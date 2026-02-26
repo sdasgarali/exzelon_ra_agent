@@ -16,6 +16,7 @@ from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
 from app.db.models.warmup_profile import WarmupProfile
 from app.db.models.dns_check_result import DNSCheckResult
 from app.db.models.blacklist_check_result import BlacklistCheckResult
+from app.db.models.email_template import EmailTemplate, TemplateStatus
 
 __all__ = [
     "User",
@@ -40,4 +41,6 @@ __all__ = [
     "WarmupProfile",
     "DNSCheckResult",
     "BlacklistCheckResult",
+    "EmailTemplate",
+    "TemplateStatus",
 ]

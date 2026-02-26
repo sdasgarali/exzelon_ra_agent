@@ -43,8 +43,8 @@ def send_outreach_email(
         msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_mailbox.email.split('@')[1]}>"
 
         if body_text:
-            msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
+            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
 
         smtp_host = sender_mailbox.smtp_host or "smtp.office365.com"
         server = smtplib.SMTP(smtp_host, sender_mailbox.smtp_port or 587, timeout=30)
@@ -90,6 +90,9 @@ def render_signature_html(sig_json: str) -> str:
             url = 'https://' + url
         parts.append(f'<a href="{url}" style="font-size:12px;color:#0066cc;text-decoration:none;">{sig["website"]}</a>')
 
+    if sig.get('address'):
+        parts.append(f'<span style="font-size:12px;color:#666666;">{sig["address"]}</span>')
+
     if not parts:
         return ''
 
@@ -99,6 +102,47 @@ def render_signature_html(sig_json: str) -> str:
         + lines_html
         + '</div>'
     )
+
+def get_active_template(db):
+    """Get the currently active email template, if any."""
+    from app.db.models.email_template import EmailTemplate, TemplateStatus
+    return db.query(EmailTemplate).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE
+    ).first()
+
+
+def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png"):
+    """Render an email template with placeholder substitution."""
+
+    # Determine sender first name
+    sender_first = ""
+    if mailbox.display_name:
+        sender_first = mailbox.display_name.split()[0]
+    else:
+        sender_first = mailbox.email.split("@")[0]
+
+    # Build placeholder map
+    placeholders = {
+        "{{contact_first_name}}": contact.first_name or "",
+        "{{sender_first_name}}": sender_first,
+        "{{job_title}}": (lead.job_title if lead and lead.job_title else "Open Position"),
+        "{{job_location}}": (lead.state if lead and lead.state else ""),
+        "{{company_name}}": (lead.client_name if lead and lead.client_name else (contact.client_name or "")),
+        "{{signature}}": signature_html,
+        "{{logo_url}}": logo_url,
+    }
+
+    subject = template.subject
+    body_html = template.body_html
+    body_text = template.body_text or ""
+
+    for placeholder, value in placeholders.items():
+        subject = subject.replace(placeholder, value)
+        body_html = body_html.replace(placeholder, value)
+        body_text = body_text.replace(placeholder, value)
+
+    return subject, body_html, body_text
+
 
 def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
     """
@@ -338,6 +382,10 @@ def run_outreach_send_pipeline(
             ContactDetails.validation_status == "valid"
         ).all()
 
+        # Get active email template
+        active_template = get_active_template(db)
+        used_template_id = active_template.template_id if active_template else None
+
         sent_count = 0
         for contact in contacts:
             if sent_count >= remaining_limit:
@@ -365,13 +413,19 @@ def run_outreach_send_pipeline(
             if sending_mailbox.email_signature_json:
                 signature_html = render_signature_html(sending_mailbox.email_signature_json)
 
-            body_content = f"<p>Dear {contact.first_name},</p>"
-            body_content += "<p>We noticed your company is hiring and wanted to reach out about our staffing solutions.</p>"
-            body_content += signature_html
-            body_content += '<hr><small>To unsubscribe, reply with "UNSUBSCRIBE"</small>'
+            # Use template if available, otherwise fallback to hardcoded
+            if active_template:
+                subject, body_content, body_text = render_template(
+                    active_template, contact, None, sending_mailbox, signature_html
+                )
+            else:
+                body_content = f"<p>Dear {contact.first_name},</p>"
+                body_content += "<p>We noticed your company is hiring and wanted to reach out about our staffing solutions.</p>"
+                body_content += signature_html
+                body_content += '<hr><small>To unsubscribe, reply with \"UNSUBSCRIBE\"</small>'
 
-            subject = f"Exciting Opportunity at {contact.client_name}"
-            body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
+                subject = f"Exciting Opportunity at {contact.client_name}"
+                body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
 
             try:
                 if dry_run:
@@ -409,7 +463,8 @@ def run_outreach_send_pipeline(
                     status=send_status,
                     skip_reason=skip_reason,
                     body_html=body_content,
-                    body_text=body_text
+                    body_text=body_text,
+                    template_id=used_template_id
                 )
                 db.add(event)
 
@@ -478,6 +533,10 @@ def run_outreach_for_lead(
         if not contacts:
             return {"message": "No contacts found for this lead", **counters}
 
+        # Get active email template
+        active_template = get_active_template(db)
+        used_template_id = active_template.template_id if active_template else None
+
         for contact in contacts:
             eligible, reason = check_send_eligibility(db, contact)
             if not eligible:
@@ -502,13 +561,19 @@ def run_outreach_for_lead(
             if sending_mailbox.email_signature_json:
                 signature_html = render_signature_html(sending_mailbox.email_signature_json)
 
-            body_content = f"<p>Dear {contact.first_name},</p>"
-            body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
-            body_content += signature_html
-            body_content += '<hr><small>To unsubscribe, reply with "UNSUBSCRIBE"</small>'
+            # Use template if available, otherwise fallback to hardcoded
+            if active_template:
+                subject, body_content, body_text = render_template(
+                    active_template, contact, lead, sending_mailbox, signature_html
+                )
+            else:
+                body_content = f"<p>Dear {contact.first_name},</p>"
+                body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
+                body_content += signature_html
+                body_content += '<hr><small>To unsubscribe, reply with \"UNSUBSCRIBE\"</small>'
 
-            subject = f"Staffing for {lead.job_title} at {lead.client_name}"
-            body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
+                subject = f"Staffing for {lead.job_title} at {lead.client_name}"
+                body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
 
             try:
                 if dry_run:
@@ -544,7 +609,8 @@ def run_outreach_for_lead(
                     status=send_status,
                     skip_reason=skip_reason,
                     body_html=body_content,
-                    body_text=body_text
+                    body_text=body_text,
+                    template_id=used_template_id
                 )
                 db.add(event)
 

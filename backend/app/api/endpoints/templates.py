@@ -1,0 +1,213 @@
+"""Email template management endpoints."""
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db, require_role
+from app.db.models.user import User, UserRole
+from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.schemas.email_template import (
+    EmailTemplateCreate,
+    EmailTemplateUpdate,
+    EmailTemplateResponse,
+    EmailTemplateListResponse,
+)
+
+router = APIRouter(prefix="/templates", tags=["Email Templates"])
+
+
+@router.get("", response_model=EmailTemplateListResponse)
+async def list_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """List all email templates."""
+    templates = db.query(EmailTemplate).order_by(EmailTemplate.created_at.desc()).all()
+    active = next((t for t in templates if t.status == TemplateStatus.ACTIVE), None)
+    return EmailTemplateListResponse(
+        items=[EmailTemplateResponse.model_validate(t) for t in templates],
+        total=len(templates),
+        active_template_id=active.template_id if active else None,
+    )
+
+
+@router.get("/active", response_model=Optional[EmailTemplateResponse])
+async def get_active_template(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Get the currently active email template."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE
+    ).first()
+    if not template:
+        return None
+    return EmailTemplateResponse.model_validate(template)
+
+
+@router.get("/{template_id}", response_model=EmailTemplateResponse)
+async def get_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Get a single email template by ID."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+    return EmailTemplateResponse.model_validate(template)
+
+
+@router.post("", response_model=EmailTemplateResponse, status_code=status.HTTP_201_CREATED)
+async def create_template(
+    template_in: EmailTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Create a new email template."""
+    # If creating as active, deactivate all others
+    if template_in.status == TemplateStatus.ACTIVE:
+        db.query(EmailTemplate).filter(
+            EmailTemplate.status == TemplateStatus.ACTIVE
+        ).update({"status": TemplateStatus.INACTIVE})
+
+    template = EmailTemplate(**template_in.model_dump())
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    return EmailTemplateResponse.model_validate(template)
+
+
+@router.put("/{template_id}", response_model=EmailTemplateResponse)
+async def update_template(
+    template_id: int,
+    template_in: EmailTemplateUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Update an email template."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    update_data = template_in.model_dump(exclude_unset=True)
+
+    # If setting to active, deactivate all others
+    if update_data.get("status") == TemplateStatus.ACTIVE:
+        db.query(EmailTemplate).filter(
+            EmailTemplate.status == TemplateStatus.ACTIVE,
+            EmailTemplate.template_id != template_id,
+        ).update({"status": TemplateStatus.INACTIVE})
+
+    for field, value in update_data.items():
+        setattr(template, field, value)
+
+    db.commit()
+    db.refresh(template)
+    return EmailTemplateResponse.model_validate(template)
+
+
+@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Delete an email template. Cannot delete the default template."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+    if template.is_default:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete the default template",
+        )
+    db.delete(template)
+    db.commit()
+
+
+@router.post("/{template_id}/activate", response_model=EmailTemplateResponse)
+async def activate_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Activate a template (deactivates all others)."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    # Deactivate all others
+    db.query(EmailTemplate).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE
+    ).update({"status": TemplateStatus.INACTIVE})
+
+    template.status = TemplateStatus.ACTIVE
+    db.commit()
+    db.refresh(template)
+    return EmailTemplateResponse.model_validate(template)
+
+
+@router.post("/{template_id}/preview")
+async def preview_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Preview a template with sample data."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    sample_data = {
+        "{{contact_first_name}}": "John",
+        "{{sender_first_name}}": "Sarah",
+        "{{job_title}}": "Senior Software Engineer",
+        "{{job_location}}": "New York, NY",
+        "{{company_name}}": "Acme Corp",
+        "{{signature}}": "<div style='margin-top:20px;padding-top:12px;border-top:1px solid #ccc;font-family:Arial,sans-serif;'><strong>Sarah Smith</strong><br>Recruitment Specialist<br>Exzelon Inc.</div>",
+        "{{logo_url}}": "https://www.exzelon.com/gallery/logo.png",
+    }
+
+    preview_subject = template.subject
+    preview_html = template.body_html
+    preview_text = template.body_text or ""
+
+    for placeholder, value in sample_data.items():
+        preview_subject = preview_subject.replace(placeholder, value)
+        preview_html = preview_html.replace(placeholder, value)
+        preview_text = preview_text.replace(placeholder, value)
+
+    return {
+        "template_id": template.template_id,
+        "name": template.name,
+        "subject": preview_subject,
+        "body_html": preview_html,
+        "body_text": preview_text,
+        "placeholders_used": list(sample_data.keys()),
+    }

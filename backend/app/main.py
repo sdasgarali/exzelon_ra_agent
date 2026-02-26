@@ -92,6 +92,96 @@ def _seed_warmup_profiles():
         db.close()
 
 
+def _seed_default_email_template():
+    """Seed the default Exzelon outreach email template if none exists."""
+    from app.db.base import SessionLocal
+    from app.db.models.email_template import EmailTemplate, TemplateStatus
+    db = SessionLocal()
+    try:
+        existing = db.query(EmailTemplate).filter(EmailTemplate.is_default == True).first()
+        if existing:
+            return
+
+        default_subject = "Free candidate preview for {{job_title}} position"
+
+        default_body_html = (
+            '<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;\">\n'
+            '  <p>Hi {{contact_first_name}},</p>\n'
+            '  \n'
+            '  <p>My name is {{sender_first_name}} from <strong>Exzelon Consulting Inc.</strong></p>\n'
+            '  \n'
+            '  <p>I noticed {{company_name}} is hiring for the <strong>{{job_title}}</strong> position in <strong>{{job_location}}</strong>. We specialize in connecting companies with top-tier talent and would love to help you find the perfect candidate.</p>\n'
+            '  \n'
+            '  <p>We offer a <strong>free candidate preview</strong> &#8212; no commitment required. Just let us know your requirements, and we’ll present pre-screened profiles that match your needs.</p>\n'
+            '  \n'
+            '  <p><strong>Why Exzelon?</strong></p>\n'
+            '  <ul style=\"padding-left: 20px;\">\n'
+            '    <li>Pre-vetted, interview-ready candidates</li>\n'
+            '    <li>Quick turnaround -- profiles within 48 hours</li>\n'
+            '    <li>No upfront cost -- pay only when you hire</li>\n'
+            '    <li>Specialists in IT, Engineering, Healthcare, and more</li>\n'
+            '  </ul>\n'
+            '  \n'
+            '  <p>Would you be open to a quick 10-minute call this week to discuss how we can support your hiring needs?</p>\n'
+            '  \n'
+            '  <p>Looking forward to hearing from you.</p>\n'
+            '  \n'
+            '  <p>Best regards,</p>\n'
+            '  \n'
+            '  {{signature}}\n'
+            '  \n'
+            '  <div style=\"margin-top: 20px; text-align: left;\">\n'
+            '    <img src=\"{{logo_url}}\" alt=\"Exzelon Consulting Inc.\" style=\"max-width: 150px; height: auto;\" />\n'
+            '  </div>\n'
+            '  \n'
+            '  <hr style=\"border: none; border-top: 1px solid #eee; margin-top: 20px;\" />\n'
+            '  <p style=\"font-size: 11px; color: #999;\">To unsubscribe, reply with \"UNSUBSCRIBE\"</p>\n'
+            '</div>'
+        )
+
+        default_body_text = (
+            "Hi {{contact_first_name}},\n"
+            "\n"
+            "My name is {{sender_first_name}} from Exzelon Consulting Inc.\n"
+            "\n"
+            "I noticed {{company_name}} is hiring for the {{job_title}} position in {{job_location}}. We specialize in connecting companies with top-tier talent and would love to help you find the perfect candidate.\n"
+            "\n"
+            "We offer a free candidate preview -- no commitment required. Just let us know your requirements, and we’ll present pre-screened profiles that match your needs.\n"
+            "\n"
+            "Why Exzelon?\n"
+            "- Pre-vetted, interview-ready candidates\n"
+            "- Quick turnaround -- profiles within 48 hours\n"
+            "- No upfront cost -- pay only when you hire\n"
+            "- Specialists in IT, Engineering, Healthcare, and more\n"
+            "\n"
+            "Would you be open to a quick 10-minute call this week to discuss how we can support your hiring needs?\n"
+            "\n"
+            "Looking forward to hearing from you.\n"
+            "\n"
+            "Best regards,\n"
+            "{{sender_first_name}}\n"
+            "\n"
+            "To unsubscribe, reply with \"UNSUBSCRIBE\""
+        )
+
+        template = EmailTemplate(
+            name="Exzelon Default Outreach",
+            subject=default_subject,
+            body_html=default_body_html,
+            body_text=default_body_text,
+            status=TemplateStatus.ACTIVE,
+            is_default=True,
+            description="Default Exzelon Consulting outreach template with free candidate preview offer.",
+        )
+        db.add(template)
+        db.commit()
+        logger.info("Seeded default email template")
+    except Exception as e:
+        logger.error("Failed to seed default email template", error=str(e))
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
@@ -99,6 +189,7 @@ async def lifespan(app: FastAPI):
     logger.info("Database tables created/verified")
 
     _seed_warmup_profiles()
+    _seed_default_email_template()
 
     # Start warmup scheduler
     try:

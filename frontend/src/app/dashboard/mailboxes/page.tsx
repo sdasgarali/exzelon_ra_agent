@@ -102,6 +102,7 @@ export default function MailboxesPage() {
     email: '',
     company: '',
     website: '',
+    address: '',
   })
 
   const [formData, setFormData] = useState({
@@ -305,10 +306,11 @@ export default function MailboxesPage() {
           email: sig.email || '',
           company: sig.company || '',
           website: sig.website || '',
+          address: sig.address || '',
         })
-      } catch { setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '' }) }
+      } catch { setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' }) }
     } else {
-      setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '' })
+      setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
     }
     setShowAddModal(true)
   }
@@ -396,7 +398,7 @@ export default function MailboxesPage() {
       notes: '',
       email_signature_json: '',
     })
-    setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '' })
+    setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
   }
 
   const clearFilters = () => {
@@ -771,6 +773,10 @@ export default function MailboxesPage() {
                     <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
                     <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://exzelon.com" />
                   </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
+                    <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                  </div>
                 </div>
 
                 {/* Live Preview */}
@@ -790,6 +796,11 @@ export default function MailboxesPage() {
                         {sigData.website && (
                           <div style={{ fontSize: '12px' }}>
                             <span style={{ color: '#0066cc' }}>{sigData.website}</span>
+                          </div>
+                        )}
+                        {sigData.address && (
+                          <div style={{ fontSize: '12px', color: '#666666' }}>
+                            {sigData.address}
                           </div>
                         )}
                       </div>

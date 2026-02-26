@@ -54,7 +54,8 @@ def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
         last_connection_test_at=mailbox.last_connection_test_at,
         connection_error=mailbox.connection_error,
         can_send=mailbox.can_send,
-        remaining_daily_quota=mailbox.remaining_daily_quota
+        remaining_daily_quota=mailbox.remaining_daily_quota,
+        email_signature_json=mailbox.email_signature_json
     )
 
 

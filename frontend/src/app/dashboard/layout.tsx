@@ -17,6 +17,7 @@ import {
   BarChart3,
   Inbox,
   Flame,
+  FileEdit,
 } from 'lucide-react'
 
 const navigation = [
@@ -26,6 +27,7 @@ const navigation = [
   { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle },
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit },
   { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox },
   { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame },
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3 },
