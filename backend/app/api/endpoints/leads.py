@@ -22,6 +22,7 @@ router = APIRouter(prefix="/leads", tags=["Leads"])
 
 # Valid sort columns
 SORT_COLUMNS = {
+    "lead_id": LeadDetails.lead_id,
     "client_name": LeadDetails.client_name,
     "job_title": LeadDetails.job_title,
     "state": LeadDetails.state,
@@ -71,11 +72,16 @@ async def list_leads(
     if to_date:
         query = query.filter(LeadDetails.posting_date <= to_date)
     if search:
-        query = query.filter(
-            (LeadDetails.client_name.ilike(f"%{search}%")) |
-            (LeadDetails.job_title.ilike(f"%{search}%")) |
-            (LeadDetails.state.ilike(f"%{search}%"))
-        )
+        # Support searching by numeric ID (e.g. "42" or "#42")
+        search_stripped = search.lstrip('#').strip()
+        if search_stripped.isdigit():
+            query = query.filter(LeadDetails.lead_id == int(search_stripped))
+        else:
+            query = query.filter(
+                (LeadDetails.client_name.ilike(f"%{search}%")) |
+                (LeadDetails.job_title.ilike(f"%{search}%")) |
+                (LeadDetails.state.ilike(f"%{search}%"))
+            )
 
     total = query.count()
 

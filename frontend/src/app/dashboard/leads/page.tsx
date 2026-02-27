@@ -53,7 +53,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'lead_status'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'lead_status'
 type SortOrder = 'asc' | 'desc'
 
 export default function LeadsPage() {
@@ -543,7 +543,7 @@ export default function LeadsPage() {
           <div className="flex-1 min-w-64">
             <input
               type="text"
-              placeholder="Search company, job title, or state..."
+              placeholder="Search by ID (#42), company, job title, or state..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="input w-full"
@@ -661,8 +661,11 @@ export default function LeadsPage() {
                     className="w-4 h-4"
                   />
                 </th>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
+                <th
+                  onClick={() => handleSort('lead_id')}
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  ID <SortIcon field="lead_id" />
                 </th>
                 <th
                   onClick={() => handleSort('client_name')}
