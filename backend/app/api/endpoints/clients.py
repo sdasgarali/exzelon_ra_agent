@@ -9,6 +9,7 @@ from app.api.deps import get_db, get_current_active_user
 from app.db.models.user import User
 from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
+from app.db.models.contact import ContactDetails
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
@@ -168,8 +169,12 @@ async def delete_client(
             detail="Client not found"
         )
 
-    # Soft delete: archive instead of hard deleting
+    # Soft delete: archive client and cascade to linked contacts
     client.is_archived = True
+    # Archive all contacts belonging to this company
+    db.query(ContactDetails).filter(
+        ContactDetails.company_name == client.company_name
+    ).update({ContactDetails.is_archived: True}, synchronize_session=False)
     db.commit()
 
 

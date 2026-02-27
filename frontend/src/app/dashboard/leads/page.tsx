@@ -994,8 +994,8 @@ export default function LeadsPage() {
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
                 <p className="font-medium mb-1">Archived leads will be hidden by default but can be restored.</p>
                 <ul className="list-disc ml-4 space-y-1">
-                  <li>Linked contacts will also be archived</li>
-                  <li>Use the "Show Archived" toggle to view them</li>
+                  <li>Contacts linked to this lead remain active for other leads</li>
+                  <li>Use the "Show Archived" toggle to view archived leads</li>
                   <li>Archived leads are excluded from pipelines</li>
                 </ul>
               </div>
