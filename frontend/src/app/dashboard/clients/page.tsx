@@ -19,15 +19,18 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     fetchClients()
-  }, [])
+  }, [showArchived])
 
   const fetchClients = async () => {
     try {
       setLoading(true)
-      const response = await clientsApi.list({ limit: 50 })
+      const params: Record<string, any> = { limit: 50 }
+      if (showArchived) params.show_archived = true
+      const response = await clientsApi.list(params)
       // Handle both array and {items: [], total: N} response formats
       const clientList = Array.isArray(response) ? response : (response?.items || [])
       setClients(clientList)
@@ -80,6 +83,16 @@ export default function ClientsPage() {
         </div>
       )}
 
+      <div className="flex items-center gap-4 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Show Archived</span>
+          </label></div>
       <div className="card overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

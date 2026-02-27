@@ -48,6 +48,7 @@ const emptyForm: TemplateForm = {
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [activeTemplateId, setActiveTemplateId] = useState<number | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
@@ -60,7 +61,7 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     try {
       setLoading(true)
-      const data = await templatesApi.list()
+      const data = await templatesApi.list(showArchived ? { show_archived: true } : {})
       setTemplates(data.items || [])
       setActiveTemplateId(data.active_template_id)
     } catch (err: any) {
@@ -72,7 +73,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     fetchTemplates()
-  }, [])
+  }, [showArchived])
 
   const handleCreate = () => {
     setEditingId(null)
@@ -123,7 +124,7 @@ export default function TemplatesPage() {
       setShowDeleteConfirm(null)
       fetchTemplates()
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete template')
+      setError(err.response?.data?.detail || 'Failed to archive template')
       setShowDeleteConfirm(null)
     }
   }
@@ -286,7 +287,7 @@ export default function TemplatesPage() {
                         <button
                           onClick={() => setShowDeleteConfirm(template.template_id)}
                           className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
-                          title="Delete"
+                          title="Archive"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -381,7 +382,19 @@ export default function TemplatesPage() {
                   <Info className="w-4 h-4 text-blue-600" />
                   <h4 className="text-sm font-medium text-blue-800">Available Placeholders</h4>
                 </div>
-                <div className="grid grid-cols-2 gap-1 text-xs text-blue-700">
+                <div className="flex items-center gap-4 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Show Archived</span>
+          </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 text-xs text-blue-700">
                   <div><code>{'{{contact_first_name}}'}</code> — Recipient first name</div>
                   <div><code>{'{{sender_first_name}}'}</code> — Sender first name</div>
                   <div><code>{'{{job_title}}'}</code> — Job title from lead</div>
@@ -416,9 +429,9 @@ export default function TemplatesPage() {
       {showDeleteConfirm !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-2">Delete Template</h3>
+            <h3 className="text-lg font-semibold mb-2">Archive Template</h3>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to delete this template? This action cannot be undone.
+              Are you sure you want to archive this template? It can be restored later.
             </p>
             <div className="flex justify-end gap-3">
               <button

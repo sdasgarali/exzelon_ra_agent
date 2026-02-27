@@ -10,7 +10,7 @@ from sqlalchemy import func, asc, desc
 
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
-from app.db.models.lead import LeadDetails, LeadStatus
+from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.outreach import OutreachEvent
@@ -48,6 +48,7 @@ async def list_leads(
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
+    show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -56,6 +57,9 @@ async def list_leads(
         page_size = limit
 
     query = db.query(LeadDetails)
+
+    if not show_archived:
+        query = query.filter(LeadDetails.is_archived == False)
 
     if status:
         query = query.filter(LeadDetails.lead_status == status)
@@ -137,18 +141,22 @@ async def list_leads(
 
 @router.get("/stats", tags=["Leads"])
 async def get_lead_stats(
+    show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Get lead statistics summary."""
-    total = db.query(func.count(LeadDetails.lead_id)).scalar()
+    stats_base = db.query(LeadDetails)
+    if not show_archived:
+        stats_base = stats_base.filter(LeadDetails.is_archived == False)
+    total = stats_base.count()
 
-    by_status = db.query(
+    by_status = stats_base.with_entities(
         LeadDetails.lead_status,
         func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.lead_status).all()
 
-    by_source = db.query(
+    by_source = stats_base.with_entities(
         LeadDetails.source,
         func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.source).all()
@@ -169,11 +177,15 @@ async def export_leads_csv(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
+    show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Export leads to CSV file."""
     query = db.query(LeadDetails)
+
+    if not show_archived:
+        query = query.filter(LeadDetails.is_archived == False)
 
     if lead_status:
         query = query.filter(LeadDetails.lead_status == lead_status)
@@ -313,6 +325,8 @@ async def import_leads_csv(
                 'closed_not_hired': LeadStatus.CLOSED_NOT_HIRED,
                 'closed-not-hired': LeadStatus.CLOSED_NOT_HIRED,
                 'new': LeadStatus.OPEN,
+                'closed_test': LeadStatus.CLOSED_TEST,
+                'closed-test': LeadStatus.CLOSED_TEST,
             }
             lead_status_val = status_map.get(status_str, LeadStatus.OPEN)
 
@@ -367,7 +381,7 @@ async def bulk_delete_leads(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Delete multiple leads by IDs. Admin only."""
+    """Archive multiple leads by IDs (soft delete). Admin only."""
     lead_ids = request.get("lead_ids", [])
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
@@ -381,54 +395,69 @@ async def bulk_delete_leads(
 
     found_ids = [l.lead_id for l in leads]
 
-    # Delete junction table entries
-    db.query(LeadContactAssociation).filter(
-        LeadContactAssociation.lead_id.in_(found_ids)
-    ).delete(synchronize_session=False)
+    # Soft delete: archive leads instead of hard deleting
+    archived_count = db.query(LeadDetails).filter(
+        LeadDetails.lead_id.in_(found_ids)
+    ).update({LeadDetails.is_archived: True}, synchronize_session=False)
 
-    # Find contacts linked to these leads
+    # Also archive linked contacts
     linked_contacts = db.query(ContactDetails).filter(
         ContactDetails.lead_id.in_(found_ids)
     ).all()
     contact_ids = [c.contact_id for c in linked_contacts]
-    contact_emails = [c.email for c in linked_contacts if c.email]
-
+    contacts_archived = 0
     if contact_ids:
-        try:
-            db.query(OutreachEvent).filter(
-                OutreachEvent.contact_id.in_(contact_ids)
-            ).delete(synchronize_session=False)
-        except Exception:
-            pass
-
-    if contact_emails:
-        try:
-            from app.db.models.email_validation import EmailValidationResult
-            db.query(EmailValidationResult).filter(
-                EmailValidationResult.email.in_(contact_emails)
-            ).delete(synchronize_session=False)
-        except Exception:
-            pass
-
-    contacts_deleted = 0
-    if contact_ids:
-        contacts_deleted = db.query(ContactDetails).filter(
+        contacts_archived = db.query(ContactDetails).filter(
             ContactDetails.contact_id.in_(contact_ids)
-        ).delete(synchronize_session=False)
-
-    deleted_count = db.query(LeadDetails).filter(
-        LeadDetails.lead_id.in_(found_ids)
-    ).delete(synchronize_session=False)
+        ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
     db.commit()
 
     return {
-        "message": f"Successfully deleted {deleted_count} lead(s) and {contacts_deleted} linked contact(s)",
-        "deleted_count": deleted_count,
-        "contacts_deleted": contacts_deleted,
-        "deleted_ids": found_ids
+        "message": f"Successfully archived {archived_count} lead(s) and {contacts_archived} linked contact(s)",
+        "archived_count": archived_count,
+        "contacts_archived": contacts_archived,
+        "archived_ids": found_ids
     }
 
+
+
+
+@router.put("/bulk/status")
+async def bulk_update_status(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+):
+    """Update status of multiple leads at once. Admin/Operator only."""
+    lead_ids = request.get("lead_ids", [])
+    new_status = request.get("status", "")
+
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+    if not new_status:
+        raise HTTPException(status_code=400, detail="No status provided")
+
+    # Validate status
+    try:
+        status_enum = LeadStatus(new_status)
+    except ValueError:
+        valid = [s.value for s in LeadStatus]
+        raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid}")
+
+    updated = db.query(LeadDetails).filter(
+        LeadDetails.lead_id.in_(lead_ids)
+    ).update(
+        {LeadDetails.lead_status: status_enum},
+        synchronize_session=False
+    )
+    db.commit()
+
+    return {
+        "message": f"Updated {updated} lead(s) to status '{new_status}'",
+        "updated_count": updated,
+        "status": new_status
+    }
 
 
 @router.post("/bulk/enrich/preview")
@@ -522,17 +551,31 @@ async def bulk_enrich_leads(
         raise HTTPException(status_code=400, detail="Maximum 200 leads per batch")
 
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
+    from app.db.models.job_run import JobRun, JobStatus
+
+    # Pre-create job run so we can return run_id immediately
+    job_run = JobRun(
+        pipeline_name="contact_enrichment",
+        status=JobStatus.PENDING,
+        triggered_by=current_user.email
+    )
+    db.add(job_run)
+    db.commit()
+    db.refresh(job_run)
+    created_run_id = job_run.run_id
 
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
         triggered_by=current_user.email,
-        lead_ids=lead_ids
+        lead_ids=lead_ids,
+        run_id=created_run_id
     )
 
     return {
         "message": f"Contact enrichment started for {len(lead_ids)} lead(s)",
         "status": "processing",
-        "lead_count": len(lead_ids)
+        "lead_count": len(lead_ids),
+        "run_id": created_run_id
     }
 
 
@@ -898,7 +941,7 @@ async def delete_lead(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Delete lead."""
+    """Archive lead (soft delete)."""
     lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
@@ -906,9 +949,6 @@ async def delete_lead(
             detail="Lead not found"
         )
 
-    db.query(LeadContactAssociation).filter(
-        LeadContactAssociation.lead_id == lead_id
-    ).delete(synchronize_session=False)
-
-    db.delete(lead)
+    # Soft delete: archive instead of hard deleting
+    lead.is_archived = True
     db.commit()

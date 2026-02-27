@@ -35,6 +35,7 @@ class EmailTemplateResponse(BaseModel):
     status: TemplateStatus
     is_default: bool
     description: Optional[str] = None
+    is_archived: bool = False
     created_at: datetime
     updated_at: datetime
 

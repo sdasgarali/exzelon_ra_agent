@@ -47,6 +47,7 @@ class ContactResponse(ContactBase):
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
     lead_ids: List[int] = []  # All associated lead IDs via junction table
+    is_archived: bool = False
     created_at: datetime
     updated_at: datetime
 

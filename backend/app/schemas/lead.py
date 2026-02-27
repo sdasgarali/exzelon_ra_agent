@@ -56,7 +56,8 @@ class LeadResponse(LeadBase):
     contact_source: Optional[str] = None
     lead_status: LeadStatus
     skip_reason: Optional[str] = None
-    contact_count: Optional[int] = 0  # Number of contacts linked to this lead
+    contact_count: Optional[int] = 0
+    is_archived: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -75,8 +76,8 @@ class LeadListResponse(BaseModel):
 
 class LeadDetailResponse(LeadResponse):
     """Schema for detailed lead response including contacts and outreach events."""
-    contacts: List[dict] = []  # ContactResponse dicts
-    outreach_events: List[dict] = []  # OutreachEventResponse dicts
+    contacts: List[dict] = []
+    outreach_events: List[dict] = []
 
 
 class LeadContactsManageRequest(BaseModel):

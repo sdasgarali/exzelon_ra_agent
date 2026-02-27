@@ -5,7 +5,7 @@ from typing import Dict, Any
 import structlog
 
 from app.db.base import SessionLocal
-from app.db.models.lead import LeadDetails, LeadStatus
+from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.client import ClientInfo
@@ -37,14 +37,12 @@ def get_contact_discovery_adapters(db=None):
     import json as _json
     adapters = []
 
-    # Read providers list from DB (fall back to config.py default)
     providers = [settings.CONTACT_PROVIDER]
     if db:
         db_providers = _get_db_setting(db, "contact_providers")
         if db_providers and isinstance(db_providers, list) and len(db_providers) > 0:
             providers = db_providers
 
-    # Read API keys from DB (fall back to config.py / env vars)
     apollo_key = settings.APOLLO_API_KEY
     seamless_key = settings.SEAMLESS_API_KEY
     if db:
@@ -78,13 +76,11 @@ def get_contact_discovery_adapters(db=None):
     return adapters
 
 
-
 def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
     """
     Check DB for contacts at the same company NOT already linked to this lead.
     Associate them via LeadContactAssociation. Return count reused.
     """
-    # Get contact_ids already linked to this lead (junction + FK)
     existing_cids = set()
     for row in db.query(LeadContactAssociation.contact_id).filter(
         LeadContactAssociation.lead_id == lead.lead_id
@@ -100,7 +96,6 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
     if needed <= 0:
         return 0
 
-    # Find reusable contacts at same company, not already linked
     query = db.query(ContactDetails).filter(
         ContactDetails.client_name == lead.client_name
     )
@@ -119,7 +114,7 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
             db.flush()
             reused += 1
         except Exception:
-            db.rollback()  # Unique constraint violation
+            db.rollback()
     return reused
 
 
@@ -129,7 +124,6 @@ def _update_lead_from_contacts(db, lead):
         ContactDetails.lead_id == lead.lead_id
     ).first()
     if not contact:
-        # Try junction table
         row = db.query(LeadContactAssociation.contact_id).filter(
             LeadContactAssociation.lead_id == lead.lead_id
         ).first()
@@ -149,7 +143,8 @@ def _update_lead_from_contacts(db, lead):
 
 def run_contact_enrichment_pipeline(
     triggered_by: str = "system",
-    lead_ids: list | None = None
+    lead_ids: list | None = None,
+    run_id: int | None = None
 ) -> Dict[str, Any]:
     """
     Run the contact enrichment pipeline.
@@ -163,15 +158,23 @@ def run_contact_enrichment_pipeline(
     """
     db = SessionLocal()
     counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0}
+    lead_results = []
 
-    # Create job run record
-    job_run = JobRun(
-        pipeline_name="contact_enrichment",
-        status=JobStatus.RUNNING,
-        triggered_by=triggered_by
-    )
-    db.add(job_run)
-    db.commit()
+    # Reuse pre-created job run or create a new one
+    if run_id:
+        job_run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+        if job_run:
+            job_run.status = JobStatus.RUNNING
+            job_run.started_at = datetime.utcnow()
+            db.commit()
+        else:
+            job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+            db.add(job_run)
+            db.commit()
+    else:
+        job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+        db.add(job_run)
+        db.commit()
 
     try:
         logger.info("Starting contact enrichment pipeline")
@@ -182,48 +185,55 @@ def run_contact_enrichment_pipeline(
 
         max_contacts_per_job = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
-        # Get leads needing enrichment
         if lead_ids:
             leads = db.query(LeadDetails).filter(
-                LeadDetails.lead_id.in_(lead_ids)
+                LeadDetails.lead_id.in_(lead_ids),
+                ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
+                LeadDetails.is_archived == False
             ).all()
         else:
-            # Default behavior: all NEW leads with no contact info
             leads = db.query(LeadDetails).filter(
                 LeadDetails.first_name.is_(None),
-                LeadDetails.lead_status == LeadStatus.NEW
+                LeadDetails.lead_status == LeadStatus.NEW,
+                LeadDetails.is_archived == False
             ).limit(100).all()
 
         logger.info(f"Found {len(leads)} leads to enrich")
 
         for lead in leads:
             try:
-                # Check how many contacts we already have for THIS SPECIFIC LEAD
                 existing_count = db.query(ContactDetails).filter(
                     ContactDetails.lead_id == lead.lead_id
                 ).count()
 
                 if existing_count >= max_contacts_per_job:
                     counters["skipped"] += 1
+                    lead_results.append({
+                        "lead_id": lead.lead_id, "client_name": lead.client_name,
+                        "status": "skipped", "contacts_found": 0, "contacts_reused": 0,
+                        "adapter_used": None,
+                        "reason": f"Already at max contacts ({existing_count}/{max_contacts_per_job})"
+                    })
                     logger.debug("Lead already has max contacts", lead_id=lead.lead_id, count=existing_count)
                     continue
 
-                # Smart reuse: check DB for contacts at same company
                 reused = _reuse_existing_contacts(db, lead, max_contacts_per_job)
                 counters["contacts_reused"] += reused
                 counters["contacts_found"] += reused
 
-                # Recount after reuse
                 existing_count += reused
                 if existing_count >= max_contacts_per_job:
-                    # Fully satisfied from cache - no API call needed
                     counters["api_calls_saved"] += 1
                     if not lead.first_name:
                         _update_lead_from_contacts(db, lead)
                     counters["leads_enriched"] += 1
+                    lead_results.append({
+                        "lead_id": lead.lead_id, "client_name": lead.client_name,
+                        "status": "cache_only", "contacts_found": 0, "contacts_reused": reused,
+                        "adapter_used": None, "reason": "Fully satisfied from cache"
+                    })
                     continue
 
-                # Search for contacts from all providers
                 needed = max_contacts_per_job - existing_count
                 contacts = []
                 for adapter_name, adapter in adapters:
@@ -239,12 +249,11 @@ def run_contact_enrichment_pipeline(
                         contacts.extend(result)
                         logger.debug(f"Adapter {adapter_name} returned {len(result)} contacts for {lead.client_name}")
                     except ApolloCreditsExhaustedError:
-                        raise  # Propagate to stop pipeline early
+                        raise
                     except Exception as e:
                         logger.error(f"Adapter {adapter_name} failed for {lead.client_name}: {e}")
                         counters["errors"] += 1
 
-                # Deduplicate contacts by email
                 seen_emails = set()
                 unique_contacts = []
                 for c in contacts:
@@ -255,12 +264,16 @@ def run_contact_enrichment_pipeline(
 
                 if not contacts:
                     counters["skipped"] += 1
+                    adapter_names = ", ".join(a[0] for a in adapters)
+                    lead_results.append({
+                        "lead_id": lead.lead_id, "client_name": lead.client_name,
+                        "status": "skipped", "contacts_found": 0, "contacts_reused": reused,
+                        "adapter_used": adapter_names, "reason": "No results from API"
+                    })
                     continue
 
-                # Store contacts linked to this specific lead
                 contacts_added = 0
                 for contact_data in contacts:
-                    # Check for duplicate email FOR THIS LEAD
                     existing = db.query(ContactDetails).filter(
                         ContactDetails.lead_id == lead.lead_id,
                         ContactDetails.email == contact_data["email"]
@@ -269,7 +282,6 @@ def run_contact_enrichment_pipeline(
                     if existing:
                         continue
 
-                    # Apollo/Seamless contacts are pre-validated; others start as pending
                     contact_source = contact_data.get("source")
                     if contact_source in ("apollo", "seamless"):
                         val_status = "valid"
@@ -290,9 +302,8 @@ def run_contact_enrichment_pipeline(
                         validation_status=val_status
                     )
                     db.add(contact)
-                    db.flush()  # Get the contact_id
+                    db.flush()
 
-                    # Also insert into junction table for many-to-many support
                     assoc = LeadContactAssociation(
                         lead_id=lead.lead_id,
                         contact_id=contact.contact_id
@@ -302,7 +313,6 @@ def run_contact_enrichment_pipeline(
                     counters["contacts_found"] += 1
                     contacts_added += 1
 
-                # Update lead with first contact info (denormalized for quick access)
                 if contacts:
                     first_contact = contacts[0]
                     lead.first_name = first_contact["first_name"]
@@ -314,6 +324,14 @@ def run_contact_enrichment_pipeline(
                     lead.lead_status = LeadStatus.ENRICHED
                     counters["leads_enriched"] += 1
 
+                adapter_names = ", ".join(a[0] for a in adapters)
+                lead_results.append({
+                    "lead_id": lead.lead_id, "client_name": lead.client_name,
+                    "status": "enriched", "contacts_found": contacts_added,
+                    "contacts_reused": reused, "adapter_used": adapter_names,
+                    "reason": None
+                })
+
                 logger.info("Enriched lead with contacts",
                            lead_id=lead.lead_id,
                            client=lead.client_name,
@@ -322,17 +340,27 @@ def run_contact_enrichment_pipeline(
             except ApolloCreditsExhaustedError:
                 logger.error("Apollo credits exhausted - stopping pipeline early. Upgrade at https://app.apollo.io/#/settings/plans/upgrade")
                 counters["errors"] += 1
-                break  # Stop processing more leads
+                lead_results.append({
+                    "lead_id": lead.lead_id, "client_name": lead.client_name,
+                    "status": "error", "contacts_found": 0, "contacts_reused": 0,
+                    "adapter_used": "apollo", "reason": "Apollo credits exhausted"
+                })
+                break
             except Exception as e:
                 logger.error("Error enriching lead", error=str(e), lead_id=lead.lead_id)
                 counters["errors"] += 1
+                lead_results.append({
+                    "lead_id": lead.lead_id, "client_name": lead.client_name,
+                    "status": "error", "contacts_found": 0, "contacts_reused": 0,
+                    "adapter_used": None, "reason": str(e)[:200]
+                })
 
         db.commit()
 
-        # Update job run
         job_run.status = JobStatus.COMPLETED
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps(counters)
+        job_run.lead_results_json = json.dumps(lead_results)
         db.commit()
 
         logger.info("Contact enrichment completed", counters=counters)
@@ -343,6 +371,7 @@ def run_contact_enrichment_pipeline(
         job_run.status = JobStatus.FAILED
         job_run.error_message = str(e)
         job_run.ended_at = datetime.utcnow()
+        job_run.lead_results_json = json.dumps(lead_results)
         db.commit()
         raise
     finally:

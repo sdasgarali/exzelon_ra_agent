@@ -25,6 +25,7 @@ class JobRun(Base):
     ended_at = Column(DateTime, nullable=True)
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
     counters_json = Column(Text, nullable=True)  # JSON with inserted/updated/skipped counts
+    lead_results_json = Column(Text, nullable=True)  # JSON array of per-lead enrichment results
     logs_path = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)
     triggered_by = Column(String(100), nullable=True)  # user email or "scheduler"

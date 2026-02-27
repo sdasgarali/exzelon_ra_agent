@@ -11,7 +11,7 @@ import pandas as pd
 import structlog
 
 from app.db.base import SessionLocal
-from app.db.models.lead import LeadDetails, LeadStatus
+from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES, is_closed_status
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
@@ -224,9 +224,10 @@ def run_outreach_mailmerge_pipeline(
     try:
         logger.info("Starting mailmerge export")
 
-        # Get validated contacts
+        # Get validated contacts (excluding archived)
         contacts = db.query(ContactDetails).filter(
-            ContactDetails.validation_status == "valid"
+            ContactDetails.validation_status == "valid",
+            ContactDetails.is_archived == False
         ).all()
 
         eligible_contacts = []
@@ -377,9 +378,10 @@ def run_outreach_send_pipeline(
             db.commit()
             return counters
 
-        # Get validated contacts not yet sent
+        # Get validated contacts not yet sent (excluding contacts from closed/archived leads)
         contacts = db.query(ContactDetails).filter(
-            ContactDetails.validation_status == "valid"
+            ContactDetails.validation_status == "valid",
+            ContactDetails.is_archived == False
         ).all()
 
         # Get active email template
@@ -516,6 +518,12 @@ def run_outreach_for_lead(
         lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
         if not lead:
             return {"error": "Lead not found", "lead_id": lead_id}
+
+        # Skip closed or archived leads
+        if is_closed_status(lead.lead_status):
+            return {"message": f"Lead is closed ({lead.lead_status.value}), skipping outreach", **counters}
+        if lead.is_archived:
+            return {"message": "Lead is archived, skipping outreach", **counters}
 
         # Get contacts via junction table + legacy FK
         junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(

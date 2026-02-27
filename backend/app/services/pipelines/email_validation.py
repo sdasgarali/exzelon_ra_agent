@@ -78,7 +78,8 @@ def run_email_validation_pipeline(
         if emails is None:
             # Get unvalidated contact emails
             contacts = db.query(ContactDetails).filter(
-                ContactDetails.validation_status.is_(None)
+                ContactDetails.validation_status.is_(None),
+                ContactDetails.is_archived == False
             ).limit(500).all()
             emails = [c.email for c in contacts]
 

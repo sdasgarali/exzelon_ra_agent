@@ -1,6 +1,6 @@
 """Database base configuration."""
 from datetime import datetime
-from sqlalchemy import create_engine, Column, DateTime
+from sqlalchemy import create_engine, Column, DateTime, Boolean
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -18,6 +18,7 @@ class Base(DeclarativeBase):
     # Common columns for all tables
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    is_archived = Column(Boolean, default=False, nullable=False, index=True)
 
 
 # Create engine and session

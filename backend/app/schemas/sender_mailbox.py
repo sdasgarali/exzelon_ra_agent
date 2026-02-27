@@ -83,6 +83,8 @@ class SenderMailboxResponse(SenderMailboxBase):
     connection_error: Optional[str] = None
     email_signature_json: Optional[str] = None
 
+    is_archived: bool = False
+
     # Computed fields
     can_send: bool = False
     remaining_daily_quota: int = 0

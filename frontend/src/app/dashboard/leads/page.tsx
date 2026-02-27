@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { leadsApi, api } from '@/lib/api'
+import { leadsApi, pipelinesApi, api } from '@/lib/api'
 
 interface Lead {
   lead_id: number
@@ -17,6 +17,7 @@ interface Lead {
   salary_min: number
   salary_max: number
   contact_count: number  // Number of contacts linked to this lead
+  is_archived: boolean
   created_at: string
   updated_at: string
 }
@@ -41,6 +42,7 @@ const STATUS_OPTIONS = [
   { value: 'skipped', label: 'Skipped', color: 'bg-orange-100 text-orange-800' },
   { value: 'closed_hired', label: 'Closed-Hired', color: 'bg-blue-100 text-blue-800' },
   { value: 'closed_not_hired', label: 'Closed-Not-Hired', color: 'bg-gray-100 text-gray-800' },
+  { value: 'closed_test', label: 'Closed-Test', color: 'bg-amber-100 text-amber-800' },
 ]
 
 const SOURCE_OPTIONS = ['jsearch', 'apollo', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
@@ -89,7 +91,15 @@ export default function LeadsPage() {
   const [leadContacts, setLeadContacts] = useState<Contact[]>([])
   const [loadingContacts, setLoadingContacts] = useState(false)
 
-  // Bulk delete
+  // Show archived toggle
+  const [showArchived, setShowArchived] = useState(false)
+
+  // Bulk status update
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [bulkStatusValue, setBulkStatusValue] = useState('')
+  const [updatingBulkStatus, setUpdatingBulkStatus] = useState(false)
+
+  // Bulk delete (archive)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -110,6 +120,11 @@ export default function LeadsPage() {
   const [loadingEnrichPreview, setLoadingEnrichPreview] = useState(false)
   const [showEnrichResultsModal, setShowEnrichResultsModal] = useState(false)
   const [enrichResultMsg, setEnrichResultMsg] = useState('')
+  const [enrichRunId, setEnrichRunId] = useState<number | null>(null)
+  const [enrichLeadResults, setEnrichLeadResults] = useState<any[] | null>(null)
+  const [enrichRunStatus, setEnrichRunStatus] = useState<string>('pending')
+  const [enrichRunDuration, setEnrichRunDuration] = useState<number | null>(null)
+  const [enrichAdaptersUsed, setEnrichAdaptersUsed] = useState<string[] | null>(null)
 
   // Cache contact counts across pages so selection works when navigating
   const [contactCountCache, setContactCountCache] = useState<Record<number, number>>({})
@@ -134,7 +149,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, sortBy, sortOrder])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -151,6 +166,7 @@ export default function LeadsPage() {
       if (filterState) params.state = filterState
       if (filterFromDate) params.from_date = filterFromDate
       if (filterToDate) params.to_date = filterToDate
+      if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
       setLeads(response.items || [])
@@ -195,6 +211,7 @@ export default function LeadsPage() {
     setFilterState('')
     setFilterFromDate('')
     setFilterToDate('')
+    setShowArchived(false)
     setPage(1)
   }
 
@@ -313,6 +330,25 @@ export default function LeadsPage() {
     }
   }
 
+
+  const handleBulkStatusUpdate = async () => {
+    if (!bulkStatusValue) return
+    try {
+      setUpdatingBulkStatus(true)
+      const result = await leadsApi.bulkUpdateStatus(Array.from(selectedIds), bulkStatusValue)
+      setSuccess(result.message || 'Status updated successfully')
+      setShowStatusModal(false)
+      setBulkStatusValue('')
+      setSelectedIds(new Set())
+      fetchLeads()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to update status')
+    } finally {
+      setUpdatingBulkStatus(false)
+    }
+  }
+
   const handleBulkOutreach = async () => {
     try {
       setSendingOutreach(true)
@@ -388,9 +424,40 @@ export default function LeadsPage() {
       setShowEnrichModal(false)
       setEnrichPreview(null)
       setEnrichResultMsg(data.message || `Enrichment started for ${data.lead_count} lead(s)`)
+      setEnrichRunId(data.run_id || null)
+      setEnrichLeadResults(null)
+      setEnrichRunStatus('running')
       setShowEnrichResultsModal(true)
-      // Refresh after a delay to pick up background results
-      setTimeout(() => { fetchLeads(); setSelectedIds(new Set()) }, 3000)
+
+      // Poll for results if we have a run_id
+      if (data.run_id) {
+        const pollInterval = setInterval(async () => {
+          try {
+            const runDetail = await pipelinesApi.getRunDetail(data.run_id)
+            if (runDetail.status === 'completed' || runDetail.status === 'failed') {
+              clearInterval(pollInterval)
+              setEnrichRunStatus(runDetail.status)
+              setEnrichLeadResults(runDetail.lead_results || [])
+              setEnrichRunDuration(runDetail.duration_seconds || null)
+              setEnrichAdaptersUsed(runDetail.adapters_used || null)
+              fetchLeads()
+              setSelectedIds(new Set())
+            }
+          } catch {
+            clearInterval(pollInterval)
+            setEnrichRunStatus('failed')
+          }
+        }, 3000)
+        // Safety timeout - stop polling after 5 minutes
+        setTimeout(() => clearInterval(pollInterval), 300000)
+      } else {
+        // Fallback: no run_id (old backend), show completion after delay
+        setEnrichRunStatus('completed')
+        setTimeout(() => {
+          fetchLeads()
+          setSelectedIds(new Set())
+        }, 3000)
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to start enrichment')
     } finally {
@@ -424,7 +491,7 @@ export default function LeadsPage() {
     return sortOrder === 'asc' ? <span className="ml-1">&#8593;</span> : <span className="ml-1">&#8595;</span>
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterState, filterFromDate, filterToDate, search].filter(Boolean).length
+  const activeFiltersCount = [filterStatus, filterSource, filterState, filterFromDate, filterToDate, search].filter(Boolean).length + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -469,10 +536,16 @@ export default function LeadsPage() {
                 Send Outreach ({Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length})
               </button>
               <button
+                onClick={() => setShowStatusModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
+              >
+                Update Status ({selectedIds.size})
+              </button>
+              <button
                 onClick={() => setShowDeleteModal(true)}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
               >
-                Delete Selected ({selectedIds.size})
+                Archive Selected ({selectedIds.size})
               </button>
             </>
           )}
@@ -590,7 +663,19 @@ export default function LeadsPage() {
 
         {/* Expanded Filters */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t grid grid-cols-4 gap-4">
+          <div className="mt-4 pt-4 border-t">
+            <div className="flex items-center gap-3 mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Show Archived</span>
+              </label>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="label text-sm">State</label>
               <select
@@ -634,6 +719,7 @@ export default function LeadsPage() {
                 <option value="50">50 per page</option>
                 <option value="100">100 per page</option>
               </select>
+            </div>
             </div>
           </div>
         )}
@@ -720,7 +806,7 @@ export default function LeadsPage() {
                 </tr>
               ) : (
                 leads.map((lead) => (
-                  <tr key={lead.lead_id} className={selectedIds.has(lead.lead_id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}>
+                  <tr key={lead.lead_id} className={`${lead.is_archived ? "opacity-60 bg-gray-50" : ""} ${selectedIds.has(lead.lead_id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}`}>
                     <td className="px-3 py-3">
                       <input
                         type="checkbox"
@@ -733,6 +819,7 @@ export default function LeadsPage() {
                       <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">
                         #{lead.lead_id}
                       </Link>
+                      {lead.is_archived && <span className="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-medium">Archived</span>}
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline">
@@ -853,23 +940,63 @@ export default function LeadsPage() {
         </p>
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Bulk Status Update Modal */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-blue-600">Update Status for {selectedIds.size} Lead(s)</h3>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-gray-700 mb-3">Select the new status for all selected leads:</p>
+              <select
+                value={bulkStatusValue}
+                onChange={(e) => setBulkStatusValue(e.target.value)}
+                className="input w-full"
+              >
+                <option value="">-- Select Status --</option>
+                {STATUS_OPTIONS.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowStatusModal(false); setBulkStatusValue(''); }}
+                disabled={updatingBulkStatus}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkStatusUpdate}
+                disabled={updatingBulkStatus || !bulkStatusValue}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {updatingBulkStatus ? 'Updating...' : 'Update Status'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive Confirmation Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="px-6 py-4 border-b">
-              <h3 className="text-lg font-semibold text-red-600">Confirm Bulk Delete</h3>
+              <h3 className="text-lg font-semibold text-amber-600">Confirm Archive</h3>
             </div>
             <div className="px-6 py-4">
               <p className="text-gray-700 mb-3">
-                Are you sure you want to delete <strong>{selectedIds.size}</strong> lead(s)?
+                Are you sure you want to archive <strong>{selectedIds.size}</strong> lead(s)?
               </p>
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                <p className="font-medium mb-1">This action cannot be undone. It will also delete:</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                <p className="font-medium mb-1">Archived leads will be hidden by default but can be restored.</p>
                 <ul className="list-disc ml-4 space-y-1">
-                  <li>All contacts linked to these leads</li>
-                  <li>Related outreach events</li>
-                  <li>Related email validation results</li>
+                  <li>Linked contacts will also be archived</li>
+                  <li>Use the "Show Archived" toggle to view them</li>
+                  <li>Archived leads are excluded from pipelines</li>
                 </ul>
               </div>
             </div>
@@ -884,9 +1011,9 @@ export default function LeadsPage() {
               <button
                 onClick={handleBulkDelete}
                 disabled={deleting}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
-                {deleting ? 'Deleting...' : 'Delete Permanently'}
+                {deleting ? 'Archiving...' : 'Archive'}
               </button>
             </div>
           </div>
@@ -1185,20 +1312,138 @@ export default function LeadsPage() {
       {/* Enrichment Results Modal */}
       {showEnrichResultsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="px-6 py-4 border-b">
-              <h3 className="text-lg font-semibold text-purple-700">Enrichment Started</h3>
-            </div>
-            <div className="px-6 py-6 text-center">
-              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl text-purple-600">&#10003;</span>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-semibold text-purple-700">
+                  {enrichRunStatus === 'running' ? 'Enrichment Running...' : enrichRunStatus === 'completed' ? 'Enrichment Complete' : enrichRunStatus === 'failed' ? 'Enrichment Failed' : 'Enrichment Started'}
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">{enrichResultMsg}</p>
+                {(enrichRunDuration != null || enrichAdaptersUsed) && (
+                  <div className="flex gap-3 mt-2">
+                    {enrichRunDuration != null && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                        {enrichRunDuration < 60
+                          ? `${enrichRunDuration}s`
+                          : `${Math.floor(enrichRunDuration / 60)}m ${Math.round(enrichRunDuration % 60)}s`}
+                      </span>
+                    )}
+                    {enrichAdaptersUsed && enrichAdaptersUsed.map((a: string) => (
+                      <span key={a} className={`text-xs px-2 py-0.5 rounded-full ${
+                        a === 'apollo' ? 'bg-orange-100 text-orange-700' :
+                        a === 'seamless' ? 'bg-cyan-100 text-cyan-700' :
+                        a === 'mock' ? 'bg-gray-100 text-gray-600' :
+                        'bg-purple-100 text-purple-700'
+                      }`}>
+                        {a}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <p className="text-gray-700 mb-2">{enrichResultMsg}</p>
-              <p className="text-sm text-gray-500">Running in background. Leads will update automatically.</p>
+              <button
+                onClick={() => { setShowEnrichResultsModal(false); setEnrichLeadResults(null); setEnrichRunId(null) }}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {/* Spinner while running */}
+              {enrichRunStatus === 'running' && !enrichLeadResults && (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-gray-600">Processing leads... Results will appear here automatically.</p>
+                </div>
+              )}
+
+              {/* Summary Cards */}
+              {enrichLeadResults && enrichLeadResults.length > 0 && (
+                <>
+                  <div className="grid grid-cols-4 gap-3 mb-4">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-green-700">
+                        {enrichLeadResults.filter((r: any) => r.status === 'enriched').length}
+                      </div>
+                      <div className="text-xs text-green-600">Enriched</div>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-blue-700">
+                        {enrichLeadResults.filter((r: any) => r.status === 'cache_only').length}
+                      </div>
+                      <div className="text-xs text-blue-600">From Cache</div>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-gray-700">
+                        {enrichLeadResults.filter((r: any) => r.status === 'skipped').length}
+                      </div>
+                      <div className="text-xs text-gray-600">Skipped</div>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-red-700">
+                        {enrichLeadResults.filter((r: any) => r.status === 'error').length}
+                      </div>
+                      <div className="text-xs text-red-600">Errors</div>
+                    </div>
+                  </div>
+
+                  {/* Per-Lead Rows */}
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Per-Lead Breakdown ({enrichLeadResults.length} leads)</h4>
+                  <div className="space-y-2">
+                    {enrichLeadResults.map((r: any, i: number) => (
+                      <div key={i} className="p-3 border rounded-lg bg-gray-50 flex justify-between items-center">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-gray-500">#{r.lead_id}</span>
+                            <span className="text-sm font-medium text-gray-800 truncate">{r.client_name}</span>
+                          </div>
+                          <div className="flex gap-2 mt-1 flex-wrap">
+                            {r.contacts_found > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">+{r.contacts_found} found</span>
+                            )}
+                            {r.contacts_reused > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">{r.contacts_reused} reused</span>
+                            )}
+                            {r.adapter_used && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">via {r.adapter_used}</span>
+                            )}
+                          </div>
+                          {r.reason && (
+                            <p className="text-xs text-gray-500 mt-1">{r.reason}</p>
+                          )}
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ml-2 ${
+                          r.status === 'enriched' ? 'bg-green-100 text-green-700' :
+                          r.status === 'cache_only' ? 'bg-blue-100 text-blue-700' :
+                          r.status === 'skipped' ? 'bg-gray-100 text-gray-600' :
+                          r.status === 'error' ? 'bg-red-100 text-red-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {r.status === 'enriched' ? 'Enriched' :
+                           r.status === 'cache_only' ? 'Cached' :
+                           r.status === 'skipped' ? 'Skipped' :
+                           r.status === 'error' ? 'Error' : r.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* No results yet and not running */}
+              {!enrichLeadResults && enrichRunStatus !== 'running' && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl text-purple-600">&#10003;</span>
+                  </div>
+                  <p className="text-gray-700 mb-2">{enrichResultMsg}</p>
+                  <p className="text-sm text-gray-500">Running in background. Leads will update automatically.</p>
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
               <button
-                onClick={() => setShowEnrichResultsModal(false)}
+                onClick={() => { setShowEnrichResultsModal(false); setEnrichLeadResults(null); setEnrichRunId(null); setEnrichRunDuration(null); setEnrichAdaptersUsed(null) }}
                 className="btn-secondary"
               >
                 Close

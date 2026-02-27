@@ -188,6 +188,37 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
 
+    # Migration: add lead_results_json column if missing (SQLite create_all won't alter existing tables)
+    try:
+        from sqlalchemy import text as sa_text
+        with engine.connect() as conn:
+            try:
+                conn.execute(sa_text("SELECT lead_results_json FROM job_runs LIMIT 1"))
+            except Exception:
+                conn.execute(sa_text("ALTER TABLE job_runs ADD COLUMN lead_results_json TEXT"))
+                conn.commit()
+                logger.info("Migration: added lead_results_json column to job_runs")
+    except Exception as e:
+        logger.warning(f"Migration check for lead_results_json: {e}")
+
+    # Migration: add is_archived column to all tables if missing
+    try:
+        from sqlalchemy import text as sa_text2, inspect as sa_inspect
+        with engine.connect() as conn:
+            inspector = sa_inspect(engine)
+            tables_to_migrate = inspector.get_table_names()
+            for tbl in tables_to_migrate:
+                cols = [c["name"] for c in inspector.get_columns(tbl)]
+                if "is_archived" not in cols:
+                    try:
+                        conn.execute(sa_text2(f"ALTER TABLE {tbl} ADD COLUMN is_archived BOOLEAN DEFAULT 0 NOT NULL"))
+                        conn.commit()
+                        logger.info(f"Migration: added is_archived column to {tbl}")
+                    except Exception:
+                        pass  # Column may already exist or table may not support it
+    except Exception as e:
+        logger.warning(f"Migration check for is_archived: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
 

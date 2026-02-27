@@ -38,11 +38,15 @@ async def list_clients(
     status: Optional[ClientStatus] = None,
     category: Optional[ClientCategory] = None,
     search: Optional[str] = None,
+    show_archived: bool = Query(False, description="Include archived clients"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List clients with filtering."""
     query = db.query(ClientInfo)
+
+    if not show_archived:
+        query = query.filter(ClientInfo.is_archived == False)
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -54,7 +58,7 @@ async def list_clients(
     clients = query.order_by(ClientInfo.client_name).offset(skip).limit(limit).all()
 
     # Return paginated response
-    total = db.query(func.count(ClientInfo.client_id)).scalar()
+    total = query.count()
     return {
         "items": [ClientResponse.model_validate(c) for c in clients],
         "total": total
@@ -67,7 +71,7 @@ async def get_client_stats(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get client statistics summary."""
-    total = db.query(func.count(ClientInfo.client_id)).scalar()
+    total = query.count()
 
     by_status = db.query(
         ClientInfo.status,
@@ -156,7 +160,7 @@ async def delete_client(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Delete client."""
+    """Archive client (soft delete)."""
     client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
     if not client:
         raise HTTPException(
@@ -164,7 +168,8 @@ async def delete_client(
             detail="Client not found"
         )
 
-    db.delete(client)
+    # Soft delete: archive instead of hard deleting
+    client.is_archived = True
     db.commit()
 
 

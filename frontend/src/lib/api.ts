@@ -105,6 +105,10 @@ export const leadsApi = {
     const response = await api.post('/leads/bulk/enrich', { lead_ids: leadIds })
     return response.data
   },
+  bulkUpdateStatus: async (leadIds: number[], status: string) => {
+    const response = await api.put('/leads/bulk/status', { lead_ids: leadIds, status })
+    return response.data
+  },
 }
 
 // Clients API
@@ -206,6 +210,10 @@ export const pipelinesApi = {
     const response = await api.post('/pipelines/outreach/run',
       leadIds ? { lead_ids: leadIds } : undefined,
       { params: { mode, dry_run: dryRun } })
+    return response.data
+  },
+  getRunDetail: async (runId: number) => {
+    const response = await api.get(`/pipelines/runs/${runId}`)
     return response.data
   },
 }
@@ -408,8 +416,8 @@ export const warmupApi = {
 
 // Email Templates API
 export const templatesApi = {
-  list: async () => {
-    const response = await api.get('/templates')
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/templates', { params })
     return response.data
   },
   get: async (id: number) => {

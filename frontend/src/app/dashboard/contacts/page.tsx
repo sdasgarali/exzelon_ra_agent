@@ -28,6 +28,7 @@ export default function ContactsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pageSize, setPageSize] = useState(25)
+  const [showArchived, setShowArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterValidation, setFilterValidation] = useState('')
@@ -46,7 +47,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts()
-  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource])
+  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, showArchived])
 
   const fetchContacts = async () => {
     try {
@@ -56,6 +57,7 @@ export default function ContactsPage() {
       if (filterPriority) params.priority_level = filterPriority
       if (filterValidation) params.validation_status = filterValidation
       if (filterSource) params.source = filterSource
+      if (showArchived) params.show_archived = true
       const response = await contactsApi.list(params)
       const contactList = Array.isArray(response) ? response : (response?.items || [])
       setContacts(contactList)
@@ -92,12 +94,12 @@ export default function ContactsPage() {
       setError('')
       const response = await api.delete('/contacts/bulk', { data: { contact_ids: Array.from(selectedIds) } })
       const count = response.data?.deleted_count || selectedIds.size
-      setSuccess(`${count} contact(s) deleted successfully. Related outreach events and validation results have been cleaned up.`)
+      setSuccess(`${count} contact(s) archived successfully.`)
       setSelectedIds(new Set())
       setShowDeleteModal(false)
       fetchContacts()
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete contacts')
+      setError(err.response?.data?.detail || 'Failed to archive contacts')
       setShowDeleteModal(false)
     } finally {
       setDeleting(false)
@@ -154,7 +156,7 @@ export default function ContactsPage() {
               <h3 className="text-lg font-semibold text-gray-800">Confirm Deletion</h3>
             </div>
             <p className="text-gray-600 mb-2">
-              You are about to permanently delete <strong>{selectedIds.size}</strong> contact(s).
+              You are about to archive <strong>{selectedIds.size}</strong> contact(s).
             </p>
             <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
               <p className="text-sm text-red-800 font-medium mb-1">This action cannot be undone.</p>
@@ -167,7 +169,7 @@ export default function ContactsPage() {
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowDeleteModal(false)} disabled={deleting} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
               <button onClick={handleDeleteSelected} disabled={deleting} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
-                {deleting ? 'Deleting...' : 'Delete Permanently'}
+                {deleting ? 'Archiving...' : 'Archive'}
               </button>
             </div>
           </div>
@@ -186,7 +188,7 @@ export default function ContactsPage() {
           <button
             onClick={() => setShowDeleteModal(true)}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
-            Delete Selected ({selectedIds.size})
+            Archive Selected ({selectedIds.size})
           </button>
         )}
       </div>
@@ -238,6 +240,15 @@ export default function ContactsPage() {
             <option value="50">50 per page</option>
             <option value="100">100 per page</option>
           </select>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Show Archived</span>
+          </label>
         </div>
       </div>
 

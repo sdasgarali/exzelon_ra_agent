@@ -4,9 +4,20 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Body
 from sqlalchemy.orm import Session
 
+from datetime import timezone
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.job_run import JobRun, JobStatus
+
+
+def _utc_iso(dt) -> str | None:
+    """Convert naive datetime to UTC ISO string so JS parses it correctly."""
+    if dt is None:
+        return None
+    # If naive, assume UTC (our DB stores UTC via datetime.utcnow)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 router = APIRouter(prefix="/pipelines", tags=["Pipelines"])
 
@@ -99,18 +110,40 @@ async def list_job_runs(
     results = []
     for r in runs:
         counters = parse_counters(r.counters_json)
+        # Compute duration
+        duration = None
+        if r.started_at and r.ended_at:
+            duration = round((r.ended_at - r.started_at).total_seconds(), 1)
+
+        # Extract adapters used from lead_results
+        adapters_used = None
+        if r.lead_results_json:
+            try:
+                lr = json.loads(r.lead_results_json)
+                adapters = set()
+                for entry in lr:
+                    if entry.get("adapter_used"):
+                        for a in entry["adapter_used"].split(", "):
+                            adapters.add(a)
+                if adapters:
+                    adapters_used = sorted(adapters)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         results.append({
             "run_id": r.run_id,
             "pipeline_name": r.pipeline_name,
-            "started_at": r.started_at,
-            "ended_at": r.ended_at,
+            "started_at": _utc_iso(r.started_at),
+            "ended_at": _utc_iso(r.ended_at),
             "status": r.status.value if r.status else None,
             "counters": r.counters_json,
             "records_processed": counters["records_processed"],
             "records_success": counters["records_success"],
             "records_failed": counters["records_failed"],
             "error_message": r.error_message,
-            "triggered_by": r.triggered_by
+            "triggered_by": r.triggered_by,
+            "duration_seconds": duration,
+            "adapters_used": adapters_used
         })
     return results
 
@@ -131,11 +164,32 @@ async def get_job_run(
 
     counters = parse_counters(run.counters_json)
 
+    # Compute duration
+    duration = None
+    if run.started_at and run.ended_at:
+        duration = round((run.ended_at - run.started_at).total_seconds(), 1)
+
+    # Extract adapters used from lead_results
+    adapters_used = None
+    lead_results = None
+    if run.lead_results_json:
+        try:
+            lead_results = json.loads(run.lead_results_json)
+            adapters = set()
+            for entry in lead_results:
+                if entry.get("adapter_used"):
+                    for a in entry["adapter_used"].split(", "):
+                        adapters.add(a)
+            if adapters:
+                adapters_used = sorted(adapters)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return {
         "run_id": run.run_id,
         "pipeline_name": run.pipeline_name,
-        "started_at": run.started_at,
-        "ended_at": run.ended_at,
+        "started_at": _utc_iso(run.started_at),
+        "ended_at": _utc_iso(run.ended_at),
         "status": run.status.value if run.status else None,
         "counters": run.counters_json,
         "records_processed": counters["records_processed"],
@@ -143,7 +197,10 @@ async def get_job_run(
         "records_failed": counters["records_failed"],
         "logs_path": run.logs_path,
         "error_message": run.error_message,
-        "triggered_by": run.triggered_by
+        "triggered_by": run.triggered_by,
+        "duration_seconds": duration,
+        "adapters_used": adapters_used,
+        "lead_results": lead_results
     }
 
 

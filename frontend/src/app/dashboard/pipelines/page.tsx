@@ -14,6 +14,8 @@ interface PipelineRun {
   records_failed: number
   error_message: string | null
   triggered_by: string
+  duration_seconds: number | null
+  adapters_used: string[] | null
 }
 
 interface PipelineStats {
@@ -481,6 +483,12 @@ export default function PipelinesPage() {
                 Started
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Duration
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Adapter
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Records
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -509,6 +517,31 @@ export default function PipelinesPage() {
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">
                   {run.started_at ? new Date(run.started_at).toLocaleString() : '-'}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {run.duration_seconds != null ? (
+                    run.duration_seconds < 60
+                      ? `${run.duration_seconds}s`
+                      : `${Math.floor(run.duration_seconds / 60)}m ${Math.round(run.duration_seconds % 60)}s`
+                  ) : '-'}
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  {run.adapters_used && run.adapters_used.length > 0 ? (
+                    <div className="flex gap-1 flex-wrap">
+                      {run.adapters_used.map((a: string) => (
+                        <span key={a} className={`text-xs px-2 py-0.5 rounded-full ${
+                          a === 'apollo' ? 'bg-orange-100 text-orange-700' :
+                          a === 'seamless' ? 'bg-cyan-100 text-cyan-700' :
+                          a === 'mock' ? 'bg-gray-100 text-gray-600' :
+                          'bg-purple-100 text-purple-700'
+                        }`}>
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-900">
                   {run.records_processed || 0}

@@ -72,6 +72,7 @@ type SortDir = 'asc' | 'desc'
 export default function MailboxesPage() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [stats, setStats] = useState<MailboxStats | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingMailbox, setEditingMailbox] = useState<Mailbox | null>(null)
@@ -121,13 +122,14 @@ export default function MailboxesPage() {
 
   useEffect(() => {
     fetchData()
-  }, [statusFilter])
+  }, [statusFilter, showArchived])
 
   const fetchData = async () => {
     try {
       setLoading(true)
       const params: Record<string, any> = {}
       if (statusFilter) params.status = statusFilter
+      if (showArchived) params.show_archived = true
 
       const [mailboxData, statsData] = await Promise.all([
         mailboxesApi.list(params),
@@ -234,7 +236,7 @@ export default function MailboxesPage() {
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
     const count = selectedIds.size
-    if (!confirm(`Are you sure you want to delete ${count} mailbox${count > 1 ? 'es' : ''}? This cannot be undone.`)) return
+    if (!confirm(`Are you sure you want to archive ${count} mailbox${count > 1 ? 'es' : ''}? This cannot be undone.`)) return
     setBulkDeleting(true)
     let deleted = 0
     let failed = 0
@@ -250,7 +252,7 @@ export default function MailboxesPage() {
     setBulkDeleting(false)
     setTestResult({
       success: failed === 0,
-      message: `Deleted ${deleted} mailbox${deleted !== 1 ? 'es' : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+      message: `Archived ${deleted} mailbox${deleted !== 1 ? 'es' : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
     })
     fetchData()
   }
@@ -316,7 +318,7 @@ export default function MailboxesPage() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this mailbox?')) return
+    if (!confirm('Are you sure you want to archive this mailbox?')) return
     try {
       await mailboxesApi.delete(id)
       fetchData()
@@ -406,6 +408,7 @@ export default function MailboxesPage() {
     setStatusFilter('')
     setConnectionFilter('')
     setProviderFilter('')
+    setShowArchived(false)
   }
 
   const hasActiveFilters = searchQuery || statusFilter || connectionFilter || providerFilter
@@ -518,6 +521,18 @@ export default function MailboxesPage() {
               <option value="other">Other</option>
             </select>
           </div>
+
+          <div className="w-40 flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Show Archived</span>
+            </label>
+          </div>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50">
               Clear All
@@ -539,7 +554,7 @@ export default function MailboxesPage() {
               Deselect All
             </button>
             <button onClick={handleBulkDelete} disabled={bulkDeleting} className="px-3 py-1.5 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
-              {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
+              {bulkDeleting ? 'Archiving...' : `Archive Selected (${selectedIds.size})`}
             </button>
           </div>
         </div>
@@ -666,7 +681,7 @@ export default function MailboxesPage() {
                     {testingId === mailbox.mailbox_id ? 'Testing...' : 'Test'}
                   </button>
                   <button onClick={() => handleEdit(mailbox)} className="text-blue-600 hover:text-blue-900">Edit</button>
-                  <button onClick={() => handleDelete(mailbox.mailbox_id)} className="text-red-600 hover:text-red-900">Delete</button>
+                  <button onClick={() => handleDelete(mailbox.mailbox_id)} className="text-red-600 hover:text-red-900">Archive</button>
                 </td>
               </tr>
             ))}

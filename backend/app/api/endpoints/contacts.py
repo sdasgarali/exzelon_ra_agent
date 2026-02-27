@@ -39,11 +39,15 @@ async def list_contacts(
     source: Optional[str] = None,
     state: Optional[str] = None,
     search: Optional[str] = None,
+    show_archived: bool = Query(False, description="Include archived contacts"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List contacts with filtering."""
     query = db.query(ContactDetails)
+
+    if not show_archived:
+        query = query.filter(ContactDetails.is_archived == False)
 
     if lead_id:
         junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
@@ -177,7 +181,7 @@ async def bulk_delete_contacts(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Delete multiple contacts by IDs. Admin only."""
+    """Archive multiple contacts by IDs (soft delete). Admin only."""
     contact_ids = request.get("contact_ids", [])
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
@@ -192,37 +196,17 @@ async def bulk_delete_contacts(
     emails = [c.email for c in contacts if c.email]
     found_ids = [c.contact_id for c in contacts]
 
-    db.query(LeadContactAssociation).filter(
-        LeadContactAssociation.contact_id.in_(found_ids)
-    ).delete(synchronize_session=False)
-
-    try:
-        from app.db.models.outreach import OutreachEvent
-        db.query(OutreachEvent).filter(
-            OutreachEvent.contact_id.in_(found_ids)
-        ).delete(synchronize_session=False)
-    except Exception:
-        pass
-
-    if emails:
-        try:
-            from app.db.models.email_validation import EmailValidationResult
-            db.query(EmailValidationResult).filter(
-                EmailValidationResult.email.in_(emails)
-            ).delete(synchronize_session=False)
-        except Exception:
-            pass
-
-    deleted_count = db.query(ContactDetails).filter(
+    # Soft delete: archive contacts instead of hard deleting
+    archived_count = db.query(ContactDetails).filter(
         ContactDetails.contact_id.in_(found_ids)
-    ).delete(synchronize_session=False)
+    ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
     db.commit()
 
     return {
-        "message": f"Successfully deleted {deleted_count} contact(s)",
-        "deleted_count": deleted_count,
-        "deleted_ids": found_ids
+        "message": f"Successfully archived {archived_count} contact(s)",
+        "archived_count": archived_count,
+        "archived_ids": found_ids
     }
 
 
@@ -302,7 +286,7 @@ async def delete_contact(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Delete contact."""
+    """Archive contact (soft delete)."""
     contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
     if not contact:
         raise HTTPException(
@@ -310,9 +294,6 @@ async def delete_contact(
             detail="Contact not found"
         )
 
-    db.query(LeadContactAssociation).filter(
-        LeadContactAssociation.contact_id == contact_id
-    ).delete(synchronize_session=False)
-
-    db.delete(contact)
+    # Soft delete: archive instead of hard deleting
+    contact.is_archived = True
     db.commit()

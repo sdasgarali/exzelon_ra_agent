@@ -55,7 +55,8 @@ def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
         connection_error=mailbox.connection_error,
         can_send=mailbox.can_send,
         remaining_daily_quota=mailbox.remaining_daily_quota,
-        email_signature_json=mailbox.email_signature_json
+        email_signature_json=mailbox.email_signature_json,
+        is_archived=mailbox.is_archived
     )
 
 
@@ -64,11 +65,15 @@ async def list_mailboxes(
     status: Optional[str] = Query(None, description="Filter by warmup status"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     provider: Optional[str] = Query(None, description="Filter by provider"),
+    show_archived: bool = Query(False, description="Include archived mailboxes"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """List all sender mailboxes."""
     query = db.query(SenderMailbox)
+
+    if not show_archived:
+        query = query.filter(SenderMailbox.is_archived == False)
 
     if status:
         try:
@@ -253,7 +258,7 @@ async def delete_mailbox(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Delete a sender mailbox (Admin only)."""
+    """Archive a sender mailbox (soft delete, Admin only)."""
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
@@ -261,10 +266,12 @@ async def delete_mailbox(
             detail="Mailbox not found"
         )
 
-    db.delete(mailbox)
+    # Soft delete: archive and deactivate instead of hard deleting
+    mailbox.is_archived = True
+    mailbox.is_active = False
     db.commit()
 
-    return {"message": f"Mailbox {mailbox.email} deleted successfully"}
+    return {"message": f"Mailbox {mailbox.email} archived successfully"}
 
 
 @router.post("/{mailbox_id}/test-connection", response_model=TestMailboxConnectionResponse)

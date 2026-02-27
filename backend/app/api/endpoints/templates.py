@@ -18,11 +18,15 @@ router = APIRouter(prefix="/templates", tags=["Email Templates"])
 
 @router.get("", response_model=EmailTemplateListResponse)
 async def list_templates(
+    show_archived: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """List all email templates."""
-    templates = db.query(EmailTemplate).order_by(EmailTemplate.created_at.desc()).all()
+    query = db.query(EmailTemplate)
+    if not show_archived:
+        query = query.filter(EmailTemplate.is_archived == False)
+    templates = query.order_by(EmailTemplate.created_at.desc()).all()
     active = next((t for t in templates if t.status == TemplateStatus.ACTIVE), None)
     return EmailTemplateListResponse(
         items=[EmailTemplateResponse.model_validate(t) for t in templates],
@@ -123,7 +127,7 @@ async def delete_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
-    """Delete an email template. Cannot delete the default template."""
+    """Archive an email template (soft delete). Cannot archive the default template."""
     template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
@@ -137,7 +141,9 @@ async def delete_template(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete the default template",
         )
-    db.delete(template)
+    # Soft delete: archive instead of hard deleting
+    template.is_archived = True
+    template.status = TemplateStatus.INACTIVE
     db.commit()
 
 

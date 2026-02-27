@@ -38,6 +38,7 @@ class ClientResponse(ClientBase):
     end_date: Optional[date] = None
     client_category: ClientCategory
     service_count: int
+    is_archived: bool = False
     created_at: datetime
     updated_at: datetime
 

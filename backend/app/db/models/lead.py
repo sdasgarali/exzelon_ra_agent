@@ -11,12 +11,30 @@ class LeadStatus(str, PyEnum):
     HUNTING = "hunting"
     CLOSED_HIRED = "closed_hired"
     CLOSED_NOT_HIRED = "closed_not_hired"
+    CLOSED_TEST = "closed_test"
     # Legacy statuses (for backward compatibility)
     NEW = "new"
     ENRICHED = "enriched"
     VALIDATED = "validated"
     SENT = "sent"
     SKIPPED = "skipped"
+
+
+# All statuses that represent a closed lead
+CLOSED_STATUSES = [
+    LeadStatus.CLOSED_HIRED,
+    LeadStatus.CLOSED_NOT_HIRED,
+    LeadStatus.CLOSED_TEST,
+]
+
+
+def is_closed_status(status) -> bool:
+    """Check if a lead status represents a closed lead."""
+    if isinstance(status, LeadStatus):
+        return status.value.startswith("closed")
+    if isinstance(status, str):
+        return status.startswith("closed")
+    return False
 
 
 class LeadDetails(Base):
@@ -70,9 +88,9 @@ class LeadDetails(Base):
     )
 
     __table_args__ = (
-        Index('idx_lead_client_job', 'client_name', 'job_title', 'state', 'posting_date'),
-        Index('idx_lead_status', 'lead_status'),
-        Index('idx_lead_posting_date', 'posting_date'),
+        Index("idx_lead_client_job", "client_name", "job_title", "state", "posting_date"),
+        Index("idx_lead_status", "lead_status"),
+        Index("idx_lead_posting_date", "posting_date"),
     )
 
     @property
