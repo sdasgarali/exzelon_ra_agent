@@ -1,14 +1,18 @@
 """Core configuration settings loaded from environment variables."""
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor all relative paths to the backend/ directory (parent of app/)
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -24,8 +28,8 @@ class Settings(BaseSettings):
 
     # Data Storage Mode
     DATA_STORAGE: Literal["database", "files"] = "database"
-    JOB_REQUIREMENTS_PATH: str = "./data/Job_requirements.xlsx"
-    EXPORT_PATH: str = "./data/exports"
+    JOB_REQUIREMENTS_PATH: str = str(_BACKEND_DIR / "data" / "Job_requirements.xlsx")
+    EXPORT_PATH: str = str(_BACKEND_DIR / "data" / "exports")
 
     # Database
     DB_TYPE: Literal["mysql", "sqlite"] = "sqlite"
@@ -38,13 +42,15 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         if self.DB_TYPE == "sqlite":
-            return "sqlite:///./data/ra_agent.db"
+            db_path = _BACKEND_DIR / "data" / "ra_agent.db"
+            return f"sqlite:///{db_path}"
         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:
         if self.DB_TYPE == "sqlite":
-            return "sqlite+aiosqlite:///./data/ra_agent.db"
+            db_path = _BACKEND_DIR / "data" / "ra_agent.db"
+            return f"sqlite+aiosqlite:///{db_path}"
         return f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
 
     # Redis
