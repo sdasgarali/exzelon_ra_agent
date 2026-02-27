@@ -109,6 +109,10 @@ export const leadsApi = {
     const response = await api.put('/leads/bulk/status', { lead_ids: leadIds, status })
     return response.data
   },
+  bulkUnarchive: async (leadIds: number[]) => {
+    const response = await api.put('/leads/bulk/unarchive', { lead_ids: leadIds })
+    return response.data
+  },
 }
 
 // Clients API

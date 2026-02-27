@@ -331,6 +331,20 @@ export default function LeadsPage() {
   }
 
 
+
+  const handleBulkUnarchive = async () => {
+    try {
+      const result = await leadsApi.bulkUnarchive(Array.from(selectedIds))
+      setSuccess(result.message || 'Leads restored successfully')
+      setSelectedIds(new Set())
+      fetchLeads()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to restore leads')
+      setTimeout(() => setError(''), 4000)
+    }
+  }
+
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatusValue) return
     try {
@@ -541,12 +555,21 @@ export default function LeadsPage() {
               >
                 Update Status ({selectedIds.size})
               </button>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
-              >
-                Archive Selected ({selectedIds.size})
-              </button>
+              {showArchived ? (
+                <button
+                  onClick={handleBulkUnarchive}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium"
+                >
+                  Restore Selected ({selectedIds.size})
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
+                >
+                  Archive Selected ({selectedIds.size})
+                </button>
+              )}
             </>
           )}
           {/* Import Button */}
@@ -646,6 +669,17 @@ export default function LeadsPage() {
             ))}
           </select>
 
+          {/* Show Archived Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Show Archived</span>
+          </label>
+
           {/* Toggle More Filters */}
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -664,17 +698,6 @@ export default function LeadsPage() {
         {/* Expanded Filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t">
-            <div className="flex items-center gap-3 mb-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm font-medium text-gray-700">Show Archived</span>
-              </label>
-            </div>
             <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="label text-sm">State</label>

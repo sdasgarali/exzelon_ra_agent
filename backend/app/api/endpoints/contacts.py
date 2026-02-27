@@ -46,7 +46,9 @@ async def list_contacts(
     """List contacts with filtering."""
     query = db.query(ContactDetails)
 
-    if not show_archived:
+    if show_archived:
+        query = query.filter(ContactDetails.is_archived == True)
+    else:
         query = query.filter(ContactDetails.is_archived == False)
 
     if lead_id:

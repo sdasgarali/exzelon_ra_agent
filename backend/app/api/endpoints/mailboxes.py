@@ -72,7 +72,9 @@ async def list_mailboxes(
     """List all sender mailboxes."""
     query = db.query(SenderMailbox)
 
-    if not show_archived:
+    if show_archived:
+        query = query.filter(SenderMailbox.is_archived == True)
+    else:
         query = query.filter(SenderMailbox.is_archived == False)
 
     if status:

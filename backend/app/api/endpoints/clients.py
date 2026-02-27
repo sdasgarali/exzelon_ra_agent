@@ -46,7 +46,9 @@ async def list_clients(
     """List clients with filtering."""
     query = db.query(ClientInfo)
 
-    if not show_archived:
+    if show_archived:
+        query = query.filter(ClientInfo.is_archived == True)
+    else:
         query = query.filter(ClientInfo.is_archived == False)
 
     if status:

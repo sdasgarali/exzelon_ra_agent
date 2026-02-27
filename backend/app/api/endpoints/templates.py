@@ -24,7 +24,9 @@ async def list_templates(
 ):
     """List all email templates."""
     query = db.query(EmailTemplate)
-    if not show_archived:
+    if show_archived:
+        query = query.filter(EmailTemplate.is_archived == True)
+    else:
         query = query.filter(EmailTemplate.is_archived == False)
     templates = query.order_by(EmailTemplate.created_at.desc()).all()
     active = next((t for t in templates if t.status == TemplateStatus.ACTIVE), None)

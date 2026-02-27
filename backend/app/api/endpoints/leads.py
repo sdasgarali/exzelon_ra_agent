@@ -58,7 +58,9 @@ async def list_leads(
 
     query = db.query(LeadDetails)
 
-    if not show_archived:
+    if show_archived:
+        query = query.filter(LeadDetails.is_archived == True)
+    else:
         query = query.filter(LeadDetails.is_archived == False)
 
     if status:
@@ -147,7 +149,9 @@ async def get_lead_stats(
 ):
     """Get lead statistics summary."""
     stats_base = db.query(LeadDetails)
-    if not show_archived:
+    if show_archived:
+        stats_base = stats_base.filter(LeadDetails.is_archived == True)
+    else:
         stats_base = stats_base.filter(LeadDetails.is_archived == False)
     total = stats_base.count()
 
@@ -184,7 +188,9 @@ async def export_leads_csv(
     """Export leads to CSV file."""
     query = db.query(LeadDetails)
 
-    if not show_archived:
+    if show_archived:
+        query = query.filter(LeadDetails.is_archived == True)
+    else:
         query = query.filter(LeadDetails.is_archived == False)
 
     if lead_status:
@@ -419,6 +425,32 @@ async def bulk_delete_leads(
         "contacts_archived": contacts_archived,
         "archived_ids": found_ids
     }
+
+@router.put('/bulk/unarchive', tags=['Leads'])
+async def bulk_unarchive_leads(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Restore archived leads (unarchive)."""
+    lead_ids = request.get('lead_ids', [])
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail='No lead IDs provided')
+
+    restored_count = db.query(LeadDetails).filter(
+        LeadDetails.lead_id.in_(lead_ids),
+        LeadDetails.is_archived == True
+    ).update({LeadDetails.is_archived: False}, synchronize_session=False)
+
+    db.commit()
+
+    return {
+        'message': f'Successfully restored {restored_count} lead(s)',
+        'restored_count': restored_count,
+        'restored_ids': lead_ids
+    }
+
+
 
 
 
