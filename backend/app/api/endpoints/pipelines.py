@@ -1,7 +1,7 @@
 """Pipeline management endpoints."""
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Body
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_active_user, require_role
@@ -44,6 +44,9 @@ def parse_counters(counters_json: str) -> dict:
                 total = inserted + updated + skipped + errors
                 success = inserted + updated
 
+            contacts_reused = counters.get("contacts_reused", 0)
+            api_calls_saved = counters.get("api_calls_saved", 0)
+
             return {
                 "records_processed": total,
                 "records_success": success,
@@ -53,7 +56,9 @@ def parse_counters(counters_json: str) -> dict:
                 "skipped": skipped,
                 "errors": errors,
                 "contacts_found": contacts_found,
-                "leads_enriched": leads_enriched
+                "leads_enriched": leads_enriched,
+                "contacts_reused": contacts_reused,
+                "api_calls_saved": api_calls_saved
             }
     except (json.JSONDecodeError, TypeError):
         pass
@@ -66,7 +71,9 @@ def parse_counters(counters_json: str) -> dict:
         "skipped": 0,
         "errors": 0,
         "contacts_found": 0,
-        "leads_enriched": 0
+        "leads_enriched": 0,
+        "contacts_reused": 0,
+        "api_calls_saved": 0
     }
 
 
@@ -196,19 +203,26 @@ async def upload_leads_file(
 @router.post("/contact-enrichment/run")
 async def run_contact_enrichment(
     background_tasks: BackgroundTasks,
+    request: Optional[dict] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
-    """Run contact enrichment pipeline."""
+    """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
+
+    lead_ids = None
+    if request and isinstance(request, dict):
+        lead_ids = request.get("lead_ids")
 
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        lead_ids=lead_ids
     )
 
+    msg = "Contact enrichment started" + (f" for {len(lead_ids)} selected leads" if lead_ids else "")
     return {
-        "message": "Contact enrichment started",
+        "message": msg,
         "status": "processing"
     }
 
@@ -279,10 +293,24 @@ async def run_outreach(
     background_tasks: BackgroundTasks,
     mode: str = Query("mailmerge", description="Send mode: mailmerge or send"),
     dry_run: bool = Query(True),
+    request: Optional[dict] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
-    """Run outreach pipeline."""
+    """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
+    lead_ids = None
+    if request and isinstance(request, dict):
+        lead_ids = request.get("lead_ids")
+
+    if lead_ids:
+        from app.services.pipelines.outreach import run_outreach_for_lead
+        for lid in lead_ids:
+            background_tasks.add_task(run_outreach_for_lead, lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
+        return {
+            "message": f"Outreach started for {len(lead_ids)} selected leads (dry_run={dry_run})",
+            "status": "processing"
+        }
+
     if mode == "mailmerge":
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
         background_tasks.add_task(

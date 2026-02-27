@@ -103,6 +103,14 @@ export default function LeadsPage() {
   const [outreachPreview, setOutreachPreview] = useState<any>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
 
+  // Bulk contact enrichment
+  const [showEnrichModal, setShowEnrichModal] = useState(false)
+  const [enriching, setEnriching] = useState(false)
+  const [enrichPreview, setEnrichPreview] = useState<any>(null)
+  const [loadingEnrichPreview, setLoadingEnrichPreview] = useState(false)
+  const [showEnrichResultsModal, setShowEnrichResultsModal] = useState(false)
+  const [enrichResultMsg, setEnrichResultMsg] = useState('')
+
   // Cache contact counts across pages so selection works when navigating
   const [contactCountCache, setContactCountCache] = useState<Record<number, number>>({})
 
@@ -356,6 +364,40 @@ export default function LeadsPage() {
     }
   }
 
+  const handleOpenEnrichPreview = async () => {
+    setShowEnrichModal(true)
+    setLoadingEnrichPreview(true)
+    setEnrichPreview(null)
+    try {
+      const ids = Array.from(selectedIds)
+      const preview = await leadsApi.bulkEnrichPreview(ids)
+      setEnrichPreview(preview)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to load enrichment preview')
+      setShowEnrichModal(false)
+    } finally {
+      setLoadingEnrichPreview(false)
+    }
+  }
+
+  const handleBulkEnrich = async () => {
+    try {
+      setEnriching(true)
+      const ids = Array.from(selectedIds)
+      const data = await leadsApi.bulkEnrich(ids)
+      setShowEnrichModal(false)
+      setEnrichPreview(null)
+      setEnrichResultMsg(data.message || `Enrichment started for ${data.lead_count} lead(s)`)
+      setShowEnrichResultsModal(true)
+      // Refresh after a delay to pick up background results
+      setTimeout(() => { fetchLeads(); setSelectedIds(new Set()) }, 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to start enrichment')
+    } finally {
+      setEnriching(false)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const statusOption = STATUS_OPTIONS.find(s => s.value === status)
     return statusOption?.color || 'bg-gray-100 text-gray-800'
@@ -397,6 +439,12 @@ export default function LeadsPage() {
         <div className="flex gap-2">
           {selectedIds.size > 0 && (
             <>
+              <button
+                onClick={handleOpenEnrichPreview}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm font-medium"
+              >
+                Contact Enrich ({selectedIds.size})
+              </button>
               <button
                 onClick={async () => {
                   setOutreachDryRun(true)
@@ -1031,6 +1079,123 @@ export default function LeadsPage() {
             <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
               <button
                 onClick={() => { setShowResultsModal(false); setOutreachResults(null) }}
+                className="btn-secondary"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enrichment Preview Modal */}
+      {showEnrichModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-purple-700">Contact Enrichment Preview</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {enrichPreview
+                  ? `${enrichPreview.summary?.will_enrich || 0} lead(s) will be enriched, ${enrichPreview.summary?.will_skip || 0} skipped`
+                  : 'Loading preview...'}
+              </p>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {loadingEnrichPreview ? (
+                <div className="text-center py-8 text-gray-500">Loading enrichment preview...</div>
+              ) : enrichPreview ? (
+                <>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-purple-700">{enrichPreview.summary?.will_enrich || 0}</div>
+                      <div className="text-xs text-purple-600">Will Enrich</div>
+                    </div>
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-green-700">{enrichPreview.summary?.contacts_from_cache || 0}</div>
+                      <div className="text-xs text-green-600">From Cache (saves API credits)</div>
+                    </div>
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-yellow-700">{enrichPreview.summary?.leads_needing_api || 0}</div>
+                      <div className="text-xs text-yellow-600">Need API Calls</div>
+                    </div>
+                  </div>
+
+                  {/* Per-Lead Breakdown */}
+                  <div className="space-y-2 mb-4">
+                    {enrichPreview.previews?.map((p: any) => (
+                      <div key={p.lead_id} className="p-3 border rounded-lg bg-gray-50 flex justify-between items-center">
+                        <div>
+                          <span className="text-sm font-medium text-gray-800">
+                            #{p.lead_id} {p.client_name}
+                          </span>
+                          <span className="text-xs text-gray-500 ml-2">{p.job_title}</span>
+                          <div className="flex gap-2 mt-1">
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">
+                              {p.current_contacts} existing
+                            </span>
+                            {p.reusable_count > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">
+                                +{p.reusable_count} from cache
+                              </span>
+                            )}
+                            {p.api_needed > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 text-yellow-700">
+                                {p.api_needed} via API
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                          p.status === 'enrich' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {p.status === 'enrich' ? 'Enrich' : 'Skip'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-red-500">Failed to load preview</div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowEnrichModal(false); setEnrichPreview(null) }}
+                disabled={enriching}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkEnrich}
+                disabled={enriching || loadingEnrichPreview || !enrichPreview?.summary?.will_enrich}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              >
+                {enriching ? 'Processing...' : `Enrich ${enrichPreview?.summary?.will_enrich || 0} Lead(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enrichment Results Modal */}
+      {showEnrichResultsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-purple-700">Enrichment Started</h3>
+            </div>
+            <div className="px-6 py-6 text-center">
+              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl text-purple-600">&#10003;</span>
+              </div>
+              <p className="text-gray-700 mb-2">{enrichResultMsg}</p>
+              <p className="text-sm text-gray-500">Running in background. Leads will update automatically.</p>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setShowEnrichResultsModal(false)}
                 className="btn-secondary"
               >
                 Close

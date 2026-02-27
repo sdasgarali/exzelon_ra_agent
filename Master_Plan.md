@@ -61,6 +61,15 @@ Fully automated cold-email outreach system for Exzelon Research Analysts targeti
 | REQ-033 | Sync backend DEFAULT_SETTINGS with refined exclude keywords | Pending |
 | REQ-034 | Email signature templates/presets for quick setup | Pending |
 
+
+### Smart Enrichment & Pipeline Selection
+| ID | Requirement | Status |
+|----|-------------|--------|
+| REQ-035 | Smart contact enrichment with per-lead selection and company-level DB caching | In Progress |
+| REQ-036 | Lead selection popup for Contact Enrichment pipeline on Pipelines page | In Progress |
+| REQ-037 | Lead selection popup for Outreach pipeline on Pipelines page | In Progress |
+| REQ-038 | Apollo credit optimization via contact reuse across same-company leads | In Progress |
+
 ---
 
 ## Architecture Decisions

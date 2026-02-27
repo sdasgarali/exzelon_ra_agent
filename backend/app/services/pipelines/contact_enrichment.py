@@ -78,8 +78,78 @@ def get_contact_discovery_adapters(db=None):
     return adapters
 
 
+
+def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
+    """
+    Check DB for contacts at the same company NOT already linked to this lead.
+    Associate them via LeadContactAssociation. Return count reused.
+    """
+    # Get contact_ids already linked to this lead (junction + FK)
+    existing_cids = set()
+    for row in db.query(LeadContactAssociation.contact_id).filter(
+        LeadContactAssociation.lead_id == lead.lead_id
+    ).all():
+        existing_cids.add(row[0])
+    for c in db.query(ContactDetails.contact_id).filter(
+        ContactDetails.lead_id == lead.lead_id
+    ).all():
+        existing_cids.add(c[0])
+
+    existing_count = len(existing_cids)
+    needed = max_contacts - existing_count
+    if needed <= 0:
+        return 0
+
+    # Find reusable contacts at same company, not already linked
+    query = db.query(ContactDetails).filter(
+        ContactDetails.client_name == lead.client_name
+    )
+    if existing_cids:
+        query = query.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
+    reusable = query.limit(needed).all()
+
+    reused = 0
+    for contact in reusable:
+        try:
+            assoc = LeadContactAssociation(
+                lead_id=lead.lead_id,
+                contact_id=contact.contact_id
+            )
+            db.add(assoc)
+            db.flush()
+            reused += 1
+        except Exception:
+            db.rollback()  # Unique constraint violation
+    return reused
+
+
+def _update_lead_from_contacts(db, lead):
+    """Update lead denormalized fields from its linked contacts."""
+    contact = db.query(ContactDetails).filter(
+        ContactDetails.lead_id == lead.lead_id
+    ).first()
+    if not contact:
+        # Try junction table
+        row = db.query(LeadContactAssociation.contact_id).filter(
+            LeadContactAssociation.lead_id == lead.lead_id
+        ).first()
+        if row:
+            contact = db.query(ContactDetails).filter(
+                ContactDetails.contact_id == row[0]
+            ).first()
+    if contact:
+        lead.first_name = contact.first_name
+        lead.last_name = contact.last_name
+        lead.contact_title = contact.title
+        lead.contact_email = contact.email
+        lead.contact_phone = contact.phone
+        lead.contact_source = contact.source
+        lead.lead_status = LeadStatus.ENRICHED
+
+
 def run_contact_enrichment_pipeline(
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    lead_ids: list | None = None
 ) -> Dict[str, Any]:
     """
     Run the contact enrichment pipeline.
@@ -92,7 +162,7 @@ def run_contact_enrichment_pipeline(
     5. Insert into junction table for many-to-many support
     """
     db = SessionLocal()
-    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0}
+    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0}
 
     # Create job run record
     job_run = JobRun(
@@ -113,10 +183,16 @@ def run_contact_enrichment_pipeline(
         max_contacts_per_job = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
         # Get leads needing enrichment
-        leads = db.query(LeadDetails).filter(
-            LeadDetails.first_name.is_(None),
-            LeadDetails.lead_status == LeadStatus.NEW
-        ).limit(100).all()
+        if lead_ids:
+            leads = db.query(LeadDetails).filter(
+                LeadDetails.lead_id.in_(lead_ids)
+            ).all()
+        else:
+            # Default behavior: all NEW leads with no contact info
+            leads = db.query(LeadDetails).filter(
+                LeadDetails.first_name.is_(None),
+                LeadDetails.lead_status == LeadStatus.NEW
+            ).limit(100).all()
 
         logger.info(f"Found {len(leads)} leads to enrich")
 
@@ -132,7 +208,23 @@ def run_contact_enrichment_pipeline(
                     logger.debug("Lead already has max contacts", lead_id=lead.lead_id, count=existing_count)
                     continue
 
+                # Smart reuse: check DB for contacts at same company
+                reused = _reuse_existing_contacts(db, lead, max_contacts_per_job)
+                counters["contacts_reused"] += reused
+                counters["contacts_found"] += reused
+
+                # Recount after reuse
+                existing_count += reused
+                if existing_count >= max_contacts_per_job:
+                    # Fully satisfied from cache - no API call needed
+                    counters["api_calls_saved"] += 1
+                    if not lead.first_name:
+                        _update_lead_from_contacts(db, lead)
+                    counters["leads_enriched"] += 1
+                    continue
+
                 # Search for contacts from all providers
+                needed = max_contacts_per_job - existing_count
                 contacts = []
                 for adapter_name, adapter in adapters:
                     try:
@@ -140,7 +232,7 @@ def run_contact_enrichment_pipeline(
                             company_name=lead.client_name,
                             job_title=lead.job_title,
                             state=lead.state,
-                            limit=max_contacts_per_job - existing_count
+                            limit=needed
                         )
                         for c in result:
                             c["source"] = c.get("source", adapter_name)
@@ -159,7 +251,7 @@ def run_contact_enrichment_pipeline(
                     if c["email"] not in seen_emails:
                         seen_emails.add(c["email"])
                         unique_contacts.append(c)
-                contacts = unique_contacts[:max_contacts_per_job - existing_count]
+                contacts = unique_contacts[:needed]
 
                 if not contacts:
                     counters["skipped"] += 1

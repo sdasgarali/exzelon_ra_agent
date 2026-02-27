@@ -97,6 +97,14 @@ export const leadsApi = {
     const response = await api.post('/leads/bulk/outreach/preview', { lead_ids: leadIds })
     return response.data
   },
+  bulkEnrichPreview: async (leadIds: number[]) => {
+    const response = await api.post('/leads/bulk/enrich/preview', { lead_ids: leadIds })
+    return response.data
+  },
+  bulkEnrich: async (leadIds: number[]) => {
+    const response = await api.post('/leads/bulk/enrich', { lead_ids: leadIds })
+    return response.data
+  },
 }
 
 // Clients API
@@ -185,18 +193,19 @@ export const pipelinesApi = {
     })
     return response.data
   },
-  runContactEnrichment: async () => {
-    const response = await api.post('/pipelines/contact-enrichment/run')
+  runContactEnrichment: async (leadIds?: number[]) => {
+    const response = await api.post('/pipelines/contact-enrichment/run',
+      leadIds ? { lead_ids: leadIds } : undefined)
     return response.data
   },
   runEmailValidation: async () => {
     const response = await api.post('/pipelines/email-validation/run')
     return response.data
   },
-  runOutreach: async (mode: string, dryRun: boolean = true) => {
-    const response = await api.post('/pipelines/outreach/run', null, {
-      params: { mode, dry_run: dryRun },
-    })
+  runOutreach: async (mode: string, dryRun: boolean = true, leadIds?: number[]) => {
+    const response = await api.post('/pipelines/outreach/run',
+      leadIds ? { lead_ids: leadIds } : undefined,
+      { params: { mode, dry_run: dryRun } })
     return response.data
   },
 }

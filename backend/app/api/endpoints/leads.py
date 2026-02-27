@@ -3,7 +3,7 @@ import csv
 import io
 from typing import Optional, List, Literal
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc
@@ -421,6 +421,112 @@ async def bulk_delete_leads(
         "deleted_count": deleted_count,
         "contacts_deleted": contacts_deleted,
         "deleted_ids": found_ids
+    }
+
+
+
+@router.post("/bulk/enrich/preview")
+async def preview_bulk_enrichment(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Preview enrichment plan: show leads, existing contacts, reusable contacts, API needs."""
+    lead_ids = request.get("lead_ids", [])
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+
+    from app.core.config import settings as app_settings
+    max_contacts = app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+
+    previews = []
+    summary = {
+        "total_leads": len(lead_ids),
+        "will_enrich": 0,
+        "will_skip": 0,
+        "contacts_from_cache": 0,
+        "leads_needing_api": 0
+    }
+
+    for lid in lead_ids:
+        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        if not lead:
+            previews.append({"lead_id": lid, "error": "Lead not found", "status": "skip", "skip_reason": "Not found"})
+            summary["will_skip"] += 1
+            continue
+
+        # Count existing contacts for this lead (junction + FK)
+        existing_cids = set()
+        for row in db.query(LeadContactAssociation.contact_id).filter(
+            LeadContactAssociation.lead_id == lid
+        ).all():
+            existing_cids.add(row[0])
+        for c in db.query(ContactDetails.contact_id).filter(
+            ContactDetails.lead_id == lid
+        ).all():
+            existing_cids.add(c[0])
+        current_contacts = len(existing_cids)
+
+        if current_contacts >= max_contacts:
+            previews.append({
+                "lead_id": lid, "client_name": lead.client_name, "job_title": lead.job_title,
+                "current_contacts": current_contacts, "reusable_count": 0, "api_needed": 0,
+                "status": "skip", "skip_reason": f"Already has {current_contacts}/{max_contacts} contacts"
+            })
+            summary["will_skip"] += 1
+            continue
+
+        # Count reusable contacts at same company not linked to this lead
+        reusable_query = db.query(ContactDetails).filter(
+            ContactDetails.client_name == lead.client_name
+        )
+        if existing_cids:
+            reusable_query = reusable_query.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
+        reusable_count = reusable_query.count()
+
+        needed = max_contacts - current_contacts
+        from_cache = min(reusable_count, needed)
+        api_needed = max(0, needed - from_cache)
+
+        previews.append({
+            "lead_id": lid, "client_name": lead.client_name, "job_title": lead.job_title,
+            "current_contacts": current_contacts, "reusable_count": from_cache,
+            "api_needed": api_needed, "status": "enrich", "skip_reason": None
+        })
+        summary["will_enrich"] += 1
+        summary["contacts_from_cache"] += from_cache
+        if api_needed > 0:
+            summary["leads_needing_api"] += 1
+
+    return {"previews": previews, "summary": summary}
+
+
+@router.post("/bulk/enrich")
+async def bulk_enrich_leads(
+    request: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+):
+    """Trigger contact enrichment for selected leads (runs in background)."""
+    lead_ids = request.get("lead_ids", [])
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+    if len(lead_ids) > 200:
+        raise HTTPException(status_code=400, detail="Maximum 200 leads per batch")
+
+    from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
+
+    background_tasks.add_task(
+        run_contact_enrichment_pipeline,
+        triggered_by=current_user.email,
+        lead_ids=lead_ids
+    )
+
+    return {
+        "message": f"Contact enrichment started for {len(lead_ids)} lead(s)",
+        "status": "processing",
+        "lead_count": len(lead_ids)
     }
 
 
