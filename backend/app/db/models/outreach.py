@@ -30,10 +30,12 @@ class OutreachEvent(Base):
     event_id = Column(Integer, primary_key=True, autoincrement=True)
     contact_id = Column(Integer, ForeignKey('contact_details.contact_id'), nullable=False)
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id'), nullable=True)
+    sender_mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=True)
     sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     channel = Column(Enum(OutreachChannel), nullable=False)
     template_id = Column(Integer, nullable=True)
     subject = Column(String(500), nullable=True)
+    message_id = Column(String(255), nullable=True)
     status = Column(Enum(OutreachStatus), nullable=False)
     bounce_reason = Column(Text, nullable=True)
     reply_detected_at = Column(DateTime, nullable=True)
@@ -52,6 +54,8 @@ class OutreachEvent(Base):
         Index('idx_outreach_lead', 'lead_id'),
         Index('idx_outreach_status', 'status'),
         Index('idx_outreach_sent_at', 'sent_at'),
+        Index('idx_outreach_message_id', 'message_id'),
+        Index('idx_outreach_sender_mailbox', 'sender_mailbox_id'),
     )
 
     def __repr__(self) -> str:

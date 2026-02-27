@@ -1068,7 +1068,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
                   <div className="flex flex-wrap gap-2">
-                    {[...new Set([...jobSourceConfig.exclude_it_keywords, ...DEFAULT_IT_EXCLUSIONS])].sort().map((keyword) => {
+                    {Array.from(new Set([...jobSourceConfig.exclude_it_keywords, ...DEFAULT_IT_EXCLUSIONS])).sort().map((keyword) => {
                       const isActive = jobSourceConfig.exclude_it_keywords.includes(keyword)
                       const isDefault = DEFAULT_IT_EXCLUSIONS.includes(keyword)
                       return (
@@ -1191,7 +1191,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
                   <div className="flex flex-wrap gap-2">
-                    {[...new Set([...jobSourceConfig.exclude_staffing_keywords, ...DEFAULT_STAFFING_EXCLUSIONS])].sort().map((keyword) => {
+                    {Array.from(new Set([...jobSourceConfig.exclude_staffing_keywords, ...DEFAULT_STAFFING_EXCLUSIONS])).sort().map((keyword) => {
                       const isActive = jobSourceConfig.exclude_staffing_keywords.includes(keyword)
                       const isDefault = DEFAULT_STAFFING_EXCLUSIONS.includes(keyword)
                       return (

@@ -153,16 +153,31 @@ async def get_outreach_sent(
 
     events = query.order_by(OutreachEvent.sent_at.desc()).limit(limit).all()
 
-    return [
-        {
+    results = []
+    for e in events:
+        # Join with contact for name/email
+        contact = db.query(ContactDetails).filter(
+            ContactDetails.contact_id == e.contact_id
+        ).first() if e.contact_id else None
+
+        results.append({
+            "event_id": e.event_id,
             "date_sent": e.sent_at.isoformat() if e.sent_at else None,
+            "contact_name": f"{contact.first_name} {contact.last_name}" if contact else None,
+            "client_name": contact.client_name if contact else None,
+            "email": contact.email if contact else None,
             "template_id": e.template_id,
             "subject": e.subject,
             "status": e.status.value if e.status else None,
-            "bounce_reason": e.bounce_reason
-        }
-        for e in events
-    ]
+            "channel": e.channel.value if e.channel else None,
+            "bounce_reason": e.bounce_reason,
+            "body_html": e.body_html,
+            "reply_body": e.reply_body,
+            "reply_subject": e.reply_subject,
+            "reply_detected_at": e.reply_detected_at.isoformat() if e.reply_detected_at else None,
+            "sender_mailbox_id": e.sender_mailbox_id,
+        })
+    return results
 
 
 @router.get("/client-categories")

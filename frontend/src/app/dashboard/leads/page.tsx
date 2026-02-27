@@ -94,6 +94,29 @@ export default function LeadsPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Bulk outreach
+  const [showOutreachModal, setShowOutreachModal] = useState(false)
+  const [sendingOutreach, setSendingOutreach] = useState(false)
+  const [outreachDryRun, setOutreachDryRun] = useState(true)
+  const [outreachResults, setOutreachResults] = useState<any>(null)
+  const [showResultsModal, setShowResultsModal] = useState(false)
+  const [outreachPreview, setOutreachPreview] = useState<any>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+
+  // Cache contact counts across pages so selection works when navigating
+  const [contactCountCache, setContactCountCache] = useState<Record<number, number>>({})
+
+  // Update cache whenever leads change (user browses pages)
+  useEffect(() => {
+    if (leads.length > 0) {
+      setContactCountCache(prev => {
+        const next = { ...prev }
+        leads.forEach(l => { next[l.lead_id] = l.contact_count })
+        return next
+      })
+    }
+  }, [leads])
+
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('')
   useEffect(() => {
@@ -282,6 +305,57 @@ export default function LeadsPage() {
     }
   }
 
+  const handleBulkOutreach = async () => {
+    try {
+      setSendingOutreach(true)
+      const ids = Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0)
+      if (ids.length === 0) {
+        setError('None of the selected leads have contacts. Run Contact Enrichment first.')
+        setShowOutreachModal(false)
+        setSendingOutreach(false)
+        return
+      }
+      let data: any
+
+      if (ids.length === 1) {
+        const result = await leadsApi.runOutreach(ids[0], outreachDryRun)
+        data = {
+          total_leads: 1,
+          results: [{
+            lead_id: ids[0],
+            sent: result.sent || 0,
+            skipped: result.skipped || 0,
+            errors: result.errors || 0,
+            error: result.error,
+            message: result.message
+          }],
+          summary: {
+            total_sent: result.sent || 0,
+            total_skipped: result.skipped || 0,
+            total_errors: result.errors || 0
+          },
+          dry_run: outreachDryRun
+        }
+      } else {
+        data = await leadsApi.bulkOutreach(ids, outreachDryRun)
+      }
+
+      setOutreachResults(data)
+      setShowOutreachModal(false)
+      setOutreachPreview(null)
+      setShowResultsModal(true)
+
+      if (!outreachDryRun) {
+        fetchLeads()
+        setSelectedIds(new Set())
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to run outreach')
+    } finally {
+      setSendingOutreach(false)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const statusOption = STATUS_OPTIONS.find(s => s.value === status)
     return statusOption?.color || 'bg-gray-100 text-gray-800'
@@ -322,12 +396,37 @@ export default function LeadsPage() {
         </div>
         <div className="flex gap-2">
           {selectedIds.size > 0 && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
-            >
-              Delete Selected ({selectedIds.size})
-            </button>
+            <>
+              <button
+                onClick={async () => {
+                  setOutreachDryRun(true)
+                  setShowOutreachModal(true)
+                  setLoadingPreview(true)
+                  try {
+                    const eligibleIds = Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0)
+                    if (eligibleIds.length > 0) {
+                      const preview = await leadsApi.previewOutreach(eligibleIds)
+                      setOutreachPreview(preview)
+                    }
+                  } catch (err: any) {
+                    setError(err.response?.data?.detail || 'Failed to load preview')
+                  } finally {
+                    setLoadingPreview(false)
+                  }
+                }}
+                disabled={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                title={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0 ? 'No selected leads have contacts' : ''}
+              >
+                Send Outreach ({Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length})
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
+              >
+                Delete Selected ({selectedIds.size})
+              </button>
+            </>
           )}
           {/* Import Button */}
           <input
@@ -737,6 +836,204 @@ export default function LeadsPage() {
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
                 {deleting ? 'Deleting...' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Outreach Confirmation Modal */}
+      {showOutreachModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b">
+              <h3 className="text-lg font-semibold text-indigo-700">Confirm Outreach</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {outreachPreview
+                  ? (() => {
+                      const totalEligible = outreachPreview.assignments?.reduce((sum: number, a: any) => sum + (a.eligible_count || 0), 0) || 0
+                      return totalEligible > 0
+                        ? totalEligible + ' eligible contact(s) across ' + outreachPreview.assignments?.length + ' lead(s)'
+                        : outreachPreview.assignments?.length + ' lead(s) - no eligible contacts'
+                    })()
+                  : 'Loading preview...'}
+              </p>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {loadingPreview ? (
+                <div className="text-center py-8 text-gray-500">Loading outreach preview...</div>
+              ) : outreachPreview ? (
+                <>
+                  {/* Available Senders Banner */}
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+                    <p className="text-xs font-medium text-indigo-700 mb-1">
+                      Cold Ready Senders ({outreachPreview.available_mailboxes?.length || 0})
+                    </p>
+                    {outreachPreview.available_mailboxes?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {outreachPreview.available_mailboxes.map((mb: any) => (
+                          <span key={mb.mailbox_id} className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                            {mb.display_name || mb.email} ({mb.sent_today}/{mb.daily_limit})
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-red-600">No Cold Ready mailboxes available. Set mailbox warmup status to Cold Ready first.</p>
+                    )}
+                  </div>
+
+                  {/* Lead-by-Lead Breakdown */}
+                  <div className="space-y-3 mb-4">
+                    {outreachPreview.assignments?.map((a: any) => (
+                      <div key={a.lead_id} className="border rounded-lg overflow-hidden">
+                        <div className="px-3 py-2 bg-gray-50 flex justify-between items-center">
+                          <div>
+                            <span className="text-sm font-medium text-gray-800">
+                              #{a.lead_id} {a.client_name}
+                            </span>
+                            <span className="text-xs text-gray-500 ml-2">{a.job_title}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {a.sender ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700" title="Assigned sender">
+                                {a.sender.display_name || a.sender.email}
+                              </span>
+                            ) : (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                {a.eligible_count === 0 ? 'All skipped' : 'No sender'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {a.error ? (
+                          <div className="px-3 py-2 text-xs text-red-600">{a.error}</div>
+                        ) : a.contacts?.length > 0 ? (
+                          <div className="divide-y">
+                            {a.contacts.map((c: any) => (
+                              <div key={c.contact_id} className="px-3 py-1.5 flex justify-between items-center text-xs">
+                                <div>
+                                  <span className="text-gray-800">{c.name}</span>
+                                  <span className="text-gray-400 ml-2">{c.email}</span>
+                                </div>
+                                {c.eligible ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700">Eligible</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700" title={c.skip_reason || ''}>
+                                    {c.skip_reason && c.skip_reason.includes('Cooldown') ? 'Cooldown' : c.skip_reason && c.skip_reason.includes('not validated') ? 'Not Validated' : c.skip_reason || 'Skipped'}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-xs text-gray-500">No contacts linked</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Dry Run Toggle */}
+                  <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${!outreachDryRun ? 'bg-yellow-50 border-yellow-300' : 'bg-gray-50 border-gray-200'}`}>
+                    <input
+                      type="checkbox"
+                      checked={outreachDryRun}
+                      onChange={(e) => setOutreachDryRun(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">Dry Run Mode</span>
+                      <p className="text-xs text-gray-500">
+                        {outreachDryRun ? 'Simulate only - no emails will be sent' : 'LIVE MODE - Emails will actually be sent!'}
+                      </p>
+                    </div>
+                  </label>
+                </>
+              ) : (
+                <div className="text-center py-8 text-red-500">Failed to load preview</div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowOutreachModal(false); setOutreachPreview(null) }}
+                disabled={sendingOutreach}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkOutreach}
+                disabled={sendingOutreach || loadingPreview || !outreachPreview?.available_mailboxes?.length}
+                className={`px-4 py-2 rounded-lg text-white disabled:opacity-50 ${outreachDryRun ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-orange-600 hover:bg-orange-700'}`}
+              >
+                {sendingOutreach ? 'Processing...' : outreachDryRun ? 'Run Dry Test' : 'Send Emails'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Outreach Results Modal */}
+      {showResultsModal && outreachResults && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">Outreach Results</h3>
+                {outreachResults.dry_run && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 font-medium">Dry Run</span>
+                )}
+              </div>
+              <button
+                onClick={() => { setShowResultsModal(false); setOutreachResults(null) }}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-green-700">{outreachResults.summary?.total_sent || 0}</div>
+                  <div className="text-xs text-green-600">Sent</div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-yellow-700">{outreachResults.summary?.total_skipped || 0}</div>
+                  <div className="text-xs text-yellow-600">Skipped</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-red-700">{outreachResults.summary?.total_errors || 0}</div>
+                  <div className="text-xs text-red-600">Errors</div>
+                </div>
+              </div>
+              {/* Per-lead breakdown */}
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Per-Lead Breakdown ({outreachResults.total_leads} leads)</h4>
+              <div className="space-y-2">
+                {outreachResults.results?.map((r: any, i: number) => (
+                  <div key={i} className="p-3 border rounded-lg bg-gray-50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-800">Lead #{r.lead_id}</span>
+                      <div className="flex gap-2 text-xs">
+                        {r.sent > 0 && <span className="px-2 py-0.5 rounded bg-green-100 text-green-700">{r.sent} sent</span>}
+                        {r.skipped > 0 && <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700">{r.skipped} skipped</span>}
+                        {r.errors > 0 && <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">{r.errors} errors</span>}
+                        {r.sent === 0 && r.skipped === 0 && r.errors === 0 && !r.error && (
+                          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">No contacts</span>
+                        )}
+                      </div>
+                    </div>
+                    {r.error && <p className="text-xs text-red-600 mt-1">{r.error}</p>}
+                    {r.message && <p className="text-xs text-gray-500 mt-1">{r.message}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end">
+              <button
+                onClick={() => { setShowResultsModal(false); setOutreachResults(null) }}
+                className="btn-secondary"
+              >
+                Close
               </button>
             </div>
           </div>

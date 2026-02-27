@@ -8,7 +8,10 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_active_user
 from app.db.models.user import User
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
-from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse
+from app.db.models.contact import ContactDetails
+from app.db.models.lead import LeadDetails
+from app.db.models.sender_mailbox import SenderMailbox
+from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse, OutreachThreadResponse
 
 router = APIRouter(prefix="/outreach", tags=["Outreach"])
 
@@ -54,6 +57,58 @@ async def get_outreach_event(
             detail="Outreach event not found"
         )
     return OutreachEventResponse.model_validate(event)
+
+
+@router.get("/events/{event_id}/thread")
+async def get_outreach_thread(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get full thread/conversation view for an outreach event."""
+    event = db.query(OutreachEvent).filter(OutreachEvent.event_id == event_id).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Outreach event not found"
+        )
+
+    contact = db.query(ContactDetails).filter(
+        ContactDetails.contact_id == event.contact_id
+    ).first()
+
+    lead = None
+    if event.lead_id:
+        lead = db.query(LeadDetails).filter(
+            LeadDetails.lead_id == event.lead_id
+        ).first()
+
+    sender = None
+    if event.sender_mailbox_id:
+        sender = db.query(SenderMailbox).filter(
+            SenderMailbox.mailbox_id == event.sender_mailbox_id
+        ).first()
+
+    return {
+        "event_id": event.event_id,
+        "contact_id": event.contact_id,
+        "contact_name": f"{contact.first_name} {contact.last_name}" if contact else None,
+        "contact_email": contact.email if contact else None,
+        "client_name": (lead.client_name if lead else (contact.client_name if contact else None)),
+        "job_title": lead.job_title if lead else None,
+        "sender_email": sender.email if sender else None,
+        "sender_name": sender.display_name if sender else None,
+        "sent_at": event.sent_at.isoformat() if event.sent_at else None,
+        "subject": event.subject,
+        "body_html": event.body_html,
+        "body_text": event.body_text,
+        "status": event.status.value if event.status else None,
+        "reply_detected_at": event.reply_detected_at.isoformat() if event.reply_detected_at else None,
+        "reply_subject": event.reply_subject,
+        "reply_body": event.reply_body,
+        "message_id": event.message_id,
+        "channel": event.channel.value if event.channel else None,
+    }
 
 
 @router.post("/events", response_model=OutreachEventResponse, status_code=status.HTTP_201_CREATED)
@@ -111,6 +166,31 @@ async def send_emails(
 
     return {
         "message": f"Email sending started (dry_run={dry_run}, limit={limit})",
+        "status": "processing"
+    }
+
+
+@router.post("/check-replies")
+async def check_replies(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Manually trigger reply checking for all mailboxes."""
+    from app.services.reply_tracker import check_all_mailbox_replies
+    from app.db.base import SessionLocal
+
+    def _run_check():
+        check_db = SessionLocal()
+        try:
+            check_all_mailbox_replies(check_db)
+        finally:
+            check_db.close()
+
+    background_tasks.add_task(_run_check)
+
+    return {
+        "message": "Reply checking started",
         "status": "processing"
     }
 

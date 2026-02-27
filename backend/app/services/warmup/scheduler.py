@@ -31,6 +31,8 @@ def init_scheduler():
         _scheduler.add_job(job_daily_log_snapshot, CronTrigger(hour=23, minute=55), id="daily_log_snapshot", name="Daily Log Snapshot", replace_existing=True)
         _scheduler.add_job(job_auto_recovery_check, CronTrigger(hour=6, minute=0), id="auto_recovery_check", name="Auto Recovery Check", replace_existing=True)
 
+        _scheduler.add_job(job_check_outreach_replies, CronTrigger(hour="8-19", minute="*/15"), id="check_outreach_replies", name="Check Outreach Replies", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -197,6 +199,19 @@ def job_auto_recovery_check():
         logger.info("Auto-recovery check complete", result=result)
     except Exception as e:
         logger.error("Auto-recovery check failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_check_outreach_replies():
+    logger.info("Running outreach reply check")
+    db = _get_db()
+    try:
+        from app.services.reply_tracker import check_all_mailbox_replies
+        result = check_all_mailbox_replies(db)
+        logger.info("Outreach reply check complete", result=result)
+    except Exception as e:
+        logger.error("Outreach reply check failed", error=str(e))
     finally:
         db.close()
 

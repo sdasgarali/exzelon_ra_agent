@@ -424,6 +424,142 @@ async def bulk_delete_leads(
     }
 
 
+@router.post("/bulk/outreach/preview")
+async def preview_bulk_outreach(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Preview outreach plan: show leads, contacts, eligibility, and sender assignments."""
+    lead_ids = request.get("lead_ids", [])
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+
+    from app.db.models.sender_mailbox import SenderMailbox
+    from app.services.pipelines.outreach import check_send_eligibility
+
+    # Get available Cold Ready / Active mailboxes, least loaded first
+    available_mailboxes = db.query(SenderMailbox).filter(
+        SenderMailbox.is_active == True,
+        SenderMailbox.warmup_status.in_(["cold_ready", "active"]),
+        SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit
+    ).order_by(SenderMailbox.emails_sent_today.asc()).all()
+
+    mailbox_list = [
+        {"mailbox_id": m.mailbox_id, "email": m.email, "display_name": m.display_name,
+         "warmup_status": m.warmup_status.value if hasattr(m.warmup_status, 'value') else str(m.warmup_status),
+         "sent_today": m.emails_sent_today, "daily_limit": m.daily_send_limit}
+        for m in available_mailboxes
+    ]
+
+    assignments = []
+    mailbox_idx = 0
+
+    for lid in lead_ids:
+        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        if not lead:
+            assignments.append({"lead_id": lid, "error": "Lead not found", "contacts": [], "sender": None})
+            continue
+
+        # Get contacts
+        junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
+            LeadContactAssociation.lead_id == lid
+        ).all()]
+
+        if junction_cids:
+            contacts = db.query(ContactDetails).filter(
+                (ContactDetails.lead_id == lid) | (ContactDetails.contact_id.in_(junction_cids))
+            ).all()
+        else:
+            contacts = db.query(ContactDetails).filter(ContactDetails.lead_id == lid).all()
+
+        contact_previews = []
+        eligible_count = 0
+        for c in contacts:
+            eligible, reason = check_send_eligibility(db, c)
+            contact_previews.append({
+                "contact_id": c.contact_id,
+                "name": f"{c.first_name} {c.last_name}".strip(),
+                "email": c.email,
+                "validation_status": c.validation_status,
+                "eligible": eligible,
+                "skip_reason": reason if not eligible else None
+            })
+            if eligible:
+                eligible_count += 1
+
+        # Round-robin mailbox assignment for this lead
+        sender = None
+        if eligible_count > 0 and available_mailboxes:
+            mb = available_mailboxes[mailbox_idx % len(available_mailboxes)]
+            sender = {"mailbox_id": mb.mailbox_id, "email": mb.email, "display_name": mb.display_name}
+            mailbox_idx += 1
+
+        assignments.append({
+            "lead_id": lid,
+            "client_name": lead.client_name,
+            "job_title": lead.job_title,
+            "contacts": contact_previews,
+            "eligible_count": eligible_count,
+            "sender": sender
+        })
+
+    return {
+        "assignments": assignments,
+        "available_mailboxes": mailbox_list,
+        "total_leads": len(lead_ids)
+    }
+
+
+@router.post("/bulk/outreach")
+async def bulk_outreach_leads(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Trigger outreach for contacts of multiple leads."""
+    lead_ids = request.get("lead_ids", [])
+    dry_run = request.get("dry_run", True)
+
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+    if len(lead_ids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 leads per batch")
+
+    from app.services.pipelines.outreach import run_outreach_for_lead as _run
+
+    results = []
+    total_sent = 0
+    total_skipped = 0
+    total_errors = 0
+
+    for lid in lead_ids:
+        try:
+            result = _run(lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
+            sent = result.get("sent", 0)
+            skipped = result.get("skipped", 0)
+            errors = result.get("errors", 0)
+            entry = {"lead_id": lid, "sent": sent, "skipped": skipped, "errors": errors}
+            if "error" in result:
+                entry["error"] = result["error"]
+            if "message" in result:
+                entry["message"] = result["message"]
+            results.append(entry)
+            total_sent += sent
+            total_skipped += skipped
+            total_errors += errors
+        except Exception as e:
+            results.append({"lead_id": lid, "error": str(e), "sent": 0, "skipped": 0, "errors": 1})
+            total_errors += 1
+
+    return {
+        "total_leads": len(lead_ids),
+        "results": results,
+        "summary": {"total_sent": total_sent, "total_skipped": total_skipped, "total_errors": total_errors},
+        "dry_run": dry_run
+    }
+
+
 @router.get("/{lead_id}/detail")
 async def get_lead_detail(
     lead_id: int,
@@ -458,10 +594,51 @@ async def get_lead_detail(
         OutreachEvent.lead_id == lead_id
     ).order_by(OutreachEvent.sent_at.desc()).all()
 
+    # Build lookup dicts for enrichment
+    contact_lookup = {c.contact_id: c for c in contacts}
+    # Fetch any additional contacts referenced by events but not in junction
+    event_contact_ids = {e.contact_id for e in outreach_events if e.contact_id not in contact_lookup}
+    if event_contact_ids:
+        extra_contacts = db.query(ContactDetails).filter(
+            ContactDetails.contact_id.in_(list(event_contact_ids))
+        ).all()
+        for c in extra_contacts:
+            contact_lookup[c.contact_id] = c
+
+    # Sender mailbox lookup
+    from app.db.models.sender_mailbox import SenderMailbox
+    mailbox_ids = {e.sender_mailbox_id for e in outreach_events if e.sender_mailbox_id}
+    mailbox_lookup = {}
+    if mailbox_ids:
+        mailboxes = db.query(SenderMailbox).filter(
+            SenderMailbox.mailbox_id.in_(list(mailbox_ids))
+        ).all()
+        mailbox_lookup = {m.mailbox_id: m for m in mailboxes}
+
+    # Enrich events
+    enriched_events = []
+    for e in outreach_events:
+        evt = OutreachEventResponse.model_validate(e).model_dump()
+        contact = contact_lookup.get(e.contact_id)
+        if contact:
+            evt["contact_name"] = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or None
+            evt["contact_email"] = contact.email
+        else:
+            evt["contact_name"] = None
+            evt["contact_email"] = None
+        mailbox = mailbox_lookup.get(e.sender_mailbox_id) if e.sender_mailbox_id else None
+        if mailbox:
+            evt["sender_email"] = mailbox.email
+            evt["sender_name"] = mailbox.display_name or mailbox.email
+        else:
+            evt["sender_email"] = None
+            evt["sender_name"] = None
+        enriched_events.append(evt)
+
     lead_dict = LeadResponse.model_validate(lead).model_dump()
     lead_dict['contact_count'] = len(contacts)
     lead_dict['contacts'] = [ContactResponse.model_validate(c).model_dump() for c in contacts]
-    lead_dict['outreach_events'] = [OutreachEventResponse.model_validate(e).model_dump() for e in outreach_events]
+    lead_dict['outreach_events'] = enriched_events
 
     return lead_dict
 

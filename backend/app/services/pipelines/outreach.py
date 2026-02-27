@@ -464,7 +464,9 @@ def run_outreach_send_pipeline(
                     skip_reason=skip_reason,
                     body_html=body_content,
                     body_text=body_text,
-                    template_id=used_template_id
+                    template_id=used_template_id,
+                    message_id=result["message_id"] if not dry_run and result.get("success") else None,
+                    sender_mailbox_id=sending_mailbox.mailbox_id
                 )
                 db.add(event)
 
@@ -610,7 +612,9 @@ def run_outreach_for_lead(
                     skip_reason=skip_reason,
                     body_html=body_content,
                     body_text=body_text,
-                    template_id=used_template_id
+                    template_id=used_template_id,
+                    message_id=result["message_id"] if not dry_run and result.get("success") else None,
+                    sender_mailbox_id=sending_mailbox.mailbox_id
                 )
                 db.add(event)
 

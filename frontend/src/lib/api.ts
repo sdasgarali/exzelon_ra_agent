@@ -431,3 +431,27 @@ export const templatesApi = {
     return response.data
   },
 }
+
+// Outreach API
+export const outreachApi = {
+  listEvents: async (params?: Record<string, any>) => {
+    const response = await api.get("/outreach/events", { params })
+    return response.data
+  },
+  getEvent: async (eventId: number) => {
+    const response = await api.get(`/outreach/events/${eventId}`)
+    return response.data
+  },
+  getThread: async (eventId: number) => {
+    const response = await api.get(`/outreach/events/${eventId}/thread`)
+    return response.data
+  },
+  checkReplies: async () => {
+    const response = await api.post("/outreach/check-replies")
+    return response.data
+  },
+  getStats: async () => {
+    const response = await api.get("/outreach/stats/summary")
+    return response.data
+  },
+}

@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { leadsApi, api } from '@/lib/api'
+import { leadsApi, outreachApi } from '@/lib/api'
 
 interface Contact {
   contact_id: number
@@ -19,16 +19,27 @@ interface Contact {
 interface OutreachEvent {
   event_id: number
   contact_id: number
+  lead_id: number | null
+  sender_mailbox_id: number | null
   sent_at: string
   channel: string
+  template_id: number | null
   subject: string
+  message_id: string | null
   status: string
-  bounce_reason: string
-  reply_detected_at: string
-  body_html: string
-  body_text: string
-  reply_subject: string
-  reply_body: string
+  bounce_reason: string | null
+  reply_detected_at: string | null
+  skip_reason: string | null
+  body_html: string | null
+  body_text: string | null
+  reply_subject: string | null
+  reply_body: string | null
+  created_at: string
+  updated_at: string
+  contact_name: string | null
+  contact_email: string | null
+  sender_email: string | null
+  sender_name: string | null
 }
 
 interface LeadDetail {
@@ -66,6 +77,63 @@ const STATUS_COLORS: Record<string, string> = {
   closed_not_hired: 'bg-gray-100 text-gray-800',
 }
 
+const EVENT_STATUS_STYLES: Record<string, { bg: string; icon: string }> = {
+  sent: { bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', icon: '\u2709' },
+  replied: { bg: 'bg-green-50 border-green-200 text-green-700', icon: '\u21A9' },
+  bounced: { bg: 'bg-red-50 border-red-200 text-red-700', icon: '\u26A0' },
+  skipped: { bg: 'bg-gray-50 border-gray-200 text-gray-600', icon: '\u23ED' },
+}
+
+const UNSUBSCRIBE_REGEX = /\b(unsubscribe|remove me|stop emailing|opt out|do not contact)\b/i
+
+function isUnsubscribe(replyBody: string | null, replySubject: string | null): boolean {
+  if (replyBody && UNSUBSCRIBE_REGEX.test(replyBody)) return true
+  if (replySubject && UNSUBSCRIBE_REGEX.test(replySubject)) return true
+  return false
+}
+
+/** Auto-resizing iframe for HTML email content */
+function EmailHtmlFrame({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  useEffect(() => {
+    const iframe = iframeRef.current
+    if (!iframe) return
+    const doc = iframe.contentDocument || iframe.contentWindow?.document
+    if (!doc) return
+    doc.open()
+    doc.write(
+      '<html><head><style>body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.5;color:#333;word-wrap:break-word}img{max-width:100%}a{color:#4f46e5}</style></head><body>' +
+        html +
+      '</body></html>'
+    )
+    doc.close()
+
+    // Auto-resize after content loads
+    const resizeIframe = () => {
+      try {
+        const body = doc.body
+        if (body) {
+          const height = Math.min(body.scrollHeight + 20, 600)
+          iframe.style.height = height + 'px'
+        }
+      } catch (e) { /* cross-origin guard */ }
+    }
+    setTimeout(resizeIframe, 100)
+    setTimeout(resizeIframe, 500)
+  }, [html])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      sandbox="allow-same-origin"
+      className="w-full border-0 rounded bg-white min-h-[100px]"
+      style={{ height: '200px' }}
+      title="Email content"
+    />
+  )
+}
+
 export default function LeadDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -79,6 +147,8 @@ export default function LeadDetailPage() {
   const [sendingOutreach, setSendingOutreach] = useState(false)
   const [dryRun, setDryRun] = useState(true)
   const [removingContact, setRemovingContact] = useState<number | null>(null)
+  const [checkingReplies, setCheckingReplies] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
 
   useEffect(() => {
     if (leadId) fetchLeadDetail()
@@ -128,6 +198,22 @@ export default function LeadDetailPage() {
     }
   }
 
+  const handleCheckReplies = async () => {
+    try {
+      setCheckingReplies(true)
+      setError('')
+      const result = await outreachApi.checkReplies()
+      const msg = result.message || `Checked ${result.checked || 0} events, found ${result.replies_found || 0} replies`
+      setSuccess(msg)
+      fetchLeadDetail()
+      setTimeout(() => setSuccess(''), 5000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to check replies')
+    } finally {
+      setCheckingReplies(false)
+    }
+  }
+
   const formatDate = (d: string | null) => {
     if (!d) return '-'
     try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) }
@@ -147,6 +233,18 @@ export default function LeadDetailPage() {
     if (min) return fmt(min) + '+'
     return 'Up to ' + fmt(max!)
   }
+
+  // Filter events by status
+  const filteredEvents = lead?.outreach_events.filter(evt => {
+    if (statusFilter === 'all') return true
+    return evt.status === statusFilter
+  }) || []
+
+  // Count by status
+  const statusCounts = lead?.outreach_events.reduce((acc, evt) => {
+    acc[evt.status] = (acc[evt.status] || 0) + 1
+    return acc
+  }, {} as Record<string, number>) || {}
 
   if (loading) {
     return (
@@ -298,99 +396,247 @@ export default function LeadDetailPage() {
         )}
       </div>
 
-      {/* Outreach Section */}
+      {/* Outreach Section - Inbox Style */}
       <div className="card mb-6">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Outreach ({lead.outreach_events.length} events)
-          </h2>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={dryRun}
-                onChange={(e) => setDryRun(e.target.checked)}
-                className="w-4 h-4"
-              />
-              Dry Run
-            </label>
-            <button
-              onClick={handleSendOutreach}
-              disabled={sendingOutreach || lead.contacts.length === 0}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
-            >
-              {sendingOutreach ? 'Sending...' : 'Send Outreach'}
-            </button>
+        <div className="px-6 py-4 border-b">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-semibold text-gray-800">
+              Outreach ({lead.outreach_events.length} events)
+            </h2>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleCheckReplies}
+                disabled={checkingReplies}
+                className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50 text-sm font-medium"
+              >
+                {checkingReplies ? 'Checking...' : 'Check Replies'}
+              </button>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={dryRun}
+                  onChange={(e) => setDryRun(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                Dry Run
+              </label>
+              <button
+                onClick={handleSendOutreach}
+                disabled={sendingOutreach || lead.contacts.length === 0}
+                className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
+              >
+                {sendingOutreach ? 'Sending...' : 'Send Outreach'}
+              </button>
+            </div>
+          </div>
+          {/* Status filter tabs */}
+          <div className="flex gap-1">
+            {[
+              { key: 'all', label: 'All', count: lead.outreach_events.length },
+              { key: 'sent', label: 'Sent', count: statusCounts['sent'] || 0 },
+              { key: 'replied', label: 'Replied', count: statusCounts['replied'] || 0 },
+              { key: 'bounced', label: 'Bounced', count: statusCounts['bounced'] || 0 },
+              { key: 'skipped', label: 'Skipped', count: statusCounts['skipped'] || 0 },
+            ].filter(t => t.key === 'all' || t.count > 0).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={
+                  'px-3 py-1 rounded-full text-xs font-medium transition-colors ' +
+                  (statusFilter === tab.key
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+                }
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
           </div>
         </div>
-        {lead.outreach_events.length === 0 ? (
+
+        {filteredEvents.length === 0 ? (
           <div className="px-6 py-8 text-center text-gray-500">
-            No outreach events yet. Click "Send Outreach" to email contacts linked to this lead.
+            {lead.outreach_events.length === 0
+              ? 'No outreach events yet. Click "Send Outreach" to email contacts linked to this lead.'
+              : 'No events match the selected filter.'}
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
-            {lead.outreach_events.map((evt) => (
-              <div key={evt.event_id}>
-                <div
-                  onClick={() => setExpandedEvent(expandedEvent === evt.event_id ? null : evt.event_id)}
-                  className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-4">
-                    <span className={'text-xs px-2 py-1 rounded-full ' + (
-                      evt.status === 'sent' ? 'bg-green-100 text-green-800' :
-                      evt.status === 'bounced' ? 'bg-red-100 text-red-800' :
-                      evt.status === 'replied' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-700'
-                    )}>
-                      {evt.status}
-                    </span>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{evt.subject || '(no subject)'}</div>
-                      <div className="text-xs text-gray-500">
-                        Contact #{evt.contact_id} | {formatDateTime(evt.sent_at)} | {evt.channel}
+          <div className="divide-y divide-gray-100">
+            {filteredEvents.map((evt) => {
+              const isExpanded = expandedEvent === evt.event_id
+              const style = EVENT_STATUS_STYLES[evt.status] || EVENT_STATUS_STYLES.sent
+              const hasReply = !!evt.reply_body
+              const isUnsub = isUnsubscribe(evt.reply_body, evt.reply_subject)
+
+              return (
+                <div key={evt.event_id}>
+                  {/* Inbox row */}
+                  <div
+                    onClick={() => setExpandedEvent(isExpanded ? null : evt.event_id)}
+                    className={'px-6 py-3 flex items-center gap-4 cursor-pointer transition-colors ' +
+                      (isExpanded ? 'bg-indigo-50/50' : 'hover:bg-gray-50') +
+                      (hasReply && !isExpanded ? ' font-medium' : '')
+                    }
+                  >
+                    {/* Status icon */}
+                    <div className={'w-8 h-8 rounded-full flex items-center justify-center text-sm border ' + style.bg}>
+                      {style.icon}
+                    </div>
+
+                    {/* From/To */}
+                    <div className="min-w-[180px] max-w-[220px]">
+                      <div className="text-sm text-gray-900 truncate">
+                        {evt.sender_name || evt.sender_email || 'Sender'}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {'\u2192 ' + (evt.contact_name || evt.contact_email || 'Contact #' + evt.contact_id)}
                       </div>
                     </div>
+
+                    {/* Subject */}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-800 truncate">
+                        {evt.subject || '(no subject)'}
+                      </div>
+                      {hasReply && (
+                        <div className="text-xs text-green-600 truncate mt-0.5">
+                          Reply: {evt.reply_body?.slice(0, 80)}...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Badges */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {isUnsub && (
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
+                          UNSUBSCRIBED
+                        </span>
+                      )}
+                      {hasReply && !isUnsub && (
+                        <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                          Replied
+                        </span>
+                      )}
+                      <span className={'px-2 py-0.5 text-xs rounded-full border ' + style.bg}>
+                        {evt.status}
+                      </span>
+                    </div>
+
+                    {/* Date */}
+                    <div className="text-xs text-gray-400 w-[110px] text-right flex-shrink-0">
+                      {formatDateTime(evt.sent_at)}
+                    </div>
+
+                    {/* Expand chevron */}
+                    <span className="text-gray-400 text-xs flex-shrink-0">
+                      {isExpanded ? '\u25B2' : '\u25BC'}
+                    </span>
                   </div>
-                  <span className="text-gray-400 text-sm">{expandedEvent === evt.event_id ? '\u25B2' : '\u25BC'}</span>
+
+                  {/* Expanded thread view */}
+                  {isExpanded && (
+                    <div className="px-6 pb-5 pt-2 bg-gray-50/50">
+                      {/* Sent email block */}
+                      <div className="border-l-4 border-indigo-400 bg-white rounded-r-lg shadow-sm mb-4">
+                        <div className="px-4 py-3 border-b border-gray-100">
+                          <div className="flex justify-between items-start">
+                            <div className="text-sm">
+                              <span className="font-semibold text-gray-800">From:</span>{' '}
+                              <span className="text-gray-700">
+                                {evt.sender_name || 'Unknown'}{' '}
+                                {evt.sender_email && <span className="text-gray-400">&lt;{evt.sender_email}&gt;</span>}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-400">{formatDateTime(evt.sent_at)}</div>
+                          </div>
+                          <div className="text-sm mt-1">
+                            <span className="font-semibold text-gray-800">To:</span>{' '}
+                            <span className="text-gray-700">
+                              {evt.contact_name || 'Unknown'}{' '}
+                              {evt.contact_email && <span className="text-gray-400">&lt;{evt.contact_email}&gt;</span>}
+                            </span>
+                          </div>
+                          {evt.subject && (
+                            <div className="text-sm mt-1">
+                              <span className="font-semibold text-gray-800">Subject:</span>{' '}
+                              <span className="text-gray-700">{evt.subject}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="px-4 py-3">
+                          {evt.body_html ? (
+                            <EmailHtmlFrame html={evt.body_html} />
+                          ) : evt.body_text ? (
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">{evt.body_text}</div>
+                          ) : (
+                            <div className="text-sm text-gray-400 italic">No email content stored.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Reply block */}
+                      {evt.reply_body && (
+                        <div className={'border-l-4 bg-white rounded-r-lg shadow-sm ' +
+                          (isUnsub ? 'border-red-400' : 'border-green-400')
+                        }>
+                          <div className="px-4 py-3 border-b border-gray-100">
+                            <div className="flex justify-between items-start">
+                              <div className="text-sm">
+                                <span className="font-semibold text-gray-800">From:</span>{' '}
+                                <span className="text-gray-700">
+                                  {evt.contact_name || 'Unknown'}{' '}
+                                  {evt.contact_email && <span className="text-gray-400">&lt;{evt.contact_email}&gt;</span>}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isUnsub && (
+                                  <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
+                                    UNSUBSCRIBED
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-400">{formatDateTime(evt.reply_detected_at)}</span>
+                              </div>
+                            </div>
+                            <div className="text-sm mt-1">
+                              <span className="font-semibold text-gray-800">To:</span>{' '}
+                              <span className="text-gray-700">
+                                {evt.sender_name || 'Unknown'}{' '}
+                                {evt.sender_email && <span className="text-gray-400">&lt;{evt.sender_email}&gt;</span>}
+                              </span>
+                            </div>
+                            {evt.reply_subject && (
+                              <div className="text-sm mt-1">
+                                <span className="font-semibold text-gray-800">Subject:</span>{' '}
+                                <span className="text-gray-700">{evt.reply_subject}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="px-4 py-3">
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">{evt.reply_body}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bounce info */}
+                      {evt.bounce_reason && (
+                        <div className="border-l-4 border-red-400 bg-red-50 rounded-r-lg p-4 mt-4">
+                          <div className="text-sm font-medium text-red-800">Bounce Reason</div>
+                          <div className="text-sm text-red-700 mt-1">{evt.bounce_reason}</div>
+                        </div>
+                      )}
+
+                      {/* Skip reason */}
+                      {evt.skip_reason && (
+                        <div className="border-l-4 border-gray-300 bg-gray-50 rounded-r-lg p-4 mt-4">
+                          <div className="text-sm font-medium text-gray-700">Skip Reason</div>
+                          <div className="text-sm text-gray-600 mt-1">{evt.skip_reason}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                {expandedEvent === evt.event_id && (
-                  <div className="px-6 pb-4">
-                    {evt.body_text && (
-                      <div className="mb-4">
-                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Email Body</h4>
-                        <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap">
-                          {evt.body_text}
-                        </div>
-                      </div>
-                    )}
-                    {evt.body_html && !evt.body_text && (
-                      <div className="mb-4">
-                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Email Body (HTML)</h4>
-                        <div className="bg-gray-50 rounded-lg p-4 text-sm" dangerouslySetInnerHTML={{ __html: evt.body_html }} />
-                      </div>
-                    )}
-                    {evt.reply_body && (
-                      <div className="mb-4">
-                        <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
-                          Reply {evt.reply_subject ? '- ' + evt.reply_subject : ''}
-                        </h4>
-                        <div className="bg-blue-50 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap border-l-4 border-blue-300">
-                          {evt.reply_body}
-                        </div>
-                      </div>
-                    )}
-                    {evt.bounce_reason && (
-                      <div className="bg-red-50 rounded-lg p-3 text-sm text-red-700">
-                        Bounce reason: {evt.bounce_reason}
-                      </div>
-                    )}
-                    {!evt.body_text && !evt.body_html && !evt.reply_body && !evt.bounce_reason && (
-                      <div className="text-sm text-gray-400 italic">No email content stored for this event.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

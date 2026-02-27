@@ -238,7 +238,7 @@ export default function MailboxesPage() {
     setBulkDeleting(true)
     let deleted = 0
     let failed = 0
-    for (const id of selectedIds) {
+    for (const id of Array.from(selectedIds)) {
       try {
         await mailboxesApi.delete(id)
         deleted++
