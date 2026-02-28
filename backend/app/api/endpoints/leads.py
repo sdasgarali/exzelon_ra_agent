@@ -167,7 +167,7 @@ async def get_lead_stats(
 
     return {
         "total": total,
-        "by_status": {str(s): c for s, c in by_status if s},
+        "by_status": {s.value: c for s, c in by_status if s},
         "by_source": {s: c for s, c in by_source if s}
     }
 
@@ -565,7 +565,52 @@ async def preview_bulk_enrichment(
         if api_needed > 0:
             summary["leads_needing_api"] += 1
 
-    return {"previews": previews, "summary": summary}
+    # Auto-enrich sibling preview: find other unenriched leads at the same companies
+    enriching_companies = set()
+    for p in previews:
+        if p.get("status") == "enrich" and p.get("client_name"):
+            enriching_companies.add(p["client_name"])
+
+    selected_id_set = set(lead_ids)
+    auto_enrich_previews = []
+    for company in enriching_companies:
+        siblings = db.query(LeadDetails).filter(
+            LeadDetails.client_name == company,
+            LeadDetails.first_name.is_(None),
+            ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
+            LeadDetails.is_archived == False,
+            ~LeadDetails.lead_id.in_(list(selected_id_set))
+        ).all()
+        for sib in siblings:
+            # Check if there are reusable contacts at this company
+            sib_existing_cids = set()
+            for row in db.query(LeadContactAssociation.contact_id).filter(
+                LeadContactAssociation.lead_id == sib.lead_id
+            ).all():
+                sib_existing_cids.add(row[0])
+            for c in db.query(ContactDetails.contact_id).filter(
+                ContactDetails.lead_id == sib.lead_id
+            ).all():
+                sib_existing_cids.add(c[0])
+
+            reusable_query = db.query(ContactDetails).filter(
+                ContactDetails.client_name == company
+            )
+            if sib_existing_cids:
+                reusable_query = reusable_query.filter(~ContactDetails.contact_id.in_(list(sib_existing_cids)))
+            reusable_count = reusable_query.count()
+
+            if reusable_count > 0:
+                auto_enrich_previews.append({
+                    "lead_id": sib.lead_id,
+                    "client_name": sib.client_name,
+                    "job_title": sib.job_title,
+                    "reusable_count": min(reusable_count, max_contacts - len(sib_existing_cids)),
+                })
+
+    summary["auto_enrich_siblings"] = len(auto_enrich_previews)
+
+    return {"previews": previews, "summary": summary, "auto_enrich_previews": auto_enrich_previews}
 
 
 @router.post("/bulk/enrich")

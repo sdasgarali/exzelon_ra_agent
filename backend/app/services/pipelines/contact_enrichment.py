@@ -141,6 +141,31 @@ def _update_lead_from_contacts(db, lead):
         lead.lead_status = LeadStatus.ENRICHED
 
 
+def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters):
+    """Find all unenriched leads at the same company and auto-link cached contacts."""
+    sibling_leads = db.query(LeadDetails).filter(
+        LeadDetails.client_name == client_name,
+        LeadDetails.first_name.is_(None),
+        ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
+        LeadDetails.is_archived == False,
+        ~LeadDetails.lead_id.in_(list(batch_lead_ids))
+    ).all()
+
+    for sibling in sibling_leads:
+        reused = _reuse_existing_contacts(db, sibling, max_contacts)
+        if reused > 0:
+            _update_lead_from_contacts(db, sibling)
+            counters["auto_enriched_leads"] += 1
+            counters["contacts_found"] += reused
+            counters["leads_enriched"] += 1
+            lead_results.append({
+                "lead_id": sibling.lead_id, "client_name": sibling.client_name,
+                "status": "auto_enriched", "contacts_found": 0,
+                "contacts_reused": reused, "adapter_used": None,
+                "reason": f"Auto-linked {reused} contact(s) from company cache"
+            })
+
+
 def run_contact_enrichment_pipeline(
     triggered_by: str = "system",
     lead_ids: list | None = None,
@@ -157,8 +182,9 @@ def run_contact_enrichment_pipeline(
     5. Insert into junction table for many-to-many support
     """
     db = SessionLocal()
-    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0}
+    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0}
     lead_results = []
+    auto_enriched_companies = set()
 
     # Reuse pre-created job run or create a new one
     if run_id:
@@ -199,6 +225,7 @@ def run_contact_enrichment_pipeline(
             ).limit(100).all()
 
         logger.info(f"Found {len(leads)} leads to enrich")
+        batch_lead_ids = {l.lead_id for l in leads}
 
         for lead in leads:
             try:
@@ -232,6 +259,9 @@ def run_contact_enrichment_pipeline(
                         "status": "cache_only", "contacts_found": 0, "contacts_reused": reused,
                         "adapter_used": None, "reason": "Fully satisfied from cache"
                     })
+                    if lead.client_name and lead.client_name not in auto_enriched_companies:
+                        auto_enriched_companies.add(lead.client_name)
+                        _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters)
                     continue
 
                 needed = max_contacts_per_job - existing_count
@@ -336,6 +366,10 @@ def run_contact_enrichment_pipeline(
                            lead_id=lead.lead_id,
                            client=lead.client_name,
                            contacts_added=contacts_added)
+
+                if lead.client_name and lead.client_name not in auto_enriched_companies:
+                    auto_enriched_companies.add(lead.client_name)
+                    _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters)
 
             except ApolloCreditsExhaustedError:
                 logger.error("Apollo credits exhausted - stopping pipeline early. Upgrade at https://app.apollo.io/#/settings/plans/upgrade")

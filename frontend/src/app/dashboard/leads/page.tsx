@@ -1259,18 +1259,22 @@ export default function LeadsPage() {
               ) : enrichPreview ? (
                 <>
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-4 gap-3 mb-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-purple-700">{enrichPreview.summary?.will_enrich || 0}</div>
                       <div className="text-xs text-purple-600">Will Enrich</div>
                     </div>
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-green-700">{enrichPreview.summary?.contacts_from_cache || 0}</div>
-                      <div className="text-xs text-green-600">From Cache (saves API credits)</div>
+                      <div className="text-xs text-green-600">From Cache</div>
                     </div>
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-yellow-700">{enrichPreview.summary?.leads_needing_api || 0}</div>
                       <div className="text-xs text-yellow-600">Need API Calls</div>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-indigo-700">{enrichPreview.summary?.auto_enrich_siblings || 0}</div>
+                      <div className="text-xs text-indigo-600">Auto-Enrich Siblings</div>
                     </div>
                   </div>
 
@@ -1307,6 +1311,38 @@ export default function LeadsPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Auto-Enrich Siblings */}
+                  {enrichPreview.auto_enrich_previews?.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-indigo-700 mb-2">
+                        Auto-Enrich Siblings ({enrichPreview.auto_enrich_previews.length} additional leads)
+                      </h4>
+                      <p className="text-xs text-gray-500 mb-2">
+                        These leads are at the same company and will be auto-enriched from cache — no extra API calls.
+                      </p>
+                      <div className="space-y-2">
+                        {enrichPreview.auto_enrich_previews.map((s: any) => (
+                          <div key={s.lead_id} className="p-3 border border-indigo-200 rounded-lg bg-indigo-50 flex justify-between items-center">
+                            <div>
+                              <span className="text-sm font-medium text-gray-800">
+                                #{s.lead_id} {s.client_name}
+                              </span>
+                              <span className="text-xs text-gray-500 ml-2">{s.job_title}</span>
+                              <div className="flex gap-2 mt-1">
+                                <span className="text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                                  +{s.reusable_count} from cache
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-indigo-100 text-indigo-700">
+                              Auto
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center py-8 text-red-500">Failed to load preview</div>
@@ -1383,7 +1419,7 @@ export default function LeadsPage() {
               {/* Summary Cards */}
               {enrichLeadResults && enrichLeadResults.length > 0 && (
                 <>
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-5 gap-3 mb-4">
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-green-700">
                         {enrichLeadResults.filter((r: any) => r.status === 'enriched').length}
@@ -1395,6 +1431,12 @@ export default function LeadsPage() {
                         {enrichLeadResults.filter((r: any) => r.status === 'cache_only').length}
                       </div>
                       <div className="text-xs text-blue-600">From Cache</div>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-indigo-700">
+                        {enrichLeadResults.filter((r: any) => r.status === 'auto_enriched').length}
+                      </div>
+                      <div className="text-xs text-indigo-600">Auto-Enriched</div>
                     </div>
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-gray-700">
@@ -1438,12 +1480,14 @@ export default function LeadsPage() {
                         <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ml-2 ${
                           r.status === 'enriched' ? 'bg-green-100 text-green-700' :
                           r.status === 'cache_only' ? 'bg-blue-100 text-blue-700' :
+                          r.status === 'auto_enriched' ? 'bg-indigo-100 text-indigo-700' :
                           r.status === 'skipped' ? 'bg-gray-100 text-gray-600' :
                           r.status === 'error' ? 'bg-red-100 text-red-700' :
                           'bg-gray-100 text-gray-600'
                         }`}>
                           {r.status === 'enriched' ? 'Enriched' :
                            r.status === 'cache_only' ? 'Cached' :
+                           r.status === 'auto_enriched' ? 'Auto' :
                            r.status === 'skipped' ? 'Skipped' :
                            r.status === 'error' ? 'Error' : r.status}
                         </span>

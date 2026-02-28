@@ -57,6 +57,7 @@ def parse_counters(counters_json: str) -> dict:
 
             contacts_reused = counters.get("contacts_reused", 0)
             api_calls_saved = counters.get("api_calls_saved", 0)
+            auto_enriched_leads = counters.get("auto_enriched_leads", 0)
 
             return {
                 "records_processed": total,
@@ -69,7 +70,8 @@ def parse_counters(counters_json: str) -> dict:
                 "contacts_found": contacts_found,
                 "leads_enriched": leads_enriched,
                 "contacts_reused": contacts_reused,
-                "api_calls_saved": api_calls_saved
+                "api_calls_saved": api_calls_saved,
+                "auto_enriched_leads": auto_enriched_leads
             }
     except (json.JSONDecodeError, TypeError):
         pass
@@ -84,7 +86,8 @@ def parse_counters(counters_json: str) -> dict:
         "contacts_found": 0,
         "leads_enriched": 0,
         "contacts_reused": 0,
-        "api_calls_saved": 0
+        "api_calls_saved": 0,
+        "auto_enriched_leads": 0
     }
 
 
