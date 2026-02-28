@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import DOMPurify from 'dompurify'
 import { dashboardApi, pipelinesApi, settingsApi, outreachApi } from '@/lib/api'
 
 interface OutreachStats {
@@ -358,7 +359,7 @@ export default function OutreachPage() {
                 <div className="text-sm font-medium text-gray-700 mb-2">Subject: {threadModal.subject}</div>
                 <div
                   className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm"
-                  dangerouslySetInnerHTML={{ __html: threadModal.body_html || threadModal.body_text || 'No content' }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(threadModal.body_html || threadModal.body_text || 'No content') }}
                 />
               </div>
 

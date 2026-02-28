@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import DOMPurify from 'dompurify'
 import { templatesApi } from '@/lib/api'
 import {
   Plus,
@@ -473,7 +474,7 @@ export default function TemplatesPage() {
                 <label className="block text-xs font-medium text-gray-500 mb-1">HTML PREVIEW</label>
                 <div
                   className="border border-gray-200 rounded-lg p-4 text-sm"
-                  dangerouslySetInnerHTML={{ __html: showPreview.body_html }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(showPreview.body_html) }}
                 />
               </div>
               {showPreview.body_text && (

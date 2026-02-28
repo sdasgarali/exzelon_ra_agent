@@ -1,8 +1,10 @@
 """Authentication endpoints."""
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.security import verify_password, get_password_hash, create_access_token
@@ -10,11 +12,14 @@ from app.core.config import settings
 from app.db.models.user import User
 from app.schemas.user import UserCreate, UserResponse, Token
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):

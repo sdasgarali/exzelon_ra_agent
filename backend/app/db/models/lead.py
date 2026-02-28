@@ -91,6 +91,7 @@ class LeadDetails(Base):
         Index("idx_lead_client_job", "client_name", "job_title", "state", "posting_date"),
         Index("idx_lead_status", "lead_status"),
         Index("idx_lead_posting_date", "posting_date"),
+        Index("idx_lead_status_archived", "lead_status", "is_archived"),
     )
 
     @property

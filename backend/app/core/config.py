@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = True
     SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
+    ENCRYPTION_KEY: str = ""  # Fernet key for encrypting mailbox passwords; generate via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    CORS_ORIGINS: str = ""  # Comma-separated allowed origins; empty = localhost defaults
 
     # Data Storage Mode
     DATA_STORAGE: Literal["database", "files"] = "database"
@@ -38,6 +40,11 @@ class Settings(BaseSettings):
     DB_NAME: str = "ra_agent"
     DB_USER: str = "ra_user"
     DB_PASSWORD: str = "change_me"
+
+    # Connection pool settings (MySQL only)
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 40
+    DB_POOL_TIMEOUT: int = 30
 
     @property
     def DATABASE_URL(self) -> str:
@@ -84,6 +91,7 @@ class Settings(BaseSettings):
     COOLDOWN_DAYS: int = 10
     MAX_CONTACTS_PER_COMPANY_PER_JOB: int = 4
     MIN_SALARY_THRESHOLD: int = 30000  # IMPACT: Lowered from 40000 to include more entry-level roles
+    DATA_RETENTION_DAYS: int = 180  # Days to keep archived records before purging
 
     # Industries (Non-IT only)
     # IMPACT ON LEAD COUNT: Jobs are searched within these industries only.

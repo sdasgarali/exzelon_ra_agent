@@ -1,7 +1,9 @@
 """Dashboard and KPI endpoints."""
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
@@ -12,8 +14,13 @@ from app.db.models.client import ClientInfo, ClientCategory
 from app.db.models.contact import ContactDetails
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus
+from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.models.email_template import EmailTemplate, TemplateStatus
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+# Simple in-memory cache for expensive KPI queries (60s TTL)
+_kpi_cache: dict = {"data": None, "expires": 0, "key": ""}
 
 
 @router.get("/kpis")
@@ -24,6 +31,12 @@ async def get_kpis(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get main KPIs for dashboard."""
+    # Check cache (60s TTL)
+    cache_key = f"{from_date}:{to_date}"
+    now = time.time()
+    if _kpi_cache["key"] == cache_key and _kpi_cache["expires"] > now and _kpi_cache["data"]:
+        return _kpi_cache["data"]
+
     # Default to last 30 days
     if not to_date:
         to_date = date.today()
@@ -65,7 +78,7 @@ async def get_kpis(
     bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
     reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
 
-    return {
+    result = {
         "period": {"from": from_date.isoformat(), "to": to_date.isoformat()},
         "total_companies_identified": total_companies,
         "total_leads": total_leads,
@@ -77,6 +90,12 @@ async def get_kpis(
         "bounce_rate_percent": round(bounce_rate, 2),
         "reply_rate_percent": round(reply_rate, 2)
     }
+
+    _kpi_cache["data"] = result
+    _kpi_cache["key"] = cache_key
+    _kpi_cache["expires"] = now + 60  # 60 second TTL
+
+    return result
 
 
 @router.get("/leads-sourced")
@@ -195,7 +214,7 @@ async def get_client_categories(
     clients = db.query(ClientInfo).order_by(ClientInfo.client_name).all()
 
     return {
-        "summary": {str(cat): count for cat, count in by_category if cat},
+        "summary": {cat.value: count for cat, count in by_category if cat},
         "clients": [
             {
                 "client_name": c.client_name,
@@ -237,4 +256,83 @@ async def get_trends(
     return {
         "daily_leads": [{"date": str(d), "count": c} for d, c in daily_leads],
         "daily_outreach": [{"date": str(d), "count": c} for d, c in daily_outreach]
+    }
+
+
+@router.get("/stats")
+async def get_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Consolidated dashboard statistics (all-time, no date filter)."""
+    # Leads
+    total_leads = db.query(func.count(LeadDetails.lead_id)).scalar() or 0
+    by_status = db.query(
+        LeadDetails.lead_status, func.count(LeadDetails.lead_id)
+    ).group_by(LeadDetails.lead_status).all()
+    by_source = db.query(
+        LeadDetails.source, func.count(LeadDetails.lead_id)
+    ).group_by(LeadDetails.source).all()
+
+    # Contacts
+    total_contacts = db.query(func.count(ContactDetails.contact_id)).scalar() or 0
+    by_validation = db.query(
+        ContactDetails.validation_status, func.count(ContactDetails.contact_id)
+    ).group_by(ContactDetails.validation_status).all()
+
+    # Outreach
+    total_sent = db.query(func.count(OutreachEvent.event_id)).filter(
+        OutreachEvent.status == OutreachStatus.SENT
+    ).scalar() or 0
+    total_replied = db.query(func.count(OutreachEvent.event_id)).filter(
+        OutreachEvent.status == OutreachStatus.REPLIED
+    ).scalar() or 0
+    total_bounced = db.query(func.count(OutreachEvent.event_id)).filter(
+        OutreachEvent.status == OutreachStatus.BOUNCED
+    ).scalar() or 0
+    reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
+    bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
+
+    # Mailboxes
+    total_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).scalar() or 0
+    active_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).filter(
+        SenderMailbox.is_active == True,
+        SenderMailbox.warmup_status == WarmupStatus.ACTIVE
+    ).scalar() or 0
+    warming_up_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).filter(
+        SenderMailbox.warmup_status == WarmupStatus.WARMING_UP
+    ).scalar() or 0
+
+    # Templates
+    total_templates = db.query(func.count(EmailTemplate.template_id)).scalar() or 0
+    active_templates = db.query(func.count(EmailTemplate.template_id)).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE
+    ).scalar() or 0
+
+    return {
+        "leads": {
+            "total": total_leads,
+            "by_status": {s.value: c for s, c in by_status if s},
+            "by_source": {s: c for s, c in by_source if s}
+        },
+        "contacts": {
+            "total": total_contacts,
+            "by_validation_status": {str(v): c for v, c in by_validation if v}
+        },
+        "outreach": {
+            "total_sent": total_sent,
+            "total_replied": total_replied,
+            "total_bounced": total_bounced,
+            "reply_rate": round(reply_rate, 2),
+            "bounce_rate": round(bounce_rate, 2)
+        },
+        "mailboxes": {
+            "total": total_mailboxes,
+            "active": active_mailboxes,
+            "warming_up": warming_up_mailboxes
+        },
+        "templates": {
+            "total": total_templates,
+            "active_count": active_templates
+        }
     }

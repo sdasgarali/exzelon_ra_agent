@@ -1,7 +1,10 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi } from '@/lib/api'
+import { dashboardApi, pipelinesApi } from '@/lib/api'
+import { useToast } from '@/components/toast'
 import {
   Building,
   Users,
@@ -56,6 +59,10 @@ function StatCard({
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
+  const { toast } = useToast()
+  const [quickLoading, setQuickLoading] = useState<string | null>(null)
+
   const { data: kpis, isLoading } = useQuery({
     queryKey: ['dashboard-kpis'],
     queryFn: () => dashboardApi.kpis(),
@@ -152,21 +159,69 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent Activity */}
+      {/* Quick Actions */}
       <div className="card">
         <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="btn-primary">
-            Run Lead Sourcing
+          <button
+            className="btn-primary"
+            disabled={quickLoading !== null}
+            onClick={async () => {
+              setQuickLoading('sourcing')
+              try {
+                await pipelinesApi.runLeadSourcing(['linkedin', 'indeed'])
+                toast('success', 'Lead sourcing pipeline started')
+                router.push('/dashboard/pipelines')
+              } catch { toast('error', 'Failed to start lead sourcing') }
+              setQuickLoading(null)
+            }}
+          >
+            {quickLoading === 'sourcing' ? 'Starting...' : 'Run Lead Sourcing'}
           </button>
-          <button className="btn-secondary">
-            Enrich Contacts
+          <button
+            className="btn-secondary"
+            disabled={quickLoading !== null}
+            onClick={async () => {
+              setQuickLoading('enrich')
+              try {
+                await pipelinesApi.runContactEnrichment()
+                toast('success', 'Contact enrichment pipeline started')
+                router.push('/dashboard/pipelines')
+              } catch { toast('error', 'Failed to start contact enrichment') }
+              setQuickLoading(null)
+            }}
+          >
+            {quickLoading === 'enrich' ? 'Starting...' : 'Enrich Contacts'}
           </button>
-          <button className="btn-secondary">
-            Validate Emails
+          <button
+            className="btn-secondary"
+            disabled={quickLoading !== null}
+            onClick={async () => {
+              setQuickLoading('validate')
+              try {
+                await pipelinesApi.runEmailValidation()
+                toast('success', 'Email validation pipeline started')
+                router.push('/dashboard/pipelines')
+              } catch { toast('error', 'Failed to start email validation') }
+              setQuickLoading(null)
+            }}
+          >
+            {quickLoading === 'validate' ? 'Starting...' : 'Validate Emails'}
           </button>
-          <button className="btn-secondary">
-            Export Mailmerge
+          <button
+            className="btn-secondary"
+            disabled={quickLoading !== null}
+            onClick={async () => {
+              setQuickLoading('outreach')
+              try {
+                await pipelinesApi.runOutreach('mailmerge', true)
+                toast('success', 'Mailmerge export pipeline started')
+                router.push('/dashboard/pipelines')
+              } catch { toast('error', 'Failed to start mailmerge export') }
+              setQuickLoading(null)
+            }}
+          >
+            {quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
           </button>
         </div>
       </div>

@@ -71,7 +71,26 @@ Thumbs.db
 # Docker
 .docker/
 
+# Screenshots & images
+*.png
+*.jpg
+*.jpeg
+*.gif
+images/
+test_screenshots/
+
+# Stray / dev artifacts
+.last_startup.json
+kill_python.py
+test_m365.py
+start_app.py
+
+# Data exports
+backend/data/exports/
+backend/data/*.backup
+
 # Misc
 *.bak
 *.tmp
 *.temp
+*.docx

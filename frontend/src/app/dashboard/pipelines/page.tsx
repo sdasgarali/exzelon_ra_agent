@@ -46,6 +46,9 @@ export default function PipelinesPage() {
   const [contactEnrichmentRunning, setContactEnrichmentRunning] = useState(false)
   const [emailValidationRunning, setEmailValidationRunning] = useState(false)
   const [outreachRunning, setOutreachRunning] = useState(false)
+  const [pipelineFilter, setPipelineFilter] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const RUNS_PER_PAGE = 20
 
   // Lead selector popup state
   const [showLeadSelector, setShowLeadSelector] = useState(false)
@@ -464,8 +467,19 @@ export default function PipelinesPage() {
 
       {/* Pipeline Run History */}
       <div className="card overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="font-semibold text-gray-800">Pipeline Run History</h3>
+          <select
+            value={pipelineFilter}
+            onChange={(e) => { setPipelineFilter(e.target.value); setCurrentPage(1); }}
+            className="text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+          >
+            <option value="">All Pipelines</option>
+            <option value="lead_sourcing">Lead Sourcing</option>
+            <option value="contact_enrichment">Contact Enrichment</option>
+            <option value="email_validation">Email Validation</option>
+            <option value="outreach">Outreach</option>
+          </select>
         </div>
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -500,7 +514,10 @@ export default function PipelinesPage() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {runs.map((run) => (
+            {runs
+              .filter(r => !pipelineFilter || r.pipeline_name === pipelineFilter)
+              .slice((currentPage - 1) * RUNS_PER_PAGE, currentPage * RUNS_PER_PAGE)
+              .map((run) => (
               <tr key={run.run_id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-sm text-gray-900 font-mono">
                   #{run.run_id}
@@ -564,6 +581,21 @@ export default function PipelinesPage() {
             No pipeline runs yet. Start a pipeline above to see run history.
           </div>
         )}
+
+        {(() => {
+          const filtered = runs.filter(r => !pipelineFilter || r.pipeline_name === pipelineFilter)
+          const totalPages = Math.ceil(filtered.length / RUNS_PER_PAGE)
+          if (totalPages <= 1) return null
+          return (
+            <div className="px-6 py-3 border-t border-gray-200 flex items-center justify-between text-sm text-gray-600">
+              <span>Showing {Math.min((currentPage - 1) * RUNS_PER_PAGE + 1, filtered.length)}-{Math.min(currentPage * RUNS_PER_PAGE, filtered.length)} of {filtered.length}</span>
+              <div className="flex gap-2">
+                <button disabled={currentPage <= 1} onClick={() => setCurrentPage(p => p - 1)} className="px-3 py-1 border rounded disabled:opacity-50">Prev</button>
+                <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)} className="px-3 py-1 border rounded disabled:opacity-50">Next</button>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Lead Selector Modal */}

@@ -58,10 +58,9 @@ async def list_clients(
     if search:
         query = query.filter(ClientInfo.client_name.ilike(f"%{search}%"))
 
+    total = query.count()
     clients = query.order_by(ClientInfo.client_name).offset(skip).limit(limit).all()
 
-    # Return paginated response
-    total = query.count()
     return {
         "items": [ClientResponse.model_validate(c) for c in clients],
         "total": total
@@ -74,7 +73,7 @@ async def get_client_stats(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get client statistics summary."""
-    total = query.count()
+    total = db.query(func.count(ClientInfo.client_id)).scalar() or 0
 
     by_status = db.query(
         ClientInfo.status,

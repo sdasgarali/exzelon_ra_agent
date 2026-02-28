@@ -9,6 +9,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.contact import ContactDetails, PriorityLevel
 from app.db.models.lead_contact import LeadContactAssociation
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
+from app.schemas.pipeline import BulkContactIdsRequest
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
 
@@ -179,12 +180,12 @@ async def get_contacts_for_lead(
 
 @router.delete("/bulk")
 async def bulk_delete_contacts(
-    request: dict,
+    request: BulkContactIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Archive multiple contacts by IDs (soft delete). Admin only."""
-    contact_ids = request.get("contact_ids", [])
+    contact_ids = request.contact_ids
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
@@ -198,17 +199,115 @@ async def bulk_delete_contacts(
     emails = [c.email for c in contacts if c.email]
     found_ids = [c.contact_id for c in contacts]
 
-    # Soft delete: archive contacts instead of hard deleting
-    archived_count = db.query(ContactDetails).filter(
-        ContactDetails.contact_id.in_(found_ids)
-    ).update({ContactDetails.is_archived: True}, synchronize_session=False)
+    try:
+        # Soft delete: archive contacts instead of hard deleting
+        archived_count = db.query(ContactDetails).filter(
+            ContactDetails.contact_id.in_(found_ids)
+        ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk delete failed: {str(e)}")
 
     return {
         "message": f"Successfully archived {archived_count} contact(s)",
         "archived_count": archived_count,
         "archived_ids": found_ids
+    }
+
+
+@router.get("/duplicates", tags=["Contacts"])
+async def find_duplicate_contacts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Find contacts with duplicate email addresses."""
+    from sqlalchemy import func as sa_func
+
+    # Find emails that appear more than once
+    dupes = db.query(
+        ContactDetails.email,
+        sa_func.count(ContactDetails.contact_id).label("count")
+    ).filter(
+        ContactDetails.email.isnot(None),
+        ContactDetails.is_archived == False
+    ).group_by(ContactDetails.email).having(
+        sa_func.count(ContactDetails.contact_id) > 1
+    ).all()
+
+    results = []
+    for email, count in dupes:
+        contacts = db.query(ContactDetails).filter(
+            ContactDetails.email == email,
+            ContactDetails.is_archived == False
+        ).order_by(ContactDetails.created_at).all()
+        results.append({
+            "email": email,
+            "count": count,
+            "contacts": [ContactResponse.model_validate(c) for c in contacts]
+        })
+
+    return {"duplicates": results, "total_groups": len(results)}
+
+
+@router.post("/merge", tags=["Contacts"])
+async def merge_contacts(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
+):
+    """Merge duplicate contacts. Keep primary, archive others and transfer associations."""
+    primary_id = request.get("primary_contact_id")
+    merge_ids = request.get("merge_contact_ids", [])
+
+    if not primary_id or not merge_ids:
+        raise HTTPException(status_code=400, detail="primary_contact_id and merge_contact_ids required")
+
+    if primary_id in merge_ids:
+        raise HTTPException(status_code=400, detail="primary_contact_id cannot be in merge_contact_ids")
+
+    primary = db.query(ContactDetails).filter(ContactDetails.contact_id == primary_id).first()
+    if not primary:
+        raise HTTPException(status_code=404, detail="Primary contact not found")
+
+    merged_count = 0
+    associations_transferred = 0
+
+    for cid in merge_ids:
+        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == cid).first()
+        if not contact:
+            continue
+
+        # Transfer junction table associations to primary
+        assocs = db.query(LeadContactAssociation).filter(
+            LeadContactAssociation.contact_id == cid
+        ).all()
+        for assoc in assocs:
+            existing = db.query(LeadContactAssociation).filter(
+                LeadContactAssociation.lead_id == assoc.lead_id,
+                LeadContactAssociation.contact_id == primary_id
+            ).first()
+            if not existing:
+                new_assoc = LeadContactAssociation(
+                    lead_id=assoc.lead_id,
+                    contact_id=primary_id
+                )
+                db.add(new_assoc)
+                associations_transferred += 1
+            db.delete(assoc)
+
+        # Archive the merged contact
+        contact.is_archived = True
+        merged_count += 1
+
+    db.commit()
+
+    return {
+        "message": f"Merged {merged_count} contacts into contact {primary_id}",
+        "primary_contact_id": primary_id,
+        "merged_count": merged_count,
+        "associations_transferred": associations_transferred
     }
 
 

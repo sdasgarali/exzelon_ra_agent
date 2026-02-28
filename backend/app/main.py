@@ -2,10 +2,15 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 import structlog
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from app.core.config import settings
+from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.db.base import engine, Base
 
@@ -188,6 +193,24 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
 
+    # Validate database schema
+    try:
+        from sqlalchemy import inspect as sa_inspect_schema
+        inspector = sa_inspect_schema(engine)
+        existing_tables = set(inspector.get_table_names())
+        required_tables = {
+            "users", "lead_details", "contactdetails", "lead_contact_associations",
+            "clientinfo", "sender_mailboxes", "outreach_events", "email_templates",
+            "warmup_profiles", "job_runs", "audit_logs"
+        }
+        missing = required_tables - existing_tables
+        if missing:
+            logger.warning("Missing database tables", missing=list(missing))
+        else:
+            logger.info("Database schema validated", tables=len(existing_tables))
+    except Exception as e:
+        logger.warning(f"Schema validation check: {e}")
+
     # Migration: add lead_results_json column if missing (SQLite create_all won't alter existing tables)
     try:
         from sqlalchemy import text as sa_text
@@ -219,8 +242,41 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for is_archived: {e}")
 
+    # Migration: encrypt existing plaintext mailbox passwords
+    try:
+        from app.core.encryption import encrypt_field, is_encrypted
+        from app.db.base import SessionLocal as _MigSessionLocal
+        from app.db.models.sender_mailbox import SenderMailbox as _MigMailbox
+        _mig_db = _MigSessionLocal()
+        try:
+            _mailboxes = _mig_db.query(_MigMailbox).all()
+            _migrated = 0
+            for _mb in _mailboxes:
+                if _mb.password and not is_encrypted(_mb.password):
+                    _mb.password = encrypt_field(_mb.password)
+                    _migrated += 1
+            if _migrated:
+                _mig_db.commit()
+                logger.info(f"Migration: encrypted {_migrated} plaintext mailbox password(s)")
+        finally:
+            _mig_db.close()
+    except Exception as e:
+        logger.warning(f"Migration check for password encryption: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
+
+    # Seed default admin user if none exists
+    try:
+        from app.core.seed import seed_admin_user
+        from app.db.base import SessionLocal as _SeedSessionLocal
+        _seed_db = _SeedSessionLocal()
+        try:
+            seed_admin_user(_seed_db)
+        finally:
+            _seed_db.close()
+    except Exception as e:
+        logger.error("Failed to seed admin user", error=str(e))
 
     # Start warmup scheduler
     try:
@@ -250,12 +306,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Rate limiter
+from app.api.endpoints.auth import limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# GZip compression for responses > 1KB
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS — read allowed origins from env, fallback to localhost dev ports
+_cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()] if settings.CORS_ORIGINS else [
+    "http://localhost:3000", "http://localhost:3001", "http://localhost:3003",
+    "http://127.0.0.1:3000", "http://127.0.0.1:3003",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:3004", "http://127.0.0.1:3000", "http://127.0.0.1:3003", "http://127.0.0.1:3004"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -263,7 +332,14 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 # Tracking pixel endpoint
 @app.get("/t/{tracking_id}/px.gif")
-async def tracking_pixel(tracking_id: str):
+async def tracking_pixel(tracking_id: str, token: str = ""):
+    # 1x1 transparent GIF (always returned regardless of token validity)
+    gif = bytes([0x47,0x49,0x46,0x38,0x39,0x61,0x01,0x00,0x01,0x00,0x80,0x00,0x00,0xff,0xff,0xff,0x00,0x00,0x00,0x21,0xf9,0x04,0x00,0x00,0x00,0x00,0x00,0x2c,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0x02,0x02,0x44,0x01,0x00,0x3b])
+    # If a token is provided but invalid, return the gif without recording the open
+    if token:
+        from app.core.tracking import validate_tracking_token
+        if not validate_tracking_token(tracking_id, token):
+            return Response(content=gif, media_type="image/gif")
     from app.db.base import SessionLocal
     db = SessionLocal()
     try:
@@ -273,16 +349,20 @@ async def tracking_pixel(tracking_id: str):
         pass
     finally:
         db.close()
-    # Return 1x1 transparent GIF
-    gif = bytes([0x47,0x49,0x46,0x38,0x39,0x61,0x01,0x00,0x01,0x00,0x80,0x00,0x00,0xff,0xff,0xff,0x00,0x00,0x00,0x21,0xf9,0x04,0x00,0x00,0x00,0x00,0x00,0x2c,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0x02,0x02,0x44,0x01,0x00,0x3b])
     return Response(content=gif, media_type="image/gif")
 
 
 # Tracking link redirect endpoint
 @app.get("/t/{tracking_id}/l")
-async def tracking_link(tracking_id: str, url: str = ""):
-    from app.db.base import SessionLocal
+async def tracking_link(tracking_id: str, url: str = "", token: str = ""):
+    from app.core.tracking import validate_tracking_token, sanitize_redirect_url
     from fastapi.responses import RedirectResponse
+
+    # If a token is provided but invalid, reject the request
+    if token and not validate_tracking_token(tracking_id, token):
+        return JSONResponse(status_code=403, content={"error": "Invalid tracking token"})
+
+    from app.db.base import SessionLocal
     db = SessionLocal()
     try:
         from app.services.warmup.tracking import record_click
@@ -291,11 +371,11 @@ async def tracking_link(tracking_id: str, url: str = ""):
         pass
     finally:
         db.close()
-    if url:
-        import urllib.parse
-        decoded_url = urllib.parse.unquote(url)
-        return RedirectResponse(url=decoded_url)
-    return {"error": "No URL provided"}
+
+    safe_url = sanitize_redirect_url(url)
+    if safe_url:
+        return RedirectResponse(url=safe_url)
+    return JSONResponse(status_code=400, content={"error": "Invalid or missing URL"})
 
 
 @app.get("/")
@@ -305,7 +385,30 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "env": settings.APP_ENV}
+    """Health check with DB connectivity test."""
+    db_ok = False
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        pass
+    status = "healthy" if db_ok else "degraded"
+    code = 200 if db_ok else 503
+    return JSONResponse(
+        status_code=code,
+        content={"status": status, "env": settings.APP_ENV, "database": "connected" if db_ok else "unavailable"}
+    )
+
+
+@app.exception_handler(AppException)
+async def app_exception_handler(request, exc: AppException):
+    logger.warning("Application error", error_code=exc.error_code, detail=exc.detail, path=request.url.path)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "error_code": exc.error_code}
+    )
 
 
 @app.exception_handler(Exception)

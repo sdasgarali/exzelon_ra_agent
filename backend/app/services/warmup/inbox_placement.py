@@ -34,7 +34,8 @@ def send_seed_email(mailbox: SenderMailbox, seed_email: str, subject: str = None
         smtp_host = mailbox.smtp_host or "smtp.office365.com"
         server = smtplib.SMTP(smtp_host, mailbox.smtp_port or 587, timeout=30)
         server.starttls()
-        server.login(mailbox.email, mailbox.password)
+        from app.core.encryption import decrypt_field
+        server.login(mailbox.email, decrypt_field(mailbox.password))
         server.sendmail(mailbox.email, seed_email, msg.as_string())
         server.quit()
         return {"success": True, "subject": subject}

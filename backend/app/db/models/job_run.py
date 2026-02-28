@@ -29,6 +29,8 @@ class JobRun(Base):
     logs_path = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)
     triggered_by = Column(String(100), nullable=True)  # user email or "scheduler"
+    progress_pct = Column(Integer, default=0, nullable=False)  # 0-100 progress percentage
+    is_cancel_requested = Column(Integer, default=0, nullable=False)  # 0=no, 1=cancel requested
 
     __table_args__ = (
         Index('idx_job_pipeline', 'pipeline_name'),

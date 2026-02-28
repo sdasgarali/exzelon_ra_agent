@@ -41,6 +41,7 @@ factory-boy==3.3.0
 
 # Security
 argon2-cffi==23.1.0
+slowapi==0.1.9
 
 # Warmup Engine
 dnspython==2.6.1

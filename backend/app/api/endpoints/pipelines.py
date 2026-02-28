@@ -8,6 +8,7 @@ from datetime import timezone
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.job_run import JobRun, JobStatus
+from app.schemas.pipeline import LeadIdsRequest, ContactIdsRequest
 
 
 def _utc_iso(dt) -> str | None:
@@ -207,6 +208,23 @@ async def get_job_run(
     }
 
 
+@router.post("/jobs/{run_id}/cancel")
+async def cancel_job_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+):
+    """Request cancellation of a running pipeline job."""
+    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Job run not found")
+    if run.status != JobStatus.RUNNING:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel job in '{run.status.value}' state")
+    run.is_cancel_requested = 1
+    db.commit()
+    return {"message": f"Cancellation requested for job {run_id}", "run_id": run_id}
+
+
 @router.post("/lead-sourcing/run")
 async def run_lead_sourcing(
     background_tasks: BackgroundTasks,
@@ -263,16 +281,14 @@ async def upload_leads_file(
 @router.post("/contact-enrichment/run")
 async def run_contact_enrichment(
     background_tasks: BackgroundTasks,
-    request: Optional[dict] = Body(None),
+    request: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
 
-    lead_ids = None
-    if request and isinstance(request, dict):
-        lead_ids = request.get("lead_ids")
+    lead_ids = request.lead_ids if request else None
 
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
@@ -313,7 +329,7 @@ async def run_email_validation(
 
 @router.post("/email-validation/run-selected")
 async def run_email_validation_selected(
-    request: dict,
+    request: ContactIdsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
@@ -322,7 +338,7 @@ async def run_email_validation_selected(
     from app.services.pipelines.email_validation import run_email_validation_pipeline
     from app.db.models.contact import ContactDetails
 
-    contact_ids = request.get("contact_ids", [])
+    contact_ids = request.contact_ids
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
@@ -353,14 +369,12 @@ async def run_outreach(
     background_tasks: BackgroundTasks,
     mode: str = Query("mailmerge", description="Send mode: mailmerge or send"),
     dry_run: bool = Query(True),
-    request: Optional[dict] = Body(None),
+    request: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
-    lead_ids = None
-    if request and isinstance(request, dict):
-        lead_ids = request.get("lead_ids")
+    lead_ids = request.lead_ids if request else None
 
     if lead_ids:
         from app.services.pipelines.outreach import run_outreach_for_lead

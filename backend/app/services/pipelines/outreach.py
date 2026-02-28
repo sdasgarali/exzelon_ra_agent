@@ -49,7 +49,8 @@ def send_outreach_email(
         smtp_host = sender_mailbox.smtp_host or "smtp.office365.com"
         server = smtplib.SMTP(smtp_host, sender_mailbox.smtp_port or 587, timeout=30)
         server.starttls()
-        server.login(sender_mailbox.email, sender_mailbox.password)
+        from app.core.encryption import decrypt_field
+        server.login(sender_mailbox.email, decrypt_field(sender_mailbox.password))
         server.sendmail(sender_mailbox.email, to_email, msg.as_string())
         server.quit()
 

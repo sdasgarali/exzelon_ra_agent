@@ -1,4 +1,5 @@
 """Email template management endpoints."""
+import html
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -207,9 +208,10 @@ async def preview_template(
     preview_text = template.body_text or ""
 
     for placeholder, value in sample_data.items():
-        preview_subject = preview_subject.replace(placeholder, value)
-        preview_html = preview_html.replace(placeholder, value)
-        preview_text = preview_text.replace(placeholder, value)
+        safe_value = html.escape(value)
+        preview_subject = preview_subject.replace(placeholder, safe_value)
+        preview_html = preview_html.replace(placeholder, value)  # HTML body keeps original (templates are HTML)
+        preview_text = preview_text.replace(placeholder, safe_value)
 
     return {
         "template_id": template.template_id,
@@ -219,3 +221,34 @@ async def preview_template(
         "body_text": preview_text,
         "placeholders_used": list(sample_data.keys()),
     }
+
+
+@router.post("/{template_id}/duplicate", response_model=EmailTemplateResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+):
+    """Duplicate an email template."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    new_template = EmailTemplate(
+        name=f"{template.name} (Copy)",
+        subject=template.subject,
+        body_html=template.body_html,
+        body_text=template.body_text,
+        status=TemplateStatus.INACTIVE,
+        is_default=False,
+        description=template.description,
+    )
+    db.add(new_template)
+    db.commit()
+    db.refresh(new_template)
+    return EmailTemplateResponse.model_validate(new_template)

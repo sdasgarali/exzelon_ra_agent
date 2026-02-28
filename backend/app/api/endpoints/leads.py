@@ -17,8 +17,26 @@ from app.db.models.outreach import OutreachEvent
 from app.schemas.lead import LeadCreate, LeadUpdate, LeadResponse, LeadListResponse
 from app.schemas.contact import ContactResponse
 from app.schemas.outreach import OutreachEventResponse
+from app.core.state_machine import validate_transition, get_allowed_transitions
+from app.db.models.audit_log import AuditLog
+from app.schemas.pipeline import BulkLeadIdsRequest, BulkLeadStatusRequest, BulkEnrichRequest, BulkOutreachRequest, ManageContactsRequest
+import json
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
+
+
+def _audit(db: Session, entity_type: str, entity_id: int, action: str,
+           changed_fields: dict | None = None, changed_by: str | None = None, notes: str | None = None):
+    """Write an audit log entry."""
+    log = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        changed_fields=json.dumps(changed_fields) if changed_fields else None,
+        changed_by=changed_by,
+        notes=notes,
+    )
+    db.add(log)
 
 # Valid sort columns
 SORT_COLUMNS = {
@@ -173,6 +191,25 @@ async def get_lead_stats(
 
 
 
+@router.get("/status-transitions")
+async def get_status_transitions(
+    current_status: Optional[LeadStatus] = None,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get allowed status transitions. If current_status provided, returns allowed next statuses."""
+    if current_status:
+        return {
+            "current": current_status.value,
+            "allowed": get_allowed_transitions(current_status),
+        }
+    # Return full transition map
+    from app.core.state_machine import LEAD_STATUS_TRANSITIONS
+    return {
+        s.value: sorted([t.value for t in targets])
+        for s, targets in LEAD_STATUS_TRANSITIONS.items()
+    }
+
+
 @router.get("/export/csv")
 async def export_leads_csv(
     lead_status: Optional[LeadStatus] = Query(None, alias="status"),
@@ -209,42 +246,113 @@ async def export_leads_csv(
             (LeadDetails.job_title.ilike(f"%{search}%"))
         )
 
-    leads = query.order_by(LeadDetails.created_at.desc()).all()
+    def generate_csv():
+        """Stream CSV data in batches to avoid loading all records into memory."""
+        output = io.StringIO()
+        writer = csv.writer(output)
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
-        "Lead ID", "Company Name", "Job Title", "State", "Posting Date",
-        "Job Link", "Source", "Status", "Salary Min", "Salary Max",
-        "Contact Email", "Created At"
-    ])
-
-    for lead in leads:
+        # Write header
         writer.writerow([
-            lead.lead_id,
-            lead.client_name,
-            lead.job_title,
-            lead.state,
-            lead.posting_date.isoformat() if lead.posting_date else "",
-            lead.job_link,
-            lead.source,
-            lead.lead_status.value if lead.lead_status else "",
-            lead.salary_min,
-            lead.salary_max,
-            lead.contact_email,
-            lead.created_at.isoformat() if lead.created_at else ""
+            "Lead ID", "Company Name", "Job Title", "State", "Posting Date",
+            "Job Link", "Source", "Status", "Salary Min", "Salary Max",
+            "Contact Email", "Created At"
         ])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
 
-    output.seek(0)
+        # Stream data in batches
+        batch_size = 1000
+        offset = 0
+        ordered_query = query.order_by(LeadDetails.created_at.desc())
+        while True:
+            batch = ordered_query.offset(offset).limit(batch_size).all()
+            if not batch:
+                break
+            for lead in batch:
+                writer.writerow([
+                    lead.lead_id,
+                    lead.client_name,
+                    lead.job_title,
+                    lead.state,
+                    lead.posting_date.isoformat() if lead.posting_date else "",
+                    lead.job_link,
+                    lead.source,
+                    lead.lead_status.value if lead.lead_status else "",
+                    lead.salary_min,
+                    lead.salary_max,
+                    lead.contact_email,
+                    lead.created_at.isoformat() if lead.created_at else ""
+                ])
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+            offset += batch_size
 
     filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
     return StreamingResponse(
-        iter([output.getvalue()]),
+        generate_csv(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.post("/import/preview")
+async def preview_csv_import(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Preview CSV import: show first 10 rows, total count, and duplicate count."""
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV")
+
+    content = await file.read()
+    decoded = content.decode('utf-8')
+    reader = csv.DictReader(io.StringIO(decoded))
+
+    rows = list(reader)
+    total_rows = len(rows)
+
+    # Check for duplicates
+    existing_links = {
+        link for (link,) in db.query(LeadDetails.job_link).filter(
+            LeadDetails.job_link.isnot(None)
+        ).all()
+    }
+
+    duplicate_count = 0
+    preview_rows = []
+    for i, row in enumerate(rows):
+        row_lower = {k.lower().strip(): v for k, v in row.items()}
+        job_link = (row_lower.get('job link') or row_lower.get('job_link') or
+                    row_lower.get('link') or row_lower.get('url') or "").strip()
+
+        is_duplicate = bool(job_link and job_link in existing_links)
+        if is_duplicate:
+            duplicate_count += 1
+
+        if i < 10:
+            preview_rows.append({
+                "row_number": i + 2,
+                "company_name": (row_lower.get('company name') or row_lower.get('client_name') or
+                                row_lower.get('company') or "").strip(),
+                "job_title": (row_lower.get('job title') or row_lower.get('job_title') or
+                             row_lower.get('title') or "").strip(),
+                "state": (row_lower.get('state') or "").strip(),
+                "source": (row_lower.get('source') or "import").strip(),
+                "is_duplicate": is_duplicate,
+            })
+
+    return {
+        "filename": file.filename,
+        "total_rows": total_rows,
+        "duplicate_count": duplicate_count,
+        "new_count": total_rows - duplicate_count,
+        "preview": preview_rows,
+        "columns": list(rows[0].keys()) if rows else [],
+    }
 
 
 @router.post("/import/csv")
@@ -268,6 +376,15 @@ async def import_leads_csv(
     imported = 0
     skipped = 0
     errors = []
+
+    # Pre-load existing job_links to avoid N+1 queries
+    existing_links = set()
+    if skip_duplicates:
+        existing_links = {
+            link for (link,) in db.query(LeadDetails.job_link).filter(
+                LeadDetails.job_link.isnot(None)
+            ).all()
+        }
 
     for row_num, row in enumerate(reader, start=2):
         try:
@@ -298,10 +415,10 @@ async def import_leads_csv(
             ).strip()
 
             if skip_duplicates and job_link:
-                existing = db.query(LeadDetails).filter(LeadDetails.job_link == job_link).first()
-                if existing:
+                if job_link in existing_links:
                     skipped += 1
                     continue
+                existing_links.add(job_link)  # Track new imports too
 
             posting_date_str = (
                 row_lower.get('posting date') or
@@ -383,12 +500,12 @@ async def import_leads_csv(
 
 @router.delete("/bulk")
 async def bulk_delete_leads(
-    request: dict,
+    request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Archive multiple leads by IDs (soft delete). Admin only."""
-    lead_ids = request.get("lead_ids", [])
+    lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
@@ -401,23 +518,27 @@ async def bulk_delete_leads(
 
     found_ids = [l.lead_id for l in leads]
 
-    # Soft delete: archive leads instead of hard deleting
-    archived_count = db.query(LeadDetails).filter(
-        LeadDetails.lead_id.in_(found_ids)
-    ).update({LeadDetails.is_archived: True}, synchronize_session=False)
+    try:
+        # Soft delete: archive leads instead of hard deleting
+        archived_count = db.query(LeadDetails).filter(
+            LeadDetails.lead_id.in_(found_ids)
+        ).update({LeadDetails.is_archived: True}, synchronize_session=False)
 
-    # Also archive linked contacts
-    linked_contacts = db.query(ContactDetails).filter(
-        ContactDetails.lead_id.in_(found_ids)
-    ).all()
-    contact_ids = [c.contact_id for c in linked_contacts]
-    contacts_archived = 0
-    if contact_ids:
-        contacts_archived = db.query(ContactDetails).filter(
-            ContactDetails.contact_id.in_(contact_ids)
-        ).update({ContactDetails.is_archived: True}, synchronize_session=False)
+        # Also archive linked contacts
+        linked_contacts = db.query(ContactDetails).filter(
+            ContactDetails.lead_id.in_(found_ids)
+        ).all()
+        contact_ids = [c.contact_id for c in linked_contacts]
+        contacts_archived = 0
+        if contact_ids:
+            contacts_archived = db.query(ContactDetails).filter(
+                ContactDetails.contact_id.in_(contact_ids)
+            ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk delete failed: {str(e)}")
 
     return {
         "message": f"Successfully archived {archived_count} lead(s) and {contacts_archived} linked contact(s)",
@@ -428,21 +549,25 @@ async def bulk_delete_leads(
 
 @router.put('/bulk/unarchive', tags=['Leads'])
 async def bulk_unarchive_leads(
-    request: dict,
+    request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Restore archived leads (unarchive)."""
-    lead_ids = request.get('lead_ids', [])
+    lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail='No lead IDs provided')
 
-    restored_count = db.query(LeadDetails).filter(
-        LeadDetails.lead_id.in_(lead_ids),
-        LeadDetails.is_archived == True
-    ).update({LeadDetails.is_archived: False}, synchronize_session=False)
+    try:
+        restored_count = db.query(LeadDetails).filter(
+            LeadDetails.lead_id.in_(lead_ids),
+            LeadDetails.is_archived == True
+        ).update({LeadDetails.is_archived: False}, synchronize_session=False)
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk unarchive failed: {str(e)}")
 
     return {
         'message': f'Successfully restored {restored_count} lead(s)',
@@ -457,13 +582,13 @@ async def bulk_unarchive_leads(
 
 @router.put("/bulk/status")
 async def bulk_update_status(
-    request: dict,
+    request: BulkLeadStatusRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Update status of multiple leads at once. Admin/Operator only."""
-    lead_ids = request.get("lead_ids", [])
-    new_status = request.get("status", "")
+    lead_ids = request.lead_ids
+    new_status = request.status
 
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
@@ -477,29 +602,46 @@ async def bulk_update_status(
         valid = [s.value for s in LeadStatus]
         raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid}")
 
-    updated = db.query(LeadDetails).filter(
-        LeadDetails.lead_id.in_(lead_ids)
-    ).update(
-        {LeadDetails.lead_status: status_enum},
-        synchronize_session=False
-    )
+    # Validate transitions per lead and audit
+    leads = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
+    updated = 0
+    rejected = []
+    for lead in leads:
+        if not validate_transition(lead.lead_status, status_enum):
+            rejected.append({
+                "lead_id": lead.lead_id,
+                "current": lead.lead_status.value,
+                "requested": new_status,
+                "allowed": get_allowed_transitions(lead.lead_status),
+            })
+            continue
+        old_status = lead.lead_status.value
+        lead.lead_status = status_enum
+        _audit(db, "lead", lead.lead_id, "status_change",
+               {"lead_status": {"old": old_status, "new": new_status}},
+               changed_by=current_user.email)
+        updated += 1
     db.commit()
 
-    return {
+    result = {
         "message": f"Updated {updated} lead(s) to status '{new_status}'",
         "updated_count": updated,
-        "status": new_status
+        "status": new_status,
     }
+    if rejected:
+        result["rejected"] = rejected
+        result["message"] += f"; {len(rejected)} rejected (invalid transition)"
+    return result
 
 
 @router.post("/bulk/enrich/preview")
 async def preview_bulk_enrichment(
-    request: dict,
+    request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Preview enrichment plan: show leads, existing contacts, reusable contacts, API needs."""
-    lead_ids = request.get("lead_ids", [])
+    lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
@@ -615,13 +757,13 @@ async def preview_bulk_enrichment(
 
 @router.post("/bulk/enrich")
 async def bulk_enrich_leads(
-    request: dict,
+    request: BulkEnrichRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Trigger contact enrichment for selected leads (runs in background)."""
-    lead_ids = request.get("lead_ids", [])
+    lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
     if len(lead_ids) > 200:
@@ -658,12 +800,12 @@ async def bulk_enrich_leads(
 
 @router.post("/bulk/outreach/preview")
 async def preview_bulk_outreach(
-    request: dict,
+    request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Preview outreach plan: show leads, contacts, eligibility, and sender assignments."""
-    lead_ids = request.get("lead_ids", [])
+    lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
@@ -745,13 +887,13 @@ async def preview_bulk_outreach(
 
 @router.post("/bulk/outreach")
 async def bulk_outreach_leads(
-    request: dict,
+    request: BulkOutreachRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Trigger outreach for contacts of multiple leads."""
-    lead_ids = request.get("lead_ids", [])
-    dry_run = request.get("dry_run", True)
+    lead_ids = request.lead_ids
+    dry_run = request.dry_run
 
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
@@ -879,7 +1021,7 @@ async def get_lead_detail(
 @router.post("/{lead_id}/contacts")
 async def manage_lead_contacts(
     lead_id: int,
-    request: dict,
+    request: ManageContactsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -891,8 +1033,8 @@ async def manage_lead_contacts(
             detail="Lead not found"
         )
 
-    add_ids = request.get("add_contact_ids", [])
-    remove_ids = request.get("remove_contact_ids", [])
+    add_ids = request.add_contact_ids
+    remove_ids = request.remove_contact_ids
 
     added = 0
     removed = 0
@@ -1003,8 +1145,31 @@ async def update_lead(
         )
 
     update_data = lead_in.model_dump(exclude_unset=True)
+
+    # Validate status transition if status is changing
+    if "lead_status" in update_data and update_data["lead_status"] != lead.lead_status:
+        new_status = update_data["lead_status"]
+        if isinstance(new_status, str):
+            new_status = LeadStatus(new_status)
+        if not validate_transition(lead.lead_status, new_status):
+            allowed = get_allowed_transitions(lead.lead_status)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot transition from '{lead.lead_status.value}' to '{new_status.value}'. Allowed: {allowed}"
+            )
+
+    # Track changes for audit
+    changes = {}
     for field, value in update_data.items():
+        old_val = getattr(lead, field, None)
+        if old_val != value:
+            old_str = old_val.value if hasattr(old_val, 'value') else str(old_val) if old_val is not None else None
+            new_str = value.value if hasattr(value, 'value') else str(value) if value is not None else None
+            changes[field] = {"old": old_str, "new": new_str}
         setattr(lead, field, value)
+
+    if changes:
+        _audit(db, "lead", lead.lead_id, "update", changes, changed_by=current_user.email)
 
     db.commit()
     db.refresh(lead)
@@ -1028,4 +1193,7 @@ async def delete_lead(
 
     # Soft delete: archive instead of hard deleting
     lead.is_archived = True
+    _audit(db, "lead", lead.lead_id, "archive",
+           {"is_archived": {"old": False, "new": True}},
+           changed_by=current_user.email)
     db.commit()

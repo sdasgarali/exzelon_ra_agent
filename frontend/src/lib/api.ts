@@ -10,19 +10,47 @@ export const api = axios.create({
   },
 })
 
-// Add auth token to requests
+// Request deduplication - cancel duplicate in-flight requests
+const pendingRequests = new Map<string, AbortController>()
+
+function getRequestKey(config: any): string {
+  return `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`
+}
+
+// Add auth token to requests + deduplicate GET requests
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+
+  // Only deduplicate GET requests
+  if (config.method?.toLowerCase() === 'get') {
+    const key = getRequestKey(config)
+    const existing = pendingRequests.get(key)
+    if (existing) {
+      existing.abort()
+    }
+    const controller = new AbortController()
+    config.signal = controller.signal
+    pendingRequests.set(key, controller)
+  }
+
   return config
 })
 
-// Handle 401 errors
+// Handle 401 errors + clean up pending requests
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const key = getRequestKey(response.config)
+    pendingRequests.delete(key)
+    return response
+  },
   (error) => {
+    if (error.config) {
+      const key = getRequestKey(error.config)
+      pendingRequests.delete(key)
+    }
     if (error.response?.status === 401) {
       useAuthStore.getState().logout()
       window.location.href = '/login'

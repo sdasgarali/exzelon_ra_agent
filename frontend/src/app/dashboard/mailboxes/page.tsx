@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { mailboxesApi } from '@/lib/api'
+import { useToast } from '@/components/toast'
 
 interface Mailbox {
   mailbox_id: number
@@ -70,6 +71,7 @@ type SortKey = 'email' | 'provider' | 'warmup_status' | 'emails_sent_today' | 't
 type SortDir = 'asc' | 'desc'
 
 export default function MailboxesPage() {
+  const { toast } = useToast()
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [stats, setStats] = useState<MailboxStats | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -278,7 +280,7 @@ export default function MailboxesPage() {
       resetForm()
       fetchData()
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to save mailbox')
+      toast('error', error.response?.data?.detail || 'Failed to save mailbox')
     }
   }
 
@@ -323,7 +325,7 @@ export default function MailboxesPage() {
       await mailboxesApi.delete(id)
       fetchData()
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to delete mailbox')
+      toast('error', error.response?.data?.detail || 'Failed to delete mailbox')
     }
   }
 
@@ -354,18 +356,34 @@ export default function MailboxesPage() {
   const handleTestAll = async () => {
     setTestingAll(true)
     setTestResult(null)
+
+    // Mark all as testing
+    const testingMap: Record<number, 'testing'> = {}
+    for (const mailbox of mailboxes) {
+      testingMap[mailbox.mailbox_id] = 'testing'
+    }
+    setConnectionStatus(prev => ({ ...prev, ...testingMap }))
+
+    // Test all connections in parallel
+    const results = await Promise.allSettled(
+      mailboxes.map(async (mailbox) => {
+        try {
+          const result = await mailboxesApi.testConnection(mailbox.mailbox_id)
+          setConnectionStatus(prev => ({ ...prev, [mailbox.mailbox_id]: result.success ? 'success' : 'failed' }))
+          return result.success
+        } catch {
+          setConnectionStatus(prev => ({ ...prev, [mailbox.mailbox_id]: 'failed' }))
+          return false
+        }
+      })
+    )
+
     let successCount = 0
     let failCount = 0
-
-    for (const mailbox of mailboxes) {
-      setConnectionStatus(prev => ({ ...prev, [mailbox.mailbox_id]: 'testing' }))
-      try {
-        const result = await mailboxesApi.testConnection(mailbox.mailbox_id)
-        setConnectionStatus(prev => ({ ...prev, [mailbox.mailbox_id]: result.success ? 'success' : 'failed' }))
-        if (result.success) successCount++
-        else failCount++
-      } catch {
-        setConnectionStatus(prev => ({ ...prev, [mailbox.mailbox_id]: 'failed' }))
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value === true) {
+        successCount++
+      } else {
         failCount++
       }
     }
@@ -382,7 +400,7 @@ export default function MailboxesPage() {
       await mailboxesApi.updateStatus(id, newStatus)
       fetchData()
     } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to update status')
+      toast('error', error.response?.data?.detail || 'Failed to update status')
     }
   }
 

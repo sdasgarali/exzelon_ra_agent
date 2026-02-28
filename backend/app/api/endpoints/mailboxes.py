@@ -1,4 +1,5 @@
 """Sender mailbox management endpoints."""
+import asyncio
 import smtplib
 import imaplib
 from datetime import datetime
@@ -10,6 +11,7 @@ from sqlalchemy import func
 from app.api.deps import get_db, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus, EmailProvider
+from app.core.encryption import encrypt_field, decrypt_field
 from app.schemas.sender_mailbox import (
     SenderMailboxCreate,
     SenderMailboxUpdate,
@@ -192,7 +194,7 @@ async def create_mailbox(
     mailbox = SenderMailbox(
         email=mailbox_in.email,
         display_name=mailbox_in.display_name,
-        password=mailbox_in.password,  # In production, encrypt this
+        password=encrypt_field(mailbox_in.password),
         provider=EmailProvider(mailbox_in.provider),
         smtp_host=smtp_host,
         smtp_port=mailbox_in.smtp_port,
@@ -245,6 +247,8 @@ async def update_mailbox(
             setattr(mailbox, field, WarmupStatus(value))
         elif field == "provider" and value:
             setattr(mailbox, field, EmailProvider(value))
+        elif field == "password" and value:
+            setattr(mailbox, field, encrypt_field(value))
         else:
             setattr(mailbox, field, value)
 
@@ -276,6 +280,33 @@ async def delete_mailbox(
     return {"message": f"Mailbox {mailbox.email} archived successfully"}
 
 
+def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str) -> tuple[bool, str]:
+    """Blocking SMTP test — run via asyncio.to_thread()."""
+    try:
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+        server.starttls()
+        server.login(email, password)
+        server.quit()
+        return True, "SMTP connection successful"
+    except smtplib.SMTPAuthenticationError:
+        return False, "SMTP authentication failed - check credentials"
+    except smtplib.SMTPConnectError:
+        return False, f"Could not connect to SMTP server {smtp_host}"
+    except Exception as e:
+        return False, f"SMTP error: {str(e)}"
+
+
+def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str) -> tuple[bool, str]:
+    """Blocking IMAP test — run via asyncio.to_thread()."""
+    try:
+        imap = imaplib.IMAP4_SSL(imap_host, imap_port)
+        imap.login(email, password)
+        imap.logout()
+        return True, "IMAP connection successful"
+    except Exception as e:
+        return False, f"IMAP error: {str(e)}"
+
+
 @router.post("/{mailbox_id}/test-connection", response_model=TestMailboxConnectionResponse)
 async def test_mailbox_connection(
     mailbox_id: int,
@@ -290,40 +321,26 @@ async def test_mailbox_connection(
             detail="Mailbox not found"
         )
 
-    smtp_connected = False
-    imap_connected = False
     messages = []
+    plain_password = decrypt_field(mailbox.password)
+    smtp_host = mailbox.smtp_host or "smtp.office365.com"
 
-    # Test SMTP connection
-    try:
-        smtp_host = mailbox.smtp_host or "smtp.office365.com"
-        server = smtplib.SMTP(smtp_host, mailbox.smtp_port, timeout=10)
-        server.starttls()
-        server.login(mailbox.email, mailbox.password)
-        server.quit()
-        smtp_connected = True
-        messages.append("SMTP connection successful")
-    except smtplib.SMTPAuthenticationError:
-        messages.append("SMTP authentication failed - check credentials")
-    except smtplib.SMTPConnectError:
-        messages.append(f"Could not connect to SMTP server {mailbox.smtp_host}")
-    except Exception as e:
-        messages.append(f"SMTP error: {str(e)}")
+    # Run blocking I/O in thread pool
+    smtp_connected, smtp_msg = await asyncio.to_thread(
+        _test_smtp_sync, smtp_host, mailbox.smtp_port, mailbox.email, plain_password
+    )
+    messages.append(smtp_msg)
 
-    # Test IMAP connection (optional)
+    imap_connected = False
     if mailbox.imap_host:
-        try:
-            imap = imaplib.IMAP4_SSL(mailbox.imap_host, mailbox.imap_port)
-            imap.login(mailbox.email, mailbox.password)
-            imap.logout()
-            imap_connected = True
-            messages.append("IMAP connection successful")
-        except Exception as e:
-            messages.append(f"IMAP error: {str(e)}")
+        imap_connected, imap_msg = await asyncio.to_thread(
+            _test_imap_sync, mailbox.imap_host, mailbox.imap_port, mailbox.email, plain_password
+        )
+        messages.append(imap_msg)
 
-    success = smtp_connected  # SMTP is required, IMAP is optional
+    success = smtp_connected
 
-    # Track connection status and error message for warmup engine filtering
+    # Track connection status
     if success:
         mailbox.connection_status = "successful"
         mailbox.connection_error = None
@@ -349,7 +366,6 @@ async def test_new_mailbox_connection(
 ):
     """Test connection for new mailbox credentials (before saving)."""
     if request.mailbox_id:
-        # Test existing mailbox
         return await test_mailbox_connection(request.mailbox_id, db, current_user)
 
     if not request.email or not request.password:
@@ -357,9 +373,6 @@ async def test_new_mailbox_connection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email and password required for connection test"
         )
-
-    smtp_connected = False
-    messages = []
 
     # Determine SMTP host
     smtp_host = request.smtp_host
@@ -374,24 +387,14 @@ async def test_new_mailbox_connection(
                 detail="SMTP host required for custom provider"
             )
 
-    # Test SMTP connection
-    try:
-        server = smtplib.SMTP(smtp_host, request.smtp_port, timeout=10)
-        server.starttls()
-        server.login(request.email, request.password)
-        server.quit()
-        smtp_connected = True
-        messages.append("SMTP connection successful")
-    except smtplib.SMTPAuthenticationError:
-        messages.append("SMTP authentication failed - check credentials")
-    except smtplib.SMTPConnectError:
-        messages.append(f"Could not connect to SMTP server {smtp_host}")
-    except Exception as e:
-        messages.append(f"SMTP error: {str(e)}")
+    # Run blocking I/O in thread pool
+    smtp_connected, smtp_msg = await asyncio.to_thread(
+        _test_smtp_sync, smtp_host, request.smtp_port, request.email, request.password
+    )
 
     return TestMailboxConnectionResponse(
         success=smtp_connected,
-        message=" | ".join(messages),
+        message=smtp_msg,
         smtp_connected=smtp_connected,
         imap_connected=False
     )
