@@ -44,14 +44,14 @@ class Settings(BaseSettings):
         if self.DB_TYPE == "sqlite":
             db_path = _BACKEND_DIR / "data" / "ra_agent.db"
             return f"sqlite:///{db_path}"
-        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:
         if self.DB_TYPE == "sqlite":
             db_path = _BACKEND_DIR / "data" / "ra_agent.db"
             return f"sqlite+aiosqlite:///{db_path}"
-        return f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -12,7 +12,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(backend_path))
 
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from app.db.base import SessionLocal, engine
 
 
@@ -21,15 +21,11 @@ def migrate():
     db = SessionLocal()
 
     try:
-        # Check if column already exists
-        check_query = text("""
-            SELECT COUNT(*) as cnt
-            FROM pragma_table_info('contact_details')
-            WHERE name = 'lead_id'
-        """)
-        result = db.execute(check_query).fetchone()
-
-        if result and result[0] > 0:
+        # Check if column already exists (works on both SQLite and MySQL)
+        inspector = inspect(engine)
+        existing_cols = {c["name"] for c in inspector.get_columns("contact_details")}
+        
+        if "lead_id" in existing_cols:
             print("Column 'lead_id' already exists in contact_details table.")
             return
 

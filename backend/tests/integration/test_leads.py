@@ -116,28 +116,29 @@ class TestLeadsEndpoints:
         assert data["lead_status"] == "enriched"
 
     def test_delete_lead(self, client, auth_headers, sample_lead):
-        """Test deleting a lead."""
+        """Test deleting (archiving) a lead."""
         response = client.delete(
             f"/api/v1/leads/{sample_lead.lead_id}",
             headers=auth_headers
         )
         assert response.status_code == 204
 
-        # Verify deletion
-        response = client.get(
-            f"/api/v1/leads/{sample_lead.lead_id}",
-            headers=auth_headers
-        )
-        assert response.status_code == 404
+        # After soft-delete, the lead is archived.
+        # The list endpoint filters out archived by default, so it should not appear.
+        list_response = client.get("/api/v1/leads", headers=auth_headers)
+        assert list_response.status_code == 200
+        items = list_response.json()["items"]
+        lead_ids = [item["lead_id"] for item in items]
+        assert sample_lead.lead_id not in lead_ids
 
     def test_filter_leads_by_status(self, client, auth_headers, db_session):
         """Test filtering leads by status."""
         # Create leads with different statuses
-        for status in [LeadStatus.NEW, LeadStatus.ENRICHED, LeadStatus.VALIDATED]:
+        for lead_status in [LeadStatus.NEW, LeadStatus.ENRICHED, LeadStatus.VALIDATED]:
             lead = LeadDetails(
-                client_name=f"Company {status.value}",
+                client_name=f"Company {lead_status.value}",
                 job_title="Position",
-                lead_status=status
+                lead_status=lead_status
             )
             db_session.add(lead)
         db_session.commit()
@@ -163,7 +164,7 @@ class TestLeadsEndpoints:
 
     def test_leads_stats(self, client, auth_headers, sample_lead):
         """Test getting lead statistics."""
-        response = client.get("/api/v1/leads/stats/summary", headers=auth_headers)
+        response = client.get("/api/v1/leads/stats", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "total" in data

@@ -26,12 +26,16 @@ class TestContactsEndpoints:
         return contact
 
     def test_list_contacts(self, client, auth_headers, sample_contact):
-        """Test listing contacts."""
+        """Test listing contacts returns paginated response."""
         response = client.get("/api/v1/contacts", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
+        assert "items" in data
+        assert "total" in data
+        assert "page" in data
+        assert "page_size" in data
+        assert "pages" in data
+        assert len(data["items"]) >= 1
 
     def test_get_contact(self, client, auth_headers, sample_contact):
         """Test getting a specific contact."""
@@ -92,7 +96,7 @@ class TestContactsEndpoints:
         assert data["validation_status"] == "valid"
 
     def test_delete_contact(self, client, auth_headers, sample_contact):
-        """Test deleting a contact."""
+        """Test deleting (archiving) a contact."""
         response = client.delete(
             f"/api/v1/contacts/{sample_contact.contact_id}",
             headers=auth_headers
@@ -107,7 +111,7 @@ class TestContactsEndpoints:
         )
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 1
+        assert len(data["items"]) >= 1
 
     def test_filter_contacts_by_validation_status(self, client, auth_headers, db_session):
         """Test filtering contacts by validation status."""
@@ -127,12 +131,12 @@ class TestContactsEndpoints:
         )
         assert response.status_code == 200
         data = response.json()
-        for item in data:
+        for item in data["items"]:
             assert item["validation_status"] == "valid"
 
     def test_contact_stats(self, client, auth_headers, sample_contact):
         """Test getting contact statistics."""
-        response = client.get("/api/v1/contacts/stats/summary", headers=auth_headers)
+        response = client.get("/api/v1/contacts/stats", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert "total" in data

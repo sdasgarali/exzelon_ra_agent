@@ -11,7 +11,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["DEBUG"] = "False"
 
 from app.main import app
-from app.db.base import Base, get_db
+from app.db.base import Base
+from app.api.deps.database import get_db
 from app.core.security import get_password_hash, create_access_token
 from app.db.models.user import User, UserRole
 
