@@ -259,6 +259,46 @@ def _job_quality_score(job: Dict[str, Any]) -> int:
     return score
 
 
+def _auto_enrich_new_leads(db, leads) -> int:
+    """Auto-enrich newly sourced leads if their company already has contacts cached.
+
+    For each new lead that has no contact info (first_name is None), check if the
+    company already has contacts in the DB. If so, link them via the junction table
+    and update the lead's denormalized contact fields. Zero API calls.
+
+    Returns count of leads auto-enriched.
+    """
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+    from app.services.pipelines.contact_enrichment import _reuse_existing_contacts, _update_lead_from_contacts
+
+    max_contacts = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    auto_enriched = 0
+    checked_companies = {}  # company_name -> has_contacts (bool)
+
+    for lead in leads:
+        # Skip leads that already have contact info (e.g. from Apollo job source)
+        if lead.first_name or not lead.client_name:
+            continue
+
+        # Check company contact cache (only query DB once per company)
+        if lead.client_name not in checked_companies:
+            has_contacts = db.query(ContactDetails).filter(
+                ContactDetails.client_name == lead.client_name
+            ).first() is not None
+            checked_companies[lead.client_name] = has_contacts
+
+        if not checked_companies[lead.client_name]:
+            continue
+
+        reused = _reuse_existing_contacts(db, lead, max_contacts)
+        if reused > 0:
+            _update_lead_from_contacts(db, lead)
+            auto_enriched += 1
+
+    return auto_enriched
+
+
 def run_lead_sourcing_pipeline(
     sources: List[str],
     triggered_by: str = "system"
@@ -353,6 +393,7 @@ def run_lead_sourcing_pipeline(
         logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {counters['skipped']} duplicates)")
 
         # Process unique jobs
+        newly_inserted_leads = []
         for job_data in unique_jobs:
             try:
                 # Create new lead
@@ -374,6 +415,7 @@ def run_lead_sourcing_pipeline(
                 )
                 db.add(lead)
                 counters["inserted"] += 1
+                newly_inserted_leads.append(lead)
 
                 # Upsert client_info with normalized name
                 upsert_client(db, job_data["client_name"])
@@ -383,6 +425,13 @@ def run_lead_sourcing_pipeline(
                 counters["errors"] += 1
 
         db.commit()
+
+        # Auto-enrich newly inserted leads from existing company contacts
+        auto_enriched = _auto_enrich_new_leads(db, newly_inserted_leads)
+        counters["auto_enriched"] = auto_enriched
+        if auto_enriched > 0:
+            db.commit()
+            logger.info(f"Auto-enriched {auto_enriched} new lead(s) from existing company contacts")
 
         # Export to XLSX
         export_leads_to_xlsx(db)
@@ -395,6 +444,7 @@ def run_lead_sourcing_pipeline(
             "updated": counters["updated"],
             "skipped": counters["skipped"],
             "errors": counters["errors"],
+            "auto_enriched": counters.get("auto_enriched", 0),
             "sources": counters["sources_used"],
             "per_source": counters["jobs_per_source"]
         })
