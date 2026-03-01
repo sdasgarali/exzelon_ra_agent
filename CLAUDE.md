@@ -140,3 +140,46 @@ cd backend && pytest -k test_name     # Run specific test by name
 2. For local dev: uses MySQL (`DB_TYPE=mysql`, `exzelon_ra_agent` database). Requires MySQL 8.x on localhost:3306
 3. To migrate from old `cold_email_ai_agent` DB: `python scripts/migrate_to_exzelon.py`
 4. Frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000/api/v1`)
+
+## Production Deployment (VPS)
+
+**Server**: 187.124.74.175 (Ubuntu 24.04) | **URL**: https://ra.partnerwithus.tech
+**App directory**: `/opt/exzelon-ra-agent/` | **Linux user**: `ra-user`
+
+### Deploy Steps
+
+```bash
+# 1. Pull latest code
+cd /opt/exzelon-ra-agent && git pull origin master
+
+# 2. Backend: install any new deps (if requirements.txt changed)
+cd backend && source venv/bin/activate && pip install -r requirements.txt
+
+# 3. Frontend: rebuild (NEXT_PUBLIC_API_URL must be set)
+cd /opt/exzelon-ra-agent/frontend && npm run build
+
+# 4. Restart services
+systemctl restart exzelon-api exzelon-web
+
+# 5. Verify
+systemctl status exzelon-api exzelon-web
+curl https://ra.partnerwithus.tech/health
+```
+
+### Critical: Frontend `.env.local`
+
+The frontend **requires** `/opt/exzelon-ra-agent/frontend/.env.local` with:
+```
+NEXT_PUBLIC_API_URL=https://ra.partnerwithus.tech/api/v1
+```
+Without this, `NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000/api/v1`, which works for server-side rendering but fails for browser-side API calls (the browser tries to reach localhost on the user's machine). This file is not in git — it must exist on the VPS.
+
+### Services
+
+| Service | Command | Notes |
+|---------|---------|-------|
+| `exzelon-api` | `systemctl restart exzelon-api` | 4 uvicorn workers on port 8000 |
+| `exzelon-web` | `systemctl restart exzelon-web` | Next.js on port 3000 |
+| nginx | `systemctl reload nginx` | Reverse proxy + SSL |
+| MySQL | `systemctl status mysql` | Port 3306, user `ra_user`, db `exzelon_ra_agent` |
+| Redis | `systemctl status redis` | Default port 6379 |
