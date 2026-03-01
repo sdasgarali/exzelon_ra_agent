@@ -14,8 +14,6 @@ from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_email import WarmupEmail, WarmupEmailStatus
 from app.db.models.settings import Settings
 from app.services.warmup.tracking import inject_tracking
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 
 
 def _get_setting(db: Session, key: str, default=None):
@@ -28,8 +26,8 @@ def _get_setting(db: Session, key: str, default=None):
     return default
 
 
-def get_peer_pairs(db: Session, mailbox: SenderMailbox, tenant_id: int = None) -> List[SenderMailbox]:
-    peers = tenant_query(db, SenderMailbox).filter(
+def get_peer_pairs(db: Session, mailbox: SenderMailbox) -> List[SenderMailbox]:
+    peers = db.query(SenderMailbox).filter(
         and_(
             SenderMailbox.mailbox_id != mailbox.mailbox_id,
             SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING]),
@@ -68,12 +66,9 @@ def send_warmup_email(sender_mailbox: SenderMailbox, receiver_email: str, subjec
         return {"success": False, "error": str(e)}
 
 
-def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id: int = None) -> Dict[str, Any]:
+def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]:
     from app.services.warmup.content_generator import generate_warmup_subject, generate_warmup_body, generate_ai_warmup_content
     from app.services.warmup.smart_scheduler import should_skip_weekend
-
-    if tenant_id is not None:
-        set_current_tenant_id(tenant_id)
 
     if should_skip_weekend(db):
         return {"skipped": True, "reason": "Weekend - skipping warmup"}
@@ -82,7 +77,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id: int = 
     if not enabled:
         return {"skipped": True, "reason": "Peer warmup disabled"}
 
-    query = tenant_query(db, SenderMailbox).filter(
+    query = db.query(SenderMailbox).filter(
         SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING]),
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
@@ -97,7 +92,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id: int = 
         if mb.emails_sent_today >= mb.daily_send_limit:
             continue
 
-        peers = get_peer_pairs(db, mb, tenant_id=tenant_id)
+        peers = get_peer_pairs(db, mb)
         for peer in peers:
             if mb.emails_sent_today >= mb.daily_send_limit:
                 break
@@ -137,7 +132,6 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id: int = 
                 tracking_id=tracking_id,
                 ai_generated=ai_generated,
                 ai_provider=ai_provider,
-                tenant_id=tenant_id,
             )
             db.add(email_record)
 
@@ -161,7 +155,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id: int = 
     return results
 
 
-def run_auto_reply_cycle(db: Session, tenant_id: int = None) -> Dict[str, Any]:
+def run_auto_reply_cycle(db: Session) -> Dict[str, Any]:
     """Auto-reply to received warmup emails to boost reply rates and ISP reputation.
 
     Logic:
@@ -173,9 +167,6 @@ def run_auto_reply_cycle(db: Session, tenant_id: int = None) -> Dict[str, Any]:
     """
     from app.services.warmup.content_generator import generate_warmup_reply
     from app.services.warmup.smart_scheduler import should_skip_weekend
-
-    if tenant_id is not None:
-        set_current_tenant_id(tenant_id)
 
     if should_skip_weekend(db):
         return {"skipped": True, "reason": "Weekend - skipping auto-replies"}
@@ -192,7 +183,7 @@ def run_auto_reply_cycle(db: Session, tenant_id: int = None) -> Dict[str, Any]:
     delay_cutoff = now - timedelta(minutes=min_delay_minutes)
 
     # Find unreplied warmup emails that are old enough
-    unreplied = tenant_query(db, WarmupEmail).filter(
+    unreplied = db.query(WarmupEmail).filter(
         WarmupEmail.status == WarmupEmailStatus.SENT,
         WarmupEmail.replied_at.is_(None),
         WarmupEmail.receiver_mailbox_id.isnot(None),
@@ -274,7 +265,6 @@ def run_auto_reply_cycle(db: Session, tenant_id: int = None) -> Dict[str, Any]:
                 tracking_id=str(uuid.uuid4()),
                 ai_generated=reply_content.get("ai_generated", False),
                 ai_provider=reply_content.get("ai_provider") if reply_content.get("ai_generated") else None,
-                tenant_id=tenant_id,
             )
             db.add(reply_record)
 

@@ -66,8 +66,8 @@ class TestContactDuplicates:
 
     def test_find_duplicates(self, client, db_session, auth_headers):
         # Create two contacts with same email
-        c1 = ContactDetails(first_name="John", last_name="Doe", email="dupe@test.com", client_name="Corp A", tenant_id=1)
-        c2 = ContactDetails(first_name="Johnny", last_name="Doe", email="dupe@test.com", client_name="Corp B", tenant_id=1)
+        c1 = ContactDetails(first_name="John", last_name="Doe", email="dupe@test.com", client_name="Corp A")
+        c2 = ContactDetails(first_name="Johnny", last_name="Doe", email="dupe@test.com", client_name="Corp B")
         db_session.add_all([c1, c2])
         db_session.commit()
 
@@ -79,8 +79,8 @@ class TestContactDuplicates:
         assert group["count"] == 2
 
     def test_no_duplicates(self, client, db_session, auth_headers):
-        c1 = ContactDetails(first_name="A", last_name="B", email="unique1@test.com", client_name="Corp X", tenant_id=1)
-        c2 = ContactDetails(first_name="C", last_name="D", email="unique2@test.com", client_name="Corp Y", tenant_id=1)
+        c1 = ContactDetails(first_name="A", last_name="B", email="unique1@test.com", client_name="Corp X")
+        c2 = ContactDetails(first_name="C", last_name="D", email="unique2@test.com", client_name="Corp Y")
         db_session.add_all([c1, c2])
         db_session.commit()
 
@@ -96,13 +96,13 @@ class TestContactMerge:
     """Tests for POST /contacts/merge."""
 
     def test_merge_contacts(self, client, db_session, auth_headers, sample_lead):
-        primary = ContactDetails(first_name="Primary", last_name="User", email="primary@test.com", client_name="Merge Corp", tenant_id=1)
-        secondary = ContactDetails(first_name="Secondary", last_name="User", email="secondary@test.com", client_name="Merge Corp", tenant_id=1)
+        primary = ContactDetails(first_name="Primary", last_name="User", email="primary@test.com", client_name="Merge Corp")
+        secondary = ContactDetails(first_name="Secondary", last_name="User", email="secondary@test.com", client_name="Merge Corp")
         db_session.add_all([primary, secondary])
         db_session.flush()
 
         # Link secondary to lead
-        assoc = LeadContactAssociation(lead_id=sample_lead.lead_id, contact_id=secondary.contact_id, tenant_id=1)
+        assoc = LeadContactAssociation(lead_id=sample_lead.lead_id, contact_id=secondary.contact_id)
         db_session.add(assoc)
         db_session.commit()
 
@@ -136,7 +136,7 @@ class TestJobCancel:
     """Tests for POST /pipelines/jobs/{run_id}/cancel."""
 
     def test_cancel_running_job(self, client, db_session, auth_headers):
-        run = JobRun(pipeline_name="test", status=JobStatus.RUNNING, triggered_by="admin@test.com", tenant_id=1)
+        run = JobRun(pipeline_name="test", status=JobStatus.RUNNING, triggered_by="admin@test.com")
         db_session.add(run)
         db_session.commit()
         db_session.refresh(run)

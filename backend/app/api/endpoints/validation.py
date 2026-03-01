@@ -8,7 +8,6 @@ from app.api.deps import get_db, get_current_active_user
 from app.db.models.user import User
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.contact import ContactDetails
-from app.db.query_helpers import tenant_query
 from app.schemas.validation import ValidationResult, ValidationBulkRequest
 
 router = APIRouter(prefix="/validation", tags=["Email Validation"])
@@ -24,7 +23,7 @@ async def list_validation_results(
     current_user: User = Depends(get_current_active_user)
 ):
     """List email validation results."""
-    query = tenant_query(db, EmailValidationResult)
+    query = db.query(EmailValidationResult)
 
     if status_filter:
         query = query.filter(EmailValidationResult.status == status_filter)
@@ -42,7 +41,7 @@ async def get_validation_result(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get validation result for a specific email."""
-    result = tenant_query(db, EmailValidationResult).filter(
+    result = db.query(EmailValidationResult).filter(
         EmailValidationResult.email == email.lower()
     ).order_by(EmailValidationResult.validated_at.desc()).first()
 
@@ -87,7 +86,7 @@ async def validate_pending_contacts(
 ):
     """Validate all contacts without validation status."""
     # Get unvalidated contact emails
-    contacts = tenant_query(db, ContactDetails).filter(
+    contacts = db.query(ContactDetails).filter(
         ContactDetails.validation_status.is_(None)
     ).all()
 
@@ -117,7 +116,7 @@ async def get_validation_stats(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get validation statistics summary."""
-    base = tenant_query(db, EmailValidationResult)
+    base = db.query(EmailValidationResult)
     total = base.count()
 
     by_status = base.with_entities(

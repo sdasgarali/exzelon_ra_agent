@@ -22,7 +22,6 @@ class WarmupEmail(Base):
     __tablename__ = 'warmup_emails'
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     sender_mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=False, index=True)
     receiver_mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=True, index=True)
     subject = Column(String(500), nullable=True)

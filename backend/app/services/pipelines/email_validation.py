@@ -10,8 +10,6 @@ from app.db.models.contact import ContactDetails
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 from app.services.adapters.email_validation.mock import MockEmailValidationAdapter
 from app.services.adapters.email_validation.neverbounce import NeverBounceAdapter
 from app.services.adapters.email_validation.zerobounce import ZeroBounceAdapter
@@ -48,7 +46,6 @@ def run_email_validation_pipeline(
     emails: Optional[List[str]] = None,
     provider: Optional[str] = None,
     triggered_by: str = "system",
-    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Run the email validation pipeline.
@@ -64,9 +61,7 @@ def run_email_validation_pipeline(
         emails: Optional list of specific emails to validate
         provider: Email validation provider name
         triggered_by: Who triggered the pipeline
-        tenant_id: Tenant ID for multi-tenant scoping
     """
-    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"validated": 0, "valid": 0, "invalid": 0, "catch_all": 0, "unknown": 0, "errors": 0}
 
@@ -75,7 +70,6 @@ def run_email_validation_pipeline(
         pipeline_name="email_validation",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
-        tenant_id=tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -88,7 +82,7 @@ def run_email_validation_pipeline(
         # Get emails to validate
         if emails is None:
             # Get unvalidated contact emails
-            contacts = tenant_query(db, ContactDetails).filter(
+            contacts = db.query(ContactDetails).filter(
                 ContactDetails.validation_status.is_(None),
                 ContactDetails.is_archived == False
             ).limit(500).all()
@@ -111,7 +105,7 @@ def run_email_validation_pipeline(
         for email in clean_emails:
             try:
                 # Check if already validated
-                existing = tenant_query(db, EmailValidationResult).filter(
+                existing = db.query(EmailValidationResult).filter(
                     EmailValidationResult.email == email
                 ).first()
 
@@ -131,7 +125,6 @@ def run_email_validation_pipeline(
                     status=result["status"],
                     sub_status=str(result.get("sub_status")),
                     raw_response_json=json.dumps(result.get("raw_response", {})),
-                    tenant_id=tenant_id
                 )
                 db.add(validation)
 
@@ -185,7 +178,7 @@ def run_email_validation_pipeline(
 
 def update_contact_validation_status(db, email: str, status: ValidationStatus):
     """Update contact validation status."""
-    contacts = tenant_query(db, ContactDetails).filter(
+    contacts = db.query(ContactDetails).filter(
         ContactDetails.email == email
     ).all()
 
@@ -195,13 +188,13 @@ def update_contact_validation_status(db, email: str, status: ValidationStatus):
 
 def update_lead_validation_status(db):
     """Update leads that have validated contact emails."""
-    leads = tenant_query(db, LeadDetails).filter(
+    leads = db.query(LeadDetails).filter(
         LeadDetails.lead_status == LeadStatus.ENRICHED,
         LeadDetails.contact_email.isnot(None)
     ).all()
 
     for lead in leads:
-        validation = tenant_query(db, EmailValidationResult).filter(
+        validation = db.query(EmailValidationResult).filter(
             EmailValidationResult.email == lead.contact_email.lower()
         ).first()
 

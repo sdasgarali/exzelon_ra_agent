@@ -5,26 +5,25 @@ from sqlalchemy import func
 
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
+from app.db.query_helpers import active_query
 
 
 def get_contact_stats(db: Session) -> dict:
     """Get contact statistics summary."""
-    total = tenant_query(db, ContactDetails).with_entities(func.count(ContactDetails.contact_id)).scalar()
+    total = db.query(ContactDetails).with_entities(func.count(ContactDetails.contact_id)).scalar()
 
-    by_priority = tenant_query(db, ContactDetails).with_entities(
+    by_priority = db.query(ContactDetails).with_entities(
         ContactDetails.priority_level,
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.priority_level).all()
 
-    by_validation = tenant_query(db, ContactDetails).with_entities(
+    by_validation = db.query(ContactDetails).with_entities(
         ContactDetails.validation_status,
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
-    with_lead = tenant_query(db, LeadContactAssociation).with_entities(func.count(func.distinct(LeadContactAssociation.contact_id))).scalar() or 0
-    legacy_linked = tenant_query(db, ContactDetails).filter(
+    with_lead = db.query(LeadContactAssociation).with_entities(func.count(func.distinct(LeadContactAssociation.contact_id))).scalar() or 0
+    legacy_linked = db.query(ContactDetails).filter(
         ContactDetails.lead_id.isnot(None)
     ).with_entities(func.count(ContactDetails.contact_id)).scalar() or 0
     linked = max(with_lead, legacy_linked)
@@ -40,7 +39,7 @@ def get_contact_stats(db: Session) -> dict:
 
 def find_duplicate_contacts(db: Session) -> list:
     """Find contacts with duplicate email addresses."""
-    dupes = tenant_query(db, ContactDetails, show_archived=False).with_entities(
+    dupes = active_query(db, ContactDetails, show_archived=False).with_entities(
         ContactDetails.email,
         func.count(ContactDetails.contact_id).label("count")
     ).filter(
@@ -51,7 +50,7 @@ def find_duplicate_contacts(db: Session) -> list:
 
     results = []
     for email, count in dupes:
-        contacts = tenant_query(db, ContactDetails, show_archived=False).filter(
+        contacts = active_query(db, ContactDetails, show_archived=False).filter(
             ContactDetails.email == email,
         ).order_by(ContactDetails.created_at).all()
         results.append({"email": email, "count": count, "contacts": contacts})
@@ -61,14 +60,14 @@ def find_duplicate_contacts(db: Session) -> list:
 
 def bulk_archive_contacts(db: Session, contact_ids: List[int]) -> int:
     """Archive contacts by IDs. Returns count."""
-    return tenant_query(db, ContactDetails).filter(
+    return db.query(ContactDetails).filter(
         ContactDetails.contact_id.in_(contact_ids)
     ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
 
 def merge_contacts(db: Session, primary_id: int, merge_ids: List[int]) -> dict:
     """Merge duplicate contacts. Keep primary, archive others, transfer associations."""
-    primary = tenant_query(db, ContactDetails).filter(ContactDetails.contact_id == primary_id).first()
+    primary = db.query(ContactDetails).filter(ContactDetails.contact_id == primary_id).first()
     if not primary:
         return {"error": "Primary contact not found"}
 
@@ -76,15 +75,15 @@ def merge_contacts(db: Session, primary_id: int, merge_ids: List[int]) -> dict:
     associations_transferred = 0
 
     for cid in merge_ids:
-        contact = tenant_query(db, ContactDetails).filter(ContactDetails.contact_id == cid).first()
+        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == cid).first()
         if not contact:
             continue
 
-        assocs = tenant_query(db, LeadContactAssociation).filter(
+        assocs = db.query(LeadContactAssociation).filter(
             LeadContactAssociation.contact_id == cid
         ).all()
         for assoc in assocs:
-            existing = tenant_query(db, LeadContactAssociation).filter(
+            existing = db.query(LeadContactAssociation).filter(
                 LeadContactAssociation.lead_id == assoc.lead_id,
                 LeadContactAssociation.contact_id == primary_id
             ).first()

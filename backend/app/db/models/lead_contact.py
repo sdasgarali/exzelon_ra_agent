@@ -13,7 +13,6 @@ class LeadContactAssociation(Base):
     __tablename__ = "lead_contact_associations"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='CASCADE'), nullable=False)
     contact_id = Column(Integer, ForeignKey('contact_details.contact_id', ondelete='CASCADE'), nullable=False)
 

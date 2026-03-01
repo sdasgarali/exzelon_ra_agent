@@ -20,7 +20,6 @@ class TestLeadsEndpoints:
             salary_max=70000,
             source="linkedin",
             lead_status=LeadStatus.NEW,
-            tenant_id=1,
         )
         db_session.add(lead)
         db_session.commit()
@@ -46,7 +45,6 @@ class TestLeadsEndpoints:
                 state="CA",
                 source="linkedin",
                 lead_status=LeadStatus.NEW,
-                tenant_id=1,
             )
             db_session.add(lead)
         db_session.commit()
@@ -141,7 +139,6 @@ class TestLeadsEndpoints:
                 client_name=f"Company {lead_status.value}",
                 job_title="Position",
                 lead_status=lead_status,
-                tenant_id=1,
             )
             db_session.add(lead)
         db_session.commit()

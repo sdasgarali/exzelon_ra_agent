@@ -62,8 +62,8 @@ docker-compose up api    # Backend only with dependencies
 - **Entry point**: `main.py` -- FastAPI app with lifespan handler that creates DB tables, seeds warmup profiles, starts APScheduler
 - **Config**: `core/config.py` -- Pydantic Settings loaded from `.env`; controls DB type (sqlite/mysql), provider selection, business rules
 - **API routes**: `api/endpoints/` -- all endpoints mounted under `/api/v1` via `api/router.py`
-- **Auth**: JWT tokens (7-day expiry), Argon2 password hashing, RBAC with 3 roles: admin, operator, viewer. Dependencies in `api/deps/auth.py`
-- **Database**: SQLAlchemy 2.0 ORM, models in `db/models/`, base class in `db/base.py`. Auto-creates tables on startup. MySQL (`cold_email_ai_agent` on localhost:3306) is the active database. SQLite backup at `./data/ra_agent.db.backup`
+- **Auth**: JWT tokens (7-day expiry), Argon2 password hashing, RBAC with 3 roles: admin, operator, viewer. Dependencies in `api/deps/auth.py`. Single-tenant deployment (no multi-tenancy).
+- **Database**: SQLAlchemy 2.0 ORM, models in `db/models/`, base class in `db/base.py`. Auto-creates tables on startup. MySQL (`exzelon_ra_agent` on localhost:3306) is the active database. SQLite used for testing.
 
 ### Adapter Pattern (`services/adapters/`)
 
@@ -137,6 +137,6 @@ cd backend && pytest -k test_name     # Run specific test by name
 ## Environment Setup
 
 1. Copy `.env.example` to `.env`
-2. For local dev: uses MySQL (`DB_TYPE=mysql`, `cold_email_ai_agent` database). Requires MySQL 8.x on localhost:3306
-3. SQLite backup available at `backend/data/ra_agent.db.backup` (set `DB_TYPE=sqlite` to use)
+2. For local dev: uses MySQL (`DB_TYPE=mysql`, `exzelon_ra_agent` database). Requires MySQL 8.x on localhost:3306
+3. To migrate from old `cold_email_ai_agent` DB: `python scripts/migrate_to_exzelon.py`
 4. Frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000/api/v1`)

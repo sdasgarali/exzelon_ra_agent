@@ -132,14 +132,14 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
 export default function SettingsPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const isSuperAdmin = user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin'
 
-  // Only Super Admin can access settings
+  // Only admin can access settings
   useEffect(() => {
-    if (user && !isSuperAdmin) {
+    if (user && !isAdmin) {
       router.replace('/dashboard')
     }
-  }, [user, isSuperAdmin, router])
+  }, [user, isAdmin, router])
 
   const [settings, setSettings] = useState<Setting[]>([])
   const [loading, setLoading] = useState(true)

@@ -19,7 +19,6 @@ class TestContactsEndpoints:
             phone="+1-555-123-4567",
             source="mock",
             priority_level=PriorityLevel.P3_HR_MANAGER,
-            tenant_id=1,
         )
         db_session.add(contact)
         db_session.commit()
@@ -122,7 +121,6 @@ class TestContactsEndpoints:
             last_name="Contact",
             email="valid@example.com",
             validation_status="valid",
-            tenant_id=1,
         )
         db_session.add(contact)
         db_session.commit()

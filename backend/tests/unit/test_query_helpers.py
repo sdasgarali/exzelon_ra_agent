@@ -12,8 +12,8 @@ pytestmark = pytest.mark.unit
 
 class TestActiveQuery:
     def test_active_only(self, db_session):
-        lead1 = LeadDetails(client_name="Active", job_title="Dev", lead_status=LeadStatus.NEW, posting_date=date.today(), tenant_id=1)
-        lead2 = LeadDetails(client_name="Archived", job_title="QA", lead_status=LeadStatus.NEW, posting_date=date.today(), is_archived=True, tenant_id=1)
+        lead1 = LeadDetails(client_name="Active", job_title="Dev", lead_status=LeadStatus.NEW, posting_date=date.today())
+        lead2 = LeadDetails(client_name="Archived", job_title="QA", lead_status=LeadStatus.NEW, posting_date=date.today(), is_archived=True)
         db_session.add_all([lead1, lead2])
         db_session.commit()
 
@@ -24,8 +24,8 @@ class TestActiveQuery:
         assert "Archived" not in names
 
     def test_archived_only(self, db_session):
-        lead1 = LeadDetails(client_name="Active2", job_title="Dev", lead_status=LeadStatus.NEW, posting_date=date.today(), tenant_id=1)
-        lead2 = LeadDetails(client_name="Archived2", job_title="QA", lead_status=LeadStatus.NEW, posting_date=date.today(), is_archived=True, tenant_id=1)
+        lead1 = LeadDetails(client_name="Active2", job_title="Dev", lead_status=LeadStatus.NEW, posting_date=date.today())
+        lead2 = LeadDetails(client_name="Archived2", job_title="QA", lead_status=LeadStatus.NEW, posting_date=date.today(), is_archived=True)
         db_session.add_all([lead1, lead2])
         db_session.commit()
 
@@ -39,7 +39,7 @@ class TestActiveQuery:
 class TestPaginate:
     def test_paginate(self, db_session):
         for i in range(25):
-            db_session.add(LeadDetails(client_name=f"Co{i}", job_title="J", lead_status=LeadStatus.NEW, posting_date=date.today(), tenant_id=1))
+            db_session.add(LeadDetails(client_name=f"Co{i}", job_title="J", lead_status=LeadStatus.NEW, posting_date=date.today()))
         db_session.commit()
 
         q = db_session.query(LeadDetails)
@@ -53,16 +53,16 @@ class TestPaginate:
 class TestContactUtils:
     def test_get_contact_ids_for_lead(self, db_session):
         from app.db.contact_utils import get_contact_ids_for_lead
-        lead = LeadDetails(client_name="CU", job_title="T", lead_status=LeadStatus.NEW, posting_date=date.today(), tenant_id=1)
+        lead = LeadDetails(client_name="CU", job_title="T", lead_status=LeadStatus.NEW, posting_date=date.today())
         db_session.add(lead)
         db_session.flush()
 
-        c1 = ContactDetails(first_name="A", last_name="B", email="cu1@t.com", client_name="CU", lead_id=lead.lead_id, tenant_id=1)
-        c2 = ContactDetails(first_name="C", last_name="D", email="cu2@t.com", client_name="CU", tenant_id=1)
+        c1 = ContactDetails(first_name="A", last_name="B", email="cu1@t.com", client_name="CU", lead_id=lead.lead_id)
+        c2 = ContactDetails(first_name="C", last_name="D", email="cu2@t.com", client_name="CU")
         db_session.add_all([c1, c2])
         db_session.flush()
 
-        assoc = LeadContactAssociation(lead_id=lead.lead_id, contact_id=c2.contact_id, tenant_id=1)
+        assoc = LeadContactAssociation(lead_id=lead.lead_id, contact_id=c2.contact_id)
         db_session.add(assoc)
         db_session.commit()
 
@@ -72,11 +72,11 @@ class TestContactUtils:
 
     def test_get_contacts_for_lead(self, db_session):
         from app.db.contact_utils import get_contacts_for_lead
-        lead = LeadDetails(client_name="CU2", job_title="T2", lead_status=LeadStatus.NEW, posting_date=date.today(), tenant_id=1)
+        lead = LeadDetails(client_name="CU2", job_title="T2", lead_status=LeadStatus.NEW, posting_date=date.today())
         db_session.add(lead)
         db_session.flush()
 
-        c = ContactDetails(first_name="E", last_name="F", email="cu3@t.com", client_name="CU2", lead_id=lead.lead_id, tenant_id=1)
+        c = ContactDetails(first_name="E", last_name="F", email="cu3@t.com", client_name="CU2", lead_id=lead.lead_id)
         db_session.add(c)
         db_session.commit()
 

@@ -17,7 +17,6 @@ from app.main import app
 from app.db.base import Base
 from app.api.deps.database import get_db
 from app.core.security import get_password_hash, create_access_token
-from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.email_template import EmailTemplate, TemplateStatus
@@ -45,29 +44,12 @@ def override_get_db():
         db.close()
 
 
-def _seed_test_tenant(db):
-    """Seed the default test tenant (tenant_id=1)."""
-    existing = db.query(Tenant).filter(Tenant.tenant_id == 1).first()
-    if not existing:
-        db.add(Tenant(
-            tenant_id=1,
-            name="Test Tenant",
-            slug="test-tenant",
-            is_active=True,
-            max_users=10,
-            max_mailboxes=20,
-            plan="standard",
-        ))
-        db.commit()
-
-
 @pytest.fixture(scope="function")
 def db_session():
     """Create a fresh database session for each test."""
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
-        _seed_test_tenant(db)
         yield db
     finally:
         db.close()
@@ -84,32 +66,14 @@ def client(db_session):
 
 
 @pytest.fixture
-def super_admin_user(db_session):
-    """Create a Global Super Admin user for testing (tenant_id=1)."""
-    user = User(
-        email="superadmin@test.com",
-        password_hash=get_password_hash("testpassword"),
-        full_name="Super Admin User",
-        role=UserRole.SUPER_ADMIN,
-        is_active=True,
-        tenant_id=1,
-    )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-    return user
-
-
-@pytest.fixture
 def admin_user(db_session):
-    """Create an admin user for testing (tenant_id=1)."""
+    """Create an admin user for testing."""
     user = User(
         email="admin@test.com",
         password_hash=get_password_hash("testpassword"),
         full_name="Admin User",
         role=UserRole.ADMIN,
         is_active=True,
-        tenant_id=1,
     )
     db_session.add(user)
     db_session.commit()
@@ -119,14 +83,13 @@ def admin_user(db_session):
 
 @pytest.fixture
 def operator_user(db_session):
-    """Create an operator user for testing (tenant_id=1)."""
+    """Create an operator user for testing."""
     user = User(
         email="operator@test.com",
         password_hash=get_password_hash("testpassword"),
         full_name="Operator User",
         role=UserRole.OPERATOR,
         is_active=True,
-        tenant_id=1,
     )
     db_session.add(user)
     db_session.commit()
@@ -136,14 +99,13 @@ def operator_user(db_session):
 
 @pytest.fixture
 def viewer_user(db_session):
-    """Create a viewer user for testing (tenant_id=1)."""
+    """Create a viewer user for testing."""
     user = User(
         email="viewer@test.com",
         password_hash=get_password_hash("testpassword"),
         full_name="Viewer User",
         role=UserRole.VIEWER,
         is_active=True,
-        tenant_id=1,
     )
     db_session.add(user)
     db_session.commit()
@@ -152,27 +114,10 @@ def viewer_user(db_session):
 
 
 @pytest.fixture
-def super_admin_token(super_admin_user):
-    """Create a Global Super Admin JWT token."""
-    return create_access_token(data={
-        "sub": super_admin_user.email,
-        "tenant_id": super_admin_user.tenant_id,
-        "role": super_admin_user.role.value,
-    })
-
-
-@pytest.fixture
-def sa_headers(super_admin_token):
-    """Create authorization headers with super admin token."""
-    return {"Authorization": f"Bearer {super_admin_token}"}
-
-
-@pytest.fixture
 def admin_token(admin_user):
     """Create an admin JWT token."""
     return create_access_token(data={
         "sub": admin_user.email,
-        "tenant_id": admin_user.tenant_id,
         "role": admin_user.role.value,
     })
 
@@ -182,7 +127,6 @@ def operator_token(operator_user):
     """Create an operator JWT token."""
     return create_access_token(data={
         "sub": operator_user.email,
-        "tenant_id": operator_user.tenant_id,
         "role": operator_user.role.value,
     })
 
@@ -192,7 +136,6 @@ def viewer_token(viewer_user):
     """Create a viewer JWT token."""
     return create_access_token(data={
         "sub": viewer_user.email,
-        "tenant_id": viewer_user.tenant_id,
         "role": viewer_user.role.value,
     })
 
@@ -215,6 +158,25 @@ def viewer_headers(viewer_token):
     return {"Authorization": f"Bearer {viewer_token}"}
 
 
+# Backward compat: some tests use sa_headers expecting admin access
+@pytest.fixture
+def sa_headers(auth_headers):
+    """Alias for auth_headers (admin-level access)."""
+    return auth_headers
+
+
+@pytest.fixture
+def super_admin_user(admin_user):
+    """Alias for admin_user (no super_admin role in single-tenant)."""
+    return admin_user
+
+
+@pytest.fixture
+def super_admin_token(admin_token):
+    """Alias for admin_token (no super_admin role in single-tenant)."""
+    return admin_token
+
+
 # ---------------------------------------------------------------------------
 # Shared domain fixtures
 # ---------------------------------------------------------------------------
@@ -232,7 +194,6 @@ def sample_lead(db_session):
         salary_max=90000,
         source="linkedin",
         lead_status=LeadStatus.NEW,
-        tenant_id=1,
     )
     db_session.add(lead)
     db_session.commit()
@@ -250,7 +211,6 @@ def sample_template(db_session):
         body_text="Hi {{contact_first_name}},",
         status=TemplateStatus.INACTIVE,
         is_default=False,
-        tenant_id=1,
     )
     db_session.add(template)
     db_session.commit()
@@ -275,7 +235,6 @@ def sample_mailbox(db_session):
         reply_count=10,
         complaint_count=0,
         warmup_days_completed=15,
-        tenant_id=1,
     )
     db_session.add(mailbox)
     db_session.commit()
@@ -292,7 +251,6 @@ def sample_warmup_profile(db_session):
         is_default=False,
         is_system=False,
         config_json='{"phase_1_days": 7, "phase_1_min_emails": 2, "phase_1_max_emails": 5}',
-        tenant_id=1,
     )
     db_session.add(profile)
     db_session.commit()
@@ -308,7 +266,6 @@ def sample_job_run(db_session):
         status=JobStatus.COMPLETED,
         triggered_by="admin@test.com",
         counters_json='{"inserted": 10, "updated": 2, "skipped": 1, "errors": 0}',
-        tenant_id=1,
     )
     db_session.add(run)
     db_session.commit()

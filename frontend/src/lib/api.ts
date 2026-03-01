@@ -17,15 +17,11 @@ function getRequestKey(config: any): string {
   return `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`
 }
 
-// Add auth token + tenant context to requests + deduplicate GET requests
+// Add auth token to requests + deduplicate GET requests
 api.interceptors.request.use((config) => {
-  const { token, activeTenantId, user } = useAuthStore.getState()
+  const { token } = useAuthStore.getState()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
-  }
-  // Global Super Admin (SA + master tenant): send X-Tenant-Id header when switching tenant context
-  if (user?.role === 'super_admin' && user?.tenant_id === 1 && activeTenantId != null) {
-    config.headers['X-Tenant-Id'] = String(activeTenantId)
   }
 
   // Only deduplicate GET requests
@@ -497,34 +493,6 @@ export const templatesApi = {
   },
 }
 
-// Tenants API (Super Admin)
-export const tenantsApi = {
-  list: async (params?: Record<string, any>) => {
-    const response = await api.get('/tenants', { params })
-    return response.data
-  },
-  get: async (id: number) => {
-    const response = await api.get(`/tenants/${id}`)
-    return response.data
-  },
-  create: async (data: { name: string; slug: string; plan?: string; max_users?: number; max_mailboxes?: number }) => {
-    const response = await api.post('/tenants', data)
-    return response.data
-  },
-  update: async (id: number, data: Record<string, any>) => {
-    const response = await api.put(`/tenants/${id}`, data)
-    return response.data
-  },
-  delete: async (id: number) => {
-    const response = await api.delete(`/tenants/${id}`)
-    return response.data
-  },
-  switch: async (id: number) => {
-    const response = await api.post(`/tenants/${id}/switch`)
-    return response.data
-  },
-}
-
 // Users API (Admin+)
 export const usersApi = {
   list: async (params?: Record<string, any>) => {
@@ -535,7 +503,7 @@ export const usersApi = {
     const response = await api.get(`/users/${id}`)
     return response.data
   },
-  create: async (data: { email: string; password: string; full_name?: string; role?: string; tenant_id?: number; is_active?: boolean }) => {
+  create: async (data: { email: string; password: string; full_name?: string; role?: string; is_active?: boolean }) => {
     const response = await api.post('/users', data)
     return response.data
   },

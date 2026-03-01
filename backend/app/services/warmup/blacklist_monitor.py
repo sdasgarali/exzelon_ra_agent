@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.blacklist_check_result import BlacklistCheckResult
 from app.db.models.settings import Settings
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 
 
 DEFAULT_PROVIDERS = [
@@ -51,11 +49,8 @@ def check_ip_blacklist(ip: str, provider: str) -> Dict[str, Any]:
         return {"provider": provider, "listed": False, "details": "Not listed"}
 
 
-def run_blacklist_check(mailbox_id: int, db: Session, tenant_id: int = None) -> Dict[str, Any]:
-    if tenant_id is not None:
-        set_current_tenant_id(tenant_id)
-
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+def run_blacklist_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
 
@@ -86,7 +81,6 @@ def run_blacklist_check(mailbox_id: int, db: Session, tenant_id: int = None) -> 
         total_checked=total_checked,
         total_listed=total_listed,
         is_clean=is_clean,
-        tenant_id=tenant_id,
     )
     db.add(bl_result)
 

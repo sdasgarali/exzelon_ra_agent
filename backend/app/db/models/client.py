@@ -1,6 +1,6 @@
 """Client info model for company lifecycle tracking."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Enum
 from app.db.base import Base
 
 
@@ -24,7 +24,6 @@ class ClientInfo(Base):
     __tablename__ = "client_info"
 
     client_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     client_name = Column(String(255), unique=True, nullable=False, index=True)
     status = Column(Enum(ClientStatus, values_callable=lambda x: [e.value for e in x]), default=ClientStatus.ACTIVE, nullable=False)
     start_date = Column(Date, nullable=True)

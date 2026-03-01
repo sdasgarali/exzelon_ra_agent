@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.dns_check_result import DNSCheckResult
 from app.db.models.settings import Settings
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 
 
 def _get_setting(db: Session, key: str, default=None):
@@ -88,11 +86,8 @@ def calculate_dns_score(spf_valid: bool, dkim_valid: bool, dmarc_valid: bool) ->
     return score
 
 
-def run_dns_health_check(mailbox_id: int, db: Session, tenant_id: int = None) -> Dict[str, Any]:
-    if tenant_id is not None:
-        set_current_tenant_id(tenant_id)
-
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+def run_dns_health_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
 
@@ -118,7 +113,6 @@ def run_dns_health_check(mailbox_id: int, db: Session, tenant_id: int = None) ->
         dmarc_policy=dmarc.get("policy"),
         mx_records_json=json.dumps(mx.get("records", [])),
         overall_score=score,
-        tenant_id=tenant_id,
     )
     db.add(result)
     mailbox.dns_score = score

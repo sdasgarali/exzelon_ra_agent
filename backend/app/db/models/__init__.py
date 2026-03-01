@@ -1,6 +1,4 @@
 """Database models package."""
-from app.db.models.tenant import Tenant
-from app.db.models.permission import Permission, RolePermission
 from app.db.models.user import User
 from app.db.models.lead import LeadDetails
 from app.db.models.client import ClientInfo
@@ -21,9 +19,6 @@ from app.db.models.blacklist_check_result import BlacklistCheckResult
 from app.db.models.email_template import EmailTemplate, TemplateStatus
 
 __all__ = [
-    "Tenant",
-    "Permission",
-    "RolePermission",
     "User",
     "LeadDetails",
     "ClientInfo",

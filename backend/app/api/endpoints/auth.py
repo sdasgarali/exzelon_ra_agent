@@ -43,11 +43,10 @@ async def login(
     user.last_login_at = datetime.utcnow()
     db.commit()
 
-    # Create access token (include tenant_id + role for multi-tenant context)
+    # Create access token
     access_token = create_access_token(
         data={
             "sub": user.email,
-            "tenant_id": user.tenant_id,
             "role": user.role.value if user.role else None,
         },
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

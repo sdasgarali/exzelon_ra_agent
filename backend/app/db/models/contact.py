@@ -30,8 +30,6 @@ class ContactDetails(Base):
     __tablename__ = "contact_details"
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
-
     # Direct link to the lead this contact was discovered for
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='CASCADE'), nullable=True, index=True)
 

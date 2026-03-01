@@ -117,7 +117,7 @@ def _seed_default_email_template():
             '  \n'
             '  <p>I noticed {{company_name}} is hiring for the <strong>{{job_title}}</strong> position in <strong>{{job_location}}</strong>. We specialize in connecting companies with top-tier talent and would love to help you find the perfect candidate.</p>\n'
             '  \n'
-            '  <p>We offer a <strong>free candidate preview</strong> &#8212; no commitment required. Just let us know your requirements, and we’ll present pre-screened profiles that match your needs.</p>\n'
+            '  <p>We offer a <strong>free candidate preview</strong> &#8212; no commitment required. Just let us know your requirements, and we\'ll present pre-screened profiles that match your needs.</p>\n'
             '  \n'
             '  <p><strong>Why Exzelon?</strong></p>\n'
             '  <ul style=\"padding-left: 20px;\">\n'
@@ -151,7 +151,7 @@ def _seed_default_email_template():
             "\n"
             "I noticed {{company_name}} is hiring for the {{job_title}} position in {{job_location}}. We specialize in connecting companies with top-tier talent and would love to help you find the perfect candidate.\n"
             "\n"
-            "We offer a free candidate preview -- no commitment required. Just let us know your requirements, and we’ll present pre-screened profiles that match your needs.\n"
+            "We offer a free candidate preview -- no commitment required. Just let us know your requirements, and we'll present pre-screened profiles that match your needs.\n"
             "\n"
             "Why Exzelon?\n"
             "- Pre-vetted, interview-ready candidates\n"
@@ -201,8 +201,7 @@ async def lifespan(app: FastAPI):
         required_tables = {
             "users", "lead_details", "contact_details", "lead_contact_associations",
             "client_info", "sender_mailboxes", "outreach_events", "email_templates",
-            "warmup_profiles", "job_runs", "audit_logs", "tenants", "permissions",
-            "role_permissions"
+            "warmup_profiles", "job_runs", "audit_logs"
         }
         missing = required_tables - existing_tables
         if missing:
@@ -212,53 +211,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Schema validation check: {e}")
 
-    # Migration: add tenant_id column to all data tables if missing
-    try:
-        from sqlalchemy import text as sa_text_tenant, inspect as sa_inspect_tenant
-        with engine.connect() as conn:
-            inspector_t = sa_inspect_tenant(engine)
-            # Tables that need tenant_id added (excludes tenants itself)
-            tenant_tables = [
-                "users", "lead_details", "contact_details", "lead_contact_associations",
-                "client_info", "sender_mailboxes", "outreach_events", "email_templates",
-                "warmup_profiles", "job_runs", "audit_logs", "suppression_list",
-                "email_validation_results", "warmup_emails", "warmup_daily_logs",
-                "warmup_alerts", "dns_check_results", "blacklist_check_results",
-                "settings",
-            ]
-            existing_tables_t = set(inspector_t.get_table_names())
-            for tbl in tenant_tables:
-                if tbl not in existing_tables_t:
-                    continue
-                cols = [c["name"] for c in inspector_t.get_columns(tbl)]
-                if "tenant_id" not in cols:
-                    try:
-                        conn.execute(sa_text_tenant(
-                            f"ALTER TABLE {tbl} ADD COLUMN tenant_id INTEGER NULL"
-                        ))
-                        conn.commit()
-                        logger.info(f"Migration: added tenant_id column to {tbl}")
-                    except Exception as e2:
-                        logger.warning(f"Migration: tenant_id on {tbl}: {e2}")
-
-            # Backfill: set tenant_id=1 for all rows where it's NULL
-            for tbl in tenant_tables:
-                if tbl not in existing_tables_t:
-                    continue
-                try:
-                    result = conn.execute(sa_text_tenant(
-                        f"UPDATE {tbl} SET tenant_id = 1 WHERE tenant_id IS NULL"
-                    ))
-                    if result.rowcount > 0:
-                        conn.commit()
-                        logger.info(f"Migration: backfilled tenant_id=1 on {tbl}", rows=result.rowcount)
-                except Exception as e2:
-                    logger.warning(f"Migration: backfill tenant_id on {tbl}: {e2}")
-
-    except Exception as e:
-        logger.warning(f"Migration check for tenant_id: {e}")
-
-    # Migration: add SUPER_ADMIN and TENANT_ADMIN to UserRole enum in MySQL
+    # Migration: ensure role enum is correct for single-tenant (admin/operator/viewer)
     try:
         from sqlalchemy import text as sa_text_role
         if settings.DB_TYPE == "mysql":
@@ -266,17 +219,17 @@ async def lifespan(app: FastAPI):
                 try:
                     conn.execute(sa_text_role(
                         "ALTER TABLE users MODIFY COLUMN role "
-                        "ENUM('super_admin','tenant_admin','admin','operator','viewer') "
+                        "ENUM('admin','operator','viewer') "
                         "NOT NULL DEFAULT 'viewer'"
                     ))
                     conn.commit()
-                    logger.info("Migration: updated UserRole enum to include super_admin, tenant_admin")
+                    logger.info("Migration: updated UserRole enum to admin/operator/viewer")
                 except Exception as e2:
                     logger.debug(f"Role enum migration (may already be done): {e2}")
     except Exception as e:
         logger.warning(f"Migration check for role enum: {e}")
 
-    # Migration: add lead_results_json column if missing (SQLite create_all won't alter existing tables)
+    # Migration: add lead_results_json column if missing
     try:
         from sqlalchemy import text as sa_text
         with engine.connect() as conn:
@@ -303,17 +256,16 @@ async def lifespan(app: FastAPI):
                         conn.commit()
                         logger.info(f"Migration: added is_archived column to {tbl}")
                     except Exception:
-                        pass  # Column may already exist or table may not support it
+                        pass
     except Exception as e:
         logger.warning(f"Migration check for is_archived: {e}")
 
-    # Migration: add unsubscribe columns (outreach_status, unsubscribed_at on contacts; tracking_id on outreach_events)
+    # Migration: add unsubscribe columns
     try:
         from sqlalchemy import text as sa_text_unsub, inspect as sa_inspect_unsub
         with engine.connect() as conn:
             inspector_unsub = sa_inspect_unsub(engine)
 
-            # contact_details: outreach_status + unsubscribed_at
             contact_cols = [c["name"] for c in inspector_unsub.get_columns("contact_details")]
             if "outreach_status" not in contact_cols:
                 conn.execute(sa_text_unsub("ALTER TABLE contact_details ADD COLUMN outreach_status VARCHAR(20) DEFAULT 'active' NOT NULL"))
@@ -324,7 +276,6 @@ async def lifespan(app: FastAPI):
                 conn.commit()
                 logger.info("Migration: added unsubscribed_at column to contact_details")
 
-            # outreach_events: tracking_id
             outreach_cols = [c["name"] for c in inspector_unsub.get_columns("outreach_events")]
             if "tracking_id" not in outreach_cols:
                 conn.execute(sa_text_unsub("ALTER TABLE outreach_events ADD COLUMN tracking_id VARCHAR(64) NULL"))
@@ -341,60 +292,9 @@ async def lifespan(app: FastAPI):
                 ))
                 conn.commit()
             except Exception:
-                pass  # May fail on SQLite (no INNER JOIN UPDATE syntax)
+                pass  # May fail on SQLite
     except Exception as e:
         logger.warning(f"Migration check for unsubscribe columns: {e}")
-
-    # Migration: composite indexes for multi-tenant performance
-    try:
-        from sqlalchemy import text as _idx_text
-        with engine.connect() as conn:
-            composite_indexes = [
-                ("ix_leads_tenant_status", "lead_details", "tenant_id, lead_status, is_archived"),
-                ("ix_contacts_tenant_email", "contact_details", "tenant_id, email"),
-                ("ix_contacts_tenant_client", "contact_details", "tenant_id, client_name"),
-                ("ix_outreach_tenant_sent", "outreach_events", "tenant_id, sent_at"),
-                ("ix_outreach_tenant_status", "outreach_events", "tenant_id, status"),
-                ("ix_jobruns_tenant_pipeline", "job_runs", "tenant_id, pipeline_name, status"),
-                ("ix_mailboxes_tenant_active", "sender_mailboxes", "tenant_id, is_active, is_archived"),
-                ("ix_templates_tenant_status", "email_templates", "tenant_id, status"),
-            ]
-            for idx_name, tbl, cols in composite_indexes:
-                try:
-                    conn.execute(_idx_text(f"CREATE INDEX {idx_name} ON {tbl} ({cols})"))
-                    conn.commit()
-                    logger.info(f"Migration: created index {idx_name}")
-                except Exception:
-                    conn.rollback()  # Index already exists
-    except Exception as e:
-        logger.warning(f"Migration check for composite indexes: {e}")
-
-    # Migration: fix master tenant name and assign super_admins to master tenant
-    try:
-        from sqlalchemy import text as _sa_text_gsa
-        with engine.connect() as conn:
-            # Rename default tenant to "Smart Cold Email AI Agent Pro"
-            try:
-                conn.execute(_sa_text_gsa(
-                    "UPDATE tenants SET name='Smart Cold Email AI Agent Pro', "
-                    "slug='smart-cold-email-ai-agent-pro' "
-                    "WHERE tenant_id=1 AND slug='exzelon-us-staffing'"
-                ))
-                conn.commit()
-            except Exception:
-                conn.rollback()
-            # Assign all super_admin users with NULL tenant_id to master tenant
-            try:
-                result = conn.execute(_sa_text_gsa(
-                    "UPDATE users SET tenant_id=1 WHERE role='super_admin' AND tenant_id IS NULL"
-                ))
-                if result.rowcount > 0:
-                    conn.commit()
-                    logger.info("Migration: assigned super_admin users to master tenant", rows=result.rowcount)
-            except Exception:
-                conn.rollback()
-    except Exception as e:
-        logger.warning(f"Migration check for GSA tenant assignment: {e}")
 
     # Migration: encrypt existing plaintext mailbox passwords
     try:
@@ -420,19 +320,17 @@ async def lifespan(app: FastAPI):
     _seed_warmup_profiles()
     _seed_default_email_template()
 
-    # Seed default tenant, admin user, and super admin
+    # Seed admin user
     try:
-        from app.core.seed import seed_default_tenant, seed_admin_user, seed_super_admin
+        from app.core.seed import seed_admin_user
         from app.db.base import SessionLocal as _SeedSessionLocal
         _seed_db = _SeedSessionLocal()
         try:
-            seed_default_tenant(_seed_db)
             seed_admin_user(_seed_db)
-            seed_super_admin(_seed_db)
         finally:
             _seed_db.close()
     except Exception as e:
-        logger.error("Failed to seed users/tenant", error=str(e))
+        logger.error("Failed to seed admin user", error=str(e))
 
     # Start warmup scheduler
     try:
@@ -470,7 +368,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # GZip compression for responses > 1KB
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# CORS — read allowed origins from CORS_ORIGINS env var (comma-separated)
+# CORS
 _cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()] if settings.CORS_ORIGINS else []
 if not _cors_origins:
     logger.warning("CORS_ORIGINS not set. No cross-origin requests will be allowed. "
@@ -481,7 +379,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -492,7 +390,6 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 async def tracking_pixel(tracking_id: str, token: str = ""):
     # 1x1 transparent GIF (always returned regardless of token validity)
     gif = bytes([0x47,0x49,0x46,0x38,0x39,0x61,0x01,0x00,0x01,0x00,0x80,0x00,0x00,0xff,0xff,0xff,0x00,0x00,0x00,0x21,0xf9,0x04,0x00,0x00,0x00,0x00,0x00,0x2c,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0x02,0x02,0x44,0x01,0x00,0x3b])
-    # If a token is provided but invalid, return the gif without recording the open
     if token:
         from app.core.tracking import validate_tracking_token
         if not validate_tracking_token(tracking_id, token):
@@ -515,7 +412,6 @@ async def tracking_link(tracking_id: str, url: str = "", token: str = ""):
     from app.core.tracking import validate_tracking_token, sanitize_redirect_url
     from fastapi.responses import RedirectResponse
 
-    # If a token is provided but invalid, reject the request
     if token and not validate_tracking_token(tracking_id, token):
         return JSONResponse(status_code=403, content={"error": "Invalid tracking token"})
 
@@ -588,14 +484,13 @@ async def unsubscribe(tracking_id: str, token: str = ""):
             contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
             contact.unsubscribed_at = datetime.utcnow()
 
-            # Audit log (inherit tenant_id from the contact record)
+            # Audit log
             db.add(AuditLog(
                 entity_type="contact",
                 entity_id=contact.contact_id,
                 action="unsubscribe",
                 changed_by="system",
                 notes="Unsubscribed via email link",
-                tenant_id=contact.tenant_id,
             ))
 
         db.commit()

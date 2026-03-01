@@ -11,7 +11,6 @@ from sqlalchemy import func
 from app.api.deps import get_db, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus, EmailProvider
-from app.db.query_helpers import tenant_query
 from app.core.encryption import encrypt_field, decrypt_field
 from app.schemas.sender_mailbox import (
     SenderMailboxCreate,
@@ -73,7 +72,7 @@ async def list_mailboxes(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """List all sender mailboxes."""
-    query = tenant_query(db, SenderMailbox)
+    query = db.query(SenderMailbox)
 
     if show_archived:
         query = query.filter(SenderMailbox.is_archived == True)
@@ -117,7 +116,7 @@ async def get_mailbox_stats(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Get mailbox statistics."""
-    mailboxes = tenant_query(db, SenderMailbox).all()
+    mailboxes = db.query(SenderMailbox).all()
 
     total = len(mailboxes)
     active = sum(1 for m in mailboxes if m.is_active)
@@ -157,7 +156,7 @@ async def get_mailbox(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Get a specific mailbox by ID."""
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -174,7 +173,7 @@ async def create_mailbox(
 ):
     """Create a new sender mailbox (Admin only)."""
     # Check if email already exists
-    existing = tenant_query(db, SenderMailbox).filter(SenderMailbox.email == mailbox_in.email).first()
+    existing = db.query(SenderMailbox).filter(SenderMailbox.email == mailbox_in.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -205,7 +204,6 @@ async def create_mailbox(
         is_active=mailbox_in.is_active,
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
-        tenant_id=current_user.tenant_id,
     )
 
     db.add(mailbox)
@@ -234,7 +232,7 @@ async def update_mailbox(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Update a sender mailbox (Admin only)."""
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -267,7 +265,7 @@ async def delete_mailbox(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Archive a sender mailbox (soft delete, Admin only)."""
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -316,7 +314,7 @@ async def test_mailbox_connection(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Test connection for an existing mailbox."""
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -410,7 +408,7 @@ async def update_mailbox_status(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Update warmup status of a mailbox (Admin only)."""
-    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -445,7 +443,7 @@ async def reset_daily_counts(
 ):
     """Reset daily email counts for all mailboxes (Admin only).
     This should be called by a scheduled job at midnight."""
-    count = tenant_query(db, SenderMailbox).update({SenderMailbox.emails_sent_today: 0})
+    count = db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0})
     db.commit()
 
     return {"message": f"Reset daily counts for {count} mailboxes"}
@@ -458,7 +456,7 @@ async def get_available_mailboxes_for_sending(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Get available mailboxes for sending (cold-ready with remaining quota)."""
-    mailboxes = tenant_query(db, SenderMailbox).filter(
+    mailboxes = db.query(SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit

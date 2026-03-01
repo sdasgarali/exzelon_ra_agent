@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${DB_NAME:-ra_agent}
+      MYSQL_DATABASE: ${DB_NAME:-exzelon_ra_agent}
       MYSQL_USER: ${DB_USER:-ra_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-change_me}
     ports:
@@ -48,7 +48,7 @@ services:
       - DB_TYPE=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
-      - DB_NAME=${DEV_DB_NAME:-cold_email_ai_agent}
+      - DB_NAME=${DEV_DB_NAME:-exzelon_ra_agent}
       - DB_USER=${DEV_DB_USER:-root}
       - DB_PASSWORD=${DEV_DB_PASSWORD}
       - REDIS_URL=redis://redis:6379/0

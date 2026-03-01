@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { usersApi, tenantsApi } from '@/lib/api';
+import { usersApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
 interface User {
@@ -11,15 +11,9 @@ interface User {
   full_name: string | null;
   role: string;
   is_active: boolean;
-  tenant_id: number | null;
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-interface Tenant {
-  tenant_id: number;
-  name: string;
 }
 
 interface UserFormData {
@@ -27,7 +21,6 @@ interface UserFormData {
   password: string;
   full_name: string;
   role: string;
-  tenant_id: number | string;
   is_active: boolean;
 }
 
@@ -36,27 +29,23 @@ const DEFAULT_FORM: UserFormData = {
   password: '',
   full_name: '',
   role: 'operator',
-  tenant_id: '',
   is_active: true,
 };
 
 export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser } = useAuthStore();
-  const isSuperAdmin = currentUser?.role === 'super_admin';
-  const isGlobalSuperAdmin = isSuperAdmin && currentUser?.tenant_id === 1;
-  const isTenantAdmin = currentUser?.role === 'tenant_admin' || currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin';
 
-  // Only Super Admin (global or tenant) can access this page
+  // Only admin can access this page
   useEffect(() => {
-    if (currentUser && !isSuperAdmin) {
+    if (currentUser && !isAdmin) {
       router.replace('/dashboard');
     }
-  }, [currentUser, isSuperAdmin, router]);
+  }, [currentUser, isAdmin, router]);
 
   // Data state
   const [users, setUsers] = useState<User[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -68,7 +57,6 @@ export default function UsersPage() {
 
   // Filters
   const [search, setSearch] = useState('');
-  const [tenantFilter, setTenantFilter] = useState<string>('');
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -81,9 +69,7 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const roleOptions = isGlobalSuperAdmin
-    ? ['super_admin', 'tenant_admin', 'operator', 'viewer']
-    : ['tenant_admin', 'operator', 'viewer'];
+  const roleOptions = ['admin', 'operator', 'viewer'];
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -94,7 +80,6 @@ export default function UsersPage() {
         limit: pageSize,
       };
       if (search.trim()) params.search = search.trim();
-      if (tenantFilter) params.tenant_id = Number(tenantFilter);
 
       const res = await usersApi.list(params);
       // Backend returns List[UserResponse] directly (an array)
@@ -113,36 +98,11 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, tenantFilter]);
-
-  const fetchTenants = useCallback(async () => {
-    if (!isGlobalSuperAdmin) return;
-    try {
-      const res = await tenantsApi.list();
-      const data = res.data;
-      if (Array.isArray(data)) {
-        setTenants(data);
-      } else if (data && Array.isArray(data.items)) {
-        setTenants(data.items);
-      } else if (data && Array.isArray(data.data)) {
-        setTenants(data.data);
-      } else {
-        setTenants([]);
-      }
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ERR_CANCELED') return;
-      // Non-critical, just log
-      console.error('Failed to load tenants', err);
-    }
-  }, [isGlobalSuperAdmin]);
+  }, [page, pageSize, search]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  useEffect(() => {
-    fetchTenants();
-  }, [fetchTenants]);
 
   // Auto-clear success message
   useEffect(() => {
@@ -151,12 +111,6 @@ export default function UsersPage() {
       return () => clearTimeout(timer);
     }
   }, [success]);
-
-  const getTenantName = (tenantId: number | null): string => {
-    if (tenantId === null) return '-';
-    const tenant = tenants.find((t) => t.tenant_id === tenantId);
-    return tenant ? tenant.name : `#${tenantId}`;
-  };
 
   const formatDate = (dateStr: string | null): string => {
     if (!dateStr) return '-';
@@ -187,7 +141,6 @@ export default function UsersPage() {
       password: '',
       full_name: user.full_name || '',
       role: user.role,
-      tenant_id: user.tenant_id ?? '',
       is_active: user.is_active,
     });
     setFormError(null);
@@ -221,10 +174,6 @@ export default function UsersPage() {
         role: formData.role,
         is_active: formData.is_active,
       };
-
-      if (isGlobalSuperAdmin && formData.tenant_id !== '') {
-        payload.tenant_id = Number(formData.tenant_id);
-      }
 
       if (editingUser) {
         // Update - do not send password if empty
@@ -288,8 +237,6 @@ export default function UsersPage() {
   // Role badge color
   const roleBadge = (role: string) => {
     const colors: Record<string, string> = {
-      super_admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      tenant_admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
       admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
       operator: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       viewer: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
@@ -368,24 +315,6 @@ export default function UsersPage() {
           />
         </div>
 
-        {isGlobalSuperAdmin && tenants.length > 0 && (
-          <select
-            value={tenantFilter}
-            onChange={(e) => {
-              setTenantFilter(e.target.value);
-              setPage(1);
-            }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Tenants</option>
-            {tenants.map((t) => (
-              <option key={t.tenant_id} value={t.tenant_id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        )}
-
         <select
           value={pageSize}
           onChange={(e) => {
@@ -419,11 +348,6 @@ export default function UsersPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Role
                 </th>
-                {isGlobalSuperAdmin && (
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Tenant
-                  </th>
-                )}
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
@@ -441,7 +365,7 @@ export default function UsersPage() {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={isGlobalSuperAdmin ? 9 : 8} className="px-4 py-12 text-center">
+                  <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
                       <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -457,7 +381,7 @@ export default function UsersPage() {
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={isGlobalSuperAdmin ? 9 : 8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
                     No users found.
                   </td>
                 </tr>
@@ -471,14 +395,9 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{u.email}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge(u.role)}`}>
-                        {u.role === 'super_admin' ? 'Super Admin' : u.role === 'tenant_admin' ? 'Admin' : u.role.replace('_', ' ')}
+                        {u.role.replace('_', ' ')}
                       </span>
                     </td>
-                    {isGlobalSuperAdmin && (
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
-                        {getTenantName(u.tenant_id)}
-                      </td>
-                    )}
                     <td className="px-4 py-3">
                       {u.is_active ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
@@ -624,30 +543,11 @@ export default function UsersPage() {
                 >
                   {roleOptions.map((r) => (
                     <option key={r} value={r}>
-                      {r === 'super_admin' ? 'Super Admin' : r === 'tenant_admin' ? 'Admin' : r.replace('_', ' ')}
+                      {r.replace('_', ' ')}
                     </option>
                   ))}
                 </select>
               </div>
-
-              {/* Tenant (super_admin only) */}
-              {isGlobalSuperAdmin && tenants.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tenant</label>
-                  <select
-                    value={formData.tenant_id}
-                    onChange={(e) => setFormData({ ...formData, tenant_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">No tenant</option>
-                    {tenants.map((t) => (
-                      <option key={t.tenant_id} value={t.tenant_id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {/* Active Toggle */}
               <div className="flex items-center justify-between">

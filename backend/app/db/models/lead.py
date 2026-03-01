@@ -1,6 +1,6 @@
 """Lead details model for job posts and leads."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -48,7 +48,6 @@ class LeadDetails(Base):
     __tablename__ = "lead_details"
 
     lead_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
 
     # Company/Client information
     client_name = Column(String(255), nullable=False, index=True)

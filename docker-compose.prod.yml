@@ -8,7 +8,7 @@ services:
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME:-cold_email_ai_agent}
+      MYSQL_DATABASE: ${DB_NAME:-exzelon_ra_agent}
       MYSQL_USER: ${DB_USER:-ra_user}
       MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
@@ -60,7 +60,7 @@ services:
       - DB_TYPE=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
-      - DB_NAME=${PROD_DB_NAME:-cold_email_ai_agent}
+      - DB_NAME=${PROD_DB_NAME:-exzelon_ra_agent}
       - DB_USER=${PROD_DB_USER}
       - DB_PASSWORD=${PROD_DB_PASSWORD}
       - SECRET_KEY=${PROD_SECRET_KEY}

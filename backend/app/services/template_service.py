@@ -2,8 +2,6 @@
 import html
 from sqlalchemy.orm import Session
 from app.db.models.email_template import EmailTemplate, TemplateStatus
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 
 
 def preview_template(db: Session, template_id: int) -> dict | None:
@@ -11,7 +9,7 @@ def preview_template(db: Session, template_id: int) -> dict | None:
 
     Returns None if template not found.
     """
-    template = tenant_query(db, EmailTemplate).filter(
+    template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -49,7 +47,7 @@ def preview_template(db: Session, template_id: int) -> dict | None:
 
 def duplicate_template(db: Session, template_id: int) -> EmailTemplate | None:
     """Duplicate a template. Returns new template or None if not found."""
-    template = tenant_query(db, EmailTemplate).filter(
+    template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:

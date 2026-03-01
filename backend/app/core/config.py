@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     DB_TYPE: Literal["mysql", "sqlite"] = "sqlite"
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
-    DB_NAME: str = "ra_agent"
+    DB_NAME: str = "exzelon_ra_agent"
     DB_USER: str = "ra_user"
     DB_PASSWORD: str = ""
 
@@ -199,36 +199,27 @@ def get_settings() -> Settings:
 settings = get_settings()
 
 
-def get_tenant_setting(db, key: str, tenant_id: int | None, default=None):
-    """Get a setting value with tenant override support.
+def get_setting(db, key: str, default=None):
+    """Get a setting value from the settings table.
 
-    Lookup order:
-    1. Tenant-specific: settings WHERE key=X AND tenant_id=current_tenant_id
-    2. Global default: settings WHERE key=X AND tenant_id IS NULL
-    3. Hardcoded default from the `default` parameter
+    Args:
+        db: Database session
+        key: Setting key to look up
+        default: Default value if not found
+
+    Returns:
+        Parsed JSON value or raw string from the settings table
     """
     import json
     from app.db.models.settings import Settings as SettingsModel
 
-    if tenant_id is not None:
-        tenant_setting = db.query(SettingsModel).filter(
-            SettingsModel.key == key,
-            SettingsModel.tenant_id == tenant_id,
-        ).first()
-        if tenant_setting and tenant_setting.value_json is not None:
-            try:
-                return json.loads(tenant_setting.value_json)
-            except (json.JSONDecodeError, TypeError):
-                return tenant_setting.value_json
-
-    global_setting = db.query(SettingsModel).filter(
+    setting = db.query(SettingsModel).filter(
         SettingsModel.key == key,
-        SettingsModel.tenant_id.is_(None),
     ).first()
-    if global_setting and global_setting.value_json is not None:
+    if setting and setting.value_json is not None:
         try:
-            return json.loads(global_setting.value_json)
+            return json.loads(setting.value_json)
         except (json.JSONDecodeError, TypeError):
-            return global_setting.value_json
+            return setting.value_json
 
     return default

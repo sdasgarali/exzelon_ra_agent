@@ -1,16 +1,13 @@
 """User model with RBAC."""
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 from app.db.base import Base
 
 
 class UserRole(str, PyEnum):
     """User roles for RBAC."""
-    SUPER_ADMIN = "super_admin"
-    TENANT_ADMIN = "tenant_admin"
-    ADMIN = "admin"          # Legacy — treated as TENANT_ADMIN
+    ADMIN = "admin"
     OPERATOR = "operator"
     VIEWER = "viewer"
 
@@ -32,20 +29,5 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
 
-    # Multi-tenant: NULL for SUPER_ADMIN (system-level), set for all other users
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
-    tenant = relationship("Tenant", back_populates="users")
-
-    @property
-    def is_super_admin(self) -> bool:
-        return self.role == UserRole.SUPER_ADMIN
-
-    @property
-    def effective_role(self) -> str:
-        """Return effective role (maps legacy ADMIN to TENANT_ADMIN)."""
-        if self.role == UserRole.ADMIN:
-            return UserRole.TENANT_ADMIN
-        return self.role
-
     def __repr__(self) -> str:
-        return f"<User(user_id={self.user_id}, email='{self.email}', role='{self.role}', tenant_id={self.tenant_id})>"
+        return f"<User(user_id={self.user_id}, email='{self.email}', role='{self.role}')>"

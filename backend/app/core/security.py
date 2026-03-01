@@ -27,7 +27,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
     The data dict should include:
       - sub: user email
-      - tenant_id: user's tenant_id (None for super admin)
       - role: user's role
     """
     to_encode = data.copy()

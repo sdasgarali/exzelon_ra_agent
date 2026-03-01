@@ -8,7 +8,6 @@ from app.api.deps import get_db, require_role
 from app.core.config import settings as app_config
 from app.db.models.user import User, UserRole
 from app.db.models.settings import Settings
-from app.db.query_helpers import tenant_query
 from app.schemas.settings import SettingUpdate, SettingResponse
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -182,10 +181,10 @@ DEFAULT_SETTINGS = {
 @router.get("", response_model=List[SettingResponse])
 async def list_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """List all settings."""
-    settings = tenant_query(db, Settings).order_by(Settings.key).all()
+    settings = db.query(Settings).order_by(Settings.key).all()
     return [SettingResponse.model_validate(s) for s in settings]
 
 
@@ -193,10 +192,10 @@ async def list_settings(
 async def get_setting(
     key: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Get setting by key."""
-    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
+    setting = db.query(Settings).filter(Settings.key == key).first()
     if not setting:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -210,10 +209,10 @@ async def update_setting(
     key: str,
     setting_in: SettingUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Update or create setting (Admin only)."""
-    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
+    setting = db.query(Settings).filter(Settings.key == key).first()
 
     # Determine the value to store
     if setting_in.value_json is not None:
@@ -231,7 +230,6 @@ async def update_setting(
             type=setting_in.type or "string",
             description=setting_in.description or f"Setting: {key}",
             updated_by=current_user.email,
-            tenant_id=current_user.tenant_id
         )
         db.add(setting)
     else:
@@ -252,12 +250,12 @@ async def update_setting(
 @router.post("/initialize")
 async def initialize_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Initialize default settings (Admin only)."""
     created = 0
     for key, config in DEFAULT_SETTINGS.items():
-        existing = tenant_query(db, Settings).filter(Settings.key == key).first()
+        existing = db.query(Settings).filter(Settings.key == key).first()
         if not existing:
             setting = Settings(
                 key=key,
@@ -265,7 +263,6 @@ async def initialize_settings(
                 type=config["type"],
                 description=config.get("description"),
                 updated_by=current_user.email,
-                tenant_id=current_user.tenant_id
             )
             db.add(setting)
             created += 1
@@ -277,7 +274,7 @@ async def initialize_settings(
 
 def get_setting_value(db: Session, key: str, default: str = "") -> str:
     """Get a setting value from database."""
-    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
+    setting = db.query(Settings).filter(Settings.key == key).first()
     if setting and setting.value_json:
         try:
             return json.loads(setting.value_json)
@@ -290,7 +287,7 @@ def get_setting_value(db: Session, key: str, default: str = "") -> str:
 async def test_provider_connection(
     provider: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Test connection to a provider."""
     try:

@@ -1,6 +1,6 @@
 """Email template model for outreach campaigns."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Text, Boolean, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, Enum
 from app.db.base import Base
 
 
@@ -16,7 +16,6 @@ class EmailTemplate(Base):
     __tablename__ = "email_templates"
 
     template_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     subject = Column(String(500), nullable=False)
     body_html = Column(Text, nullable=False)

@@ -8,8 +8,6 @@ from app.db.base import SessionLocal
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.models.settings import Settings
-from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
-from app.db.query_helpers import tenant_query
 
 logger = structlog.get_logger()
 
@@ -260,21 +258,16 @@ def assess_mailbox(mailbox: SenderMailbox, config: Dict[str, Any], db) -> Dict[s
 def run_warmup_assessment(
     triggered_by: str = "system",
     mailbox_id: Optional[int] = None,
-    tenant_id: int = None,
 ) -> Dict[str, Any]:
     """Pipeline entry: assess all or one mailbox. Creates a JobRun record."""
     db = SessionLocal()
     job = None
     try:
-        if tenant_id is not None:
-            set_current_tenant_id(tenant_id)
-
         job = JobRun(
             pipeline_name="warmup_assessment",
             started_at=datetime.utcnow(),
             status=JobStatus.RUNNING,
             triggered_by=triggered_by,
-            tenant_id=tenant_id,
         )
         db.add(job)
         db.commit()
@@ -283,12 +276,12 @@ def run_warmup_assessment(
         config = load_warmup_config(db)
 
         if mailbox_id:
-            mailboxes = tenant_query(db, SenderMailbox).filter(
+            mailboxes = db.query(SenderMailbox).filter(
                 SenderMailbox.mailbox_id == mailbox_id,
                 SenderMailbox.connection_status == "successful",
             ).all()
         else:
-            mailboxes = tenant_query(db, SenderMailbox).filter(
+            mailboxes = db.query(SenderMailbox).filter(
                 SenderMailbox.is_active == True,
                 SenderMailbox.connection_status == "successful",
             ).all()

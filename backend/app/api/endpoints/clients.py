@@ -16,7 +16,7 @@ from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
 from app.db.models.settings import Settings as SettingsModel
-from app.db.query_helpers import tenant_query
+from app.db.query_helpers import active_query
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
@@ -62,7 +62,7 @@ def compute_client_category(db: Session, client_name: str) -> ClientCategory:
 
     cutoff = date.today() - timedelta(days=window_days)
 
-    unique_dates = tenant_query(db, LeadDetails).filter(
+    unique_dates = db.query(LeadDetails).filter(
         LeadDetails.client_name == client_name,
         LeadDetails.posting_date >= cutoff
     ).with_entities(func.count(func.distinct(LeadDetails.posting_date))).scalar() or 0
@@ -89,7 +89,7 @@ async def list_clients(
     current_user: User = Depends(get_current_active_user)
 ):
     """List clients with filtering and sorting."""
-    query = tenant_query(db, ClientInfo, show_archived=show_archived)
+    query = active_query(db, ClientInfo, show_archived=show_archived)
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -128,16 +128,16 @@ async def get_client_stats(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get client statistics summary."""
-    total = tenant_query(db, ClientInfo).with_entities(
+    total = db.query(ClientInfo).with_entities(
         func.count(ClientInfo.client_id)
     ).scalar() or 0
 
-    by_status = tenant_query(db, ClientInfo).with_entities(
+    by_status = db.query(ClientInfo).with_entities(
         ClientInfo.status,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.status).all()
 
-    by_category = tenant_query(db, ClientInfo).with_entities(
+    by_category = db.query(ClientInfo).with_entities(
         ClientInfo.client_category,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.client_category).all()
@@ -159,7 +159,7 @@ async def export_clients_csv(
     current_user: User = Depends(get_current_active_user)
 ):
     """Export clients to CSV file."""
-    query = tenant_query(db, ClientInfo, show_archived=show_archived)
+    query = active_query(db, ClientInfo, show_archived=show_archived)
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -227,7 +227,7 @@ async def bulk_delete_clients(
     if not client_ids:
         raise HTTPException(status_code=400, detail="No client IDs provided")
 
-    clients = tenant_query(db, ClientInfo).filter(
+    clients = db.query(ClientInfo).filter(
         ClientInfo.client_id.in_(client_ids)
     ).all()
 
@@ -237,7 +237,7 @@ async def bulk_delete_clients(
     found_ids = [c.client_id for c in clients]
 
     try:
-        archived_count = tenant_query(db, ClientInfo).filter(
+        archived_count = db.query(ClientInfo).filter(
             ClientInfo.client_id.in_(found_ids)
         ).update({ClientInfo.is_archived: True}, synchronize_session=False)
 
@@ -260,7 +260,7 @@ async def get_client(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get client by ID."""
-    client = tenant_query(db, ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -276,7 +276,7 @@ async def create_client(
     current_user: User = Depends(get_current_active_user)
 ):
     """Create a new client."""
-    existing = tenant_query(db, ClientInfo).filter(ClientInfo.client_name == client_in.client_name).first()
+    existing = db.query(ClientInfo).filter(ClientInfo.client_name == client_in.client_name).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -285,7 +285,6 @@ async def create_client(
 
     client = ClientInfo(**client_in.model_dump())
     client.client_category = compute_client_category(db, client_in.client_name)
-    client.tenant_id = current_user.tenant_id
     db.add(client)
     db.commit()
     db.refresh(client)
@@ -301,7 +300,7 @@ async def update_client(
     current_user: User = Depends(get_current_active_user)
 ):
     """Update client."""
-    client = tenant_query(db, ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -325,7 +324,7 @@ async def delete_client(
     current_user: User = Depends(get_current_active_user)
 ):
     """Archive client (soft delete)."""
-    client = tenant_query(db, ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -335,7 +334,7 @@ async def delete_client(
     # Soft delete: archive client and cascade to linked contacts
     client.is_archived = True
     # Archive all contacts belonging to this company
-    tenant_query(db, ContactDetails).filter(
+    db.query(ContactDetails).filter(
         ContactDetails.company_name == client.company_name
     ).update({ContactDetails.is_archived: True}, synchronize_session=False)
     db.commit()
@@ -348,7 +347,7 @@ async def refresh_client_category(
     current_user: User = Depends(get_current_active_user)
 ):
     """Refresh client category based on current posting data."""
-    client = tenant_query(db, ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
