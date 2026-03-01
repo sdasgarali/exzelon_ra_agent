@@ -109,11 +109,26 @@ async def list_leads(
 
     total = query.count()
 
-    sort_column = SORT_COLUMNS.get(sort_by, LeadDetails.created_at)
-    if sort_order == "asc":
-        query = query.order_by(asc(sort_column))
+    if sort_by == "contact_count":
+        # Subquery: count distinct contacts per lead from junction table
+        count_sub = db.query(
+            LeadContactAssociation.lead_id.label("lead_id"),
+            func.count(func.distinct(LeadContactAssociation.contact_id)).label("cnt")
+        ).group_by(LeadContactAssociation.lead_id).subquery()
+
+        query = query.outerjoin(count_sub, LeadDetails.lead_id == count_sub.c.lead_id)
+        count_expr = func.coalesce(count_sub.c.cnt, 0)
+
+        if sort_order == "asc":
+            query = query.order_by(asc(count_expr))
+        else:
+            query = query.order_by(desc(count_expr))
     else:
-        query = query.order_by(desc(sort_column))
+        sort_column = SORT_COLUMNS.get(sort_by, LeadDetails.created_at)
+        if sort_order == "asc":
+            query = query.order_by(asc(sort_column))
+        else:
+            query = query.order_by(desc(sort_column))
 
     offset = (page - 1) * page_size
     leads = query.offset(offset).limit(page_size).all()
