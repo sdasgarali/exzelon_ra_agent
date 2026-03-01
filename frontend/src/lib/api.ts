@@ -284,6 +284,10 @@ export const settingsApi = {
     const response = await api.post(`/settings/test-connection/${provider}`)
     return response.data
   },
+  getMySettingsTabPermissions: async (): Promise<Record<string, string>> => {
+    const response = await api.get('/settings/my-permissions/settings-tabs')
+    return response.data
+  },
 }
 
 // Mailboxes API

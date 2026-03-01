@@ -129,10 +129,46 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
   'employment agency', 'executive search firm'
 ]
 
+// Tab ID to permission key mapping
+const TAB_PERM_MAP: Record<string, string> = {
+  jobsources: 'job_sources',
+  ai: 'ai_llm',
+  contacts: 'contacts',
+  validation: 'validation',
+  outreach: 'outreach',
+  business: 'business_rules',
+}
+
+// Setting key to tab mapping (for All Settings filtering)
+const SETTING_TAB_MAP: Record<string, string> = {
+  job_source_provider: 'job_sources', jsearch_api_key: 'job_sources', indeed_publisher_id: 'job_sources',
+  apollo_api_key: 'job_sources', lead_sources: 'job_sources', enabled_sources: 'job_sources',
+  target_states: 'job_sources', available_job_titles: 'job_sources', target_job_titles: 'job_sources',
+  target_industries: 'job_sources', company_size_priority_1_max: 'job_sources',
+  company_size_priority_2_min: 'job_sources', company_size_priority_2_max: 'job_sources',
+  exclude_it_keywords: 'job_sources', exclude_staffing_keywords: 'job_sources',
+  ai_provider: 'ai_llm', groq_api_key: 'ai_llm', openai_api_key: 'ai_llm',
+  anthropic_api_key: 'ai_llm', gemini_api_key: 'ai_llm', ai_model: 'ai_llm',
+  contact_provider: 'contacts', contact_providers: 'contacts', seamless_api_key: 'contacts',
+  email_validation_provider: 'validation', neverbounce_api_key: 'validation',
+  zerobounce_api_key: 'validation', hunter_api_key: 'validation', clearout_api_key: 'validation',
+  emailable_api_key: 'validation', mailboxvalidator_api_key: 'validation',
+  reacher_api_key: 'validation', reacher_base_url: 'validation',
+  email_send_mode: 'outreach', smtp_host: 'outreach', smtp_port: 'outreach',
+  smtp_user: 'outreach', smtp_password: 'outreach', smtp_from_email: 'outreach',
+  smtp_from_name: 'outreach', m365_admin_email: 'outreach', m365_admin_password: 'outreach',
+  daily_send_limit: 'business_rules', cooldown_days: 'business_rules',
+  max_contacts_per_company_job: 'business_rules', min_salary_threshold: 'business_rules',
+  catch_all_policy: 'business_rules', unsubscribe_footer: 'business_rules',
+  company_address: 'business_rules', category_window_days: 'business_rules',
+  category_regular_threshold: 'business_rules', category_occasional_threshold: 'business_rules',
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const isSuperAdmin = user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin' || isSuperAdmin
 
   // Only admin can access settings
   useEffect(() => {
@@ -148,7 +184,9 @@ export default function SettingsPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isLocalhost, setIsLocalhost] = useState(false)
-  const [activeTab, setActiveTab] = useState('jobsources')
+  const [activeTab, setActiveTab] = useState('')
+  const [tabPermissions, setTabPermissions] = useState<Record<string, string>>({})
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
   // Job Source configuration
   const [jobSourceConfig, setJobSourceConfig] = useState<JobSourceConfig>({
@@ -237,8 +275,51 @@ export default function SettingsPage() {
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
   useEffect(() => {
-    fetchSettings()
+    loadTabPermissions()
   }, [])
+
+  const loadTabPermissions = async () => {
+    try {
+      const perms = await settingsApi.getMySettingsTabPermissions()
+      setTabPermissions(perms)
+      setPermissionsLoaded(true)
+
+      // Set initial active tab to the first accessible tab
+      const tabOrder = ['jobsources', 'ai', 'contacts', 'validation', 'outreach', 'business']
+      const firstAccessible = tabOrder.find(tabId => {
+        const permKey = TAB_PERM_MAP[tabId]
+        return perms[permKey] && perms[permKey] !== 'no_access'
+      })
+      setActiveTab(firstAccessible || 'jobsources')
+
+      // Now fetch settings
+      await fetchSettings()
+    } catch {
+      // If permissions endpoint fails, default to super_admin-like access for backwards compat
+      const defaultPerms = { job_sources: 'full', ai_llm: 'full', contacts: 'full', validation: 'full', outreach: 'full', business_rules: 'full' }
+      setTabPermissions(defaultPerms)
+      setPermissionsLoaded(true)
+      setActiveTab('jobsources')
+      await fetchSettings()
+    }
+  }
+
+  const getTabAccess = (tabId: string): string => {
+    if (isSuperAdmin) return 'full'
+    const permKey = TAB_PERM_MAP[tabId]
+    if (!permKey) return 'full' // 'all' tab doesn't have its own permission
+    return tabPermissions[permKey] || 'no_access'
+  }
+
+  const canWriteTab = (tabId: string): boolean => {
+    const access = getTabAccess(tabId)
+    return access === 'full' || access === 'read_write'
+  }
+
+  const canReadTab = (tabId: string): boolean => {
+    const access = getTabAccess(tabId)
+    return access !== 'no_access'
+  }
 
   const fetchSettings = async () => {
     try {
@@ -533,25 +614,46 @@ export default function SettingsPage() {
             { id: 'outreach', label: '5. Outreach', color: 'orange' },
             { id: 'business', label: '6. Business Rules', color: 'gray' },
             { id: 'all', label: 'All Settings', color: 'gray' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-3 border-b-2 font-medium text-sm whitespace-nowrap ${
-                activeTab === tab.id
-                  ? `border-${tab.color}-500 text-${tab.color}-600`
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ]
+            .filter(tab => {
+              if (tab.id === 'all') {
+                // Show All Settings if user has access to at least one tab
+                return isSuperAdmin || Object.values(tabPermissions).some(v => v !== 'no_access')
+              }
+              return canReadTab(tab.id)
+            })
+            .map((tab) => {
+              const readOnly = !canWriteTab(tab.id) && tab.id !== 'all'
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-3 px-3 border-b-2 font-medium text-sm whitespace-nowrap flex items-center gap-1.5 ${
+                    activeTab === tab.id
+                      ? `border-${tab.color}-500 text-${tab.color}-600`
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  {tab.label}
+                  {readOnly && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-100 text-yellow-700 rounded">
+                      Read Only
+                    </span>
+                  )}
+                </button>
+              )
+            })}
         </nav>
       </div>
 
       {/* Tab 1: Job Sources */}
       {activeTab === 'jobsources' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('jobsources')} className="space-y-6">
+          {!canWriteTab('jobsources') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></span>
@@ -1312,17 +1414,24 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('jobsources')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save All Job Source Settings'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('jobsources') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('jobsources')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save All Job Source Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 2: AI/LLM */}
       {activeTab === 'ai' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('ai')} className="space-y-6">
+          {!canWriteTab('ai') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-pink-500 rounded-full mr-2"></span>
@@ -1495,17 +1604,24 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('ai')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save AI Settings'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('ai') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('ai')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save AI Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 3: Contacts */}
       {activeTab === 'contacts' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('contacts')} className="space-y-6">
+          {!canWriteTab('contacts') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-purple-500 rounded-full mr-2"></span>
@@ -1581,17 +1697,24 @@ export default function SettingsPage() {
             )}
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('contacts')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save Contact Settings'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('contacts') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('contacts')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Contact Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 4: Validation */}
       {activeTab === 'validation' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('validation')} className="space-y-6">
+          {!canWriteTab('validation') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-cyan-500 rounded-full mr-2"></span>
@@ -1805,17 +1928,24 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('validation')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save Validation Settings'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('validation') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('validation')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Validation Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 5: Outreach */}
       {activeTab === 'outreach' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('outreach')} className="space-y-6">
+          {!canWriteTab('outreach') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-orange-500 rounded-full mr-2"></span>
@@ -2034,17 +2164,24 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('outreach')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save Outreach Settings'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('outreach') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('outreach')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Outreach Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 6: Business Rules */}
       {activeTab === 'business' && (
-        <div className="space-y-6">
+        <fieldset disabled={!canWriteTab('business')} className="space-y-6">
+          {!canWriteTab('business') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Outreach Limits</h3>
             <div className="grid grid-cols-2 gap-6">
@@ -2170,19 +2307,33 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button onClick={() => saveAllSettings('business')} disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save Business Rules'}
-            </button>
-          </div>
-        </div>
+          {canWriteTab('business') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('business')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Business Rules'}
+              </button>
+            </div>
+          )}
+        </fieldset>
       )}
 
       {/* Tab 7: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
+          {!isSuperAdmin && (
+            <div className="bg-blue-50 border-b border-blue-200 text-blue-800 px-4 py-2 text-sm">
+              Showing settings for tabs you have access to.
+            </div>
+          )}
           <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-            {settings.map((setting) => (
+            {settings
+              .filter((setting) => {
+                if (isSuperAdmin) return true
+                const tab = SETTING_TAB_MAP[setting.key]
+                if (!tab) return true  // unmapped keys are shown
+                return tabPermissions[tab] && tabPermissions[tab] !== 'no_access'
+              })
+              .map((setting) => (
               <div key={setting.key} className="py-3 px-4 flex justify-between items-center text-sm">
                 <div>
                   <span className="font-mono text-gray-900">{setting.key}</span>
@@ -2205,22 +2356,24 @@ export default function SettingsPage() {
           {settings.length === 0 && (
             <div className="text-center py-8 text-gray-500">No settings found</div>
           )}
-          <div className="p-4 border-t bg-gray-50">
-            <button
-              onClick={async () => {
-                try {
-                  await settingsApi.initialize()
-                  fetchSettings()
-                  setSuccess('Settings initialized!')
-                } catch (err: any) {
-                  setError('Failed to initialize settings')
-                }
-              }}
-              className="btn-secondary text-sm"
-            >
-              Initialize Default Settings
-            </button>
-          </div>
+          {isSuperAdmin && (
+            <div className="p-4 border-t bg-gray-50">
+              <button
+                onClick={async () => {
+                  try {
+                    await settingsApi.initialize()
+                    fetchSettings()
+                    setSuccess('Settings initialized!')
+                  } catch (err: any) {
+                    setError('Failed to initialize settings')
+                  }
+                }}
+                className="btn-secondary text-sm"
+              >
+                Initialize Default Settings
+              </button>
+            </div>
+          )}
         </div>
       )}
 

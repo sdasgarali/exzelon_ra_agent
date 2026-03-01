@@ -1,16 +1,79 @@
 """Settings management endpoints."""
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role
+from app.api.deps.auth import get_user_settings_tab_access, get_all_settings_tab_permissions
 from app.core.config import settings as app_config
 from app.db.models.user import User, UserRole
 from app.db.models.settings import Settings
 from app.schemas.settings import SettingUpdate, SettingResponse
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
+
+# Mapping of setting keys to their settings tab
+SETTINGS_TAB_MAP: Dict[str, str] = {
+    # Job Sources
+    'job_source_provider': 'job_sources',
+    'jsearch_api_key': 'job_sources',
+    'indeed_publisher_id': 'job_sources',
+    'apollo_api_key': 'job_sources',
+    'lead_sources': 'job_sources',
+    'enabled_sources': 'job_sources',
+    'target_states': 'job_sources',
+    'available_job_titles': 'job_sources',
+    'target_job_titles': 'job_sources',
+    'target_industries': 'job_sources',
+    'company_size_priority_1_max': 'job_sources',
+    'company_size_priority_2_min': 'job_sources',
+    'company_size_priority_2_max': 'job_sources',
+    'exclude_it_keywords': 'job_sources',
+    'exclude_staffing_keywords': 'job_sources',
+    # AI/LLM
+    'ai_provider': 'ai_llm',
+    'groq_api_key': 'ai_llm',
+    'openai_api_key': 'ai_llm',
+    'anthropic_api_key': 'ai_llm',
+    'gemini_api_key': 'ai_llm',
+    'ai_model': 'ai_llm',
+    # Contacts
+    'contact_provider': 'contacts',
+    'contact_providers': 'contacts',
+    'seamless_api_key': 'contacts',
+    # Validation
+    'email_validation_provider': 'validation',
+    'neverbounce_api_key': 'validation',
+    'zerobounce_api_key': 'validation',
+    'hunter_api_key': 'validation',
+    'clearout_api_key': 'validation',
+    'emailable_api_key': 'validation',
+    'mailboxvalidator_api_key': 'validation',
+    'reacher_api_key': 'validation',
+    'reacher_base_url': 'validation',
+    # Outreach
+    'email_send_mode': 'outreach',
+    'smtp_host': 'outreach',
+    'smtp_port': 'outreach',
+    'smtp_user': 'outreach',
+    'smtp_password': 'outreach',
+    'smtp_from_email': 'outreach',
+    'smtp_from_name': 'outreach',
+    'm365_admin_email': 'outreach',
+    'm365_admin_password': 'outreach',
+    # Business Rules
+    'daily_send_limit': 'business_rules',
+    'cooldown_days': 'business_rules',
+    'max_contacts_per_company_job': 'business_rules',
+    'min_salary_threshold': 'business_rules',
+    'catch_all_policy': 'business_rules',
+    'unsubscribe_footer': 'business_rules',
+    'company_address': 'business_rules',
+    'category_window_days': 'business_rules',
+    'category_regular_threshold': 'business_rules',
+    'category_occasional_threshold': 'business_rules',
+}
 
 # Default settings for seed data
 DEFAULT_SETTINGS = {
@@ -178,14 +241,37 @@ DEFAULT_SETTINGS = {
 }
 
 
+@router.get("/my-permissions/settings-tabs")
+async def get_my_settings_tab_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
+):
+    """Get the current user's settings tab permissions."""
+    return get_all_settings_tab_permissions(db, current_user)
+
+
 @router.get("", response_model=List[SettingResponse])
 async def list_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """List all settings."""
-    settings = db.query(Settings).order_by(Settings.key).all()
-    return [SettingResponse.model_validate(s) for s in settings]
+    """List all settings. Filters by tab permissions for non-super-admin users."""
+    all_settings = db.query(Settings).order_by(Settings.key).all()
+
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return [SettingResponse.model_validate(s) for s in all_settings]
+
+    # Filter settings based on tab permissions
+    tab_perms = get_all_settings_tab_permissions(db, current_user)
+    accessible_tabs = {tab for tab, access in tab_perms.items() if access != 'no_access'}
+
+    result = []
+    for s in all_settings:
+        tab = SETTINGS_TAB_MAP.get(s.key)
+        # Allow unmapped keys (warmup settings, etc.) and keys in accessible tabs
+        if tab is None or tab in accessible_tabs:
+            result.append(SettingResponse.model_validate(s))
+    return result
 
 
 @router.get("/{key}", response_model=SettingResponse)
@@ -195,6 +281,17 @@ async def get_setting(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Get setting by key."""
+    # Check tab-level read permission for non-super-admin
+    if current_user.role != UserRole.SUPER_ADMIN:
+        tab = SETTINGS_TAB_MAP.get(key)
+        if tab:
+            access = get_user_settings_tab_access(db, current_user, tab)
+            if access == 'no_access':
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="No access to this settings tab"
+                )
+
     setting = db.query(Settings).filter(Settings.key == key).first()
     if not setting:
         raise HTTPException(
@@ -212,6 +309,24 @@ async def update_setting(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Update or create setting (Admin only)."""
+    # role_permissions is always super_admin only
+    if key == 'role_permissions' and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can modify role permissions"
+        )
+
+    # Check tab-level write permission for non-super-admin
+    if current_user.role != UserRole.SUPER_ADMIN:
+        tab = SETTINGS_TAB_MAP.get(key)
+        if tab:
+            access = get_user_settings_tab_access(db, current_user, tab)
+            if access in ('no_access', 'read'):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No write access to the '{tab}' settings tab"
+                )
+
     setting = db.query(Settings).filter(Settings.key == key).first()
 
     # Determine the value to store
@@ -283,6 +398,22 @@ def get_setting_value(db: Session, key: str, default: str = "") -> str:
     return default
 
 
+PROVIDER_TAB_MAP: Dict[str, str] = {
+    'apollo': 'job_sources',
+    'jsearch': 'job_sources',
+    'indeed': 'job_sources',
+    'seamless': 'contacts',
+    'neverbounce': 'validation',
+    'zerobounce': 'validation',
+    'smtp': 'outreach',
+    'm365': 'outreach',
+    'groq': 'ai_llm',
+    'openai': 'ai_llm',
+    'anthropic': 'ai_llm',
+    'gemini': 'ai_llm',
+}
+
+
 @router.post("/test-connection/{provider}")
 async def test_provider_connection(
     provider: str,
@@ -290,6 +421,17 @@ async def test_provider_connection(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """Test connection to a provider."""
+    # Check tab-level permission for the provider
+    if current_user.role != UserRole.SUPER_ADMIN:
+        tab = PROVIDER_TAB_MAP.get(provider)
+        if tab:
+            access = get_user_settings_tab_access(db, current_user, tab)
+            if access == 'no_access':
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"No access to the '{tab}' settings tab"
+                )
+
     try:
         if provider == "apollo":
             api_key = get_setting_value(db, "apollo_api_key")

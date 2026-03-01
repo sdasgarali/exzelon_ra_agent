@@ -14,12 +14,16 @@ interface ModuleDef {
   key: string
   label: string
   tabs?: string[]
+  tabKeys?: string[]  // machine-readable keys for sub-tabs (parallel to tabs)
   superAdminOnly?: boolean
+  independentTabs?: boolean  // if true, sub-tabs have independent per-tab permissions
 }
+
+type ModulePermission = AccessLevel | { [tabKey: string]: AccessLevel }
 
 interface RolePermissions {
   [role: string]: {
-    [moduleKey: string]: AccessLevel
+    [moduleKey: string]: ModulePermission
   }
 }
 
@@ -43,7 +47,7 @@ const MODULES: ModuleDef[] = [
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'warmup', label: 'Warmup Engine', tabs: ['Overview', 'Analytics', 'Emails', 'DNS & Blacklist', 'Profiles', 'Alerts', 'Settings'] },
   { key: 'pipelines', label: 'Pipelines', tabs: ['Lead Sourcing', 'Contact Enrichment', 'Email Validation', 'Outreach'] },
-  { key: 'settings', label: 'Settings', superAdminOnly: true },
+  { key: 'settings', label: 'Settings', tabs: ['Job Sources', 'AI/LLM', 'Contacts', 'Validation', 'Outreach', 'Business Rules'], tabKeys: ['job_sources', 'ai_llm', 'contacts', 'validation', 'outreach', 'business_rules'], independentTabs: true },
   { key: 'users', label: 'User Management', superAdminOnly: true },
   { key: 'roles', label: 'Roles & Permissions', superAdminOnly: true },
 ]
@@ -168,6 +172,31 @@ export default function RolesPermissionsPage() {
     }
   }, [])
 
+  // Helper to get a flat access level for a module (handles both flat and nested)
+  const getModuleAccess = (role: RoleName, moduleKey: string): AccessLevel => {
+    const perm = permissions[role]?.[moduleKey]
+    if (!perm) return 'no_access'
+    if (typeof perm === 'string') return perm
+    // Nested object: compute aggregate
+    const values = Object.values(perm) as AccessLevel[]
+    if (values.length === 0) return 'no_access'
+    if (values.every(v => v === values[0])) return values[0]
+    // Mixed: return highest access as summary
+    const order: AccessLevel[] = ['full', 'read_write', 'read', 'no_access']
+    for (const level of order) {
+      if (values.includes(level)) return level
+    }
+    return 'no_access'
+  }
+
+  // Helper to get sub-tab access
+  const getSubTabAccess = (role: RoleName, moduleKey: string, tabKey: string): AccessLevel => {
+    const perm = permissions[role]?.[moduleKey]
+    if (!perm) return 'no_access'
+    if (typeof perm === 'string') return perm  // flat = all tabs inherit
+    return (perm as Record<string, AccessLevel>)[tabKey] || 'no_access'
+  }
+
   useEffect(() => {
     loadPermissions()
   }, [loadPermissions])
@@ -180,14 +209,26 @@ export default function RolesPermissionsPage() {
     if (error) { const t = setTimeout(() => setError(null), 6000); return () => clearTimeout(t) }
   }, [error])
 
-  const handleAccessChange = (role: RoleName, moduleKey: string, level: AccessLevel) => {
-    setPermissions(prev => ({
-      ...prev,
-      [role]: {
-        ...prev[role],
-        [moduleKey]: level,
-      },
-    }))
+  const handleAccessChange = (role: RoleName, moduleKey: string, level: AccessLevel, tabKey?: string) => {
+    setPermissions(prev => {
+      const mod = MODULES.find(m => m.key === moduleKey)
+      if (mod?.independentTabs && mod.tabKeys) {
+        if (tabKey) {
+          // Change a single sub-tab
+          const current = prev[role]?.[moduleKey]
+          const currentObj: Record<string, AccessLevel> = typeof current === 'object' && current !== null
+            ? { ...(current as Record<string, AccessLevel>) }
+            : Object.fromEntries(mod.tabKeys.map(k => [k, (current as AccessLevel) || 'no_access']))
+          currentObj[tabKey] = level
+          return { ...prev, [role]: { ...prev[role], [moduleKey]: currentObj } }
+        } else {
+          // Parent row: set all sub-tabs at once
+          const newObj = Object.fromEntries(mod.tabKeys.map(k => [k, level]))
+          return { ...prev, [role]: { ...prev[role], [moduleKey]: newObj } }
+        }
+      }
+      return { ...prev, [role]: { ...prev[role], [moduleKey]: level } }
+    })
     setDirty(true)
   }
 
@@ -364,6 +405,8 @@ export default function RolesPermissionsPage() {
                     hasTabs={!!hasTabs}
                     onToggle={() => toggleModule(mod.key)}
                     onAccessChange={handleAccessChange}
+                    getModuleAccess={getModuleAccess}
+                    getSubTabAccess={getSubTabAccess}
                   />
                 )
               })}
@@ -404,14 +447,20 @@ function ModuleRows({
   hasTabs,
   onToggle,
   onAccessChange,
+  getModuleAccess,
+  getSubTabAccess,
 }: {
   mod: ModuleDef
   permissions: RolePermissions
   isExpanded: boolean
   hasTabs: boolean
   onToggle: () => void
-  onAccessChange: (role: RoleName, moduleKey: string, level: AccessLevel) => void
+  onAccessChange: (role: RoleName, moduleKey: string, level: AccessLevel, tabKey?: string) => void
+  getModuleAccess: (role: RoleName, moduleKey: string) => AccessLevel
+  getSubTabAccess: (role: RoleName, moduleKey: string, tabKey: string) => AccessLevel
 }) {
+  const isIndependent = mod.independentTabs && mod.tabKeys
+
   return (
     <>
       {/* Main module row */}
@@ -441,10 +490,15 @@ function ModuleRows({
                 ({mod.tabs!.length} tabs)
               </span>
             )}
+            {isIndependent && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded">
+                Per-Tab
+              </span>
+            )}
           </div>
         </td>
         {ROLES.map(role => {
-          const level = permissions[role.name]?.[mod.key] || 'no_access'
+          const level = getModuleAccess(role.name as RoleName, mod.key)
           const isStatic = role.static
           const isLocked = mod.superAdminOnly && role.name !== 'super_admin'
 
@@ -454,6 +508,24 @@ function ModuleRows({
                 <AccessBadge level="full" />
               ) : isLocked ? (
                 <AccessBadge level="no_access" locked />
+              ) : isIndependent ? (
+                <div className="flex flex-col items-center gap-0.5">
+                  <AccessDropdown
+                    value={level}
+                    onChange={(newLevel) => onAccessChange(role.name as RoleName, mod.key, newLevel)}
+                  />
+                  {(() => {
+                    // Show "Mixed" indicator if sub-tabs have different values
+                    const perm = permissions[role.name]?.[mod.key]
+                    if (typeof perm === 'object' && perm !== null) {
+                      const vals = Object.values(perm) as AccessLevel[]
+                      if (vals.length > 0 && !vals.every(v => v === vals[0])) {
+                        return <span className="text-[10px] text-amber-600 dark:text-amber-400">mixed</span>
+                      }
+                    }
+                    return null
+                  })()}
+                </div>
               ) : (
                 <AccessDropdown
                   value={level}
@@ -466,25 +538,55 @@ function ModuleRows({
       </tr>
 
       {/* Tab sub-rows (expanded) */}
-      {isExpanded && hasTabs && mod.tabs!.map(tab => (
-        <tr key={`${mod.key}-${tab}`} className="bg-gray-50/50 dark:bg-gray-800/50">
-          <td className="px-4 py-2 pl-12">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {tab}
-            </span>
-          </td>
-          {ROLES.map(role => {
-            const parentLevel = permissions[role.name]?.[mod.key] || 'no_access'
-            return (
-              <td key={role.name} className="px-4 py-2 text-center">
-                <span className="text-xs text-gray-400 dark:text-gray-500 italic">
-                  {role.static ? 'full' : parentLevel === 'no_access' ? '-' : `inherits (${parentLevel})`}
-                </span>
-              </td>
-            )
-          })}
-        </tr>
-      ))}
+      {isExpanded && hasTabs && mod.tabs!.map((tab, idx) => {
+        const tabKey = isIndependent && mod.tabKeys ? mod.tabKeys[idx] : undefined
+
+        return (
+          <tr key={`${mod.key}-${tab}`} className="bg-gray-50/50 dark:bg-gray-800/50">
+            <td className="px-4 py-2 pl-12">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {tab}
+              </span>
+            </td>
+            {ROLES.map(role => {
+              if (role.static) {
+                return (
+                  <td key={role.name} className="px-4 py-2 text-center">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 italic">full</span>
+                  </td>
+                )
+              }
+
+              if (isIndependent && tabKey) {
+                const isLocked = mod.superAdminOnly && role.name !== 'super_admin'
+                const tabLevel = getSubTabAccess(role.name as RoleName, mod.key, tabKey)
+                return (
+                  <td key={role.name} className="px-4 py-2 text-center">
+                    {isLocked ? (
+                      <span className="text-xs text-gray-400 dark:text-gray-500 italic">-</span>
+                    ) : (
+                      <AccessDropdown
+                        value={tabLevel}
+                        onChange={(newLevel) => onAccessChange(role.name as RoleName, mod.key, newLevel, tabKey)}
+                      />
+                    )}
+                  </td>
+                )
+              }
+
+              // Non-independent tabs: show inherits
+              const parentLevel = getModuleAccess(role.name as RoleName, mod.key)
+              return (
+                <td key={role.name} className="px-4 py-2 text-center">
+                  <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                    {parentLevel === 'no_access' ? '-' : `inherits (${parentLevel})`}
+                  </span>
+                </td>
+              )
+            })}
+          </tr>
+        )
+      })}
     </>
   )
 }
