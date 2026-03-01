@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
 from app.api.deps import get_db, get_current_active_user
+from app.db.query_helpers import tenant_query
 from app.db.models.user import User
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.client import ClientInfo, ClientCategory
@@ -44,29 +45,31 @@ async def get_kpis(
         from_date = to_date - timedelta(days=30)
 
     # Total companies identified
-    total_companies = db.query(func.count(func.distinct(LeadDetails.client_name))).filter(
+    total_companies = tenant_query(db, LeadDetails).filter(
         LeadDetails.posting_date >= from_date,
         LeadDetails.posting_date <= to_date
-    ).scalar() or 0
+    ).with_entities(func.count(func.distinct(LeadDetails.client_name))).scalar() or 0
 
     # Total leads
-    total_leads = db.query(func.count(LeadDetails.lead_id)).filter(
+    total_leads = tenant_query(db, LeadDetails).filter(
         LeadDetails.posting_date >= from_date,
         LeadDetails.posting_date <= to_date
-    ).scalar() or 0
+    ).with_entities(func.count(LeadDetails.lead_id)).scalar() or 0
 
     # Total valid emails
-    total_valid = db.query(func.count(EmailValidationResult.validation_id)).filter(
+    total_valid = tenant_query(db, EmailValidationResult).filter(
         EmailValidationResult.status == ValidationStatus.VALID,
         EmailValidationResult.validated_at >= datetime.combine(from_date, datetime.min.time()),
         EmailValidationResult.validated_at <= datetime.combine(to_date, datetime.max.time())
-    ).scalar() or 0
+    ).with_entities(func.count(EmailValidationResult.validation_id)).scalar() or 0
 
     # Total contacts
-    total_contacts = db.query(func.count(ContactDetails.contact_id)).scalar() or 0
+    total_contacts = tenant_query(db, ContactDetails).with_entities(
+        func.count(ContactDetails.contact_id)
+    ).scalar() or 0
 
     # Outreach stats
-    outreach_query = db.query(OutreachEvent).filter(
+    outreach_query = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.sent_at >= datetime.combine(from_date, datetime.min.time()),
         OutreachEvent.sent_at <= datetime.combine(to_date, datetime.max.time())
     )
@@ -107,7 +110,7 @@ async def get_leads_sourced(
     current_user: User = Depends(get_current_active_user)
 ):
     """Tab 1 - Leads Sourced."""
-    query = db.query(LeadDetails)
+    query = tenant_query(db, LeadDetails)
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -137,7 +140,7 @@ async def get_contacts_identified(
     current_user: User = Depends(get_current_active_user)
 ):
     """Tab 2 - Contacts Identified."""
-    contacts = db.query(ContactDetails).order_by(
+    contacts = tenant_query(db, ContactDetails).order_by(
         ContactDetails.created_at.desc()
     ).limit(limit).all()
 
@@ -158,24 +161,41 @@ async def get_contacts_identified(
 async def get_outreach_sent(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
+    status: Optional[str] = None,
+    channel: Optional[str] = None,
+    search: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """Tab 3 - Outreach Sent."""
-    query = db.query(OutreachEvent)
+    query = tenant_query(db, OutreachEvent)
 
     if from_date:
         query = query.filter(OutreachEvent.sent_at >= datetime.combine(from_date, datetime.min.time()))
     if to_date:
         query = query.filter(OutreachEvent.sent_at <= datetime.combine(to_date, datetime.max.time()))
+    if status:
+        query = query.filter(OutreachEvent.status == status)
+    if channel:
+        query = query.filter(OutreachEvent.channel == channel)
+
+    # For search, we need to join with contacts
+    if search:
+        query = query.join(ContactDetails, ContactDetails.contact_id == OutreachEvent.contact_id).filter(
+            (ContactDetails.first_name.ilike(f"%{search}%")) |
+            (ContactDetails.last_name.ilike(f"%{search}%")) |
+            (ContactDetails.email.ilike(f"%{search}%")) |
+            (ContactDetails.client_name.ilike(f"%{search}%")) |
+            (OutreachEvent.subject.ilike(f"%{search}%"))
+        )
 
     events = query.order_by(OutreachEvent.sent_at.desc()).limit(limit).all()
 
     results = []
     for e in events:
         # Join with contact for name/email
-        contact = db.query(ContactDetails).filter(
+        contact = tenant_query(db, ContactDetails).filter(
             ContactDetails.contact_id == e.contact_id
         ).first() if e.contact_id else None
 
@@ -205,13 +225,13 @@ async def get_client_categories(
     current_user: User = Depends(get_current_active_user)
 ):
     """Tab 4 - Client Category Tracking."""
-    by_category = db.query(
+    by_category = tenant_query(db, ClientInfo).with_entities(
         ClientInfo.client_category,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.client_category).all()
 
     # Also get client list by category
-    clients = db.query(ClientInfo).order_by(ClientInfo.client_name).all()
+    clients = tenant_query(db, ClientInfo).order_by(ClientInfo.client_name).all()
 
     return {
         "summary": {cat.value: count for cat, count in by_category if cat},
@@ -238,7 +258,7 @@ async def get_trends(
     start_date = end_date - timedelta(days=days)
 
     # Daily leads count
-    daily_leads = db.query(
+    daily_leads = tenant_query(db, LeadDetails).with_entities(
         func.date(LeadDetails.created_at).label('date'),
         func.count(LeadDetails.lead_id).label('count')
     ).filter(
@@ -246,7 +266,7 @@ async def get_trends(
     ).group_by(func.date(LeadDetails.created_at)).all()
 
     # Daily outreach count
-    daily_outreach = db.query(
+    daily_outreach = tenant_query(db, OutreachEvent).with_entities(
         func.date(OutreachEvent.sent_at).label('date'),
         func.count(OutreachEvent.event_id).label('count')
     ).filter(
@@ -266,48 +286,56 @@ async def get_dashboard_stats(
 ):
     """Consolidated dashboard statistics (all-time, no date filter)."""
     # Leads
-    total_leads = db.query(func.count(LeadDetails.lead_id)).scalar() or 0
-    by_status = db.query(
+    total_leads = tenant_query(db, LeadDetails).with_entities(
+        func.count(LeadDetails.lead_id)
+    ).scalar() or 0
+    by_status = tenant_query(db, LeadDetails).with_entities(
         LeadDetails.lead_status, func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.lead_status).all()
-    by_source = db.query(
+    by_source = tenant_query(db, LeadDetails).with_entities(
         LeadDetails.source, func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.source).all()
 
     # Contacts
-    total_contacts = db.query(func.count(ContactDetails.contact_id)).scalar() or 0
-    by_validation = db.query(
+    total_contacts = tenant_query(db, ContactDetails).with_entities(
+        func.count(ContactDetails.contact_id)
+    ).scalar() or 0
+    by_validation = tenant_query(db, ContactDetails).with_entities(
         ContactDetails.validation_status, func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
     # Outreach
-    total_sent = db.query(func.count(OutreachEvent.event_id)).filter(
+    total_sent = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.SENT
-    ).scalar() or 0
-    total_replied = db.query(func.count(OutreachEvent.event_id)).filter(
+    ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
+    total_replied = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.REPLIED
-    ).scalar() or 0
-    total_bounced = db.query(func.count(OutreachEvent.event_id)).filter(
+    ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
+    total_bounced = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.BOUNCED
-    ).scalar() or 0
+    ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
     reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
     bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
 
     # Mailboxes
-    total_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).scalar() or 0
-    active_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).filter(
+    total_mailboxes = tenant_query(db, SenderMailbox).with_entities(
+        func.count(SenderMailbox.mailbox_id)
+    ).scalar() or 0
+    active_mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status == WarmupStatus.ACTIVE
-    ).scalar() or 0
-    warming_up_mailboxes = db.query(func.count(SenderMailbox.mailbox_id)).filter(
+    ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
+    warming_up_mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.warmup_status == WarmupStatus.WARMING_UP
-    ).scalar() or 0
+    ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
 
     # Templates
-    total_templates = db.query(func.count(EmailTemplate.template_id)).scalar() or 0
-    active_templates = db.query(func.count(EmailTemplate.template_id)).filter(
-        EmailTemplate.status == TemplateStatus.ACTIVE
+    total_templates = tenant_query(db, EmailTemplate).with_entities(
+        func.count(EmailTemplate.template_id)
     ).scalar() or 0
+    active_templates = tenant_query(db, EmailTemplate).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE
+    ).with_entities(func.count(EmailTemplate.template_id)).scalar() or 0
 
     return {
         "leads": {

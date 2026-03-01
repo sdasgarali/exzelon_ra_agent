@@ -18,6 +18,8 @@ interface Contact {
   priority_level: string
   validation_status: string
   source: string
+  outreach_status: string
+  unsubscribed_at: string | null
 }
 
 export default function ContactsPage() {
@@ -33,6 +35,7 @@ export default function ContactsPage() {
   const [filterPriority, setFilterPriority] = useState('')
   const [filterValidation, setFilterValidation] = useState('')
   const [filterSource, setFilterSource] = useState('')
+  const [filterOutreachStatus, setFilterOutreachStatus] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
   // Multi-select & delete
@@ -47,23 +50,27 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts()
-  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, showArchived])
+  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, showArchived])
 
   const fetchContacts = async () => {
     try {
       setLoading(true)
+      setError('')
       const params: Record<string, any> = { page, page_size: pageSize }
       if (debouncedSearch) params.search = debouncedSearch
       if (filterPriority) params.priority_level = filterPriority
       if (filterValidation) params.validation_status = filterValidation
       if (filterSource) params.source = filterSource
+      if (filterOutreachStatus) params.outreach_status = filterOutreachStatus
       if (showArchived) params.show_archived = true
       const response = await contactsApi.list(params)
       const contactList = Array.isArray(response) ? response : (response?.items || [])
       setContacts(contactList)
       setTotal(response?.total || contactList.length)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch contacts')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch contacts')
+      }
     } finally {
       setLoading(false)
     }
@@ -139,6 +146,24 @@ export default function ContactsPage() {
       p5_functional_manager: 'P5 - Func. Mgr',
     }
     return labels[priority] || priority.split('_')[0].toUpperCase()
+  }
+
+  const getOutreachStatusBadge = (status: string) => {
+    const colors: Record<string, string> = {
+      active: 'bg-green-100 text-green-800',
+      inactive: 'bg-gray-100 text-gray-800',
+      unsubscribed: 'bg-red-100 text-red-800',
+    }
+    return colors[status] || 'bg-green-100 text-green-800'
+  }
+
+  const getOutreachStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      active: 'Active',
+      inactive: 'Inactive',
+      unsubscribed: 'Unsubscribed',
+    }
+    return labels[status] || 'Active'
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
@@ -234,6 +259,12 @@ export default function ContactsPage() {
             <option value="apollo">Apollo</option>
             <option value="seamless">Seamless</option>
           </select>
+          <select value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-40">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="unsubscribed">Unsubscribed</option>
+          </select>
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="input w-36">
             <option value="10">10 per page</option>
             <option value="25">25 per page</option>
@@ -276,13 +307,15 @@ export default function ContactsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lead ID</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unsub Date</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
               ) : (
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
@@ -327,6 +360,14 @@ export default function ContactsPage() {
                       ) : <span className="text-gray-400">-</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{contact.source || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={'px-2 py-1 text-xs rounded-full ' + getOutreachStatusBadge(contact.outreach_status || 'active')}>
+                        {getOutreachStatusLabel(contact.outreach_status || 'active')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {contact.unsubscribed_at ? new Date(contact.unsubscribed_at).toLocaleDateString() : '-'}
+                    </td>
                   </tr>
                 ))
               )}

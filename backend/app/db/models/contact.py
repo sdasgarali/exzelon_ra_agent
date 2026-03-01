@@ -1,5 +1,5 @@
 """Contact details model for discovered contacts."""
-from sqlalchemy import Column, Integer, String, Enum, Index, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, ForeignKey
 from sqlalchemy.orm import relationship
 from enum import Enum as PyEnum
 from app.db.base import Base
@@ -14,6 +14,13 @@ class PriorityLevel(str, PyEnum):
     P5_FUNCTIONAL_MANAGER = "p5_functional_manager"
 
 
+class OutreachStatus(str, PyEnum):
+    """Contact-level outreach status."""
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    UNSUBSCRIBED = "unsubscribed"
+
+
 class ContactDetails(Base):
     """Contact details model - Discovered contacts for outreach.
 
@@ -23,6 +30,7 @@ class ContactDetails(Base):
     __tablename__ = "contact_details"
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
 
     # Direct link to the lead this contact was discovered for
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='CASCADE'), nullable=True, index=True)
@@ -40,13 +48,17 @@ class ContactDetails(Base):
 
     # Discovery metadata
     source = Column(String(50), nullable=True)  # apollo, seamless
-    priority_level = Column(Enum(PriorityLevel), nullable=True)
+    priority_level = Column(Enum(PriorityLevel, values_callable=lambda x: [e.value for e in x]), nullable=True)
 
     # Validation status (denormalized for convenience)
     validation_status = Column(String(50), nullable=True)  # Valid, Invalid, Catch-all, Unknown
 
     # Last outreach tracking for cooldown enforcement
     last_outreach_date = Column(String(50), nullable=True)
+
+    # Outreach status and unsubscribe tracking
+    outreach_status = Column(Enum(OutreachStatus, values_callable=lambda x: [e.value for e in x]), default=OutreachStatus.ACTIVE, nullable=False, server_default="active")
+    unsubscribed_at = Column(DateTime, nullable=True)
 
     # Relationship to lead
     lead = relationship("LeadDetails", back_populates="contacts")

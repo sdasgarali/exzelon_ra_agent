@@ -63,22 +63,41 @@ export default function OutreachPage() {
   const [checkingReplies, setCheckingReplies] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [mode, setMode] = useState<'mailmerge' | 'send'>('mailmerge')
+  const [mode, setMode] = useState<'mailmerge' | 'send'>('send')
   const [dryRun, setDryRun] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [channelFilter, setChannelFilter] = useState<string>('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [threadModal, setThreadModal] = useState<ThreadData | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
 
+  // Multi-select & delete
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [statusFilter, channelFilter, debouncedSearch])
 
   const fetchData = async () => {
     try {
       setLoading(true)
+      setError('')
+      const outreachParams: Record<string, any> = { limit: 100 }
+      if (statusFilter) outreachParams.status = statusFilter
+      if (channelFilter) outreachParams.channel = channelFilter
+      if (debouncedSearch) outreachParams.search = debouncedSearch
+
       const [kpis, outreachData, settingsList] = await Promise.all([
         dashboardApi.kpis(),
-        dashboardApi.outreachSent({ limit: 50 }),
+        dashboardApi.outreachSent(outreachParams),
         settingsApi.list()
       ])
       setStats({
@@ -90,6 +109,7 @@ export default function OutreachPage() {
         total_valid_emails: kpis.total_valid_emails || 0,
       })
       setEvents(outreachData || [])
+      setSelectedIds(new Set())
       const settingsMap: Record<string, any> = {}
       for (const s of settingsList || []) {
         try {
@@ -100,7 +120,9 @@ export default function OutreachPage() {
       }
       setSettings(settingsMap)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch data')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch data')
+      }
     } finally {
       setLoading(false)
     }
@@ -151,6 +173,43 @@ export default function OutreachPage() {
     }
   }
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === events.length && events.length > 0) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(events.map(e => e.event_id)))
+    }
+  }
+
+  const isAllSelected = events.length > 0 && selectedIds.size === events.length
+
+  const handleDeleteSelected = async () => {
+    try {
+      setDeleting(true)
+      setError('')
+      const response = await outreachApi.deleteEvents(Array.from(selectedIds))
+      const count = response?.deleted_count || selectedIds.size
+      setSuccess(`${count} outreach event(s) deleted successfully.`)
+      setSelectedIds(new Set())
+      setShowDeleteModal(false)
+      fetchData()
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to delete outreach events')
+      setShowDeleteModal(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
       sent: 'bg-blue-100 text-blue-800',
@@ -162,9 +221,7 @@ export default function OutreachPage() {
     return colors[status?.toLowerCase()] || 'bg-gray-100 text-gray-800'
   }
 
-  const filteredEvents = statusFilter === 'all' ? events : events.filter(e => e.status?.toLowerCase() === statusFilter)
-
-  if (loading) {
+  if (loading && events.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading outreach data...</div>
@@ -174,29 +231,68 @@ export default function OutreachPage() {
 
   return (
     <div>
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                <span className="text-red-600 text-xl">&#9888;</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">Confirm Deletion</h3>
+            </div>
+            <p className="text-gray-600 mb-2">
+              You are about to permanently delete <strong>{selectedIds.size}</strong> outreach event(s).
+            </p>
+            <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
+              <p className="text-sm text-red-800 font-medium">This action cannot be undone.</p>
+              <p className="text-sm text-red-700 mt-1">Email send records, reply data, and tracking information will be removed.</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowDeleteModal(false)} disabled={deleting} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+              <button onClick={handleDeleteSelected} disabled={deleting} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Outreach Management</h1>
           <p className="text-gray-500 mt-1">Send emails and track replies</p>
         </div>
-        <button
-          onClick={handleCheckReplies}
-          disabled={checkingReplies}
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-        >
-          {checkingReplies ? 'Checking...' : 'Check Replies'}
-        </button>
+        <div className="flex gap-3">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
+            >
+              Delete Selected ({selectedIds.size})
+            </button>
+          )}
+          <button
+            onClick={handleCheckReplies}
+            disabled={checkingReplies}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+          >
+            {checkingReplies ? 'Checking...' : 'Check Replies'}
+          </button>
+        </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4">
-          {error}
+        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 flex justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="font-bold">x</button>
         </div>
       )}
 
       {success && (
-        <div className="bg-green-50 text-green-600 px-4 py-2 rounded-lg mb-4">
-          {success}
+        <div className="bg-green-50 text-green-600 px-4 py-2 rounded-lg mb-4 flex justify-between">
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')} className="font-bold">x</button>
         </div>
       )}
 
@@ -246,8 +342,8 @@ export default function OutreachPage() {
           <div>
             <label className="label">Outreach Mode</label>
             <select value={mode} onChange={(e) => setMode(e.target.value as 'mailmerge' | 'send')} className="input">
-              <option value="mailmerge">Mailmerge Export (CSV)</option>
               <option value="send">Programmatic Send</option>
+              <option value="mailmerge">Mailmerge Export (CSV)</option>
             </select>
           </div>
           {mode === 'send' && (
@@ -278,51 +374,89 @@ export default function OutreachPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="font-semibold text-gray-800">Recent Outreach Events</h3>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-3 py-1">
-            <option value="all">All Status</option>
-            <option value="sent">Sent</option>
-            <option value="replied">Replied</option>
-            <option value="bounced">Bounced</option>
-            <option value="skipped">Skipped</option>
-          </select>
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-semibold text-gray-800">Recent Outreach Events</h3>
+            <span className="text-sm text-gray-500">{events.length} event(s)</span>
+          </div>
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="flex-1 min-w-64">
+              <input
+                type="text"
+                placeholder="Search contact, email, company, subject..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input w-full"
+              />
+            </div>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="input w-36">
+              <option value="">All Status</option>
+              <option value="sent">Sent</option>
+              <option value="replied">Replied</option>
+              <option value="bounced">Bounced</option>
+              <option value="skipped">Skipped</option>
+            </select>
+            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="input w-36">
+              <option value="">All Channels</option>
+              <option value="smtp">SMTP</option>
+              <option value="mailmerge">Mailmerge</option>
+              <option value="api">API</option>
+            </select>
+          </div>
         </div>
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent At</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {filteredEvents.map((event, idx) => (
-              <tr key={idx} className="hover:bg-gray-50 cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>
-                <td className="px-6 py-4 text-sm text-gray-900">{event.contact_name || '-'}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{event.client_name || '-'}</td>
-                <td className="px-6 py-4 text-sm text-gray-900 font-mono">{event.email || '-'}</td>
-                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{event.subject || '-'}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{event.date_sent ? new Date(event.date_sent).toLocaleString() : '-'}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{event.channel || '-'}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(event.status)}`}>
-                    {event.status || '-'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {filteredEvents.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            No outreach events yet. Run the outreach pipeline to send emails.
+
+        {/* Selection Bar */}
+        {selectedIds.size > 0 && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-2 flex items-center justify-between">
+            <span className="text-sm text-blue-800 font-medium">{selectedIds.size} event(s) selected</span>
+            <button onClick={() => setSelectedIds(new Set())} className="text-sm text-blue-600 hover:text-blue-800">Clear Selection</button>
           </div>
         )}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 w-10">
+                  <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent At</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {loading ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Loading events...</td></tr>
+              ) : events.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No outreach events found. Run the outreach pipeline to send emails.</td></tr>
+              ) : (
+                events.map((event) => (
+                  <tr key={event.event_id} className={'hover:bg-gray-50' + (selectedIds.has(event.event_id) ? ' bg-blue-50' : '')}>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(event.event_id)} onChange={() => toggleSelect(event.event_id)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.contact_name || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.client_name || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 font-mono cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.email || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.subject || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{event.date_sent ? new Date(event.date_sent).toLocaleString() : '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{event.channel || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(event.status)}`}>
+                        {event.status || '-'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Thread Modal */}
@@ -403,4 +537,3 @@ export default function OutreachPage() {
     </div>
   )
 }
-

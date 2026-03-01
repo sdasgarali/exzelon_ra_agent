@@ -1,7 +1,8 @@
 import os
 
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 filepath = os.path.join(
-    r"C:\Ali\Rizwan-Taiyab\Exzelon\AI-Agent-RA\RA-01182026",
+    _project_root,
     "frontend", "src", "app", "dashboard", "settings", "page.tsx"
 )
 

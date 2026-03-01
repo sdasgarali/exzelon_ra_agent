@@ -76,6 +76,7 @@ export default function ValidationPage() {
   const fetchContacts = async () => {
     try {
       setLoading(true)
+      setError('')
       const params: Record<string, any> = { page, page_size: pageSize }
       if (debouncedSearch) params.search = debouncedSearch
       if (filterValidation) params.validation_status = filterValidation
@@ -85,7 +86,9 @@ export default function ValidationPage() {
       setContacts(contactList)
       setTotal(response?.total || contactList.length)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch contacts')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch contacts')
+      }
     } finally {
       setLoading(false)
     }

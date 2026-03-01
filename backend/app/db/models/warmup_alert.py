@@ -28,9 +28,10 @@ class WarmupAlert(Base):
     __tablename__ = 'warmup_alerts'
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=True, index=True)
-    alert_type = Column(Enum(AlertType), nullable=False)
-    severity = Column(Enum(AlertSeverity), default=AlertSeverity.INFO)
+    alert_type = Column(Enum(AlertType, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    severity = Column(Enum(AlertSeverity, values_callable=lambda x: [e.value for e in x]), default=AlertSeverity.INFO)
     title = Column(String(255), nullable=False)
     message = Column(Text, nullable=True)
     details_json = Column(Text, nullable=True)

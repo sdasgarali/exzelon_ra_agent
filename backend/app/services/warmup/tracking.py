@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.warmup_email import WarmupEmail
 from app.db.models.settings import Settings
+from app.core.config import settings as app_settings
 
 
 def _get_setting(db: Session, key: str, default=None):
@@ -20,19 +21,19 @@ def _get_setting(db: Session, key: str, default=None):
 
 
 def generate_tracking_pixel_url(tracking_id: str, base_url: str = None) -> str:
-    base = base_url or "http://localhost:8000"
+    base = base_url or app_settings.EFFECTIVE_BASE_URL
     return f"{base}/t/{tracking_id}/px.gif"
 
 
 def generate_tracked_link(tracking_id: str, original_url: str, base_url: str = None) -> str:
-    base = base_url or "http://localhost:8000"
+    base = base_url or app_settings.EFFECTIVE_BASE_URL
     import urllib.parse
     encoded = urllib.parse.quote(original_url, safe="")
     return f"{base}/t/{tracking_id}/l?url={encoded}"
 
 
 def inject_tracking(html_body: str, tracking_id: str, db: Session = None) -> str:
-    base_url = "http://localhost:8000"
+    base_url = app_settings.EFFECTIVE_BASE_URL
     if db:
         base_url = _get_setting(db, "warmup_tracking_base_url", base_url)
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.query_helpers import tenant_query
 from app.schemas.email_template import (
     EmailTemplateCreate,
     EmailTemplateUpdate,
@@ -24,7 +25,7 @@ async def list_templates(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """List all email templates."""
-    query = db.query(EmailTemplate)
+    query = tenant_query(db, EmailTemplate)
     if show_archived:
         query = query.filter(EmailTemplate.is_archived == True)
     else:
@@ -44,7 +45,7 @@ async def get_active_template(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get the currently active email template."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE
     ).first()
     if not template:
@@ -59,7 +60,7 @@ async def get_template(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get a single email template by ID."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -79,11 +80,11 @@ async def create_template(
     """Create a new email template."""
     # If creating as active, deactivate all others
     if template_in.status == TemplateStatus.ACTIVE:
-        db.query(EmailTemplate).filter(
+        tenant_query(db, EmailTemplate).filter(
             EmailTemplate.status == TemplateStatus.ACTIVE
         ).update({"status": TemplateStatus.INACTIVE})
 
-    template = EmailTemplate(**template_in.model_dump())
+    template = EmailTemplate(**template_in.model_dump(), tenant_id=current_user.tenant_id)
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -98,7 +99,7 @@ async def update_template(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Update an email template."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -111,7 +112,7 @@ async def update_template(
 
     # If setting to active, deactivate all others
     if update_data.get("status") == TemplateStatus.ACTIVE:
-        db.query(EmailTemplate).filter(
+        tenant_query(db, EmailTemplate).filter(
             EmailTemplate.status == TemplateStatus.ACTIVE,
             EmailTemplate.template_id != template_id,
         ).update({"status": TemplateStatus.INACTIVE})
@@ -131,7 +132,7 @@ async def delete_template(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Archive an email template (soft delete). Cannot archive the default template."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -157,7 +158,7 @@ async def activate_template(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Activate a template (deactivates all others)."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -167,7 +168,7 @@ async def activate_template(
         )
 
     # Deactivate all others
-    db.query(EmailTemplate).filter(
+    tenant_query(db, EmailTemplate).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE
     ).update({"status": TemplateStatus.INACTIVE})
 
@@ -184,7 +185,7 @@ async def preview_template(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Preview a template with sample data."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -230,7 +231,7 @@ async def duplicate_template(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Duplicate an email template."""
-    template = db.query(EmailTemplate).filter(
+    template = tenant_query(db, EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
@@ -247,6 +248,7 @@ async def duplicate_template(
         status=TemplateStatus.INACTIVE,
         is_default=False,
         description=template.description,
+        tenant_id=current_user.tenant_id,
     )
     db.add(new_template)
     db.commit()

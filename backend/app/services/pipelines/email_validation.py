@@ -10,6 +10,8 @@ from app.db.models.contact import ContactDetails
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 from app.services.adapters.email_validation.mock import MockEmailValidationAdapter
 from app.services.adapters.email_validation.neverbounce import NeverBounceAdapter
 from app.services.adapters.email_validation.zerobounce import ZeroBounceAdapter
@@ -45,7 +47,8 @@ def get_email_validation_adapter(provider: Optional[str] = None):
 def run_email_validation_pipeline(
     emails: Optional[List[str]] = None,
     provider: Optional[str] = None,
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Run the email validation pipeline.
@@ -56,7 +59,14 @@ def run_email_validation_pipeline(
     3. Validate via provider
     4. Store results
     5. Update contact validation status
+
+    Args:
+        emails: Optional list of specific emails to validate
+        provider: Email validation provider name
+        triggered_by: Who triggered the pipeline
+        tenant_id: Tenant ID for multi-tenant scoping
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"validated": 0, "valid": 0, "invalid": 0, "catch_all": 0, "unknown": 0, "errors": 0}
 
@@ -64,7 +74,8 @@ def run_email_validation_pipeline(
     job_run = JobRun(
         pipeline_name="email_validation",
         status=JobStatus.RUNNING,
-        triggered_by=triggered_by
+        triggered_by=triggered_by,
+        tenant_id=tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -77,7 +88,7 @@ def run_email_validation_pipeline(
         # Get emails to validate
         if emails is None:
             # Get unvalidated contact emails
-            contacts = db.query(ContactDetails).filter(
+            contacts = tenant_query(db, ContactDetails).filter(
                 ContactDetails.validation_status.is_(None),
                 ContactDetails.is_archived == False
             ).limit(500).all()
@@ -100,7 +111,7 @@ def run_email_validation_pipeline(
         for email in clean_emails:
             try:
                 # Check if already validated
-                existing = db.query(EmailValidationResult).filter(
+                existing = tenant_query(db, EmailValidationResult).filter(
                     EmailValidationResult.email == email
                 ).first()
 
@@ -119,7 +130,8 @@ def run_email_validation_pipeline(
                     provider=provider or settings.EMAIL_VALIDATION_PROVIDER,
                     status=result["status"],
                     sub_status=str(result.get("sub_status")),
-                    raw_response_json=json.dumps(result.get("raw_response", {}))
+                    raw_response_json=json.dumps(result.get("raw_response", {})),
+                    tenant_id=tenant_id
                 )
                 db.add(validation)
 
@@ -173,7 +185,7 @@ def run_email_validation_pipeline(
 
 def update_contact_validation_status(db, email: str, status: ValidationStatus):
     """Update contact validation status."""
-    contacts = db.query(ContactDetails).filter(
+    contacts = tenant_query(db, ContactDetails).filter(
         ContactDetails.email == email
     ).all()
 
@@ -183,13 +195,13 @@ def update_contact_validation_status(db, email: str, status: ValidationStatus):
 
 def update_lead_validation_status(db):
     """Update leads that have validated contact emails."""
-    leads = db.query(LeadDetails).filter(
+    leads = tenant_query(db, LeadDetails).filter(
         LeadDetails.lead_status == LeadStatus.ENRICHED,
         LeadDetails.contact_email.isnot(None)
     ).all()
 
     for lead in leads:
-        validation = db.query(EmailValidationResult).filter(
+        validation = tenant_query(db, EmailValidationResult).filter(
             EmailValidationResult.email == lead.contact_email.lower()
         ).first()
 

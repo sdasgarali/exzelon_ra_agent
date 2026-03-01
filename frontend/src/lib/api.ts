@@ -17,11 +17,15 @@ function getRequestKey(config: any): string {
   return `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`
 }
 
-// Add auth token to requests + deduplicate GET requests
+// Add auth token + tenant context to requests + deduplicate GET requests
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
+  const { token, activeTenantId, user } = useAuthStore.getState()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // Global Super Admin (SA + master tenant): send X-Tenant-Id header when switching tenant context
+  if (user?.role === 'super_admin' && user?.tenant_id === 1 && activeTenantId != null) {
+    config.headers['X-Tenant-Id'] = String(activeTenantId)
   }
 
   // Only deduplicate GET requests
@@ -52,8 +56,12 @@ api.interceptors.response.use(
       pendingRequests.delete(key)
     }
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout()
-      window.location.href = '/login'
+      // Don't redirect if we're already on the login page or the request was a login attempt
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+      if (!isLoginRequest) {
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }
@@ -163,6 +171,14 @@ export const clientsApi = {
   },
   delete: async (id: number) => {
     await api.delete(`/clients/${id}`)
+  },
+  bulkDelete: async (ids: number[]) => {
+    const response = await api.delete('/clients/bulk', { data: { client_ids: ids } })
+    return response.data
+  },
+  exportCsv: async (params?: Record<string, any>) => {
+    const response = await api.get('/clients/export/csv', { params, responseType: 'blob' })
+    return response.data
   },
 }
 
@@ -481,6 +497,57 @@ export const templatesApi = {
   },
 }
 
+// Tenants API (Super Admin)
+export const tenantsApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/tenants', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/tenants/${id}`)
+    return response.data
+  },
+  create: async (data: { name: string; slug: string; plan?: string; max_users?: number; max_mailboxes?: number }) => {
+    const response = await api.post('/tenants', data)
+    return response.data
+  },
+  update: async (id: number, data: Record<string, any>) => {
+    const response = await api.put(`/tenants/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    const response = await api.delete(`/tenants/${id}`)
+    return response.data
+  },
+  switch: async (id: number) => {
+    const response = await api.post(`/tenants/${id}/switch`)
+    return response.data
+  },
+}
+
+// Users API (Admin+)
+export const usersApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/users', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/users/${id}`)
+    return response.data
+  },
+  create: async (data: { email: string; password: string; full_name?: string; role?: string; tenant_id?: number; is_active?: boolean }) => {
+    const response = await api.post('/users', data)
+    return response.data
+  },
+  update: async (id: number, data: Record<string, any>) => {
+    const response = await api.put(`/users/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/users/${id}`)
+  },
+}
+
 // Outreach API
 export const outreachApi = {
   listEvents: async (params?: Record<string, any>) => {
@@ -501,6 +568,10 @@ export const outreachApi = {
   },
   getStats: async () => {
     const response = await api.get("/outreach/stats/summary")
+    return response.data
+  },
+  deleteEvents: async (eventIds: number[]) => {
+    const response = await api.delete("/outreach/events/bulk", { data: { event_ids: eventIds } })
     return response.data
   },
 }

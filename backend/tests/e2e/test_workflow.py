@@ -102,8 +102,9 @@ class TestCompleteWorkflow:
 
     def test_user_roles_access(self, client, auth_headers, operator_headers, viewer_headers):
         """Test that different roles have appropriate access."""
+        # Admin (tenant_admin) cannot access /users — requires super_admin
         admin_users_response = client.get("/api/v1/users", headers=auth_headers)
-        assert admin_users_response.status_code == 200
+        assert admin_users_response.status_code == 403
 
         viewer_leads_response = client.get("/api/v1/leads", headers=viewer_headers)
         assert viewer_leads_response.status_code == 200
@@ -118,12 +119,12 @@ class TestCompleteWorkflow:
         data = response.json()
         assert isinstance(data, list)
 
-    def test_settings_management(self, client, auth_headers):
-        """Test settings initialization and retrieval."""
-        init_response = client.post("/api/v1/settings/initialize", headers=auth_headers)
+    def test_settings_management(self, client, sa_headers):
+        """Test settings initialization and retrieval (Super Admin only)."""
+        init_response = client.post("/api/v1/settings/initialize", headers=sa_headers)
         assert init_response.status_code == 200
 
-        list_response = client.get("/api/v1/settings", headers=auth_headers)
+        list_response = client.get("/api/v1/settings", headers=sa_headers)
         assert list_response.status_code == 200
         settings = list_response.json()
         assert len(settings) > 0

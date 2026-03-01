@@ -1,6 +1,6 @@
 """Client info model for company lifecycle tracking."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Enum
+from sqlalchemy import Column, Integer, String, Date, Enum, ForeignKey
 from app.db.base import Base
 
 
@@ -24,11 +24,12 @@ class ClientInfo(Base):
     __tablename__ = "client_info"
 
     client_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     client_name = Column(String(255), unique=True, nullable=False, index=True)
-    status = Column(Enum(ClientStatus), default=ClientStatus.ACTIVE, nullable=False)
+    status = Column(Enum(ClientStatus, values_callable=lambda x: [e.value for e in x]), default=ClientStatus.ACTIVE, nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    client_category = Column(Enum(ClientCategory), default=ClientCategory.PROSPECT, nullable=False)
+    client_category = Column(Enum(ClientCategory, values_callable=lambda x: [e.value for e in x]), default=ClientCategory.PROSPECT, nullable=False)
     service_count = Column(Integer, default=0, nullable=False)
 
     # Additional fields for tracking

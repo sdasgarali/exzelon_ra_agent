@@ -19,7 +19,8 @@ class TestLeadsEndpoints:
             salary_min=50000,
             salary_max=70000,
             source="linkedin",
-            lead_status=LeadStatus.NEW
+            lead_status=LeadStatus.NEW,
+            tenant_id=1,
         )
         db_session.add(lead)
         db_session.commit()
@@ -44,7 +45,8 @@ class TestLeadsEndpoints:
                 job_title=f"Position {i}",
                 state="CA",
                 source="linkedin",
-                lead_status=LeadStatus.NEW
+                lead_status=LeadStatus.NEW,
+                tenant_id=1,
             )
             db_session.add(lead)
         db_session.commit()
@@ -138,7 +140,8 @@ class TestLeadsEndpoints:
             lead = LeadDetails(
                 client_name=f"Company {lead_status.value}",
                 job_title="Position",
-                lead_status=lead_status
+                lead_status=lead_status,
+                tenant_id=1,
             )
             db_session.add(lead)
         db_session.commit()

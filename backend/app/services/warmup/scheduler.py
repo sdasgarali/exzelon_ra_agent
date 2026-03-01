@@ -4,6 +4,9 @@ from datetime import datetime, date
 from typing import Optional
 import structlog
 
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
+
 logger = structlog.get_logger()
 _scheduler = None
 
@@ -59,21 +62,38 @@ def _get_db():
 
 def job_daily_assessment():
     logger.info("Running daily warmup assessment")
+    db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.services.pipelines.warmup_engine import run_warmup_assessment
-        result = run_warmup_assessment(triggered_by="scheduler")
-        logger.info("Daily assessment complete", result=result)
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                result = run_warmup_assessment(triggered_by="scheduler", tenant_id=tenant.tenant_id)
+                logger.info("Daily assessment complete", tenant_id=tenant.tenant_id, result=result)
+            except Exception as e:
+                logger.error("Daily assessment failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Daily assessment failed", error=str(e))
+    finally:
+        db.close()
 
 
 def job_peer_warmup_cycle():
     logger.info("Running peer warmup cycle")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.services.warmup.peer_warmup import run_peer_warmup_cycle
-        result = run_peer_warmup_cycle(db)
-        logger.info("Peer warmup cycle complete", result=result)
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                result = run_peer_warmup_cycle(db, tenant_id=tenant.tenant_id)
+                logger.info("Peer warmup cycle complete", tenant_id=tenant.tenant_id, result=result)
+            except Exception as e:
+                logger.error("Peer warmup cycle failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Peer warmup cycle failed", error=str(e))
     finally:
@@ -86,9 +106,16 @@ def job_auto_reply_cycle():
     logger.info("Running auto-reply cycle")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.services.warmup.peer_warmup import run_auto_reply_cycle
-        result = run_auto_reply_cycle(db)
-        logger.info("Auto-reply cycle complete", result=result)
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                result = run_auto_reply_cycle(db, tenant_id=tenant.tenant_id)
+                logger.info("Auto-reply cycle complete", tenant_id=tenant.tenant_id, result=result)
+            except Exception as e:
+                logger.error("Auto-reply cycle failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Auto-reply cycle failed", error=str(e))
     finally:
@@ -99,9 +126,17 @@ def job_daily_count_reset():
     logger.info("Resetting daily email counts")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.db.models.sender_mailbox import SenderMailbox
-        db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0})
-        db.commit()
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                tenant_query(db, SenderMailbox).update({SenderMailbox.emails_sent_today: 0}, synchronize_session=False)
+                db.commit()
+                logger.info("Daily count reset complete", tenant_id=tenant.tenant_id)
+            except Exception as e:
+                logger.error("Daily count reset failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Daily count reset failed", error=str(e))
     finally:
@@ -112,17 +147,24 @@ def job_dns_checks():
     logger.info("Running DNS health checks")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
         from app.services.warmup.dns_checker import run_dns_health_check
-        mailboxes = db.query(SenderMailbox).filter(
-            SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING, WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-            SenderMailbox.is_active == True,
-        ).all()
-        for mb in mailboxes:
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
             try:
-                run_dns_health_check(mb.mailbox_id, db)
+                mailboxes = tenant_query(db, SenderMailbox).filter(
+                    SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING, WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+                    SenderMailbox.is_active == True,
+                ).all()
+                for mb in mailboxes:
+                    try:
+                        run_dns_health_check(mb.mailbox_id, db, tenant_id=tenant.tenant_id)
+                    except Exception as e:
+                        logger.error("DNS check failed", mailbox=mb.email, tenant_id=tenant.tenant_id, error=str(e))
             except Exception as e:
-                logger.error("DNS check failed", mailbox=mb.email, error=str(e))
+                logger.error("DNS checks failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("DNS checks failed", error=str(e))
     finally:
@@ -133,17 +175,24 @@ def job_blacklist_checks():
     logger.info("Running blacklist checks")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
         from app.services.warmup.blacklist_monitor import run_blacklist_check
-        mailboxes = db.query(SenderMailbox).filter(
-            SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING, WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-            SenderMailbox.is_active == True,
-        ).all()
-        for mb in mailboxes:
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
             try:
-                run_blacklist_check(mb.mailbox_id, db)
+                mailboxes = tenant_query(db, SenderMailbox).filter(
+                    SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING, WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+                    SenderMailbox.is_active == True,
+                ).all()
+                for mb in mailboxes:
+                    try:
+                        run_blacklist_check(mb.mailbox_id, db, tenant_id=tenant.tenant_id)
+                    except Exception as e:
+                        logger.error("Blacklist check failed", mailbox=mb.email, tenant_id=tenant.tenant_id, error=str(e))
             except Exception as e:
-                logger.error("Blacklist check failed", mailbox=mb.email, error=str(e))
+                logger.error("Blacklist checks failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Blacklist checks failed", error=str(e))
     finally:
@@ -154,36 +203,44 @@ def job_daily_log_snapshot():
     logger.info("Taking daily log snapshot")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.db.models.sender_mailbox import SenderMailbox
         from app.db.models.warmup_daily_log import WarmupDailyLog
         from app.services.pipelines.warmup_engine import calculate_health_score, load_warmup_config, get_warmup_phase
 
         config = load_warmup_config(db)
         today = date.today()
-        mailboxes = db.query(SenderMailbox).filter(SenderMailbox.is_active == True).all()
-        for mb in mailboxes:
-            existing = db.query(WarmupDailyLog).filter(WarmupDailyLog.mailbox_id == mb.mailbox_id, WarmupDailyLog.log_date == today).first()
-            if existing:
-                continue
-            health = calculate_health_score(mb, config)
-            total_sent = mb.total_emails_sent or 0
-            bounce_rate = (mb.bounce_count / total_sent * 100) if total_sent > 0 else 0
-            reply_rate = (mb.reply_count / total_sent * 100) if total_sent > 0 else 0
-            day = mb.warmup_days_completed or 0
-            phase = 1 if day == 0 else 0
-            if day > 0:
-                phase, _ = get_warmup_phase(day, config)
-            log = WarmupDailyLog(
-                mailbox_id=mb.mailbox_id, log_date=today, emails_sent=mb.emails_sent_today,
-                emails_received=mb.warmup_emails_received or 0, opens=mb.warmup_opens or 0,
-                replies=mb.warmup_replies or 0, bounces=mb.bounce_count,
-                health_score=health["health_score"], warmup_day=day, phase=phase,
-                daily_limit=mb.daily_send_limit, bounce_rate=round(bounce_rate, 2),
-                reply_rate=round(reply_rate, 2), blacklisted=mb.is_blacklisted or False,
-            )
-            db.add(log)
-        db.commit()
-        logger.info("Daily log snapshot complete")
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                mailboxes = tenant_query(db, SenderMailbox).filter(SenderMailbox.is_active == True).all()
+                for mb in mailboxes:
+                    existing = db.query(WarmupDailyLog).filter(WarmupDailyLog.mailbox_id == mb.mailbox_id, WarmupDailyLog.log_date == today).first()
+                    if existing:
+                        continue
+                    health = calculate_health_score(mb, config)
+                    total_sent = mb.total_emails_sent or 0
+                    bounce_rate = (mb.bounce_count / total_sent * 100) if total_sent > 0 else 0
+                    reply_rate = (mb.reply_count / total_sent * 100) if total_sent > 0 else 0
+                    day = mb.warmup_days_completed or 0
+                    phase = 1 if day == 0 else 0
+                    if day > 0:
+                        phase, _ = get_warmup_phase(day, config)
+                    log = WarmupDailyLog(
+                        mailbox_id=mb.mailbox_id, log_date=today, emails_sent=mb.emails_sent_today,
+                        emails_received=mb.warmup_emails_received or 0, opens=mb.warmup_opens or 0,
+                        replies=mb.warmup_replies or 0, bounces=mb.bounce_count,
+                        health_score=health["health_score"], warmup_day=day, phase=phase,
+                        daily_limit=mb.daily_send_limit, bounce_rate=round(bounce_rate, 2),
+                        reply_rate=round(reply_rate, 2), blacklisted=mb.is_blacklisted or False,
+                        tenant_id=tenant.tenant_id,
+                    )
+                    db.add(log)
+                db.commit()
+                logger.info("Daily log snapshot complete", tenant_id=tenant.tenant_id)
+            except Exception as e:
+                logger.error("Daily log snapshot failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Daily log snapshot failed", error=str(e))
     finally:
@@ -194,9 +251,16 @@ def job_auto_recovery_check():
     logger.info("Running auto-recovery check")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.services.warmup.auto_recovery import run_auto_recovery_check
-        result = run_auto_recovery_check(db)
-        logger.info("Auto-recovery check complete", result=result)
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                result = run_auto_recovery_check(db, tenant_id=tenant.tenant_id)
+                logger.info("Auto-recovery check complete", tenant_id=tenant.tenant_id, result=result)
+            except Exception as e:
+                logger.error("Auto-recovery check failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Auto-recovery check failed", error=str(e))
     finally:
@@ -207,9 +271,16 @@ def job_check_outreach_replies():
     logger.info("Running outreach reply check")
     db = _get_db()
     try:
+        from app.db.models.tenant import Tenant
         from app.services.reply_tracker import check_all_mailbox_replies
-        result = check_all_mailbox_replies(db)
-        logger.info("Outreach reply check complete", result=result)
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        for tenant in tenants:
+            set_current_tenant_id(tenant.tenant_id)
+            try:
+                result = check_all_mailbox_replies(db, tenant_id=tenant.tenant_id)
+                logger.info("Outreach reply check complete", tenant_id=tenant.tenant_id, result=result)
+            except Exception as e:
+                logger.error("Outreach reply check failed for tenant", tenant_id=tenant.tenant_id, error=str(e))
     except Exception as e:
         logger.error("Outreach reply check failed", error=str(e))
     finally:

@@ -1,5 +1,5 @@
 """Sender mailbox model for managing email sending accounts."""
-from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 import enum
 
@@ -31,6 +31,7 @@ class SenderMailbox(Base):
     __tablename__ = "sender_mailboxes"
 
     mailbox_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
 
     # Email account details
     email = Column(String(255), unique=True, nullable=False, index=True)
@@ -40,14 +41,14 @@ class SenderMailbox(Base):
     password = Column(String(500), nullable=False)
 
     # Provider configuration
-    provider = Column(Enum(EmailProvider), default=EmailProvider.MICROSOFT_365)
+    provider = Column(Enum(EmailProvider, values_callable=lambda x: [e.value for e in x]), default=EmailProvider.MICROSOFT_365)
     smtp_host = Column(String(255), nullable=True)
     smtp_port = Column(Integer, default=587)
     imap_host = Column(String(255), nullable=True)
     imap_port = Column(Integer, default=993)
 
     # Status tracking
-    warmup_status = Column(Enum(WarmupStatus), default=WarmupStatus.INACTIVE)
+    warmup_status = Column(Enum(WarmupStatus, values_callable=lambda x: [e.value for e in x]), default=WarmupStatus.INACTIVE)
     is_active = Column(Boolean, default=True)
 
     # Usage tracking

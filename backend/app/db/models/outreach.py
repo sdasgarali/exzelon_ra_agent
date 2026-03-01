@@ -1,4 +1,5 @@
 """Outreach events model for tracking sends."""
+import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey, Index
@@ -28,15 +29,16 @@ class OutreachEvent(Base):
     __tablename__ = "outreach_events"
 
     event_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     contact_id = Column(Integer, ForeignKey('contact_details.contact_id'), nullable=False)
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id'), nullable=True)
     sender_mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=True)
     sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    channel = Column(Enum(OutreachChannel), nullable=False)
+    channel = Column(Enum(OutreachChannel, values_callable=lambda x: [e.value for e in x]), nullable=False)
     template_id = Column(Integer, nullable=True)
     subject = Column(String(500), nullable=True)
     message_id = Column(String(255), nullable=True)
-    status = Column(Enum(OutreachStatus), nullable=False)
+    status = Column(Enum(OutreachStatus, values_callable=lambda x: [e.value for e in x]), nullable=False)
     bounce_reason = Column(Text, nullable=True)
     reply_detected_at = Column(DateTime, nullable=True)
     skip_reason = Column(Text, nullable=True)
@@ -44,6 +46,9 @@ class OutreachEvent(Base):
     # Email body storage
     body_html = Column(Text, nullable=True)
     body_text = Column(Text, nullable=True)
+
+    # Unsubscribe tracking
+    tracking_id = Column(String(64), default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=True)
 
     # Reply content storage
     reply_subject = Column(String(500), nullable=True)

@@ -154,6 +154,7 @@ export default function LeadsPage() {
   const fetchLeads = async () => {
     try {
       setLoading(true)
+      setError('')
       const params: Record<string, any> = {
         page,
         page_size: pageSize,
@@ -172,7 +173,9 @@ export default function LeadsPage() {
       setLeads(response.items || [])
       setTotal(response.total || 0)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch leads')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch leads')
+      }
     } finally {
       setLoading(false)
     }

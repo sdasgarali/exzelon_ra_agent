@@ -14,6 +14,8 @@ from app.db.models.client import ClientInfo, ClientCategory, ClientStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.models.settings import Settings
 from app.core.config import settings
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 from app.services.adapters.job_sources.mock import MockJobSourceAdapter
 
 logger = structlog.get_logger()
@@ -207,7 +209,7 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
         # which would incorrectly dedup different job postings at same company
         job_link = job.get("job_link", "")
         if job_link and "/company/" not in job_link and "#job-" not in job_link:
-            existing = db.query(LeadDetails).filter(
+            existing = tenant_query(db, LeadDetails).filter(
                 LeadDetails.job_link == job_link
             ).first()
             if existing:
@@ -216,7 +218,7 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
         # Check for existing by normalized company + title
         # Use LIKE for fuzzy matching on company name
         company_normalized = normalize_company_name(company_name)
-        existing_leads = db.query(LeadDetails).filter(
+        existing_leads = tenant_query(db, LeadDetails).filter(
             LeadDetails.job_title == job.get("job_title"),
             LeadDetails.state == job.get("state")
         ).all()
@@ -283,7 +285,7 @@ def _auto_enrich_new_leads(db, leads) -> int:
 
         # Check company contact cache (only query DB once per company)
         if lead.client_name not in checked_companies:
-            has_contacts = db.query(ContactDetails).filter(
+            has_contacts = tenant_query(db, ContactDetails).filter(
                 ContactDetails.client_name == lead.client_name
             ).first() is not None
             checked_companies[lead.client_name] = has_contacts
@@ -301,7 +303,8 @@ def _auto_enrich_new_leads(db, leads) -> int:
 
 def run_lead_sourcing_pipeline(
     sources: List[str],
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Run the lead sourcing pipeline with multi-source support.
@@ -316,10 +319,12 @@ def run_lead_sourcing_pipeline(
     Args:
         sources: List of sources (used for logging, actual sources from settings)
         triggered_by: User who triggered the pipeline
+        tenant_id: Tenant ID for multi-tenant scoping
 
     Returns:
         Counter dict with inserted, updated, skipped, errors counts
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {
         "inserted": 0,
@@ -334,7 +339,8 @@ def run_lead_sourcing_pipeline(
     job_run = JobRun(
         pipeline_name="lead_sourcing",
         status=JobStatus.RUNNING,
-        triggered_by=triggered_by
+        triggered_by=triggered_by,
+        tenant_id=tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -411,14 +417,15 @@ def run_lead_sourcing_pipeline(
                     first_name=job_data.get("contact_first_name"),
                     last_name=job_data.get("contact_last_name"),
                     contact_email=job_data.get("contact_email"),
-                    contact_title=job_data.get("contact_title")
+                    contact_title=job_data.get("contact_title"),
+                    tenant_id=tenant_id
                 )
                 db.add(lead)
                 counters["inserted"] += 1
                 newly_inserted_leads.append(lead)
 
                 # Upsert client_info with normalized name
-                upsert_client(db, job_data["client_name"])
+                upsert_client(db, job_data["client_name"], tenant_id=tenant_id)
 
             except Exception as e:
                 logger.error("Error processing job", error=str(e), job=job_data.get("client_name"))
@@ -468,16 +475,16 @@ def run_lead_sourcing_pipeline(
         db.close()
 
 
-def upsert_client(db, client_name: str):
+def upsert_client(db, client_name: str, tenant_id: int = None):
     """Create or update client_info record with normalized matching."""
     try:
         # Try exact match first
-        client = db.query(ClientInfo).filter(ClientInfo.client_name == client_name).first()
+        client = tenant_query(db, ClientInfo).filter(ClientInfo.client_name == client_name).first()
 
         # If not found, try normalized match
         if not client:
             normalized = normalize_company_name(client_name)
-            all_clients = db.query(ClientInfo).all()
+            all_clients = tenant_query(db, ClientInfo).all()
             for c in all_clients:
                 if normalize_company_name(c.client_name) == normalized:
                     client = c
@@ -489,7 +496,8 @@ def upsert_client(db, client_name: str):
                 status=ClientStatus.ACTIVE,
                 start_date=date.today(),
                 service_count=1,
-                client_category=ClientCategory.PROSPECT
+                client_category=ClientCategory.PROSPECT,
+                tenant_id=tenant_id
             )
             db.add(client)
             db.flush()
@@ -497,12 +505,30 @@ def upsert_client(db, client_name: str):
             client.service_count = (client.service_count or 0) + 1
 
             # Compute client category based on posting frequency
-            three_months_ago = date.today() - timedelta(days=90)
+            # Read thresholds from settings DB (same keys as clients endpoint)
+            window_days = 90
+            regular_threshold = 3
+            occasional_threshold = 0
+            for row in db.query(Settings).filter(Settings.key.in_([
+                "category_window_days", "category_regular_threshold", "category_occasional_threshold"
+            ])).all():
+                try:
+                    val = json.loads(row.value_json)
+                except Exception:
+                    val = row.value_json
+                if row.key == "category_window_days":
+                    window_days = int(val)
+                elif row.key == "category_regular_threshold":
+                    regular_threshold = int(val)
+                elif row.key == "category_occasional_threshold":
+                    occasional_threshold = int(val)
+
+            cutoff = date.today() - timedelta(days=window_days)
 
             # Count unique dates using normalized company name matching
             normalized = normalize_company_name(client_name)
-            all_leads = db.query(LeadDetails).filter(
-                LeadDetails.posting_date >= three_months_ago
+            all_leads = tenant_query(db, LeadDetails).filter(
+                LeadDetails.posting_date >= cutoff
             ).all()
 
             unique_dates = set()
@@ -511,9 +537,9 @@ def upsert_client(db, client_name: str):
                     if lead.posting_date:
                         unique_dates.add(lead.posting_date)
 
-            if len(unique_dates) > 3:
+            if len(unique_dates) > regular_threshold:
                 client.client_category = ClientCategory.REGULAR
-            elif len(unique_dates) > 0:
+            elif len(unique_dates) > occasional_threshold:
                 client.client_category = ClientCategory.OCCASIONAL
             else:
                 client.client_category = ClientCategory.PROSPECT
@@ -522,7 +548,7 @@ def upsert_client(db, client_name: str):
         db.rollback()
         logger.warning(f"Error upserting client {client_name}: {e}")
         # Try to just find existing
-        client = db.query(ClientInfo).filter(ClientInfo.client_name == client_name).first()
+        client = tenant_query(db, ClientInfo).filter(ClientInfo.client_name == client_name).first()
         if client:
             client.service_count = (client.service_count or 0) + 1
 
@@ -534,7 +560,7 @@ def export_leads_to_xlsx(db, filepath: Optional[str] = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = os.path.join(settings.EXPORT_PATH, f"Job_requirements_{timestamp}.xlsx")
 
-    leads = db.query(LeadDetails).order_by(LeadDetails.created_at.desc()).limit(5000).all()  # IMPACT: Increased from 1000
+    leads = tenant_query(db, LeadDetails).order_by(LeadDetails.created_at.desc()).limit(5000).all()  # IMPACT: Increased from 1000
 
     data = []
     for lead in leads:
@@ -565,9 +591,11 @@ def export_leads_to_xlsx(db, filepath: Optional[str] = None):
 
 def import_leads_from_file(
     filepath: str,
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """Import leads from XLSX file."""
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
 
@@ -586,7 +614,7 @@ def import_leads_from_file(
 
                 # Check for existing using normalized name
                 normalized = normalize_company_name(client_name)
-                existing_leads = db.query(LeadDetails).filter(
+                existing_leads = tenant_query(db, LeadDetails).filter(
                     LeadDetails.job_title == job_title
                 ).all()
 
@@ -605,12 +633,13 @@ def import_leads_from_file(
                     job_title=job_title,
                     state=str(row.get("State", row.get("state", ""))) if pd.notna(row.get("State", row.get("state"))) else None,
                     source="file_import",
-                    lead_status=LeadStatus.OPEN
+                    lead_status=LeadStatus.OPEN,
+                    tenant_id=tenant_id
                 )
                 db.add(lead)
                 counters["inserted"] += 1
 
-                upsert_client(db, client_name)
+                upsert_client(db, client_name, tenant_id=tenant_id)
 
             except Exception as e:
                 logger.error("Error importing row", error=str(e))

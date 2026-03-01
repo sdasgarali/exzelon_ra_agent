@@ -20,6 +20,8 @@ from app.db.models.suppression import SuppressionList
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 
 logger = structlog.get_logger()
 
@@ -107,12 +109,29 @@ def render_signature_html(sig_json: str) -> str:
 def get_active_template(db):
     """Get the currently active email template, if any."""
     from app.db.models.email_template import EmailTemplate, TemplateStatus
-    return db.query(EmailTemplate).filter(
+    return tenant_query(db, EmailTemplate).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE
     ).first()
 
 
-def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png"):
+def generate_unsub_footer(tracking_id: str, base_url: str = "") -> Dict[str, str]:
+    """Generate HTML and text unsubscribe footers with a clickable link."""
+    from app.core.tracking import generate_tracking_token
+    if not base_url:
+        base_url = settings.EFFECTIVE_BASE_URL
+    token = generate_tracking_token(tracking_id)
+    unsub_url = f"{base_url}/unsub/{tracking_id}?token={token}"
+    html = (
+        '<hr style="border:none;border-top:1px solid #eee;margin-top:20px;" />'
+        '<p style="font-size:11px;color:#999;text-align:center;">'
+        f'<a href="{unsub_url}" style="color:#999;text-decoration:underline;">Unsubscribe</a>'
+        ' | Reply with "UNSUBSCRIBE" to opt out</p>'
+    )
+    text = f"\n---\nUnsubscribe: {unsub_url}\nOr reply with \"UNSUBSCRIBE\" to opt out."
+    return {"html": html, "text": text, "url": unsub_url}
+
+
+def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png", unsub_url=""):
     """Render an email template with placeholder substitution."""
 
     # Determine sender first name
@@ -131,6 +150,7 @@ def render_template(template, contact, lead, mailbox, signature_html, logo_url="
         "{{company_name}}": (lead.client_name if lead and lead.client_name else (contact.client_name or "")),
         "{{signature}}": signature_html,
         "{{logo_url}}": logo_url,
+        "{{unsubscribe_link}}": unsub_url,
     }
 
     subject = template.subject
@@ -151,10 +171,18 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
     Returns (eligible, reason)
     """
+    # Check contact-level outreach status first
+    from app.db.models.contact import OutreachStatus as ContactOutreachStatus
+    if hasattr(contact, 'outreach_status') and contact.outreach_status:
+        if contact.outreach_status == ContactOutreachStatus.UNSUBSCRIBED:
+            return False, "Unsubscribed"
+        if contact.outreach_status == ContactOutreachStatus.INACTIVE:
+            return False, "Inactive"
+
     email = contact.email.lower()
 
     # Check suppression list
-    suppressed = db.query(SuppressionList).filter(
+    suppressed = tenant_query(db, SuppressionList).filter(
         SuppressionList.email == email,
         (SuppressionList.expires_at.is_(None) | (SuppressionList.expires_at > datetime.utcnow()))
     ).first()
@@ -163,7 +191,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
     # Check validation status
     if contact.validation_status not in ["valid", "Valid"]:
-        validation = db.query(EmailValidationResult).filter(
+        validation = tenant_query(db, EmailValidationResult).filter(
             EmailValidationResult.email == email
         ).order_by(EmailValidationResult.validated_at.desc()).first()
 
@@ -172,7 +200,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
     # Check cooldown period for this specific contact
     cooldown_date = datetime.utcnow() - timedelta(days=settings.COOLDOWN_DAYS)
-    recent_outreach = db.query(OutreachEvent).filter(
+    recent_outreach = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.contact_id == contact.contact_id,
         OutreachEvent.sent_at >= cooldown_date,
         OutreachEvent.status == OutreachStatus.SENT
@@ -182,7 +210,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
     # Check per-lead contact limit (only contacts linked to the same lead)
     if contact.lead_id:
-        lead_contacts_sent = db.query(OutreachEvent).join(ContactDetails).filter(
+        lead_contacts_sent = tenant_query(db, OutreachEvent).join(ContactDetails).filter(
             ContactDetails.lead_id == contact.lead_id,
             OutreachEvent.status == OutreachStatus.SENT
         ).count()
@@ -190,7 +218,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
             return False, f"Max contacts per lead reached ({lead_contacts_sent}/{settings.MAX_CONTACTS_PER_COMPANY_PER_JOB})"
     else:
         # Fallback for legacy contacts without lead_id
-        company_contacts_sent = db.query(OutreachEvent).join(ContactDetails).filter(
+        company_contacts_sent = tenant_query(db, OutreachEvent).join(ContactDetails).filter(
             ContactDetails.client_name == contact.client_name,
             OutreachEvent.status == OutreachStatus.SENT
         ).count()
@@ -201,7 +229,8 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
 
 def run_outreach_mailmerge_pipeline(
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Generate mail merge export package.
@@ -210,6 +239,7 @@ def run_outreach_mailmerge_pipeline(
     1. Verified contacts CSV
     2. Word template guide
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"eligible": 0, "skipped": 0, "exported": 0}
 
@@ -217,7 +247,8 @@ def run_outreach_mailmerge_pipeline(
     job_run = JobRun(
         pipeline_name="outreach_mailmerge",
         status=JobStatus.RUNNING,
-        triggered_by=triggered_by
+        triggered_by=triggered_by,
+        tenant_id=tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -226,7 +257,7 @@ def run_outreach_mailmerge_pipeline(
         logger.info("Starting mailmerge export")
 
         # Get validated contacts (excluding archived)
-        contacts = db.query(ContactDetails).filter(
+        contacts = tenant_query(db, ContactDetails).filter(
             ContactDetails.validation_status == "valid",
             ContactDetails.is_archived == False
         ).all()
@@ -309,7 +340,8 @@ COMPLIANCE NOTES:
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.MAILMERGE,
                 status=OutreachStatus.SENT,
-                skip_reason=None
+                skip_reason=None,
+                tenant_id=tenant_id
             )
             db.add(event)
 
@@ -342,11 +374,13 @@ COMPLIANCE NOTES:
 def run_outreach_send_pipeline(
     dry_run: bool = True,
     limit: int = 30,
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Send emails programmatically with rate limiting.
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0}
 
@@ -354,7 +388,8 @@ def run_outreach_send_pipeline(
     job_run = JobRun(
         pipeline_name="outreach_send",
         status=JobStatus.RUNNING,
-        triggered_by=triggered_by
+        triggered_by=triggered_by,
+        tenant_id=tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -364,7 +399,7 @@ def run_outreach_send_pipeline(
 
         # Check daily limit
         today = datetime.utcnow().date()
-        today_sent = db.query(OutreachEvent).filter(
+        today_sent = tenant_query(db, OutreachEvent).filter(
             OutreachEvent.sent_at >= datetime.combine(today, datetime.min.time()),
             OutreachEvent.status == OutreachStatus.SENT,
             OutreachEvent.channel != OutreachChannel.MAILMERGE
@@ -380,7 +415,7 @@ def run_outreach_send_pipeline(
             return counters
 
         # Get validated contacts not yet sent (excluding contacts from closed/archived leads)
-        contacts = db.query(ContactDetails).filter(
+        contacts = tenant_query(db, ContactDetails).filter(
             ContactDetails.validation_status == "valid",
             ContactDetails.is_archived == False
         ).all()
@@ -400,7 +435,7 @@ def run_outreach_send_pipeline(
                 continue
 
             # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
-            sending_mailbox = db.query(SenderMailbox).filter(
+            sending_mailbox = tenant_query(db, SenderMailbox).filter(
                 SenderMailbox.is_active == True,
                 SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
                 SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
@@ -416,25 +451,47 @@ def run_outreach_send_pipeline(
             if sending_mailbox.email_signature_json:
                 signature_html = render_signature_html(sending_mailbox.email_signature_json)
 
+            # Pre-create event to get tracking_id for unsub link
+            event = OutreachEvent(
+                contact_id=contact.contact_id,
+                channel=OutreachChannel.SMTP,
+                status=OutreachStatus.SKIPPED,
+                skip_reason="pending_send",
+                template_id=used_template_id,
+                sender_mailbox_id=sending_mailbox.mailbox_id,
+                tenant_id=tenant_id
+            )
+            db.add(event)
+            db.flush()  # Get tracking_id
+
+            # Generate unsub footer
+            unsub_footer = generate_unsub_footer(event.tracking_id)
+
             # Use template if available, otherwise fallback to hardcoded
             if active_template:
                 subject, body_content, body_text = render_template(
-                    active_template, contact, None, sending_mailbox, signature_html
+                    active_template, contact, None, sending_mailbox, signature_html,
+                    unsub_url=unsub_footer["url"]
                 )
+                # Append unsub footer if template doesn't include {{unsubscribe_link}}
+                if "unsub/" not in body_content:
+                    body_content += unsub_footer["html"]
+                    body_text += unsub_footer["text"]
             else:
                 body_content = f"<p>Dear {contact.first_name},</p>"
                 body_content += "<p>We noticed your company is hiring and wanted to reach out about our staffing solutions.</p>"
                 body_content += signature_html
-                body_content += '<hr><small>To unsubscribe, reply with \"UNSUBSCRIBE\"</small>'
+                body_content += unsub_footer["html"]
 
                 subject = f"Exciting Opportunity at {contact.client_name}"
                 body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
+                body_text += unsub_footer["text"]
 
             try:
                 if dry_run:
                     logger.info("DRY RUN - Would send to", email=contact.email, via=sending_mailbox.email)
-                    send_status = OutreachStatus.SKIPPED
-                    skip_reason = "dry_run"
+                    event.status = OutreachStatus.SKIPPED
+                    event.skip_reason = "dry_run"
                 else:
                     result = send_outreach_email(
                         sender_mailbox=sending_mailbox,
@@ -445,8 +502,8 @@ def run_outreach_send_pipeline(
                     )
 
                     if result["success"]:
-                        send_status = OutreachStatus.SENT
-                        skip_reason = None
+                        event.status = OutreachStatus.SENT
+                        event.skip_reason = None
                         counters["sent"] += 1
                         sent_count += 1
                         # Update mailbox counters
@@ -454,30 +511,24 @@ def run_outreach_send_pipeline(
                         sending_mailbox.total_emails_sent += 1
                         sending_mailbox.last_sent_at = datetime.utcnow()
                     else:
-                        send_status = OutreachStatus.SKIPPED
-                        skip_reason = result.get("error", "Unknown error")
+                        event.status = OutreachStatus.SKIPPED
+                        event.skip_reason = result.get("error", "Unknown error")
                         counters["errors"] += 1
 
-                # Record event
-                event = OutreachEvent(
-                    contact_id=contact.contact_id,
-                    channel=OutreachChannel.SMTP,
-                    subject=subject,
-                    status=send_status,
-                    skip_reason=skip_reason,
-                    body_html=body_content,
-                    body_text=body_text,
-                    template_id=used_template_id,
-                    message_id=result["message_id"] if not dry_run and result.get("success") else None,
-                    sender_mailbox_id=sending_mailbox.mailbox_id
-                )
-                db.add(event)
+                # Update event with email content
+                event.subject = subject
+                event.body_html = body_content
+                event.body_text = body_text
+                if not dry_run and result.get("success"):
+                    event.message_id = result["message_id"]
 
-                if send_status == OutreachStatus.SENT:
+                if event.status == OutreachStatus.SENT:
                     contact.last_outreach_date = datetime.now().isoformat()
 
             except Exception as e:
                 logger.error("Error sending email", error=str(e), email=contact.email)
+                event.status = OutreachStatus.SKIPPED
+                event.skip_reason = str(e)
                 counters["errors"] += 1
 
         db.commit()
@@ -505,18 +556,20 @@ def run_outreach_send_pipeline(
 def run_outreach_for_lead(
     lead_id: int,
     dry_run: bool = True,
-    triggered_by: str = "system"
+    triggered_by: str = "system",
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Send outreach emails to contacts of a specific lead only.
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0, "lead_id": lead_id}
 
     try:
         logger.info("Starting outreach for lead", lead_id=lead_id, dry_run=dry_run)
 
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+        lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
         if not lead:
             return {"error": "Lead not found", "lead_id": lead_id}
 
@@ -527,17 +580,17 @@ def run_outreach_for_lead(
             return {"message": "Lead is archived, skipping outreach", **counters}
 
         # Get contacts via junction table + legacy FK
-        junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
+        junction_cids = [row[0] for row in tenant_query(db, LeadContactAssociation).filter(
             LeadContactAssociation.lead_id == lead_id
         ).all()]
 
         if junction_cids:
-            contacts = db.query(ContactDetails).filter(
+            contacts = tenant_query(db, ContactDetails).filter(
                 (ContactDetails.lead_id == lead_id) |
                 (ContactDetails.contact_id.in_(junction_cids))
             ).all()
         else:
-            contacts = db.query(ContactDetails).filter(
+            contacts = tenant_query(db, ContactDetails).filter(
                 ContactDetails.lead_id == lead_id
             ).all()
 
@@ -556,7 +609,7 @@ def run_outreach_for_lead(
                 continue
 
             # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
-            sending_mailbox = db.query(SenderMailbox).filter(
+            sending_mailbox = tenant_query(db, SenderMailbox).filter(
                 SenderMailbox.is_active == True,
                 SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
                 SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
@@ -572,25 +625,48 @@ def run_outreach_for_lead(
             if sending_mailbox.email_signature_json:
                 signature_html = render_signature_html(sending_mailbox.email_signature_json)
 
+            # Pre-create event to get tracking_id for unsub link
+            event = OutreachEvent(
+                contact_id=contact.contact_id,
+                lead_id=lead_id,
+                channel=OutreachChannel.SMTP,
+                status=OutreachStatus.SKIPPED,
+                skip_reason="pending_send",
+                template_id=used_template_id,
+                sender_mailbox_id=sending_mailbox.mailbox_id,
+                tenant_id=tenant_id
+            )
+            db.add(event)
+            db.flush()  # Get tracking_id
+
+            # Generate unsub footer
+            unsub_footer = generate_unsub_footer(event.tracking_id)
+
             # Use template if available, otherwise fallback to hardcoded
             if active_template:
                 subject, body_content, body_text = render_template(
-                    active_template, contact, lead, sending_mailbox, signature_html
+                    active_template, contact, lead, sending_mailbox, signature_html,
+                    unsub_url=unsub_footer["url"]
                 )
+                # Append unsub footer if template doesn't include {{unsubscribe_link}}
+                if "unsub/" not in body_content:
+                    body_content += unsub_footer["html"]
+                    body_text += unsub_footer["text"]
             else:
                 body_content = f"<p>Dear {contact.first_name},</p>"
                 body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
                 body_content += signature_html
-                body_content += '<hr><small>To unsubscribe, reply with \"UNSUBSCRIBE\"</small>'
+                body_content += unsub_footer["html"]
 
                 subject = f"Staffing for {lead.job_title} at {lead.client_name}"
                 body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
+                body_text += unsub_footer["text"]
 
             try:
                 if dry_run:
                     logger.info("DRY RUN - Would send to", email=contact.email, via=sending_mailbox.email)
-                    send_status = OutreachStatus.SKIPPED
-                    skip_reason = "dry_run"
+                    event.status = OutreachStatus.SKIPPED
+                    event.skip_reason = "dry_run"
                 else:
                     result = send_outreach_email(
                         sender_mailbox=sending_mailbox,
@@ -600,38 +676,32 @@ def run_outreach_for_lead(
                         body_text=body_text
                     )
                     if result["success"]:
-                        send_status = OutreachStatus.SENT
-                        skip_reason = None
+                        event.status = OutreachStatus.SENT
+                        event.skip_reason = None
                         counters["sent"] += 1
                         # Update mailbox counters
                         sending_mailbox.emails_sent_today += 1
                         sending_mailbox.total_emails_sent += 1
                         sending_mailbox.last_sent_at = datetime.utcnow()
                     else:
-                        send_status = OutreachStatus.SKIPPED
-                        skip_reason = result.get("error", "Unknown error")
+                        event.status = OutreachStatus.SKIPPED
+                        event.skip_reason = result.get("error", "Unknown error")
                         counters["errors"] += 1
 
-                event = OutreachEvent(
-                    contact_id=contact.contact_id,
-                    lead_id=lead_id,
-                    channel=OutreachChannel.SMTP,
-                    subject=subject,
-                    status=send_status,
-                    skip_reason=skip_reason,
-                    body_html=body_content,
-                    body_text=body_text,
-                    template_id=used_template_id,
-                    message_id=result["message_id"] if not dry_run and result.get("success") else None,
-                    sender_mailbox_id=sending_mailbox.mailbox_id
-                )
-                db.add(event)
+                # Update event with email content
+                event.subject = subject
+                event.body_html = body_content
+                event.body_text = body_text
+                if not dry_run and result.get("success"):
+                    event.message_id = result["message_id"]
 
-                if send_status == OutreachStatus.SENT:
+                if event.status == OutreachStatus.SENT:
                     contact.last_outreach_date = datetime.now().isoformat()
 
             except Exception as e:
                 logger.error("Error sending to contact", error=str(e), email=contact.email)
+                event.status = OutreachStatus.SKIPPED
+                event.skip_reason = str(e)
                 counters["errors"] += 1
 
         db.commit()

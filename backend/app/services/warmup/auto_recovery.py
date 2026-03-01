@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
 from app.db.models.settings import Settings
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 
 
 def _get_setting(db: Session, key: str, default=None):
@@ -29,8 +31,8 @@ def check_recovery_eligibility(mailbox: SenderMailbox, db: Session) -> bool:
     return days_paused >= wait_days
 
 
-def start_recovery(mailbox_id: int, db: Session) -> Dict[str, Any]:
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+def start_recovery(mailbox_id: int, db: Session, tenant_id: int = None) -> Dict[str, Any]:
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
 
@@ -46,6 +48,7 @@ def start_recovery(mailbox_id: int, db: Session) -> Dict[str, Any]:
         severity=AlertSeverity.INFO,
         title=f"Recovery started for {mailbox.email}",
         message=f"Auto-recovery initiated. Mailbox will gradually ramp up sending volume.",
+        tenant_id=tenant_id,
     )
     db.add(alert)
     db.commit()
@@ -53,7 +56,7 @@ def start_recovery(mailbox_id: int, db: Session) -> Dict[str, Any]:
     return {"mailbox_id": mailbox_id, "status": "recovering", "daily_limit": 2}
 
 
-def advance_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
+def advance_recovery(mailbox: SenderMailbox, db: Session, tenant_id: int = None) -> Dict[str, Any]:
     if mailbox.warmup_status != WarmupStatus.RECOVERING:
         return {"skipped": True}
 
@@ -63,13 +66,13 @@ def advance_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
     mailbox.warmup_days_completed += 1
 
     if mailbox.daily_send_limit >= 25 and mailbox.warmup_days_completed >= 7:
-        return complete_recovery(mailbox, db)
+        return complete_recovery(mailbox, db, tenant_id=tenant_id)
 
     db.commit()
     return {"mailbox_id": mailbox.mailbox_id, "day": mailbox.warmup_days_completed, "new_limit": mailbox.daily_send_limit}
 
 
-def complete_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
+def complete_recovery(mailbox: SenderMailbox, db: Session, tenant_id: int = None) -> Dict[str, Any]:
     mailbox.warmup_status = WarmupStatus.WARMING_UP
     mailbox.auto_recovery_started_at = None
 
@@ -79,6 +82,7 @@ def complete_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
         severity=AlertSeverity.INFO,
         title=f"Recovery complete for {mailbox.email}",
         message=f"Mailbox has been restored to WARMING_UP status.",
+        tenant_id=tenant_id,
     )
     db.add(alert)
     db.commit()
@@ -86,22 +90,25 @@ def complete_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
     return {"mailbox_id": mailbox.mailbox_id, "status": "warming_up", "recovery_complete": True}
 
 
-def run_auto_recovery_check(db: Session) -> Dict[str, Any]:
+def run_auto_recovery_check(db: Session, tenant_id: int = None) -> Dict[str, Any]:
+    if tenant_id is not None:
+        set_current_tenant_id(tenant_id)
+
     enabled = _get_setting(db, "warmup_auto_recovery_enabled", True)
     if not enabled:
         return {"skipped": True, "reason": "Auto-recovery disabled"}
 
-    recovering = db.query(SenderMailbox).filter(SenderMailbox.warmup_status == WarmupStatus.RECOVERING).all()
+    recovering = tenant_query(db, SenderMailbox).filter(SenderMailbox.warmup_status == WarmupStatus.RECOVERING).all()
     for mb in recovering:
-        advance_recovery(mb, db)
+        advance_recovery(mb, db, tenant_id=tenant_id)
 
-    paused = db.query(SenderMailbox).filter(
+    paused = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.warmup_status.in_([WarmupStatus.PAUSED, WarmupStatus.BLACKLISTED])
     ).all()
     auto_started = 0
     for mb in paused:
         if check_recovery_eligibility(mb, db):
-            start_recovery(mb.mailbox_id, db)
+            start_recovery(mb.mailbox_id, db, tenant_id=tenant_id)
             auto_started += 1
 
     return {"recovering_advanced": len(recovering), "auto_started": auto_started}

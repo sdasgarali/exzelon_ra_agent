@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.suppression import SuppressionList
-from app.db.models.contact import ContactDetails
+from app.db.models.contact import ContactDetails, OutreachStatus as ContactOutreachStatus
+from app.db.models.audit_log import AuditLog
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 
 logger = structlog.get_logger()
 
@@ -103,7 +106,7 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
         # Get all our sent message_ids for this mailbox for matching
         sent_message_ids = {
             _clean_message_id(e.message_id): e
-            for e in db.query(OutreachEvent).filter(
+            for e in tenant_query(db, OutreachEvent).filter(
                 OutreachEvent.sender_mailbox_id == mailbox.mailbox_id,
                 OutreachEvent.status == OutreachStatus.SENT,
                 OutreachEvent.message_id.isnot(None)
@@ -112,7 +115,7 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
 
         # Also build subject map for fallback matching
         sent_subjects = {}
-        for ev in db.query(OutreachEvent).filter(
+        for ev in tenant_query(db, OutreachEvent).filter(
             OutreachEvent.sender_mailbox_id == mailbox.mailbox_id,
             OutreachEvent.status == OutreachStatus.SENT,
             OutreachEvent.subject.isnot(None)
@@ -180,26 +183,42 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
 
                 # Check for UNSUBSCRIBE
                 if _is_unsubscribe(reply_subject or '', reply_body or ''):
-                    contact = db.query(ContactDetails).filter(
+                    contact = tenant_query(db, ContactDetails).filter(
                         ContactDetails.contact_id == matched_event.contact_id
                     ).first()
 
                     if contact:
-                        existing = db.query(SuppressionList).filter(
+                        existing = tenant_query(db, SuppressionList).filter(
                             SuppressionList.email == contact.email.lower()
                         ).first()
 
                         if not existing:
                             suppression = SuppressionList(
                                 email=contact.email.lower(),
-                                reason="unsubscribe_reply"
+                                reason="unsubscribe_reply",
+                                tenant_id=get_current_tenant_id(),
                             )
                             db.add(suppression)
-                            logger.info("Contact added to suppression list",
-                                email=contact.email,
-                                reason="unsubscribe_reply",
-                                event_id=matched_event.event_id
-                            )
+
+                        # Update contact outreach status
+                        contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
+                        contact.unsubscribed_at = datetime.utcnow()
+
+                        # Audit log (inherit tenant_id from the contact record)
+                        db.add(AuditLog(
+                            entity_type="contact",
+                            entity_id=contact.contact_id,
+                            action="unsubscribe",
+                            changed_by="system",
+                            notes="Unsubscribed via email reply",
+                            tenant_id=contact.tenant_id,
+                        ))
+
+                        logger.info("Contact unsubscribed",
+                            email=contact.email,
+                            reason="unsubscribe_reply",
+                            event_id=matched_event.event_id
+                        )
 
                     result["unsubscribes"] += 1
 
@@ -221,14 +240,17 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
     return result
 
 
-def check_all_mailbox_replies(db: Session) -> Dict[str, Any]:
+def check_all_mailbox_replies(db: Session, tenant_id: int = None) -> Dict[str, Any]:
     """Check all active mailboxes with IMAP configured for replies.
 
     Returns summary dict: {checked, replies_found, unsubscribes, errors, details}.
     """
+    if tenant_id is not None:
+        set_current_tenant_id(tenant_id)
+
     summary = {"checked": 0, "replies_found": 0, "unsubscribes": 0, "errors": 0, "details": []}
 
-    mailboxes = db.query(SenderMailbox).filter(
+    mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status.in_([
             WarmupStatus.COLD_READY, WarmupStatus.ACTIVE,

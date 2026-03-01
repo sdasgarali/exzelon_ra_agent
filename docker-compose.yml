@@ -44,14 +44,20 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - APP_ENV=${APP_ENV:-development}
+      - APP_ENV=${APP_ENV:-DEV}
+      - DB_TYPE=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
-      - DB_NAME=${DB_NAME:-ra_agent}
-      - DB_USER=${DB_USER:-ra_user}
-      - DB_PASSWORD=${DB_PASSWORD:-change_me}
+      - DB_NAME=${DEV_DB_NAME:-cold_email_ai_agent}
+      - DB_USER=${DEV_DB_USER:-root}
+      - DB_PASSWORD=${DEV_DB_PASSWORD}
       - REDIS_URL=redis://redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - SECRET_KEY=${DEV_SECRET_KEY:-change-me-in-production}
+      - ENCRYPTION_KEY=${DEV_ENCRYPTION_KEY}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - BASE_URL=${DEV_BASE_URL:-http://localhost:8000}
+      - CORS_ORIGINS=${DEV_CORS_ORIGINS:-http://localhost:3000,http://localhost:3003}
       - CONTACT_PROVIDER=${CONTACT_PROVIDER:-mock}
       - EMAIL_VALIDATION_PROVIDER=${EMAIL_VALIDATION_PROVIDER:-mock}
       - EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-mailmerge}
@@ -75,7 +81,7 @@ services:
     ports:
       - "3003:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     volumes:
       - ./frontend:/app
       - /app/node_modules

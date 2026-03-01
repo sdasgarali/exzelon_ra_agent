@@ -11,6 +11,7 @@ class WarmupDailyLog(Base):
     __tablename__ = 'warmup_daily_logs'
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=False, index=True)
     log_date = Column(Date, nullable=False, index=True)
     emails_sent = Column(Integer, default=0)

@@ -62,11 +62,14 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     try {
       setLoading(true)
+      setError('')
       const data = await templatesApi.list(showArchived ? { show_archived: true } : {})
       setTemplates(data.items || [])
       setActiveTemplateId(data.active_template_id)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load templates')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to load templates')
+      }
     } finally {
       setLoading(false)
     }

@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr
-from app.db.models.contact import PriorityLevel
+from app.db.models.contact import PriorityLevel, OutreachStatus
 
 
 class ContactBase(BaseModel):
@@ -39,6 +39,7 @@ class ContactUpdate(BaseModel):
     priority_level: Optional[PriorityLevel] = None
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
+    outreach_status: Optional[OutreachStatus] = None
 
 
 class ContactResponse(ContactBase):
@@ -46,6 +47,8 @@ class ContactResponse(ContactBase):
     contact_id: int
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
+    outreach_status: Optional[str] = "active"
+    unsubscribed_at: Optional[datetime] = None
     lead_ids: List[int] = []  # All associated lead IDs via junction table
     is_archived: bool = False
     created_at: datetime

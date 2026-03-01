@@ -140,7 +140,7 @@ def _seed_default_email_template():
             '  </div>\n'
             '  \n'
             '  <hr style=\"border: none; border-top: 1px solid #eee; margin-top: 20px;\" />\n'
-            '  <p style=\"font-size: 11px; color: #999;\">To unsubscribe, reply with \"UNSUBSCRIBE\"</p>\n'
+            '  <p style=\"font-size: 11px; color: #999;\">{{unsubscribe_link}}</p>\n'
             '</div>'
         )
 
@@ -166,7 +166,7 @@ def _seed_default_email_template():
             "Best regards,\n"
             "{{sender_first_name}}\n"
             "\n"
-            "To unsubscribe, reply with \"UNSUBSCRIBE\""
+            "{{unsubscribe_link}}"
         )
 
         template = EmailTemplate(
@@ -199,9 +199,10 @@ async def lifespan(app: FastAPI):
         inspector = sa_inspect_schema(engine)
         existing_tables = set(inspector.get_table_names())
         required_tables = {
-            "users", "lead_details", "contactdetails", "lead_contact_associations",
-            "clientinfo", "sender_mailboxes", "outreach_events", "email_templates",
-            "warmup_profiles", "job_runs", "audit_logs"
+            "users", "lead_details", "contact_details", "lead_contact_associations",
+            "client_info", "sender_mailboxes", "outreach_events", "email_templates",
+            "warmup_profiles", "job_runs", "audit_logs", "tenants", "permissions",
+            "role_permissions"
         }
         missing = required_tables - existing_tables
         if missing:
@@ -210,6 +211,70 @@ async def lifespan(app: FastAPI):
             logger.info("Database schema validated", tables=len(existing_tables))
     except Exception as e:
         logger.warning(f"Schema validation check: {e}")
+
+    # Migration: add tenant_id column to all data tables if missing
+    try:
+        from sqlalchemy import text as sa_text_tenant, inspect as sa_inspect_tenant
+        with engine.connect() as conn:
+            inspector_t = sa_inspect_tenant(engine)
+            # Tables that need tenant_id added (excludes tenants itself)
+            tenant_tables = [
+                "users", "lead_details", "contact_details", "lead_contact_associations",
+                "client_info", "sender_mailboxes", "outreach_events", "email_templates",
+                "warmup_profiles", "job_runs", "audit_logs", "suppression_list",
+                "email_validation_results", "warmup_emails", "warmup_daily_logs",
+                "warmup_alerts", "dns_check_results", "blacklist_check_results",
+                "settings",
+            ]
+            existing_tables_t = set(inspector_t.get_table_names())
+            for tbl in tenant_tables:
+                if tbl not in existing_tables_t:
+                    continue
+                cols = [c["name"] for c in inspector_t.get_columns(tbl)]
+                if "tenant_id" not in cols:
+                    try:
+                        conn.execute(sa_text_tenant(
+                            f"ALTER TABLE {tbl} ADD COLUMN tenant_id INTEGER NULL"
+                        ))
+                        conn.commit()
+                        logger.info(f"Migration: added tenant_id column to {tbl}")
+                    except Exception as e2:
+                        logger.warning(f"Migration: tenant_id on {tbl}: {e2}")
+
+            # Backfill: set tenant_id=1 for all rows where it's NULL
+            for tbl in tenant_tables:
+                if tbl not in existing_tables_t:
+                    continue
+                try:
+                    result = conn.execute(sa_text_tenant(
+                        f"UPDATE {tbl} SET tenant_id = 1 WHERE tenant_id IS NULL"
+                    ))
+                    if result.rowcount > 0:
+                        conn.commit()
+                        logger.info(f"Migration: backfilled tenant_id=1 on {tbl}", rows=result.rowcount)
+                except Exception as e2:
+                    logger.warning(f"Migration: backfill tenant_id on {tbl}: {e2}")
+
+    except Exception as e:
+        logger.warning(f"Migration check for tenant_id: {e}")
+
+    # Migration: add SUPER_ADMIN and TENANT_ADMIN to UserRole enum in MySQL
+    try:
+        from sqlalchemy import text as sa_text_role
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                try:
+                    conn.execute(sa_text_role(
+                        "ALTER TABLE users MODIFY COLUMN role "
+                        "ENUM('super_admin','tenant_admin','admin','operator','viewer') "
+                        "NOT NULL DEFAULT 'viewer'"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: updated UserRole enum to include super_admin, tenant_admin")
+                except Exception as e2:
+                    logger.debug(f"Role enum migration (may already be done): {e2}")
+    except Exception as e:
+        logger.warning(f"Migration check for role enum: {e}")
 
     # Migration: add lead_results_json column if missing (SQLite create_all won't alter existing tables)
     try:
@@ -242,6 +307,95 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for is_archived: {e}")
 
+    # Migration: add unsubscribe columns (outreach_status, unsubscribed_at on contacts; tracking_id on outreach_events)
+    try:
+        from sqlalchemy import text as sa_text_unsub, inspect as sa_inspect_unsub
+        with engine.connect() as conn:
+            inspector_unsub = sa_inspect_unsub(engine)
+
+            # contact_details: outreach_status + unsubscribed_at
+            contact_cols = [c["name"] for c in inspector_unsub.get_columns("contact_details")]
+            if "outreach_status" not in contact_cols:
+                conn.execute(sa_text_unsub("ALTER TABLE contact_details ADD COLUMN outreach_status VARCHAR(20) DEFAULT 'active' NOT NULL"))
+                conn.commit()
+                logger.info("Migration: added outreach_status column to contact_details")
+            if "unsubscribed_at" not in contact_cols:
+                conn.execute(sa_text_unsub("ALTER TABLE contact_details ADD COLUMN unsubscribed_at DATETIME NULL"))
+                conn.commit()
+                logger.info("Migration: added unsubscribed_at column to contact_details")
+
+            # outreach_events: tracking_id
+            outreach_cols = [c["name"] for c in inspector_unsub.get_columns("outreach_events")]
+            if "tracking_id" not in outreach_cols:
+                conn.execute(sa_text_unsub("ALTER TABLE outreach_events ADD COLUMN tracking_id VARCHAR(64) NULL"))
+                conn.commit()
+                logger.info("Migration: added tracking_id column to outreach_events")
+
+            # Sync: mark existing suppressed contacts as unsubscribed
+            try:
+                conn.execute(sa_text_unsub(
+                    "UPDATE contact_details cd INNER JOIN suppression_list sl "
+                    "ON LOWER(cd.email) = sl.email "
+                    "SET cd.outreach_status='unsubscribed', cd.unsubscribed_at=cd.updated_at "
+                    "WHERE cd.outreach_status != 'unsubscribed'"
+                ))
+                conn.commit()
+            except Exception:
+                pass  # May fail on SQLite (no INNER JOIN UPDATE syntax)
+    except Exception as e:
+        logger.warning(f"Migration check for unsubscribe columns: {e}")
+
+    # Migration: composite indexes for multi-tenant performance
+    try:
+        from sqlalchemy import text as _idx_text
+        with engine.connect() as conn:
+            composite_indexes = [
+                ("ix_leads_tenant_status", "lead_details", "tenant_id, lead_status, is_archived"),
+                ("ix_contacts_tenant_email", "contact_details", "tenant_id, email"),
+                ("ix_contacts_tenant_client", "contact_details", "tenant_id, client_name"),
+                ("ix_outreach_tenant_sent", "outreach_events", "tenant_id, sent_at"),
+                ("ix_outreach_tenant_status", "outreach_events", "tenant_id, status"),
+                ("ix_jobruns_tenant_pipeline", "job_runs", "tenant_id, pipeline_name, status"),
+                ("ix_mailboxes_tenant_active", "sender_mailboxes", "tenant_id, is_active, is_archived"),
+                ("ix_templates_tenant_status", "email_templates", "tenant_id, status"),
+            ]
+            for idx_name, tbl, cols in composite_indexes:
+                try:
+                    conn.execute(_idx_text(f"CREATE INDEX {idx_name} ON {tbl} ({cols})"))
+                    conn.commit()
+                    logger.info(f"Migration: created index {idx_name}")
+                except Exception:
+                    conn.rollback()  # Index already exists
+    except Exception as e:
+        logger.warning(f"Migration check for composite indexes: {e}")
+
+    # Migration: fix master tenant name and assign super_admins to master tenant
+    try:
+        from sqlalchemy import text as _sa_text_gsa
+        with engine.connect() as conn:
+            # Rename default tenant to "Smart Cold Email AI Agent Pro"
+            try:
+                conn.execute(_sa_text_gsa(
+                    "UPDATE tenants SET name='Smart Cold Email AI Agent Pro', "
+                    "slug='smart-cold-email-ai-agent-pro' "
+                    "WHERE tenant_id=1 AND slug='exzelon-us-staffing'"
+                ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            # Assign all super_admin users with NULL tenant_id to master tenant
+            try:
+                result = conn.execute(_sa_text_gsa(
+                    "UPDATE users SET tenant_id=1 WHERE role='super_admin' AND tenant_id IS NULL"
+                ))
+                if result.rowcount > 0:
+                    conn.commit()
+                    logger.info("Migration: assigned super_admin users to master tenant", rows=result.rowcount)
+            except Exception:
+                conn.rollback()
+    except Exception as e:
+        logger.warning(f"Migration check for GSA tenant assignment: {e}")
+
     # Migration: encrypt existing plaintext mailbox passwords
     try:
         from app.core.encryption import encrypt_field, is_encrypted
@@ -266,17 +420,19 @@ async def lifespan(app: FastAPI):
     _seed_warmup_profiles()
     _seed_default_email_template()
 
-    # Seed default admin user if none exists
+    # Seed default tenant, admin user, and super admin
     try:
-        from app.core.seed import seed_admin_user
+        from app.core.seed import seed_default_tenant, seed_admin_user, seed_super_admin
         from app.db.base import SessionLocal as _SeedSessionLocal
         _seed_db = _SeedSessionLocal()
         try:
+            seed_default_tenant(_seed_db)
             seed_admin_user(_seed_db)
+            seed_super_admin(_seed_db)
         finally:
             _seed_db.close()
     except Exception as e:
-        logger.error("Failed to seed admin user", error=str(e))
+        logger.error("Failed to seed users/tenant", error=str(e))
 
     # Start warmup scheduler
     try:
@@ -314,17 +470,18 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # GZip compression for responses > 1KB
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# CORS — read allowed origins from env, fallback to localhost dev ports
-_cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()] if settings.CORS_ORIGINS else [
-    "http://localhost:3000", "http://localhost:3001", "http://localhost:3003",
-    "http://127.0.0.1:3000", "http://127.0.0.1:3003",
-]
+# CORS — read allowed origins from CORS_ORIGINS env var (comma-separated)
+_cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()] if settings.CORS_ORIGINS else []
+if not _cors_origins:
+    logger.warning("CORS_ORIGINS not set. No cross-origin requests will be allowed. "
+                    "Set CORS_ORIGINS in .env (e.g. DEV_CORS_ORIGINS=http://localhost:3000)")
+    _cors_origins = ["http://localhost:3000"]  # Minimal safe default for dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -378,6 +535,96 @@ async def tracking_link(tracking_id: str, url: str = "", token: str = ""):
     return JSONResponse(status_code=400, content={"error": "Invalid or missing URL"})
 
 
+# Unsubscribe endpoint (public — clicked from email)
+@app.get("/unsub/{tracking_id}")
+async def unsubscribe(tracking_id: str, token: str = ""):
+    from fastapi.responses import HTMLResponse
+    from app.core.tracking import validate_tracking_token
+    from app.db.base import SessionLocal
+    from datetime import datetime
+
+    if not token or not validate_tracking_token(tracking_id, token):
+        return HTMLResponse(
+            status_code=403,
+            content=(
+                '<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:40px auto;text-align:center;">'
+                '<h2 style="color:#dc2626;">Invalid Unsubscribe Link</h2>'
+                '<p>This link is invalid or has expired.</p>'
+                '<p>To unsubscribe, reply to any of our emails with the word <strong>UNSUBSCRIBE</strong>.</p>'
+                '</body></html>'
+            )
+        )
+
+    db = SessionLocal()
+    try:
+        from app.db.models.outreach import OutreachEvent
+        from app.db.models.contact import ContactDetails, OutreachStatus as ContactOutreachStatus
+        from app.db.models.suppression import SuppressionList
+        from app.db.models.audit_log import AuditLog
+
+        event = db.query(OutreachEvent).filter(OutreachEvent.tracking_id == tracking_id).first()
+        if not event:
+            return HTMLResponse(
+                status_code=404,
+                content=(
+                    '<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:40px auto;text-align:center;">'
+                    '<h2 style="color:#dc2626;">Link Not Found</h2>'
+                    '<p>This unsubscribe link is no longer valid.</p>'
+                    '<p>To unsubscribe, reply to any of our emails with the word <strong>UNSUBSCRIBE</strong>.</p>'
+                    '</body></html>'
+                )
+            )
+
+        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == event.contact_id).first()
+        if contact:
+            # Add to suppression list
+            existing_sup = db.query(SuppressionList).filter(
+                SuppressionList.email == contact.email.lower()
+            ).first()
+            if not existing_sup:
+                db.add(SuppressionList(email=contact.email.lower(), reason="unsubscribe_link"))
+
+            # Update contact status
+            contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
+            contact.unsubscribed_at = datetime.utcnow()
+
+            # Audit log (inherit tenant_id from the contact record)
+            db.add(AuditLog(
+                entity_type="contact",
+                entity_id=contact.contact_id,
+                action="unsubscribe",
+                changed_by="system",
+                notes="Unsubscribed via email link",
+                tenant_id=contact.tenant_id,
+            ))
+
+        db.commit()
+        logger.info("Contact unsubscribed via link", tracking_id=tracking_id, contact_id=event.contact_id)
+
+        return HTMLResponse(
+            content=(
+                '<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:40px auto;text-align:center;">'
+                '<h2 style="color:#16a34a;">You have been unsubscribed</h2>'
+                '<p>You will no longer receive emails from us.</p>'
+                '<p style="color:#666;font-size:14px;margin-top:20px;">If this was a mistake, please contact us directly.</p>'
+                '</body></html>'
+            )
+        )
+    except Exception as e:
+        logger.error("Unsubscribe endpoint error", error=str(e), tracking_id=tracking_id)
+        return HTMLResponse(
+            status_code=500,
+            content=(
+                '<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:40px auto;text-align:center;">'
+                '<h2 style="color:#dc2626;">Something went wrong</h2>'
+                '<p>Please try again or reply to any of our emails with <strong>UNSUBSCRIBE</strong>.</p>'
+                '</body></html>'
+            )
+        )
+    finally:
+        db.close()
+
+
 @app.get("/")
 async def root():
     return {"app": settings.APP_NAME, "version": "2.0.0", "docs": "/api/docs"}
@@ -419,4 +666,4 @@ async def global_exception_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT)

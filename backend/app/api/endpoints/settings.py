@@ -5,8 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role
+from app.core.config import settings as app_config
 from app.db.models.user import User, UserRole
 from app.db.models.settings import Settings
+from app.db.query_helpers import tenant_query
 from app.schemas.settings import SettingUpdate, SettingResponse
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -163,7 +165,7 @@ DEFAULT_SETTINGS = {
     "warmup_recovery_wait_days": {"value": 3, "type": "integer", "description": "Days to wait before auto-recovery"},
     "warmup_recovery_ramp_factor": {"value": 1.5, "type": "float", "description": "Recovery ramp-up factor for daily limit"},
     "warmup_tracking_enabled": {"value": True, "type": "boolean", "description": "Enable open/click tracking for warmup emails"},
-    "warmup_tracking_base_url": {"value": "http://localhost:8000", "type": "string", "description": "Base URL for tracking pixel/link endpoints"},
+    "warmup_tracking_base_url": {"value": app_config.EFFECTIVE_BASE_URL, "type": "string", "description": "Base URL for tracking pixel/link endpoints"},
     "warmup_google_postmaster_api_key": {"value": "", "type": "string", "description": "Google Postmaster Tools API key (optional)"},
     "warmup_scheduler_enabled": {"value": True, "type": "boolean", "description": "Enable background warmup scheduler"},
     "warmup_daily_assessment_time": {"value": "00:05", "type": "string", "description": "Daily assessment time (HH:MM UTC)"},
@@ -180,10 +182,10 @@ DEFAULT_SETTINGS = {
 @router.get("", response_model=List[SettingResponse])
 async def list_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """List all settings."""
-    settings = db.query(Settings).order_by(Settings.key).all()
+    settings = tenant_query(db, Settings).order_by(Settings.key).all()
     return [SettingResponse.model_validate(s) for s in settings]
 
 
@@ -191,10 +193,10 @@ async def list_settings(
 async def get_setting(
     key: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """Get setting by key."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
+    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
     if not setting:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -208,10 +210,10 @@ async def update_setting(
     key: str,
     setting_in: SettingUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """Update or create setting (Admin only)."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
+    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
 
     # Determine the value to store
     if setting_in.value_json is not None:
@@ -228,7 +230,8 @@ async def update_setting(
             value_json=value_json,
             type=setting_in.type or "string",
             description=setting_in.description or f"Setting: {key}",
-            updated_by=current_user.email
+            updated_by=current_user.email,
+            tenant_id=current_user.tenant_id
         )
         db.add(setting)
     else:
@@ -249,19 +252,20 @@ async def update_setting(
 @router.post("/initialize")
 async def initialize_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """Initialize default settings (Admin only)."""
     created = 0
     for key, config in DEFAULT_SETTINGS.items():
-        existing = db.query(Settings).filter(Settings.key == key).first()
+        existing = tenant_query(db, Settings).filter(Settings.key == key).first()
         if not existing:
             setting = Settings(
                 key=key,
                 value_json=json.dumps(config["value"]),
                 type=config["type"],
                 description=config.get("description"),
-                updated_by=current_user.email
+                updated_by=current_user.email,
+                tenant_id=current_user.tenant_id
             )
             db.add(setting)
             created += 1
@@ -273,7 +277,7 @@ async def initialize_settings(
 
 def get_setting_value(db: Session, key: str, default: str = "") -> str:
     """Get a setting value from database."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
+    setting = tenant_query(db, Settings).filter(Settings.key == key).first()
     if setting and setting.value_json:
         try:
             return json.loads(setting.value_json)
@@ -286,7 +290,7 @@ def get_setting_value(db: Session, key: str, default: str = "") -> str:
 async def test_provider_connection(
     provider: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
     """Test connection to a provider."""
     try:

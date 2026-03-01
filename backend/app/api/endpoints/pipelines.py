@@ -8,6 +8,7 @@ from datetime import timezone
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.job_run import JobRun, JobStatus
+from app.db.query_helpers import tenant_query
 from app.schemas.pipeline import LeadIdsRequest, ContactIdsRequest
 
 
@@ -102,7 +103,7 @@ async def list_job_runs(
     current_user: User = Depends(get_current_active_user)
 ):
     """List pipeline job runs."""
-    query = db.query(JobRun)
+    query = tenant_query(db, JobRun)
 
     if pipeline_name:
         query = query.filter(JobRun.pipeline_name == pipeline_name)
@@ -159,7 +160,7 @@ async def get_job_run(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get job run details."""
-    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    run = tenant_query(db, JobRun).filter(JobRun.run_id == run_id).first()
     if not run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -215,7 +216,7 @@ async def cancel_job_run(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
 ):
     """Request cancellation of a running pipeline job."""
-    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    run = tenant_query(db, JobRun).filter(JobRun.run_id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Job run not found")
     if run.status != JobStatus.RUNNING:
@@ -238,7 +239,8 @@ async def run_lead_sourcing(
     background_tasks.add_task(
         run_lead_sourcing_pipeline,
         sources=sources,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=current_user.tenant_id,
     )
 
     return {
@@ -273,7 +275,7 @@ async def upload_leads_file(
         f.write(content)
 
     # Import leads
-    result = import_leads_from_file(file_path, triggered_by=current_user.email)
+    result = import_leads_from_file(file_path, triggered_by=current_user.email, tenant_id=current_user.tenant_id)
 
     return result
 
@@ -293,7 +295,8 @@ async def run_contact_enrichment(
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
         triggered_by=current_user.email,
-        lead_ids=lead_ids
+        lead_ids=lead_ids,
+        tenant_id=current_user.tenant_id,
     )
 
     msg = "Contact enrichment started" + (f" for {len(lead_ids)} selected leads" if lead_ids else "")
@@ -316,7 +319,8 @@ async def run_email_validation(
         run_email_validation_pipeline,
         emails=None,  # Will validate all unvalidated contacts
         provider=None,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=current_user.tenant_id,
     )
 
     return {
@@ -342,7 +346,7 @@ async def run_email_validation_selected(
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
-    contacts = db.query(ContactDetails).filter(
+    contacts = tenant_query(db, ContactDetails).filter(
         ContactDetails.contact_id.in_(contact_ids)
     ).all()
     emails = [c.email for c in contacts if c.email]
@@ -354,7 +358,8 @@ async def run_email_validation_selected(
         run_email_validation_pipeline,
         emails=emails,
         provider=None,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=current_user.tenant_id,
     )
 
     return {
@@ -379,7 +384,7 @@ async def run_outreach(
     if lead_ids:
         from app.services.pipelines.outreach import run_outreach_for_lead
         for lid in lead_ids:
-            background_tasks.add_task(run_outreach_for_lead, lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
+            background_tasks.add_task(run_outreach_for_lead, lead_id=lid, dry_run=dry_run, triggered_by=current_user.email, tenant_id=current_user.tenant_id)
         return {
             "message": f"Outreach started for {len(lead_ids)} selected leads (dry_run={dry_run})",
             "status": "processing"
@@ -389,7 +394,8 @@ async def run_outreach(
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
         background_tasks.add_task(
             run_outreach_mailmerge_pipeline,
-            triggered_by=current_user.email
+            triggered_by=current_user.email,
+            tenant_id=current_user.tenant_id,
         )
     else:
         from app.services.pipelines.outreach import run_outreach_send_pipeline
@@ -397,7 +403,8 @@ async def run_outreach(
             run_outreach_send_pipeline,
             dry_run=dry_run,
             limit=30,
-            triggered_by=current_user.email
+            triggered_by=current_user.email,
+            tenant_id=current_user.tenant_id,
         )
 
     return {

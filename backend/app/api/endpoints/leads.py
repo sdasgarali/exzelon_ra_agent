@@ -19,6 +19,7 @@ from app.schemas.contact import ContactResponse
 from app.schemas.outreach import OutreachEventResponse
 from app.core.state_machine import validate_transition, get_allowed_transitions
 from app.db.models.audit_log import AuditLog
+from app.db.query_helpers import tenant_query
 from app.schemas.pipeline import BulkLeadIdsRequest, BulkLeadStatusRequest, BulkEnrichRequest, BulkOutreachRequest, ManageContactsRequest
 import json
 
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/leads", tags=["Leads"])
 def _audit(db: Session, entity_type: str, entity_id: int, action: str,
            changed_fields: dict | None = None, changed_by: str | None = None, notes: str | None = None):
     """Write an audit log entry."""
+    from app.core.tenant_context import get_current_tenant_id
     log = AuditLog(
         entity_type=entity_type,
         entity_id=entity_id,
@@ -35,6 +37,7 @@ def _audit(db: Session, entity_type: str, entity_id: int, action: str,
         changed_fields=json.dumps(changed_fields) if changed_fields else None,
         changed_by=changed_by,
         notes=notes,
+        tenant_id=get_current_tenant_id(),
     )
     db.add(log)
 
@@ -74,7 +77,7 @@ async def list_leads(
     if limit:
         page_size = limit
 
-    query = db.query(LeadDetails)
+    query = tenant_query(db, LeadDetails)
 
     if show_archived:
         query = query.filter(LeadDetails.is_archived == True)
@@ -125,7 +128,7 @@ async def list_leads(
     contact_counts = {}
     if lead_ids:
         # Junction table counts
-        junc_counts = db.query(
+        junc_counts = tenant_query(db, LeadContactAssociation).with_entities(
             LeadContactAssociation.lead_id,
             func.count(func.distinct(LeadContactAssociation.contact_id))
         ).filter(
@@ -135,7 +138,7 @@ async def list_leads(
             contact_counts[lid] = cnt
 
         # Legacy FK counts (for leads not in junction table yet)
-        legacy_counts = db.query(
+        legacy_counts = tenant_query(db, ContactDetails).with_entities(
             ContactDetails.lead_id,
             func.count(ContactDetails.contact_id)
         ).filter(
@@ -166,7 +169,7 @@ async def get_lead_stats(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get lead statistics summary."""
-    stats_base = db.query(LeadDetails)
+    stats_base = tenant_query(db, LeadDetails)
     if show_archived:
         stats_base = stats_base.filter(LeadDetails.is_archived == True)
     else:
@@ -223,7 +226,7 @@ async def export_leads_csv(
     current_user: User = Depends(get_current_active_user)
 ):
     """Export leads to CSV file."""
-    query = db.query(LeadDetails)
+    query = tenant_query(db, LeadDetails)
 
     if show_archived:
         query = query.filter(LeadDetails.is_archived == True)
@@ -317,7 +320,9 @@ async def preview_csv_import(
 
     # Check for duplicates
     existing_links = {
-        link for (link,) in db.query(LeadDetails.job_link).filter(
+        link for (link,) in tenant_query(db, LeadDetails).with_entities(
+            LeadDetails.job_link
+        ).filter(
             LeadDetails.job_link.isnot(None)
         ).all()
     }
@@ -381,7 +386,9 @@ async def import_leads_csv(
     existing_links = set()
     if skip_duplicates:
         existing_links = {
-            link for (link,) in db.query(LeadDetails.job_link).filter(
+            link for (link,) in tenant_query(db, LeadDetails).with_entities(
+                LeadDetails.job_link
+            ).filter(
                 LeadDetails.job_link.isnot(None)
             ).all()
         }
@@ -478,7 +485,8 @@ async def import_leads_csv(
                 lead_status=lead_status_val,
                 salary_min=salary_min,
                 salary_max=salary_max,
-                contact_email=(row_lower.get('contact email') or row_lower.get('email') or "").strip() or None
+                contact_email=(row_lower.get('contact email') or row_lower.get('email') or "").strip() or None,
+                tenant_id=current_user.tenant_id
             )
             db.add(lead)
             imported += 1
@@ -509,7 +517,7 @@ async def bulk_delete_leads(
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
-    leads = db.query(LeadDetails).filter(
+    leads = tenant_query(db, LeadDetails).filter(
         LeadDetails.lead_id.in_(lead_ids)
     ).all()
 
@@ -520,18 +528,18 @@ async def bulk_delete_leads(
 
     try:
         # Soft delete: archive leads instead of hard deleting
-        archived_count = db.query(LeadDetails).filter(
+        archived_count = tenant_query(db, LeadDetails).filter(
             LeadDetails.lead_id.in_(found_ids)
         ).update({LeadDetails.is_archived: True}, synchronize_session=False)
 
         # Also archive linked contacts
-        linked_contacts = db.query(ContactDetails).filter(
+        linked_contacts = tenant_query(db, ContactDetails).filter(
             ContactDetails.lead_id.in_(found_ids)
         ).all()
         contact_ids = [c.contact_id for c in linked_contacts]
         contacts_archived = 0
         if contact_ids:
-            contacts_archived = db.query(ContactDetails).filter(
+            contacts_archived = tenant_query(db, ContactDetails).filter(
                 ContactDetails.contact_id.in_(contact_ids)
             ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
@@ -559,7 +567,7 @@ async def bulk_unarchive_leads(
         raise HTTPException(status_code=400, detail='No lead IDs provided')
 
     try:
-        restored_count = db.query(LeadDetails).filter(
+        restored_count = tenant_query(db, LeadDetails).filter(
             LeadDetails.lead_id.in_(lead_ids),
             LeadDetails.is_archived == True
         ).update({LeadDetails.is_archived: False}, synchronize_session=False)
@@ -603,7 +611,7 @@ async def bulk_update_status(
         raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid}")
 
     # Validate transitions per lead and audit
-    leads = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
+    leads = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
     updated = 0
     rejected = []
     for lead in leads:
@@ -658,7 +666,7 @@ async def preview_bulk_enrichment(
     }
 
     for lid in lead_ids:
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lid).first()
         if not lead:
             previews.append({"lead_id": lid, "error": "Lead not found", "status": "skip", "skip_reason": "Not found"})
             summary["will_skip"] += 1
@@ -666,11 +674,15 @@ async def preview_bulk_enrichment(
 
         # Count existing contacts for this lead (junction + FK)
         existing_cids = set()
-        for row in db.query(LeadContactAssociation.contact_id).filter(
+        for row in tenant_query(db, LeadContactAssociation).with_entities(
+            LeadContactAssociation.contact_id
+        ).filter(
             LeadContactAssociation.lead_id == lid
         ).all():
             existing_cids.add(row[0])
-        for c in db.query(ContactDetails.contact_id).filter(
+        for c in tenant_query(db, ContactDetails).with_entities(
+            ContactDetails.contact_id
+        ).filter(
             ContactDetails.lead_id == lid
         ).all():
             existing_cids.add(c[0])
@@ -686,12 +698,12 @@ async def preview_bulk_enrichment(
             continue
 
         # Count reusable contacts at same company not linked to this lead
-        reusable_query = db.query(ContactDetails).filter(
+        reusable_q = tenant_query(db, ContactDetails).filter(
             ContactDetails.client_name == lead.client_name
         )
         if existing_cids:
-            reusable_query = reusable_query.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
-        reusable_count = reusable_query.count()
+            reusable_q = reusable_q.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
+        reusable_count = reusable_q.count()
 
         needed = max_contacts - current_contacts
         from_cache = min(reusable_count, needed)
@@ -716,7 +728,7 @@ async def preview_bulk_enrichment(
     selected_id_set = set(lead_ids)
     auto_enrich_previews = []
     for company in enriching_companies:
-        siblings = db.query(LeadDetails).filter(
+        siblings = tenant_query(db, LeadDetails).filter(
             LeadDetails.client_name == company,
             LeadDetails.first_name.is_(None),
             ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
@@ -726,21 +738,25 @@ async def preview_bulk_enrichment(
         for sib in siblings:
             # Check if there are reusable contacts at this company
             sib_existing_cids = set()
-            for row in db.query(LeadContactAssociation.contact_id).filter(
+            for row in tenant_query(db, LeadContactAssociation).with_entities(
+                LeadContactAssociation.contact_id
+            ).filter(
                 LeadContactAssociation.lead_id == sib.lead_id
             ).all():
                 sib_existing_cids.add(row[0])
-            for c in db.query(ContactDetails.contact_id).filter(
+            for c in tenant_query(db, ContactDetails).with_entities(
+                ContactDetails.contact_id
+            ).filter(
                 ContactDetails.lead_id == sib.lead_id
             ).all():
                 sib_existing_cids.add(c[0])
 
-            reusable_query = db.query(ContactDetails).filter(
+            sib_reusable_q = tenant_query(db, ContactDetails).filter(
                 ContactDetails.client_name == company
             )
             if sib_existing_cids:
-                reusable_query = reusable_query.filter(~ContactDetails.contact_id.in_(list(sib_existing_cids)))
-            reusable_count = reusable_query.count()
+                sib_reusable_q = sib_reusable_q.filter(~ContactDetails.contact_id.in_(list(sib_existing_cids)))
+            reusable_count = sib_reusable_q.count()
 
             if reusable_count > 0:
                 auto_enrich_previews.append({
@@ -776,7 +792,8 @@ async def bulk_enrich_leads(
     job_run = JobRun(
         pipeline_name="contact_enrichment",
         status=JobStatus.PENDING,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=current_user.tenant_id
     )
     db.add(job_run)
     db.commit()
@@ -787,7 +804,8 @@ async def bulk_enrich_leads(
         run_contact_enrichment_pipeline,
         triggered_by=current_user.email,
         lead_ids=lead_ids,
-        run_id=created_run_id
+        run_id=created_run_id,
+        tenant_id=current_user.tenant_id,
     )
 
     return {
@@ -813,7 +831,7 @@ async def preview_bulk_outreach(
     from app.services.pipelines.outreach import check_send_eligibility
 
     # Get available Cold Ready / Active mailboxes, least loaded first
-    available_mailboxes = db.query(SenderMailbox).filter(
+    available_mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status.in_(["cold_ready", "active"]),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit
@@ -830,22 +848,24 @@ async def preview_bulk_outreach(
     mailbox_idx = 0
 
     for lid in lead_ids:
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lid).first()
         if not lead:
             assignments.append({"lead_id": lid, "error": "Lead not found", "contacts": [], "sender": None})
             continue
 
         # Get contacts
-        junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
+        junction_cids = [row[0] for row in tenant_query(db, LeadContactAssociation).with_entities(
+            LeadContactAssociation.contact_id
+        ).filter(
             LeadContactAssociation.lead_id == lid
         ).all()]
 
         if junction_cids:
-            contacts = db.query(ContactDetails).filter(
+            contacts = tenant_query(db, ContactDetails).filter(
                 (ContactDetails.lead_id == lid) | (ContactDetails.contact_id.in_(junction_cids))
             ).all()
         else:
-            contacts = db.query(ContactDetails).filter(ContactDetails.lead_id == lid).all()
+            contacts = tenant_query(db, ContactDetails).filter(ContactDetails.lead_id == lid).all()
 
         contact_previews = []
         eligible_count = 0
@@ -941,7 +961,7 @@ async def get_lead_detail(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get detailed lead info including contacts and outreach events."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -949,22 +969,24 @@ async def get_lead_detail(
         )
 
     # Get contacts via junction table + legacy FK
-    junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
+    junction_cids = [row[0] for row in tenant_query(db, LeadContactAssociation).with_entities(
+        LeadContactAssociation.contact_id
+    ).filter(
         LeadContactAssociation.lead_id == lead_id
     ).all()]
 
     if junction_cids:
-        contacts = db.query(ContactDetails).filter(
+        contacts = tenant_query(db, ContactDetails).filter(
             (ContactDetails.lead_id == lead_id) |
             (ContactDetails.contact_id.in_(junction_cids))
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
     else:
-        contacts = db.query(ContactDetails).filter(
+        contacts = tenant_query(db, ContactDetails).filter(
             ContactDetails.lead_id == lead_id
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
 
     # Get outreach events for this lead
-    outreach_events = db.query(OutreachEvent).filter(
+    outreach_events = tenant_query(db, OutreachEvent).filter(
         OutreachEvent.lead_id == lead_id
     ).order_by(OutreachEvent.sent_at.desc()).all()
 
@@ -973,7 +995,7 @@ async def get_lead_detail(
     # Fetch any additional contacts referenced by events but not in junction
     event_contact_ids = {e.contact_id for e in outreach_events if e.contact_id not in contact_lookup}
     if event_contact_ids:
-        extra_contacts = db.query(ContactDetails).filter(
+        extra_contacts = tenant_query(db, ContactDetails).filter(
             ContactDetails.contact_id.in_(list(event_contact_ids))
         ).all()
         for c in extra_contacts:
@@ -984,7 +1006,7 @@ async def get_lead_detail(
     mailbox_ids = {e.sender_mailbox_id for e in outreach_events if e.sender_mailbox_id}
     mailbox_lookup = {}
     if mailbox_ids:
-        mailboxes = db.query(SenderMailbox).filter(
+        mailboxes = tenant_query(db, SenderMailbox).filter(
             SenderMailbox.mailbox_id.in_(list(mailbox_ids))
         ).all()
         mailbox_lookup = {m.mailbox_id: m for m in mailboxes}
@@ -1026,7 +1048,7 @@ async def manage_lead_contacts(
     current_user: User = Depends(get_current_active_user)
 ):
     """Add or remove contact associations for a lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1040,20 +1062,20 @@ async def manage_lead_contacts(
     removed = 0
 
     for cid in add_ids:
-        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == cid).first()
+        contact = tenant_query(db, ContactDetails).filter(ContactDetails.contact_id == cid).first()
         if not contact:
             continue
-        existing = db.query(LeadContactAssociation).filter(
+        existing = tenant_query(db, LeadContactAssociation).filter(
             LeadContactAssociation.lead_id == lead_id,
             LeadContactAssociation.contact_id == cid
         ).first()
         if not existing:
-            assoc = LeadContactAssociation(lead_id=lead_id, contact_id=cid)
+            assoc = LeadContactAssociation(lead_id=lead_id, contact_id=cid, tenant_id=current_user.tenant_id)
             db.add(assoc)
             added += 1
 
     for cid in remove_ids:
-        deleted = db.query(LeadContactAssociation).filter(
+        deleted = tenant_query(db, LeadContactAssociation).filter(
             LeadContactAssociation.lead_id == lead_id,
             LeadContactAssociation.contact_id == cid
         ).delete(synchronize_session=False)
@@ -1077,7 +1099,7 @@ async def run_outreach_for_lead(
     current_user: User = Depends(get_current_active_user)
 ):
     """Trigger outreach for contacts of a specific lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1097,7 +1119,7 @@ async def get_lead(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get lead by ID."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1114,14 +1136,14 @@ async def create_lead(
 ):
     """Create a new lead."""
     if lead_in.job_link:
-        existing = db.query(LeadDetails).filter(LeadDetails.job_link == lead_in.job_link).first()
+        existing = tenant_query(db, LeadDetails).filter(LeadDetails.job_link == lead_in.job_link).first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Lead with this job link already exists"
             )
 
-    lead = LeadDetails(**lead_in.model_dump())
+    lead = LeadDetails(**lead_in.model_dump(), tenant_id=current_user.tenant_id)
     db.add(lead)
     db.commit()
     db.refresh(lead)
@@ -1137,7 +1159,7 @@ async def update_lead(
     current_user: User = Depends(get_current_active_user)
 ):
     """Update lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1184,7 +1206,7 @@ async def delete_lead(
     current_user: User = Depends(get_current_active_user)
 ):
     """Archive lead (soft delete)."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    lead = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

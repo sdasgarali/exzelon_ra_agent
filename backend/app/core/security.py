@@ -23,7 +23,13 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token."""
+    """Create a JWT access token.
+
+    The data dict should include:
+      - sub: user email
+      - tenant_id: user's tenant_id (None for super admin)
+      - role: user's role
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta

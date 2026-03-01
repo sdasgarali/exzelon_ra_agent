@@ -16,6 +16,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for creating a user."""
     password: str
+    tenant_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -25,11 +26,13 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    tenant_id: Optional[int] = None
 
 
 class UserResponse(UserBase):
     """Schema for user response."""
     user_id: int
+    tenant_id: Optional[int] = None
     last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime

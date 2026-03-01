@@ -10,15 +10,13 @@ from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.contact_utils import get_contacts_for_lead, get_contact_ids_for_lead
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 
 
 def get_lead_stats(db: Session, show_archived: bool = False) -> dict:
     """Get lead statistics summary."""
-    query = db.query(LeadDetails)
-    if show_archived:
-        query = query.filter(LeadDetails.is_archived == True)
-    else:
-        query = query.filter(LeadDetails.is_archived == False)
+    query = tenant_query(db, LeadDetails, show_archived=show_archived)
 
     total = query.count()
     by_status = query.with_entities(
@@ -37,22 +35,22 @@ def get_lead_stats(db: Session, show_archived: bool = False) -> dict:
 
 def bulk_archive_leads(db: Session, lead_ids: List[int]) -> dict:
     """Archive leads and their linked contacts. Returns counts."""
-    leads = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
+    leads = tenant_query(db, LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
     if not leads:
         return {"archived_count": 0, "contacts_archived": 0, "archived_ids": []}
 
     found_ids = [l.lead_id for l in leads]
-    archived_count = db.query(LeadDetails).filter(
+    archived_count = tenant_query(db, LeadDetails).filter(
         LeadDetails.lead_id.in_(found_ids)
     ).update({LeadDetails.is_archived: True}, synchronize_session=False)
 
-    linked_contacts = db.query(ContactDetails).filter(
+    linked_contacts = tenant_query(db, ContactDetails).filter(
         ContactDetails.lead_id.in_(found_ids)
     ).all()
     contact_ids = [c.contact_id for c in linked_contacts]
     contacts_archived = 0
     if contact_ids:
-        contacts_archived = db.query(ContactDetails).filter(
+        contacts_archived = tenant_query(db, ContactDetails).filter(
             ContactDetails.contact_id.in_(contact_ids)
         ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
@@ -65,7 +63,7 @@ def bulk_archive_leads(db: Session, lead_ids: List[int]) -> dict:
 
 def bulk_unarchive_leads(db: Session, lead_ids: List[int]) -> int:
     """Unarchive leads. Returns count of restored leads."""
-    return db.query(LeadDetails).filter(
+    return tenant_query(db, LeadDetails).filter(
         LeadDetails.lead_id.in_(lead_ids),
         LeadDetails.is_archived == True
     ).update({LeadDetails.is_archived: False}, synchronize_session=False)

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { warmupApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -90,6 +91,8 @@ function hText(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-
 
 /* COMPONENT */
 export default function WarmupEnginePage() {
+  const { user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [status, setStatus] = useState<WarmupStatusData | null>(null)
   const [config, setConfig] = useState<WarmupConfigData | null>(null)
@@ -128,10 +131,11 @@ export default function WarmupEnginePage() {
   const fetchCore = async () => {
     try {
       setLoading(true)
+      setError('')
       const [s, c, sc] = await Promise.all([warmupApi.getStatus(), warmupApi.getConfig(), warmupApi.getSchedule()])
       setStatus(s); setConfig(c); setEditConfig({ ...c }); setSchedule(sc)
       try { const u = await warmupApi.getUnreadCount(); setUnreadCount(typeof u === 'number' ? u : u?.count ?? 0) } catch {}
-    } catch (e: any) { setError(e?.response?.data?.detail || 'Failed to load warmup data') }
+    } catch (e: any) { if (e.code !== 'ERR_CANCELED') { setError(e?.response?.data?.detail || 'Failed to load warmup data') } }
     finally { setLoading(false) }
   }
   const fetchAnalytics = async (days: number) => {
@@ -246,12 +250,13 @@ export default function WarmupEnginePage() {
   const mailboxEmailMap: Record<number, string> = {}
   for (const mb of (status?.mailboxes || [])) { mailboxEmailMap[mb.mailbox_id] = mb.email }
 
-  const tabs: { id: TabId; label: string }[] = [
+  const allTabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Overview' }, { id: 'analytics', label: 'Analytics' },
     { id: 'emails', label: 'Email Threads' },
     { id: 'dns', label: 'DNS & Blacklist' }, { id: 'profiles', label: 'Profiles' },
     { id: 'alerts', label: 'Alerts' }, { id: 'settings', label: 'Settings' },
   ]
+  const tabs = isSuperAdmin ? allTabs : allTabs.filter(t => ['overview', 'analytics'].includes(t.id))
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading warmup data...</div></div>
 
@@ -286,8 +291,8 @@ export default function WarmupEnginePage() {
             </div>
             <div className="flex items-center gap-3">
               {unreadCount > 0 && <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">{unreadCount} unread alert{unreadCount > 1 ? 's' : ''}</span>}
-              <button onClick={handleAssessAll} disabled={assessing} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium">{assessing ? 'Assessing...' : 'Assess All'}</button>
-              <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>
+              {isSuperAdmin && <button onClick={handleAssessAll} disabled={assessing} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium">{assessing ? 'Assessing...' : 'Assess All'}</button>}
+              {isSuperAdmin && <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>}
             </div>
           </div>
 
@@ -308,14 +313,14 @@ export default function WarmupEnginePage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['Email','Day / Phase','Health Score','Status','Daily Limit','Bounce %','Reply %','DNS Score','Blacklisted','Profile ID','Actions'].map(h => (
+                    {['Email','Day / Phase','Health Score','Status','Daily Limit','Bounce %','Reply %','DNS Score','Blacklisted','Profile ID', ...(isSuperAdmin ? ['Actions'] : [])].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {status.mailboxes.length === 0 ? (
-                    <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No mailboxes found. Add mailboxes in the Mailboxes page first.</td></tr>
+                    <tr><td colSpan={isSuperAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-500">No mailboxes found. Add mailboxes in the Mailboxes page first.</td></tr>
                   ) : status.mailboxes.map(mb => (
                     <tr key={mb.mailbox_id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm">
@@ -344,10 +349,12 @@ export default function WarmupEnginePage() {
                       <td className="px-4 py-3 text-sm text-gray-600">{mb.dns_score}</td>
                       <td className="px-4 py-3 text-sm">{mb.is_blacklisted ? <span className="text-red-600 font-bold">X</span> : <span className="text-green-600 font-bold">{String.fromCharCode(10003)}</span>}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">{mb.warmup_profile_id ?? '-'}</td>
-                      <td className="px-4 py-3 text-sm space-x-2">
-                        <button onClick={() => handleAssessOne(mb.mailbox_id)} className="text-orange-600 hover:text-orange-800 text-xs font-medium">Assess</button>
-                        {(mb.warmup_status === 'paused' || mb.warmup_status === 'blacklisted') && <button onClick={() => handleRecovery(mb.mailbox_id)} className="text-purple-600 hover:text-purple-800 text-xs font-medium">Recovery</button>}
-                      </td>
+                      {isSuperAdmin && (
+                        <td className="px-4 py-3 text-sm space-x-2">
+                          <button onClick={() => handleAssessOne(mb.mailbox_id)} className="text-orange-600 hover:text-orange-800 text-xs font-medium">Assess</button>
+                          {(mb.warmup_status === 'paused' || mb.warmup_status === 'blacklisted') && <button onClick={() => handleRecovery(mb.mailbox_id)} className="text-purple-600 hover:text-purple-800 text-xs font-medium">Recovery</button>}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

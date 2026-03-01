@@ -7,6 +7,7 @@ from sqlalchemy import desc
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.audit_log import AuditLog
+from app.db.query_helpers import tenant_query
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
@@ -23,7 +24,7 @@ async def list_audit_logs(
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """List audit logs with optional filters. Admin only."""
-    query = db.query(AuditLog)
+    query = tenant_query(db, AuditLog)
 
     if entity_type:
         query = query.filter(AuditLog.entity_type == entity_type)
@@ -66,7 +67,7 @@ async def get_lead_audit_trail(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get audit trail for a specific lead."""
-    logs = db.query(AuditLog).filter(
+    logs = tenant_query(db, AuditLog).filter(
         AuditLog.entity_type == "lead",
         AuditLog.entity_id == lead_id
     ).order_by(desc(AuditLog.created_at)).all()

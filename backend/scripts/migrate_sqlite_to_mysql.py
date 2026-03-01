@@ -8,10 +8,14 @@ in FK-safe topological order.
 Usage:
     cd backend && python -m scripts.migrate_sqlite_to_mysql
 """
+import os
 import sys
 import enum
 from pathlib import Path
 from datetime import datetime
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 # Add backend to path so app modules resolve
 backend_dir = Path(__file__).resolve().parent.parent
@@ -30,14 +34,14 @@ from app.db.models import (  # noqa: F401
 )
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Configuration — reads from environment (resolved by env_loader / .env)
 # ---------------------------------------------------------------------------
 SQLITE_PATH = backend_dir / "data" / "ra_agent.db"
-MYSQL_USER = "root"
-MYSQL_PASSWORD = "AdminRootDBAli"
-MYSQL_HOST = "localhost"
-MYSQL_PORT = 3306
-MYSQL_DB = "cold_email_ai_agent"
+MYSQL_USER = os.environ.get("DB_USER", "root")
+MYSQL_PASSWORD = os.environ.get("DB_PASSWORD", "")
+MYSQL_HOST = os.environ.get("DB_HOST", "localhost")
+MYSQL_PORT = int(os.environ.get("DB_PORT", "3306"))
+MYSQL_DB = os.environ.get("DB_NAME", "cold_email_ai_agent")
 
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 MYSQL_URL = (

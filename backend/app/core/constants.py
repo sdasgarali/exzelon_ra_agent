@@ -1,5 +1,8 @@
 """Application constants - eliminates magic numbers from business logic."""
 
+# Multi-tenant
+MASTER_TENANT_ID = 1  # The platform-owner tenant; super_admin + this tenant = Global Super Admin
+
 # Pipeline batch limits
 ENRICHMENT_BATCH_LIMIT = 200
 OUTREACH_BATCH_LIMIT = 100

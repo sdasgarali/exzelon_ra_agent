@@ -1,5 +1,5 @@
 """Audit log model for tracking entity changes."""
-from sqlalchemy import Column, Integer, String, Text, Index
+from sqlalchemy import Column, Integer, String, Text, Index, ForeignKey
 from app.db.base import Base
 
 
@@ -9,6 +9,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     entity_type = Column(String(50), nullable=False)   # e.g. "lead", "contact", "mailbox"
     entity_id = Column(Integer, nullable=False)
     action = Column(String(50), nullable=False)         # e.g. "status_change", "archive", "create", "update", "delete"

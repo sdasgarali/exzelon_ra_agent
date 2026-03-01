@@ -1,25 +1,16 @@
 # Plan WIP
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 12: ALL 14 batches of remaining improvements implemented. 170 tests passing. Frontend builds clean. Ready to commit.
+> Session 17: Global Super Admin vs Tenant Super Admin implemented — GSA (SA+tenant_id=1) has cross-tenant access; TSA (SA+tenant_id!=1) scoped to own tenant. 14 files changed, 191 tests pass.
 
 ## Immediate TODO
-- [ ] Commit all session 12 work
-- [x] Batch 1: Pydantic schemas for 9 dict endpoints (SEC-02)
-- [x] Batch 2: Security hardening - HMAC tracking, XSS escape (SEC-03, SEC-06)
-- [x] Batch 3: Performance - N+1 fix, DB pool, streaming CSV (PERF-01, PERF-06, PERF-07)
-- [x] Batch 4: Code quality - exceptions, constants, rollback (QUAL-02, QUAL-03, QUAL-04)
-- [x] Batch 5: Backend features - progress, cancel, retention, duplicate, preview, merge (FEAT-01..10)
-- [x] Batch 6: Data model cleanup - junction table standardization (QUAL-05, QUAL-06)
-- [x] Batch 7: Service layer extraction (QUAL-07)
-- [x] Batch 8: Frontend component extraction (UX-01, UX-04, UX-08)
-- [x] Batch 9: Frontend UX - URL filters, role nav, mutations (UX-07, UX-12, UX-13, UX-14)
-- [x] Batch 10: Frontend perf/security - abort, offline, token, types (FPERF-03..FSEC-03)
-- [x] Batch 11: Database - schema validation, seed admin, query helpers (DB-02..04)
-- [x] Batch 12: Infrastructure - CI, backup, nginx (INFRA-01, INFRA-04, INFRA-06)
-- [x] Batch 13: Testing - 36 new tests (170 total), Locust load test, coverage threshold (TEST-01, TEST-04, TEST-05)
-- [x] Batch 14: Documentation - security, troubleshooting, ADRs (DOC-02, DOC-03, DOC-05)
+- [x] Global Super Admin vs Tenant Super Admin: Two-tier SA model — 14 files changed, all 191 tests pass (2026-02-28)
 
 ## Completed
+- [x] Session 17: GSA vs TSA — MASTER_TENANT_ID=1 constant, _is_global_super_admin ContextVar, auth.py GSA/TSA branching, query_helpers uses GSA check, tenants.py _require_global_super_admin, users.py GSA-only scoping, seed.py fixed (SA→tenant_id=1), migration SQL, frontend isGlobalSuperAdmin(), nav globalOnly flag, tenant switcher GSA-only, role display GSA/TSA labels. 191 tests pass (2026-02-28)
+- [x] Session 16: Production Deployment Config — env_loader.py (APP_ENV prefix resolution), config.py refactored, hardcoded URLs/secrets/paths removed, docker-compose aligned, 191 tests pass (2026-02-28)
+- [x] Session 15: Multi-Tenant Architecture — 6 phases (Foundation → Query Filtering → Pipelines → Settings → Frontend → Hardening), 191 tests pass, 0 cross-tenant leaks (2026-02-28)
+- [x] Session 14: Unsubscribe Handling Enhancement — clickable unsub links, contact status tracking, audit log, outreach_status filter, frontend columns (2026-02-28)
+- [x] Session 13: Full E2E testing — 170 backend tests, 16 frontend pages, browser E2E via Playwright, 6 bugs fixed (2026-02-28)
 - [x] Batch 13 (new): 36 new backend tests (170 total), Locust load test, Makefile --cov-fail-under=75 (2026-02-28)
 - [x] Batch 15: Testing + docs — 39 new tests (134 total), DEPLOYMENT_GUIDE.md, CHANGELOG.md (2026-02-28)
 - [x] Batch 14: Dark mode (class-based Tailwind), keyboard shortcuts (Shift+?, Ctrl+D/L/O/P) (2026-02-28)
@@ -57,5 +48,5 @@
 ## Blockers / Notes
 - Write/Edit tools now work on Windows (hook issue resolved)
 - SQLAlchemy create_all creates new tables with all columns; existing tables need ALTER TABLE
-- .env must exist in BOTH project root AND backend/ directory (config.py reads from backend/.env)
+- Single .env in project root (backend/.env removed); env_loader resolves APP_ENV prefixes
 - mysql.connector not available in env; use pymysql instead for direct DB scripts

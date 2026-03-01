@@ -11,6 +11,8 @@ from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.client import ClientInfo
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
+from app.core.tenant_context import set_current_tenant_id, get_current_tenant_id
+from app.db.query_helpers import tenant_query
 from app.services.adapters.contact_discovery.mock import MockContactDiscoveryAdapter
 from app.services.adapters.contact_discovery.apollo import ApolloAdapter, ApolloCreditsExhaustedError
 from app.services.adapters.contact_discovery.seamless import SeamlessAdapter
@@ -81,14 +83,15 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
     Check DB for contacts at the same company NOT already linked to this lead.
     Associate them via LeadContactAssociation. Return count reused.
     """
+    tenant_id = get_current_tenant_id()
     existing_cids = set()
-    for row in db.query(LeadContactAssociation.contact_id).filter(
+    for row in tenant_query(db, LeadContactAssociation).filter(
         LeadContactAssociation.lead_id == lead.lead_id
-    ).all():
+    ).with_entities(LeadContactAssociation.contact_id).all():
         existing_cids.add(row[0])
-    for c in db.query(ContactDetails.contact_id).filter(
+    for c in tenant_query(db, ContactDetails).filter(
         ContactDetails.lead_id == lead.lead_id
-    ).all():
+    ).with_entities(ContactDetails.contact_id).all():
         existing_cids.add(c[0])
 
     existing_count = len(existing_cids)
@@ -96,7 +99,7 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
     if needed <= 0:
         return 0
 
-    query = db.query(ContactDetails).filter(
+    query = tenant_query(db, ContactDetails).filter(
         ContactDetails.client_name == lead.client_name
     )
     if existing_cids:
@@ -108,7 +111,8 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
         try:
             assoc = LeadContactAssociation(
                 lead_id=lead.lead_id,
-                contact_id=contact.contact_id
+                contact_id=contact.contact_id,
+                tenant_id=tenant_id
             )
             db.add(assoc)
             db.flush()
@@ -120,15 +124,15 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
 
 def _update_lead_from_contacts(db, lead):
     """Update lead denormalized fields from its linked contacts."""
-    contact = db.query(ContactDetails).filter(
+    contact = tenant_query(db, ContactDetails).filter(
         ContactDetails.lead_id == lead.lead_id
     ).first()
     if not contact:
-        row = db.query(LeadContactAssociation.contact_id).filter(
+        row = tenant_query(db, LeadContactAssociation).filter(
             LeadContactAssociation.lead_id == lead.lead_id
-        ).first()
+        ).with_entities(LeadContactAssociation.contact_id).first()
         if row:
-            contact = db.query(ContactDetails).filter(
+            contact = tenant_query(db, ContactDetails).filter(
                 ContactDetails.contact_id == row[0]
             ).first()
     if contact:
@@ -143,7 +147,7 @@ def _update_lead_from_contacts(db, lead):
 
 def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters):
     """Find all unenriched leads at the same company and auto-link cached contacts."""
-    sibling_leads = db.query(LeadDetails).filter(
+    sibling_leads = tenant_query(db, LeadDetails).filter(
         LeadDetails.client_name == client_name,
         LeadDetails.first_name.is_(None),
         ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
@@ -169,7 +173,8 @@ def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts,
 def run_contact_enrichment_pipeline(
     triggered_by: str = "system",
     lead_ids: list | None = None,
-    run_id: int | None = None
+    run_id: int | None = None,
+    tenant_id: int = None
 ) -> Dict[str, Any]:
     """
     Run the contact enrichment pipeline.
@@ -180,7 +185,14 @@ def run_contact_enrichment_pipeline(
     3. Store contacts with priority levels
     4. Update lead records
     5. Insert into junction table for many-to-many support
+
+    Args:
+        triggered_by: Who triggered the pipeline
+        lead_ids: Optional list of specific lead IDs to enrich
+        run_id: Optional pre-created job run ID
+        tenant_id: Tenant ID for multi-tenant scoping
     """
+    set_current_tenant_id(tenant_id)
     db = SessionLocal()
     counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0}
     lead_results = []
@@ -188,17 +200,17 @@ def run_contact_enrichment_pipeline(
 
     # Reuse pre-created job run or create a new one
     if run_id:
-        job_run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+        job_run = tenant_query(db, JobRun).filter(JobRun.run_id == run_id).first()
         if job_run:
             job_run.status = JobStatus.RUNNING
             job_run.started_at = datetime.utcnow()
             db.commit()
         else:
-            job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+            job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by, tenant_id=tenant_id)
             db.add(job_run)
             db.commit()
     else:
-        job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+        job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by, tenant_id=tenant_id)
         db.add(job_run)
         db.commit()
 
@@ -212,13 +224,13 @@ def run_contact_enrichment_pipeline(
         max_contacts_per_job = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
         if lead_ids:
-            leads = db.query(LeadDetails).filter(
+            leads = tenant_query(db, LeadDetails).filter(
                 LeadDetails.lead_id.in_(lead_ids),
                 ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
                 LeadDetails.is_archived == False
             ).all()
         else:
-            leads = db.query(LeadDetails).filter(
+            leads = tenant_query(db, LeadDetails).filter(
                 LeadDetails.first_name.is_(None),
                 LeadDetails.lead_status == LeadStatus.NEW,
                 LeadDetails.is_archived == False
@@ -229,7 +241,7 @@ def run_contact_enrichment_pipeline(
 
         for lead in leads:
             try:
-                existing_count = db.query(ContactDetails).filter(
+                existing_count = tenant_query(db, ContactDetails).filter(
                     ContactDetails.lead_id == lead.lead_id
                 ).count()
 
@@ -304,7 +316,7 @@ def run_contact_enrichment_pipeline(
 
                 contacts_added = 0
                 for contact_data in contacts:
-                    existing = db.query(ContactDetails).filter(
+                    existing = tenant_query(db, ContactDetails).filter(
                         ContactDetails.lead_id == lead.lead_id,
                         ContactDetails.email == contact_data["email"]
                     ).first()
@@ -329,14 +341,16 @@ def run_contact_enrichment_pipeline(
                         phone=contact_data.get("phone"),
                         source=contact_source,
                         priority_level=contact_data.get("priority_level"),
-                        validation_status=val_status
+                        validation_status=val_status,
+                        tenant_id=tenant_id
                     )
                     db.add(contact)
                     db.flush()
 
                     assoc = LeadContactAssociation(
                         lead_id=lead.lead_id,
-                        contact_id=contact.contact_id
+                        contact_id=contact.contact_id,
+                        tenant_id=tenant_id
                     )
                     db.add(assoc)
 

@@ -75,10 +75,12 @@ class TestTemplateEndpoints:
         t1 = EmailTemplate(
             name="T1", subject="S1", body_html="<p>1</p>",
             status=TemplateStatus.ACTIVE, is_default=False,
+            tenant_id=1,
         )
         t2 = EmailTemplate(
             name="T2", subject="S2", body_html="<p>2</p>",
             status=TemplateStatus.INACTIVE, is_default=False,
+            tenant_id=1,
         )
         db_session.add_all([t1, t2])
         db_session.commit()

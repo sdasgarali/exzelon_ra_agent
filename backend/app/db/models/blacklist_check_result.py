@@ -11,6 +11,7 @@ class BlacklistCheckResult(Base):
     __tablename__ = 'blacklist_check_results'
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=False, index=True)
     domain = Column(String(255), nullable=False)
     ip_address = Column(String(45), nullable=True)

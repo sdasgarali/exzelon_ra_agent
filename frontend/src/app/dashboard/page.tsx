@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { dashboardApi, pipelinesApi } from '@/lib/api'
 import { useToast } from '@/components/toast'
+import { useAuthStore } from '@/lib/store'
 import {
   Building,
   Users,
@@ -61,6 +62,7 @@ function StatCard({
 export default function DashboardPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const user = useAuthStore((s) => s.user)
   const [quickLoading, setQuickLoading] = useState<string | null>(null)
 
   const { data: kpis, isLoading } = useQuery({
@@ -159,8 +161,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="card">
+      {/* Quick Actions — admin and operator only */}
+      {user?.role !== 'viewer' && <div className="card">
         <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <button
@@ -224,7 +226,7 @@ export default function DashboardPage() {
             {quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

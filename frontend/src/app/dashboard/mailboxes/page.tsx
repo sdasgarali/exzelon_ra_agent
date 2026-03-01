@@ -151,8 +151,10 @@ export default function MailboxesPage() {
         if (mb.connection_error) errorMap[mb.mailbox_id] = mb.connection_error
       }
       setConnectionErrors(prev => ({ ...errorMap, ...prev }))
-    } catch (error) {
-      console.error('Failed to fetch mailboxes:', error)
+    } catch (error: any) {
+      if (error.code !== 'ERR_CANCELED') {
+        console.error('Failed to fetch mailboxes:', error)
+      }
     } finally {
       setLoading(false)
     }

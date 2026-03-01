@@ -1,6 +1,6 @@
 """Lead details model for job posts and leads."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index
+from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index, ForeignKey
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -48,6 +48,7 @@ class LeadDetails(Base):
     __tablename__ = "lead_details"
 
     lead_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
 
     # Company/Client information
     client_name = Column(String(255), nullable=False, index=True)
@@ -70,7 +71,7 @@ class LeadDetails(Base):
     contact_source = Column(String(50), nullable=True)  # apollo, seamless
 
     # Status tracking
-    lead_status = Column(Enum(LeadStatus), default=LeadStatus.NEW, nullable=False)
+    lead_status = Column(Enum(LeadStatus, values_callable=lambda x: [e.value for e in x]), default=LeadStatus.NEW, nullable=False)
     skip_reason = Column(Text, nullable=True)
 
     # Research analyst tracking

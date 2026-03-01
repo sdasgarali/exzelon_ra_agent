@@ -1,4 +1,10 @@
-"""Core configuration settings loaded from environment variables."""
+"""Core configuration settings loaded from environment variables.
+
+Uses the env_loader module to resolve APP_ENV-prefixed variables before
+Pydantic reads them from os.environ. This enables TEST/DEV/PROD switching
+with zero code changes — only APP_ENV needs to change in the .env file.
+"""
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -7,13 +13,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Anchor all relative paths to the backend/ directory (parent of app/)
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
+# ---------------------------------------------------------------------------
+# Load environment BEFORE Settings class is instantiated.
+# This resolves DEV_DB_HOST → DB_HOST etc. in os.environ.
+# Skipped when DATABASE_URL is already set (e.g. test harness).
+# ---------------------------------------------------------------------------
+_app_env = "DEV"
+if "DATABASE_URL" not in os.environ:
+    from app.core.env_loader import load_env, validate_env
+    _app_env = load_env()
+    validate_env(_app_env)
+
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables.
+
+    The env_loader has already resolved APP_ENV-prefixed keys into canonical
+    names in os.environ, so Pydantic reads them directly. No env_file is
+    specified — all values come from os.environ (populated by the loader).
+    """
 
     model_config = SettingsConfigDict(
-        env_file=str(_BACKEND_DIR / ".env"),
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )
@@ -23,10 +43,15 @@ class Settings(BaseSettings):
     APP_NAME: str = "Exzelon RA Cold-Email Automation"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = True
-    SECRET_KEY: str = "change-me-in-production-use-openssl-rand-hex-32"
-    ENCRYPTION_KEY: str = ""  # Fernet key for encrypting mailbox passwords; generate via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    SECRET_KEY: str = ""
+    ENCRYPTION_KEY: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    CORS_ORIGINS: str = ""  # Comma-separated allowed origins; empty = localhost defaults
+    CORS_ORIGINS: str = ""  # Comma-separated allowed origins
+
+    # Server
+    HOST: str = "127.0.0.1"
+    PORT: int = 8000
+    BASE_URL: str = ""  # Public-facing URL (e.g. https://yourdomain.com); used for tracking links
 
     # Data Storage Mode
     DATA_STORAGE: Literal["database", "files"] = "database"
@@ -39,7 +64,7 @@ class Settings(BaseSettings):
     DB_PORT: int = 3306
     DB_NAME: str = "ra_agent"
     DB_USER: str = "ra_user"
-    DB_PASSWORD: str = "change_me"
+    DB_PASSWORD: str = ""
 
     # Connection pool settings (MySQL only)
     DB_POOL_SIZE: int = 20
@@ -59,6 +84,13 @@ class Settings(BaseSettings):
             db_path = _BACKEND_DIR / "data" / "ra_agent.db"
             return f"sqlite+aiosqlite:///{db_path}"
         return f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+
+    @property
+    def EFFECTIVE_BASE_URL(self) -> str:
+        """Resolved base URL for tracking pixels, unsubscribe links, etc."""
+        if self.BASE_URL:
+            return self.BASE_URL.rstrip("/")
+        return f"http://{self.HOST}:{self.PORT}"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -90,13 +122,10 @@ class Settings(BaseSettings):
     DAILY_SEND_LIMIT: int = 30
     COOLDOWN_DAYS: int = 10
     MAX_CONTACTS_PER_COMPANY_PER_JOB: int = 4
-    MIN_SALARY_THRESHOLD: int = 30000  # IMPACT: Lowered from 40000 to include more entry-level roles
-    DATA_RETENTION_DAYS: int = 180  # Days to keep archived records before purging
+    MIN_SALARY_THRESHOLD: int = 30000
+    DATA_RETENTION_DAYS: int = 180
 
     # Industries (Non-IT only)
-    # IMPACT ON LEAD COUNT: Jobs are searched within these industries only.
-    #   More industries = broader search = more leads.
-    #   22 industries currently configured for maximum coverage.
     TARGET_INDUSTRIES: list[str] = [
         "Healthcare", "Manufacturing", "Logistics", "Retail", "BFSI",
         "Education", "Engineering", "Automotive", "Construction", "Energy",
@@ -107,21 +136,14 @@ class Settings(BaseSettings):
 
     # Job Sources Configuration
     JOB_SOURCES: list[str] = ["linkedin", "indeed", "glassdoor", "simplyhired"]
-    JSEARCH_API_KEY: str = ""  # RapidAPI key for JSearch (aggregates LinkedIn, Indeed, Glassdoor)
+    JSEARCH_API_KEY: str = ""
 
     # Company Size Preference (employees)
-    # IMPACT ON LEAD COUNT: Apollo adapter uses these to filter companies.
-    #   Wider range = more companies included in results.
-    COMPANY_SIZE_PRIORITY_1_MAX: int = 50  # Priority 1: ≤50 employees
-    COMPANY_SIZE_PRIORITY_2_MIN: int = 51  # Priority 2: 51-200+ employees
+    COMPANY_SIZE_PRIORITY_1_MAX: int = 50
+    COMPANY_SIZE_PRIORITY_2_MIN: int = 51
     COMPANY_SIZE_PRIORITY_2_MAX: int = 500
 
     # Excluded patterns
-    # IMPACT ON LEAD COUNT: Each keyword here filters out ANY job/company containing it.
-    #   Previously had 18 broad IT keywords like "engineer", "tech", "technology" that
-    #   also caught legitimate non-IT roles (e.g. "Construction Engineer", "Biotech Corp").
-    #   Now refined to be more specific to pure IT/software roles only.
-    #   Reducing from 21 to 14 precise keywords = ~30% fewer false exclusions.
     EXCLUDE_IT_KEYWORDS: list[str] = [
         "software developer", "software engineer", "web developer",
         "programmer", "coding", "data scientist", "devops",
@@ -129,16 +151,13 @@ class Settings(BaseSettings):
         "cloud architect", "cybersecurity analyst", "network administrator",
         "machine learning engineer"
     ]
-    # IMPACT ON LEAD COUNT: Staffing company exclusion. These are kept tight to avoid
-    #   filtering out companies that simply have "staffing" in a job description.
-    #   Only excludes companies whose NAME contains these exact staffing-agency phrases.
     EXCLUDE_STAFFING_KEYWORDS: list[str] = [
         "staffing agency", "staffing firm", "recruitment agency",
         "talent acquisition agency", "temp agency",
         "employment agency", "executive search firm"
     ]
 
-    # Available Job Titles - Master list of all available titles
+    # Available Job Titles
     AVAILABLE_JOB_TITLES: list[str] = [
         "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
         "Operations Manager", "Plant Manager", "Warehouse Manager",
@@ -154,12 +173,7 @@ class Settings(BaseSettings):
         "Account Manager", "Territory Manager", "Area Manager"
     ]
 
-    # Target Job Titles - Selected titles to use in searches
-    # IMPACT ON LEAD COUNT: Previously only 16 of 38 titles were searched by default.
-    #   Now ALL 37 titles are enabled. Each additional title generates a separate
-    #   search query, potentially returning 10-30 new leads per title.
-    #   Going from 16 to 37 titles = ~2.3x more search queries = ~2.3x more leads.
-    #   Remove titles from this list to narrow your search scope.
+    # Target Job Titles
     TARGET_JOB_TITLES: list[str] = [
         "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
         "Operations Manager", "Plant Manager", "Warehouse Manager",
@@ -183,3 +197,38 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def get_tenant_setting(db, key: str, tenant_id: int | None, default=None):
+    """Get a setting value with tenant override support.
+
+    Lookup order:
+    1. Tenant-specific: settings WHERE key=X AND tenant_id=current_tenant_id
+    2. Global default: settings WHERE key=X AND tenant_id IS NULL
+    3. Hardcoded default from the `default` parameter
+    """
+    import json
+    from app.db.models.settings import Settings as SettingsModel
+
+    if tenant_id is not None:
+        tenant_setting = db.query(SettingsModel).filter(
+            SettingsModel.key == key,
+            SettingsModel.tenant_id == tenant_id,
+        ).first()
+        if tenant_setting and tenant_setting.value_json is not None:
+            try:
+                return json.loads(tenant_setting.value_json)
+            except (json.JSONDecodeError, TypeError):
+                return tenant_setting.value_json
+
+    global_setting = db.query(SettingsModel).filter(
+        SettingsModel.key == key,
+        SettingsModel.tenant_id.is_(None),
+    ).first()
+    if global_setting and global_setting.value_json is not None:
+        try:
+            return json.loads(global_setting.value_json)
+        except (json.JSONDecodeError, TypeError):
+            return global_setting.value_json
+
+    return default

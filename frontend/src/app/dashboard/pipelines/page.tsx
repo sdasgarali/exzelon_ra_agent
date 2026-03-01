@@ -66,6 +66,7 @@ export default function PipelinesPage() {
   // Fetch data function
   const fetchData = async () => {
     try {
+      setError('')
       const [runsData, kpis] = await Promise.all([
         pipelinesApi.runs({ limit: 50 }),
         dashboardApi.kpis()
@@ -79,7 +80,9 @@ export default function PipelinesPage() {
       })
       return runsData || []
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch pipeline data')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch pipeline data')
+      }
       return []
     }
   }

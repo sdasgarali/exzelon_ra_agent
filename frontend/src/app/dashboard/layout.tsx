@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
-import { warmupApi } from '@/lib/api'
+import { warmupApi, tenantsApi } from '@/lib/api'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { OfflineBanner } from '@/components/offline-banner'
 import { useTheme } from '@/components/theme-provider'
@@ -27,6 +27,10 @@ import {
   Sun,
   Moon,
   Keyboard,
+  Shield,
+  Building2,
+  UserCog,
+  ChevronDown,
 } from 'lucide-react'
 
 const navigation = [
@@ -35,12 +39,15 @@ const navigation = [
   { name: 'Clients', href: '/dashboard/clients', icon: Building },
   { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['admin', 'operator'] as string[] },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['admin', 'operator'] as string[] },
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['admin', 'operator'] as string[] },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['admin', 'operator'] as string[] },
-  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['admin', 'operator'] as string[] },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['admin'] as string[] },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['super_admin', 'tenant_admin', 'admin', 'operator'] as string[] },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['super_admin', 'tenant_admin', 'admin', 'operator'] as string[] },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['super_admin', 'tenant_admin', 'admin', 'operator'] as string[] },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['super_admin', 'tenant_admin', 'admin', 'operator'] as string[] },
+  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['super_admin', 'tenant_admin', 'admin', 'operator'] as string[] },
+  { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['super_admin'] as string[] },
+  { name: 'Tenants', href: '/dashboard/tenants', icon: Building2, roles: ['super_admin'] as string[], globalOnly: true },
+  { name: 'Roles', href: '/dashboard/roles', icon: Shield, roles: ['super_admin'] as string[], globalOnly: true },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['super_admin'] as string[] },
 ]
 
 export default function DashboardLayout({
@@ -50,12 +57,14 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, logout, isAuthenticated } = useAuthStore()
+  const { user, logout, isAuthenticated, activeTenantId, activeTenantName, switchTenant, isSuperAdmin, isGlobalSuperAdmin } = useAuthStore()
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [tenantList, setTenantList] = useState<{ tenant_id: number; name: string }[]>([])
+  const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false)
 
   // Handle mounting to avoid hydration mismatch
   useEffect(() => {
@@ -78,10 +87,30 @@ export default function DashboardLayout({
     }
   }, [mounted])
 
+  // Fetch tenant list for Global Super Admin switcher only
+  useEffect(() => {
+    if (mounted && isAuthenticated() && isGlobalSuperAdmin()) {
+      tenantsApi.list().then(data => {
+        setTenantList(Array.isArray(data) ? data : [])
+      }).catch(() => {})
+    }
+  }, [mounted])
+
   // Close sidebar on route change (mobile)
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
+
+  const handleSwitchTenant = async (tenantId: number, tenantName: string) => {
+    try {
+      const data = await tenantsApi.switch(tenantId)
+      switchTenant(tenantId, tenantName, data.access_token)
+      setTenantDropdownOpen(false)
+      router.push('/dashboard')
+    } catch {
+      // silently fail
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -107,22 +136,67 @@ export default function DashboardLayout({
 
   const sidebarContent = (
     <>
-      <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Exzelon RA</h1>
-          <p className="text-gray-400 text-sm mt-1">Admin Panel</p>
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Exzelon RA</h1>
+            <p className="text-gray-400 text-sm mt-1">
+              {isGlobalSuperAdmin() ? 'Global Admin' : user?.role === 'super_admin' ? 'Admin Panel' : 'Admin Panel'}
+            </p>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden text-gray-400 hover:text-white"
+            aria-label="Close sidebar"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <button
-          onClick={() => setSidebarOpen(false)}
-          className="lg:hidden text-gray-400 hover:text-white"
-          aria-label="Close sidebar"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Tenant Switcher for Global Super Admin only */}
+        {isGlobalSuperAdmin() && tenantList.length > 0 && (
+          <div className="mt-3 relative">
+            <button
+              onClick={() => setTenantDropdownOpen(!tenantDropdownOpen)}
+              className="w-full flex items-center justify-between bg-gray-800 hover:bg-gray-750 text-sm px-3 py-2 rounded-lg transition-colors"
+            >
+              <span className="truncate text-gray-200">
+                {activeTenantName || 'All Tenants'}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${tenantDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {tenantDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => {
+                    switchTenant(user.tenant_id ?? 0, '', useAuthStore.getState().token ?? '')
+                    setTenantDropdownOpen(false)
+                    router.push('/dashboard')
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors ${!activeTenantName ? 'text-primary-400 font-medium' : 'text-gray-300'}`}
+                >
+                  All Tenants (Global)
+                </button>
+                {tenantList.map(t => (
+                  <button
+                    key={t.tenant_id}
+                    onClick={() => handleSwitchTenant(t.tenant_id, t.name)}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors ${activeTenantId === t.tenant_id ? 'text-primary-400 font-medium' : 'text-gray-300'}`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation">
-        {navigation.filter(item => !item.roles || item.roles.includes(user?.role || 'viewer')).map((item) => {
+        {navigation.filter(item => {
+          if (item.roles && !item.roles.includes(user?.role || 'viewer')) return false
+          if (item.globalOnly && !isGlobalSuperAdmin()) return false
+          return true
+        }).map((item) => {
           const isActive = item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(item.href)
@@ -154,7 +228,7 @@ export default function DashboardLayout({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-            <p className="text-xs text-gray-400 capitalize">{user?.role}</p>
+            <p className="text-xs text-gray-400 capitalize">{isGlobalSuperAdmin() ? 'Global Super Admin' : user?.role === 'super_admin' ? 'Super Admin' : user?.role === 'tenant_admin' ? 'Admin' : user?.role}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 mb-2">

@@ -1,7 +1,7 @@
 """Settings model for Admin Panel configuration."""
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, Text, Index, ForeignKey
 from app.db.base import Base
 
 
@@ -20,6 +20,7 @@ class Settings(Base):
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     value_json = Column(Text, nullable=True)  # JSON-serialized value
     type = Column(String(20), nullable=False, default="string")
     description = Column(Text, nullable=True)

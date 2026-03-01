@@ -11,6 +11,7 @@ import io
 from app.api.deps import get_db, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.query_helpers import tenant_query
 from app.db.models.warmup_email import WarmupEmail
 from app.db.models.warmup_daily_log import WarmupDailyLog
 from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
@@ -106,7 +107,7 @@ async def get_warmup_status(
     """
     config = load_warmup_config(db)
     mailboxes = (
-        db.query(SenderMailbox)
+        tenant_query(db, SenderMailbox)
         .filter(SenderMailbox.connection_status == "successful")
         .order_by(SenderMailbox.email)
         .all()
@@ -267,7 +268,7 @@ async def assess_single_mailbox(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Assess a single mailbox (synchronous)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
@@ -301,7 +302,7 @@ async def get_health_scores(
 ):
     """Get health scores for all mailboxes."""
     config = load_warmup_config(db)
-    mailboxes = db.query(SenderMailbox).filter(
+    mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.connection_status == "successful"
     ).order_by(SenderMailbox.email).all()
 
@@ -382,12 +383,12 @@ async def get_peer_history(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     mailbox_id: Optional[int] = None,
-    direction: Optional[str] = Query(None, regex="^(sent|received|all)$"),
+    direction: Optional[str] = Query(None, pattern="^(sent|received|all)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get paginated peer warmup email history, optionally filtered by mailbox and direction."""
-    query = db.query(WarmupEmail).order_by(desc(WarmupEmail.sent_at))
+    query = tenant_query(db, WarmupEmail).order_by(desc(WarmupEmail.sent_at))
 
     if mailbox_id is not None:
         if direction == "sent":
@@ -422,13 +423,13 @@ async def get_peer_email_detail(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get full detail of a single warmup email including body content."""
-    email_record = db.query(WarmupEmail).filter(WarmupEmail.id == email_id).first()
+    email_record = tenant_query(db, WarmupEmail).filter(WarmupEmail.id == email_id).first()
     if not email_record:
         raise HTTPException(status_code=404, detail="Warmup email not found")
 
     # Resolve sender/receiver emails
-    sender_mb = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.sender_mailbox_id).first()
-    receiver_mb = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.receiver_mailbox_id).first() if email_record.receiver_mailbox_id else None
+    sender_mb = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.sender_mailbox_id).first()
+    receiver_mb = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.receiver_mailbox_id).first() if email_record.receiver_mailbox_id else None
 
     data = WarmupEmailDetailSchema.model_validate(email_record)
     data.sender_email = sender_mb.email if sender_mb else None
@@ -449,7 +450,7 @@ async def get_analytics(
 ):
     """Get time-series warmup analytics data."""
     cutoff = datetime.utcnow() - timedelta(days=days)
-    query = db.query(WarmupDailyLog).filter(WarmupDailyLog.log_date >= cutoff.date())
+    query = tenant_query(db, WarmupDailyLog).filter(WarmupDailyLog.log_date >= cutoff.date())
 
     if mailbox_id is not None:
         query = query.filter(WarmupDailyLog.mailbox_id == mailbox_id)
@@ -491,14 +492,14 @@ async def run_dns_check(
 ):
     """Run DNS health check for one or all mailboxes."""
     if mailbox_id is not None:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
         if not mailbox:
             raise HTTPException(status_code=404, detail="Mailbox not found")
         result = run_dns_health_check(mailbox_id, db)
         return {"message": "DNS check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
-    mailboxes = db.query(SenderMailbox).filter(
+    mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
     ).all()
@@ -523,12 +524,12 @@ async def get_dns_results(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get latest DNS check result for a mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
     result = (
-        db.query(DNSCheckResult)
+        tenant_query(db, DNSCheckResult)
         .filter(DNSCheckResult.mailbox_id == mailbox_id)
         .order_by(desc(DNSCheckResult.checked_at))
         .first()
@@ -556,14 +557,14 @@ async def run_blacklist_check_endpoint(
 ):
     """Run blacklist check for one or all mailboxes."""
     if mailbox_id is not None:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
         if not mailbox:
             raise HTTPException(status_code=404, detail="Mailbox not found")
         result = run_bl_check(mailbox_id, db)
         return {"message": "Blacklist check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
-    mailboxes = db.query(SenderMailbox).filter(
+    mailboxes = tenant_query(db, SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
     ).all()
@@ -588,12 +589,12 @@ async def get_blacklist_results(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get latest blacklist check result for a mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
     result = (
-        db.query(BlacklistCheckResult)
+        tenant_query(db, BlacklistCheckResult)
         .filter(BlacklistCheckResult.mailbox_id == mailbox_id)
         .order_by(desc(BlacklistCheckResult.checked_at))
         .first()
@@ -620,7 +621,7 @@ async def run_placement_test_endpoint(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Run inbox placement test for a specific mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
@@ -642,7 +643,7 @@ async def get_alerts(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get paginated warmup alerts with optional filters."""
-    query = db.query(WarmupAlert)
+    query = tenant_query(db, WarmupAlert)
 
     if severity is not None:
         query = query.filter(WarmupAlert.severity == severity)
@@ -650,7 +651,7 @@ async def get_alerts(
         query = query.filter(WarmupAlert.is_read == is_read)
 
     total = query.count()
-    unread_count = db.query(WarmupAlert).filter(WarmupAlert.is_read == False).count()
+    unread_count = tenant_query(db, WarmupAlert).filter(WarmupAlert.is_read == False).count()
 
     items = (
         query.order_by(desc(WarmupAlert.created_at))
@@ -677,7 +678,7 @@ async def mark_alert_read(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Mark a single alert as read."""
-    alert = db.query(WarmupAlert).filter(WarmupAlert.id == alert_id).first()
+    alert = tenant_query(db, WarmupAlert).filter(WarmupAlert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 
@@ -697,7 +698,7 @@ async def mark_all_alerts_read(
 ):
     """Mark all unread alerts as read."""
     count = (
-        db.query(WarmupAlert)
+        tenant_query(db, WarmupAlert)
         .filter(WarmupAlert.is_read == False)
         .update({"is_read": True})
     )
@@ -715,7 +716,7 @@ async def get_unread_alert_count(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """Get the count of unread alerts."""
-    count = db.query(WarmupAlert).filter(WarmupAlert.is_read == False).count()
+    count = tenant_query(db, WarmupAlert).filter(WarmupAlert.is_read == False).count()
     return {"unread_count": count}
 
 
@@ -729,7 +730,7 @@ async def list_profiles(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
     """List all warmup profiles."""
-    profiles = db.query(WarmupProfile).order_by(WarmupProfile.name).all()
+    profiles = tenant_query(db, WarmupProfile).order_by(WarmupProfile.name).all()
     return WarmupProfileListResponse(
         items=[WarmupProfileSchema.model_validate(p) for p in profiles],
         total=len(profiles),
@@ -753,6 +754,7 @@ async def create_profile(
         config_json=profile_in.config_json,
         is_system=False,
         is_default=False,
+        tenant_id=current_user.tenant_id,
     )
     db.add(profile)
     db.commit()
@@ -772,7 +774,7 @@ async def update_profile(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Update a warmup profile (Admin only)."""
-    profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
+    profile = tenant_query(db, WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
@@ -796,7 +798,7 @@ async def delete_profile(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Delete a warmup profile (Admin only). System profiles cannot be deleted."""
-    profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
+    profile = tenant_query(db, WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     if profile.is_system:
@@ -819,11 +821,11 @@ async def apply_profile(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Apply a warmup profile to a specific mailbox (Admin only)."""
-    profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
+    profile = tenant_query(db, WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
@@ -847,7 +849,7 @@ async def start_recovery_endpoint(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
 ):
     """Start auto-recovery for a specific mailbox (Admin only)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    mailbox = tenant_query(db, SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { settingsApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 
 interface Setting {
   key: string
@@ -77,6 +79,9 @@ interface BusinessRules {
   min_salary_threshold: number
   catch_all_policy: string
   unsubscribe_footer: boolean
+  category_window_days: number
+  category_regular_threshold: number
+  category_occasional_threshold: number
 }
 
 const US_STATES = [
@@ -125,6 +130,17 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
 ]
 
 export default function SettingsPage() {
+  const router = useRouter()
+  const { user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
+
+  // Only Super Admin can access settings
+  useEffect(() => {
+    if (user && !isSuperAdmin) {
+      router.replace('/dashboard')
+    }
+  }, [user, isSuperAdmin, router])
+
   const [settings, setSettings] = useState<Setting[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -212,6 +228,9 @@ export default function SettingsPage() {
     min_salary_threshold: 40000,
     catch_all_policy: 'exclude',
     unsubscribe_footer: true,
+    category_window_days: 90,
+    category_regular_threshold: 3,
+    category_occasional_threshold: 0,
   })
 
   // Test results
@@ -224,6 +243,7 @@ export default function SettingsPage() {
   const fetchSettings = async () => {
     try {
       setLoading(true)
+      setError('')
       const response = await settingsApi.list()
       setSettings(response || [])
 
@@ -315,9 +335,14 @@ export default function SettingsPage() {
         min_salary_threshold: settingsMap.min_salary_threshold || 40000,
         catch_all_policy: settingsMap.catch_all_policy || 'exclude',
         unsubscribe_footer: settingsMap.unsubscribe_footer !== false,
+        category_window_days: settingsMap.category_window_days ?? 90,
+        category_regular_threshold: settingsMap.category_regular_threshold ?? 3,
+        category_occasional_threshold: settingsMap.category_occasional_threshold ?? 0,
       }))
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch settings')
+      if (err.code !== 'ERR_CANCELED') {
+        setError(err.response?.data?.detail || 'Failed to fetch settings')
+      }
     } finally {
       setLoading(false)
     }
@@ -402,6 +427,9 @@ export default function SettingsPage() {
           saveSetting('min_salary_threshold', businessRules.min_salary_threshold, 'integer'),
           saveSetting('catch_all_policy', businessRules.catch_all_policy),
           saveSetting('unsubscribe_footer', businessRules.unsubscribe_footer, 'boolean'),
+          saveSetting('category_window_days', businessRules.category_window_days, 'integer'),
+          saveSetting('category_regular_threshold', businessRules.category_regular_threshold, 'integer'),
+          saveSetting('category_occasional_threshold', businessRules.category_occasional_threshold, 'integer'),
         ])
       }
 
@@ -2088,6 +2116,57 @@ export default function SettingsPage() {
                   <span className="text-sm">Include unsubscribe link (CAN-SPAM compliance)</span>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Client Category Rules</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Controls how clients are auto-classified as Regular, Occasional, or Prospect based on their job posting frequency.
+            </p>
+            <div className="grid grid-cols-3 gap-6">
+              <div>
+                <label className="label">Lookback Window (Days)</label>
+                <input
+                  type="number"
+                  value={businessRules.category_window_days}
+                  onChange={(e) => setBusinessRules({ ...businessRules, category_window_days: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">How far back to count posting dates (default: 90)</p>
+              </div>
+              <div>
+                <label className="label">Regular Threshold</label>
+                <input
+                  type="number"
+                  value={businessRules.category_regular_threshold}
+                  onChange={(e) => setBusinessRules({ ...businessRules, category_regular_threshold: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Unique posting dates &gt; this = Regular (default: 3)</p>
+              </div>
+              <div>
+                <label className="label">Occasional Threshold</label>
+                <input
+                  type="number"
+                  value={businessRules.category_occasional_threshold}
+                  onChange={(e) => setBusinessRules({ ...businessRules, category_occasional_threshold: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="0"
+                />
+                <p className="text-xs text-gray-500 mt-1">Unique posting dates &gt; this = Occasional (default: 0)</p>
+              </div>
+            </div>
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+              <p className="font-medium mb-1">How it works:</p>
+              <ul className="list-disc ml-4 space-y-1">
+                <li><span className="font-medium text-green-700">Regular</span> — more than {businessRules.category_regular_threshold} unique posting dates in the last {businessRules.category_window_days} days</li>
+                <li><span className="font-medium text-blue-700">Occasional</span> — more than {businessRules.category_occasional_threshold} but &le; {businessRules.category_regular_threshold} unique posting dates</li>
+                <li><span className="font-medium text-yellow-700">Prospect</span> — {businessRules.category_occasional_threshold} or fewer unique posting dates</li>
+                <li><span className="font-medium text-gray-600">Dormant</span> — manually assigned only</li>
+              </ul>
             </div>
           </div>
 
