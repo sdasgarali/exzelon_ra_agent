@@ -1,31 +1,29 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 18: Single-tenant refactor COMPLETE. All multi-tenancy stripped. 170 tests pass. Ready to commit and push to sdasgarali/exzelon_ra_agent.
+> Session 20 (cont): All 5 phases complete. Data migrated (19 tables). Super admin login working (ali.aitechs@gmail.com / SA@Admin#123). Rate limiter restored. Servers running on :8000 (backend) and :3004 (frontend). Need: git commit, frontend build verification.
 
 ## Immediate TODO
-- [ ] Commit all changes on refactor/single-tenant-exzelon branch
-- [ ] Create GitHub repo sdasgarali/exzelon_ra_agent and push
-- [ ] Run migration script against live MySQL DB
+- [ ] Verify frontend build (`cd frontend && npm run build`)
+- [ ] Git commit all changes to feature branch
 
 ## Completed
-- [x] Session 18: Single-Tenant Refactor — 8 files deleted, ~55 files modified, 170 tests pass (2026-02-28)
-  - Phase 0: Committed WIP, created feature branch refactor/single-tenant-exzelon
-  - Phase 1: Backend Core — deleted tenant_context.py, simplified constants/query_helpers/auth/user/config/security
-  - Phase 2: Backend Models — deleted tenant.py/permission.py, removed tenant_id from all 18 models
-  - Phase 3: Backend Endpoints — deleted tenants.py endpoint/schema, updated all 14 endpoint files
-  - Phase 4: Backend Services — removed tenant_id from all 16 service/pipeline files
-  - Phase 5: Backend Startup — simplified main.py (removed tenant migrations), simplified seed.py
-  - Phase 6: Frontend — deleted tenants/roles dirs, updated api.ts/layout/users/all pages
-  - Phase 7: Tests/Docker/Config — updated conftest, all test files, docker-compose, .env.example, CLAUDE.md
-  - Created scripts/migrate_to_exzelon.py for data migration
-- [x] Session 17: GSA vs TSA implementation (2026-02-28) [NOW REVERTED by session 18]
-- [x] Session 16: Production Deployment Config (2026-02-28) [retained: env_loader.py]
-- [x] Session 15: Multi-Tenant Architecture (2026-02-28) [NOW REVERTED by session 18]
-- [x] Sessions 1-14: Core features, pipelines, warmup engine, UI, testing
+- [x] Session 20: Super Admin Role + Roles & Permissions Page + Data Migration (2026-03-01)
+  - Phase 1: Added SUPER_ADMIN enum to UserRole, super_admin bypass in require_role()
+  - Phase 2: Added role guards in users.py (escalation prevention, last-SA protection)
+  - Phase 3: Updated store.ts (isSuperAdmin/isAdmin), layout.tsx nav, users/settings/warmup pages
+  - Phase 4: Created Roles & Permissions page (/dashboard/roles) with access matrix, 13 modules, 4 roles
+  - Phase 5: Updated migration script (preserves super_admin, converts tenant_admin->admin), updated test fixtures, added 13 super_admin tests
+  - 185 tests pass (15 new)
+  - Data migration from cold_email_ai_agent: 19 tables, 13 users, 826 leads, 645 clients migrated
+  - Super admin password reset to SA@Admin#123
+  - Rate limiter restored on login endpoint after debugging
+- [x] Session 19: Single-tenant refactor merged to master, pushed to sdasgarali/exzelon_ra_agent (2026-03-01)
+- [x] Session 18: Single-Tenant Refactor — 86 files changed, 170 tests pass (2026-02-28)
+- [x] Sessions 1-17: Core features, pipelines, warmup engine, UI, testing, multi-tenant (reverted)
 
 ## Blockers / Notes
-- Migration script: scripts/migrate_to_exzelon.py created but NOT yet run (needs MySQL with cold_email_ai_agent DB)
-- GitHub repo creation pending (needs `gh` auth)
-- Database name changed from cold_email_ai_agent → exzelon_ra_agent
-- Roles simplified from 5 (super_admin/tenant_admin/admin/operator/viewer) to 3 (admin/operator/viewer)
+- Migration completed successfully (cold_email_ai_agent → exzelon_ra_agent)
+- Database name: exzelon_ra_agent
+- Roles: 4 levels (super_admin > admin > operator > viewer)
+- GitHub repo: https://github.com/sdasgarali/exzelon_ra_agent (master branch only)

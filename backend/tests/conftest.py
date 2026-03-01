@@ -66,6 +66,22 @@ def client(db_session):
 
 
 @pytest.fixture
+def super_admin_user(db_session):
+    """Create a super admin user for testing."""
+    user = User(
+        email="superadmin@test.com",
+        password_hash=get_password_hash("testpassword"),
+        full_name="Super Admin User",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
 def admin_user(db_session):
     """Create an admin user for testing."""
     user = User(
@@ -114,6 +130,15 @@ def viewer_user(db_session):
 
 
 @pytest.fixture
+def super_admin_token(super_admin_user):
+    """Create a super admin JWT token."""
+    return create_access_token(data={
+        "sub": super_admin_user.email,
+        "role": super_admin_user.role.value,
+    })
+
+
+@pytest.fixture
 def admin_token(admin_user):
     """Create an admin JWT token."""
     return create_access_token(data={
@@ -141,6 +166,12 @@ def viewer_token(viewer_user):
 
 
 @pytest.fixture
+def sa_headers(super_admin_token):
+    """Create authorization headers with super admin token."""
+    return {"Authorization": f"Bearer {super_admin_token}"}
+
+
+@pytest.fixture
 def auth_headers(admin_token):
     """Create authorization headers with admin token."""
     return {"Authorization": f"Bearer {admin_token}"}
@@ -156,25 +187,6 @@ def operator_headers(operator_token):
 def viewer_headers(viewer_token):
     """Create authorization headers with viewer token."""
     return {"Authorization": f"Bearer {viewer_token}"}
-
-
-# Backward compat: some tests use sa_headers expecting admin access
-@pytest.fixture
-def sa_headers(auth_headers):
-    """Alias for auth_headers (admin-level access)."""
-    return auth_headers
-
-
-@pytest.fixture
-def super_admin_user(admin_user):
-    """Alias for admin_user (no super_admin role in single-tenant)."""
-    return admin_user
-
-
-@pytest.fixture
-def super_admin_token(admin_token):
-    """Alias for admin_token (no super_admin role in single-tenant)."""
-    return admin_token
 
 
 # ---------------------------------------------------------------------------

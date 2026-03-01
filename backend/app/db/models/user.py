@@ -7,6 +7,7 @@ from app.db.base import Base
 
 class UserRole(str, PyEnum):
     """User roles for RBAC."""
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     OPERATOR = "operator"
     VIEWER = "viewer"

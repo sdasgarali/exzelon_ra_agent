@@ -211,7 +211,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Schema validation check: {e}")
 
-    # Migration: ensure role enum is correct for single-tenant (admin/operator/viewer)
+    # Migration: ensure role enum includes super_admin
     try:
         from sqlalchemy import text as sa_text_role
         if settings.DB_TYPE == "mysql":
@@ -219,11 +219,11 @@ async def lifespan(app: FastAPI):
                 try:
                     conn.execute(sa_text_role(
                         "ALTER TABLE users MODIFY COLUMN role "
-                        "ENUM('admin','operator','viewer') "
+                        "ENUM('super_admin','admin','operator','viewer') "
                         "NOT NULL DEFAULT 'viewer'"
                     ))
                     conn.commit()
-                    logger.info("Migration: updated UserRole enum to admin/operator/viewer")
+                    logger.info("Migration: updated UserRole enum to super_admin/admin/operator/viewer")
                 except Exception as e2:
                     logger.debug(f"Role enum migration (may already be done): {e2}")
     except Exception as e:

@@ -35,9 +35,10 @@ const DEFAULT_FORM: UserFormData = {
 export default function UsersPage() {
   const router = useRouter();
   const { user: currentUser } = useAuthStore();
-  const isAdmin = currentUser?.role === 'admin';
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
 
-  // Only admin can access this page
+  // Only admin+ can access this page
   useEffect(() => {
     if (currentUser && !isAdmin) {
       router.replace('/dashboard');
@@ -69,7 +70,9 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const roleOptions = ['admin', 'operator', 'viewer'];
+  const roleOptions = isSuperAdmin
+    ? ['super_admin', 'admin', 'operator', 'viewer']
+    : ['admin', 'operator', 'viewer'];
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -237,6 +240,7 @@ export default function UsersPage() {
   // Role badge color
   const roleBadge = (role: string) => {
     const colors: Record<string, string> = {
+      super_admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
       admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
       operator: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       viewer: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
@@ -414,7 +418,8 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-right space-x-2">
                       <button
                         onClick={() => openEditModal(u)}
-                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium transition-colors"
+                        disabled={u.role === 'super_admin' && !isSuperAdmin}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Edit
                       </button>
@@ -422,7 +427,8 @@ export default function UsersPage() {
                         onClick={() => confirmDelete(u)}
                         disabled={
                           !!(currentUser &&
-                          u.user_id === (currentUser as unknown as { user_id?: number }).user_id)
+                          u.user_id === (currentUser as unknown as { user_id?: number }).user_id) ||
+                          (u.role === 'super_admin' && !isSuperAdmin)
                         }
                         className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >

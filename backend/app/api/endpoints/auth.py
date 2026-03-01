@@ -9,10 +9,10 @@ from slowapi.util import get_remote_address
 from app.api.deps import get_db, get_current_active_user
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse, Token
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address, swallow_errors=True)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
@@ -64,6 +64,13 @@ async def register(
     db: Session = Depends(get_db)
 ):
     """Register a new user."""
+    # Block self-registration as super_admin
+    if user_in.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot self-register as super_admin"
+        )
+
     # Check if email exists
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:

@@ -92,7 +92,7 @@ function hText(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-
 /* COMPONENT */
 export default function WarmupEnginePage() {
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [status, setStatus] = useState<WarmupStatusData | null>(null)
   const [config, setConfig] = useState<WarmupConfigData | null>(null)

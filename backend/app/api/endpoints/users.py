@@ -21,7 +21,7 @@ async def list_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """List users. Admin only."""
+    """List users. Admin+ only."""
     query = db.query(User)
 
     if role:
@@ -44,7 +44,7 @@ async def get_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Get user by ID. Admin only."""
+    """Get user by ID. Admin+ only."""
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -57,10 +57,20 @@ async def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Create a new user. Admin only."""
+    """Create a new user. Admin+ only.
+
+    Only super_admin can assign the super_admin role.
+    """
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    # Only super_admin can create super_admin users
+    if user_in.role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can assign the super_admin role"
+        )
 
     user = User(
         email=user_in.email,
@@ -82,10 +92,44 @@ async def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Update user. Admin only."""
+    """Update user. Admin+ only.
+
+    Only super_admin can modify super_admin users.
+    Cannot demote the last super_admin.
+    """
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Only super_admin can modify super_admin users
+    if user.role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can modify super_admin users"
+        )
+
+    # Only super_admin can promote to super_admin
+    if user_in.role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can assign the super_admin role"
+        )
+
+    # Prevent demoting the last super_admin
+    if (
+        user.role == UserRole.SUPER_ADMIN
+        and user_in.role is not None
+        and user_in.role != UserRole.SUPER_ADMIN
+    ):
+        super_admin_count = db.query(User).filter(
+            User.role == UserRole.SUPER_ADMIN,
+            User.is_active == True,
+        ).count()
+        if super_admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot demote the last super admin"
+            )
 
     update_data = user_in.model_dump(exclude_unset=True)
 
@@ -106,13 +150,36 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Delete user. Admin only."""
+    """Delete user. Admin+ only.
+
+    Only super_admin can delete super_admin users.
+    Cannot delete the last super_admin.
+    """
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     if user.user_id == current_user.user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete yourself")
+
+    # Only super_admin can delete super_admin users
+    if user.role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only super admins can delete super_admin users"
+        )
+
+    # Prevent deleting the last super_admin
+    if user.role == UserRole.SUPER_ADMIN:
+        super_admin_count = db.query(User).filter(
+            User.role == UserRole.SUPER_ADMIN,
+            User.is_active == True,
+        ).count()
+        if super_admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last super admin"
+            )
 
     db.delete(user)
     db.commit()

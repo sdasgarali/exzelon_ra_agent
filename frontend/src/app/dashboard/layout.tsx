@@ -28,6 +28,7 @@ import {
   Moon,
   Keyboard,
   UserCog,
+  Shield,
 } from 'lucide-react'
 
 const navigation = [
@@ -36,13 +37,14 @@ const navigation = [
   { name: 'Clients', href: '/dashboard/clients', icon: Building },
   { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['admin', 'operator'] as string[] },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['admin', 'operator'] as string[] },
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['admin', 'operator'] as string[] },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['admin', 'operator'] as string[] },
-  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['admin', 'operator'] as string[] },
-  { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['admin'] as string[] },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['admin'] as string[] },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, roles: ['super_admin'] as string[] },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['super_admin', 'admin'] as string[] },
 ]
 
 export default function DashboardLayout({

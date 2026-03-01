@@ -50,10 +50,16 @@ async def get_current_active_user(
 
 
 def require_role(allowed_roles: List[UserRole]):
-    """Dependency factory to require specific roles."""
+    """Dependency factory to require specific roles.
+
+    Super admins bypass all role checks automatically.
+    """
     async def role_checker(
         current_user: User = Depends(get_current_active_user)
     ) -> User:
+        # Super admin bypasses all role checks
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return current_user
         if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

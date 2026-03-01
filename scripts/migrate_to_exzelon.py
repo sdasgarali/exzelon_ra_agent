@@ -5,9 +5,9 @@ Reads from the source database (READ ONLY), creates exzelon_ra_agent database,
 copies all data with the following transformations:
   - Drops: tenants, permissions, role_permissions tables
   - Strips: tenant_id column from all tables during copy
-  - Converts: super_admin/tenant_admin users to admin role
+  - Converts: tenant_admin users to admin role (preserves super_admin)
   - Fixes: Settings PK from composite (key, tenant_id) to just key
-  - Changes: role enum to ENUM('admin','operator','viewer')
+  - Changes: role enum to ENUM('super_admin','admin','operator','viewer')
 
 Usage:
   python scripts/migrate_to_exzelon.py [--source-db cold_email_ai_agent] [--target-db exzelon_ra_agent]
@@ -63,6 +63,10 @@ def migrate(source_db: str, target_db: str, dry_run: bool = False):
     cursor = conn.cursor()
 
     try:
+        # Disable FK checks to allow inserting in any order
+        if not dry_run:
+            cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+
         # Step 1: Create target database
         print(f"\n--- Step 1: Create target database '{target_db}' ---")
         if not dry_run:
@@ -123,10 +127,10 @@ def migrate(source_db: str, target_db: str, dry_run: bool = False):
             try:
                 cursor.execute(
                     f"ALTER TABLE `{target_db}`.`users` MODIFY COLUMN `role` "
-                    f"ENUM('admin','operator','viewer') NOT NULL DEFAULT 'viewer'"
+                    f"ENUM('super_admin','admin','operator','viewer') NOT NULL DEFAULT 'viewer'"
                 )
                 conn.commit()
-                print("  Role enum updated to: admin, operator, viewer")
+                print("  Role enum updated to: super_admin, admin, operator, viewer")
             except Exception as e:
                 print(f"  Warning: role enum update: {e}")
 
@@ -142,6 +146,11 @@ def migrate(source_db: str, target_db: str, dry_run: bool = False):
                 print(f"  {table}: source={source_count}, target={target_count} [{status}]")
             else:
                 print(f"  {table}: source={source_count} [DRY RUN]")
+
+        # Re-enable FK checks
+        if not dry_run:
+            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            conn.commit()
 
         print(f"\nMigration {'dry run ' if dry_run else ''}complete!")
 
@@ -192,16 +201,17 @@ def _copy_settings(cursor, conn, source_db, target_db, copy_columns):
 
 
 def _copy_users(cursor, conn, source_db, target_db, copy_columns):
-    """Copy users with role conversion: super_admin/tenant_admin → admin."""
+    """Copy users with role conversion: tenant_admin → admin, super_admin preserved."""
     cols_str = ", ".join(f"`{c}`" for c in copy_columns)
 
     # Build SELECT with role conversion
+    # Preserve super_admin as-is, only convert tenant_admin to admin
     select_cols = []
     for c in copy_columns:
         if c == "role":
             select_cols.append(
                 "CASE "
-                "WHEN `role` IN ('super_admin', 'tenant_admin') THEN 'admin' "
+                "WHEN `role` = 'tenant_admin' THEN 'admin' "
                 "ELSE `role` "
                 "END"
             )
@@ -214,9 +224,11 @@ def _copy_users(cursor, conn, source_db, target_db, copy_columns):
     conn.commit()
 
     # Count conversions
-    cursor.execute(f"SELECT COUNT(*) FROM `{source_db}`.`users` WHERE `role` IN ('super_admin', 'tenant_admin')")
+    cursor.execute(f"SELECT COUNT(*) FROM `{source_db}`.`users` WHERE `role` = 'tenant_admin'")
     converted = cursor.fetchone()[0]
-    print(f"    Copied {rows} users ({converted} super_admin/tenant_admin converted to admin)")
+    cursor.execute(f"SELECT COUNT(*) FROM `{source_db}`.`users` WHERE `role` = 'super_admin'")
+    preserved = cursor.fetchone()[0]
+    print(f"    Copied {rows} users ({converted} tenant_admin converted to admin, {preserved} super_admin preserved)")
 
 
 if __name__ == "__main__":
