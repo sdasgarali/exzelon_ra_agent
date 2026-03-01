@@ -32,6 +32,9 @@ def init_scheduler():
 
         _scheduler.add_job(job_check_outreach_replies, CronTrigger(hour="8-19", minute="*/15"), id="check_outreach_replies", name="Check Outreach Replies", replace_existing=True)
 
+        _scheduler.add_job(job_daily_backup, CronTrigger(hour=2, minute=0), id="daily_backup", name="Daily Database Backup", replace_existing=True)
+        _scheduler.add_job(job_backup_cleanup, CronTrigger(hour=2, minute=30), id="backup_cleanup", name="Backup Cleanup", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -215,6 +218,31 @@ def job_check_outreach_replies():
         logger.info("Outreach reply check complete", result=result)
     except Exception as e:
         logger.error("Outreach reply check failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_daily_backup():
+    logger.info("Running daily database backup")
+    try:
+        from app.services.backup_service import create_backup
+        result = create_backup()
+        logger.info("Daily backup complete", filename=result["filename"], size=result["size_human"])
+    except Exception as e:
+        logger.error("Daily backup failed", error=str(e))
+
+
+def job_backup_cleanup():
+    logger.info("Running backup cleanup")
+    db = _get_db()
+    try:
+        from app.core.config import get_setting
+        retention = get_setting(db, "backup_retention_days", 3)
+        from app.services.backup_service import cleanup_old_backups
+        deleted = cleanup_old_backups(int(retention))
+        logger.info("Backup cleanup complete", deleted_count=deleted, retention_days=retention)
+    except Exception as e:
+        logger.error("Backup cleanup failed", error=str(e))
     finally:
         db.close()
 

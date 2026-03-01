@@ -29,6 +29,7 @@ import {
   Keyboard,
   UserCog,
   Shield,
+  HardDrive,
 } from 'lucide-react'
 
 const navigation = [
@@ -44,6 +45,7 @@ const navigation = [
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['super_admin', 'admin'] as string[] },
   { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, roles: ['super_admin'] as string[] },
+  { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, roles: ['super_admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['super_admin', 'admin'] as string[] },
 ]
 

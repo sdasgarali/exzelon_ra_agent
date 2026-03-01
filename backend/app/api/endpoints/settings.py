@@ -73,6 +73,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'category_window_days': 'business_rules',
     'category_regular_threshold': 'business_rules',
     'category_occasional_threshold': 'business_rules',
+    'backup_retention_days': 'business_rules',
 }
 
 # Default settings for seed data
@@ -172,6 +173,8 @@ DEFAULT_SETTINGS = {
         "description": "Keywords to exclude staffing/recruitment companies"
     },
     # Warmup Engine Configuration
+    "backup_retention_days": {"value": 3, "type": "integer", "description": "Auto-delete backups older than this many days"},
+
     "warmup_phase_1_days": {"value": 7, "type": "integer", "description": "Phase 1 (Initial) duration in days"},
     "warmup_phase_1_min_emails": {"value": 2, "type": "integer", "description": "Phase 1 minimum emails per day"},
     "warmup_phase_1_max_emails": {"value": 5, "type": "integer", "description": "Phase 1 maximum emails per day"},

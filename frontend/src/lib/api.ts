@@ -520,6 +520,26 @@ export const usersApi = {
   },
 }
 
+// Backups API (super_admin only)
+export const backupsApi = {
+  list: async () => {
+    const response = await api.get('/backups')
+    return response.data
+  },
+  create: async () => {
+    const response = await api.post('/backups')
+    return response.data
+  },
+  download: async (filename: string) => {
+    const response = await api.get(`/backups/${filename}/download`, { responseType: 'blob' })
+    return response.data
+  },
+  delete: async (filename: string) => {
+    const response = await api.delete(`/backups/${filename}`)
+    return response.data
+  },
+}
+
 // Outreach API
 export const outreachApi = {
   listEvents: async (params?: Record<string, any>) => {
