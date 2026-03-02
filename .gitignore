@@ -88,6 +88,7 @@ start_app.py
 # Data exports
 backend/data/exports/
 backend/data/*.backup
+backend/data/backups/
 
 # Misc
 *.bak

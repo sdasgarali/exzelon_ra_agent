@@ -330,6 +330,24 @@ async def update_setting(
                     detail=f"No write access to the '{tab}' settings tab"
                 )
 
+    # Validate backup_retention_days: integer, min 1, max 90
+    if key == "backup_retention_days":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="backup_retention_days must be an integer",
+            )
+        if val < 1 or val > 90:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="backup_retention_days must be between 1 and 90",
+            )
+
     setting = db.query(Settings).filter(Settings.key == key).first()
 
     # Determine the value to store

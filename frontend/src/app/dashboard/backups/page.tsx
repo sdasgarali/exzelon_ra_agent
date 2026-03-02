@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { backupsApi, settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { HardDrive, Download, Trash2, Plus, RefreshCw, Clock, Database } from 'lucide-react'
+import { HardDrive, Download, Trash2, Plus, RefreshCw, Clock, Database, RotateCcw, AlertTriangle } from 'lucide-react'
 
 interface BackupFile {
   filename: string
@@ -17,6 +17,8 @@ export default function BackupsPage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const isSuperAdmin = user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin'
+  const hasAccess = isSuperAdmin || isAdmin
 
   const [backups, setBackups] = useState<BackupFile[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,15 +26,18 @@ export default function BackupsPage() {
   const [downloading, setDownloading] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null)
+  const [restoreInput, setRestoreInput] = useState('')
   const [retentionDays, setRetentionDays] = useState<number>(3)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
-    if (user && !isSuperAdmin) {
+    if (user && !hasAccess) {
       router.replace('/dashboard')
     }
-  }, [user, isSuperAdmin, router])
+  }, [user, hasAccess, router])
 
   const loadBackups = useCallback(async () => {
     setLoading(true)
@@ -59,11 +64,11 @@ export default function BackupsPage() {
   }, [])
 
   useEffect(() => {
-    if (isSuperAdmin) {
+    if (hasAccess) {
       loadBackups()
       loadRetention()
     }
-  }, [isSuperAdmin, loadBackups, loadRetention])
+  }, [hasAccess, loadBackups, loadRetention])
 
   // Auto-clear messages
   useEffect(() => {
@@ -124,6 +129,30 @@ export default function BackupsPage() {
     }
   }
 
+  const handleRestore = async (filename: string) => {
+    setRestoring(true)
+    setError(null)
+    try {
+      const result = await backupsApi.restore(filename)
+      setSuccess(
+        result.pre_restore_backup
+          ? `Database restored from '${filename}'. Pre-restore snapshot: ${result.pre_restore_backup}`
+          : `Database restored from '${filename}'`
+      )
+      setConfirmRestore(null)
+      setRestoreInput('')
+      await loadBackups()
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : undefined
+      setError(detail || 'Failed to restore backup')
+    } finally {
+      setRestoring(false)
+    }
+  }
+
   const formatTimestamp = (iso: string) => {
     try {
       const d = new Date(iso)
@@ -133,7 +162,7 @@ export default function BackupsPage() {
     }
   }
 
-  if (!isSuperAdmin) return null
+  if (!hasAccess) return null
 
   return (
     <div className="space-y-6">
@@ -272,31 +301,44 @@ export default function BackupsPage() {
                           )}
                           Download
                         </button>
-                        {confirmDelete === backup.filename ? (
-                          <div className="flex items-center gap-1">
+                        {isSuperAdmin && (
+                          <>
                             <button
-                              onClick={() => handleDelete(backup.filename)}
-                              disabled={deleting === backup.filename}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                              onClick={() => { setConfirmRestore(backup.filename); setRestoreInput('') }}
+                              disabled={restoring}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors disabled:opacity-50"
+                              title="Restore from this backup"
                             >
-                              {deleting === backup.filename ? 'Deleting...' : 'Confirm'}
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Restore
                             </button>
-                            <button
-                              onClick={() => setConfirmDelete(null)}
-                              className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDelete(backup.filename)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
-                            title="Delete backup"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
+                            {confirmDelete === backup.filename ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleDelete(backup.filename)}
+                                  disabled={deleting === backup.filename}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                                >
+                                  {deleting === backup.filename ? 'Deleting...' : 'Confirm'}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDelete(null)}
+                                  className="px-2 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDelete(backup.filename)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                                title="Delete backup"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -307,6 +349,73 @@ export default function BackupsPage() {
           </div>
         )}
       </div>
+
+      {/* Restore confirmation modal */}
+      {confirmRestore && (
+        <>
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50" onClick={() => { setConfirmRestore(null); setRestoreInput('') }} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[51] bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[480px] max-w-[90vw]">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Restore Database</h2>
+
+            {/* Warning banner */}
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 mb-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800 dark:text-amber-200">
+                <p className="font-semibold">This will overwrite all current data!</p>
+                <p className="mt-1">
+                  A pre-restore snapshot will be created automatically before restoring.
+                  This action cannot be easily undone.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+              Restoring from: <span className="font-mono font-medium text-gray-900 dark:text-white">{confirmRestore}</span>
+            </p>
+
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 mt-4">
+              Type <span className="font-mono font-bold">RESTORE</span> to confirm:
+            </label>
+            <input
+              type="text"
+              value={restoreInput}
+              onChange={(e) => setRestoreInput(e.target.value)}
+              placeholder="RESTORE"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              autoFocus
+            />
+
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button
+                onClick={() => { setConfirmRestore(null); setRestoreInput('') }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRestore(confirmRestore)}
+                disabled={restoreInput !== 'RESTORE' || restoring}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {restoring ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Restoring...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    Restore Database
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -520,7 +520,7 @@ export const usersApi = {
   },
 }
 
-// Backups API (super_admin only)
+// Backups API (admin+ for list/create/download, super_admin for delete/restore)
 export const backupsApi = {
   list: async () => {
     const response = await api.get('/backups')
@@ -536,6 +536,10 @@ export const backupsApi = {
   },
   delete: async (filename: string) => {
     const response = await api.delete(`/backups/${filename}`)
+    return response.data
+  },
+  restore: async (filename: string) => {
+    const response = await api.post(`/backups/${filename}/restore`, { confirm: true })
     return response.data
   },
 }
