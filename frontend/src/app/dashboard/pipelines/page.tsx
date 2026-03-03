@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Search, UserPlus, ShieldCheck, Send } from 'lucide-react'
 
 interface PipelineRun {
   run_id: number
@@ -594,8 +595,9 @@ export default function PipelinesPage() {
           <button
             onClick={() => setShowLeadSourcingConfirm(true)}
             disabled={leadSourcingRunning}
-            className={`btn-primary w-full text-sm ${leadSourcingRunning ? 'opacity-75 animate-pulse' : ''}`}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${leadSourcingRunning ? 'bg-indigo-400 animate-pulse cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
           >
+            <Search className="w-4 h-4" />
             {leadSourcingRunning ? 'Running...' : 'Run Pipeline'}
           </button>
         </div>
@@ -607,8 +609,9 @@ export default function PipelinesPage() {
           <button
             onClick={() => openLeadSelector('contact-enrichment')}
             disabled={contactEnrichmentRunning}
-            className={`btn-primary w-full text-sm ${contactEnrichmentRunning ? 'opacity-75 animate-pulse' : ''}`}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${contactEnrichmentRunning ? 'bg-purple-400 animate-pulse cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}`}
           >
+            <UserPlus className="w-4 h-4" />
             {contactEnrichmentRunning ? 'Running...' : 'Run Pipeline'}
           </button>
         </div>
@@ -620,8 +623,9 @@ export default function PipelinesPage() {
           <button
             onClick={() => openContactSelector()}
             disabled={emailValidationRunning}
-            className={`btn-primary w-full text-sm ${emailValidationRunning ? 'opacity-75 animate-pulse' : ''}`}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${emailValidationRunning ? 'bg-cyan-400 animate-pulse cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-700'}`}
           >
+            <ShieldCheck className="w-4 h-4" />
             {emailValidationRunning ? 'Running...' : 'Run Pipeline'}
           </button>
         </div>
@@ -633,8 +637,9 @@ export default function PipelinesPage() {
           <button
             onClick={() => openLeadSelector('outreach')}
             disabled={outreachRunning}
-            className={`btn-primary w-full text-sm ${outreachRunning ? 'opacity-75 animate-pulse' : ''}`}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${outreachRunning ? 'bg-orange-400 animate-pulse cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
           >
+            <Send className="w-4 h-4" />
             {outreachRunning ? 'Running...' : 'Run Pipeline'}
           </button>
         </div>

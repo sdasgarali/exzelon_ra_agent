@@ -227,6 +227,10 @@ export const dashboardApi = {
     const response = await api.get('/dashboard/trends', { params: { days } })
     return response.data
   },
+  stats: async () => {
+    const response = await api.get('/dashboard/stats')
+    return response.data
+  },
 }
 
 // Pipelines API
