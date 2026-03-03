@@ -147,7 +147,9 @@ async def list_job_runs(
             "error_message": r.error_message,
             "triggered_by": r.triggered_by,
             "duration_seconds": duration,
-            "adapters_used": adapters_used
+            "adapters_used": adapters_used,
+            "is_cancel_requested": bool(r.is_cancel_requested),
+            "progress_pct": r.progress_pct or 0,
         })
     return results
 
@@ -204,7 +206,9 @@ async def get_job_run(
         "triggered_by": run.triggered_by,
         "duration_seconds": duration,
         "adapters_used": adapters_used,
-        "lead_results": lead_results
+        "lead_results": lead_results,
+        "is_cancel_requested": bool(run.is_cancel_requested),
+        "progress_pct": run.progress_pct or 0,
     }
 
 

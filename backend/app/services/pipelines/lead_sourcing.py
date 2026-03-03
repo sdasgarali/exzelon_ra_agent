@@ -15,6 +15,7 @@ from app.db.models.job_run import JobRun, JobStatus
 from app.db.models.settings import Settings
 from app.core.config import settings
 from app.services.adapters.job_sources.mock import MockJobSourceAdapter
+from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
@@ -394,7 +395,18 @@ def run_lead_sourcing_pipeline(
 
         # Process unique jobs
         newly_inserted_leads = []
-        for job_data in unique_jobs:
+        total_unique = len(unique_jobs)
+        for idx, job_data in enumerate(unique_jobs):
+            # Cancel check
+            if check_cancel(job_run.run_id, db):
+                logger.info("Lead sourcing cancelled by user", processed=idx)
+                break
+
+            # Update progress every 10 items
+            if total_unique > 0 and idx % 10 == 0:
+                job_run.progress_pct = int((idx / total_unique) * 100)
+                db.commit()
+
             try:
                 # Create new lead
                 lead = LeadDetails(
@@ -437,7 +449,12 @@ def run_lead_sourcing_pipeline(
         export_leads_to_xlsx(db)
 
         # Update job run with detailed counters
-        job_run.status = JobStatus.COMPLETED
+        db.refresh(job_run)
+        if job_run.is_cancel_requested == 1:
+            job_run.status = JobStatus.CANCELLED
+        else:
+            job_run.status = JobStatus.COMPLETED
+        job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps({
             "inserted": counters["inserted"],

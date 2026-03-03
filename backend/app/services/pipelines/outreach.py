@@ -20,6 +20,7 @@ from app.db.models.suppression import SuppressionList
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
@@ -330,7 +331,18 @@ COMPLIANCE NOTES:
             f.write(guide_content)
 
         # Record outreach events
-        for contact in eligible_contacts:
+        total_eligible = len(eligible_contacts)
+        for idx, contact in enumerate(eligible_contacts):
+            # Cancel check
+            if check_cancel(job_run.run_id, db):
+                logger.info("Mailmerge cancelled by user", processed=idx)
+                break
+
+            # Update progress
+            if total_eligible > 0 and idx % 10 == 0:
+                job_run.progress_pct = int((idx / total_eligible) * 100)
+                db.commit()
+
             event = OutreachEvent(
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.MAILMERGE,
@@ -345,7 +357,12 @@ COMPLIANCE NOTES:
         db.commit()
 
         # Update job run
-        job_run.status = JobStatus.COMPLETED
+        db.refresh(job_run)
+        if job_run.is_cancel_requested == 1:
+            job_run.status = JobStatus.CANCELLED
+        else:
+            job_run.status = JobStatus.COMPLETED
+        job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps(counters)
         job_run.logs_path = csv_path
@@ -416,7 +433,18 @@ def run_outreach_send_pipeline(
         used_template_id = active_template.template_id if active_template else None
 
         sent_count = 0
-        for contact in contacts:
+        total_contacts = len(contacts)
+        for idx, contact in enumerate(contacts):
+            # Cancel check
+            if check_cancel(job_run.run_id, db):
+                logger.info("Outreach send cancelled by user", processed=idx)
+                break
+
+            # Update progress
+            if total_contacts > 0 and idx % 5 == 0:
+                job_run.progress_pct = int((idx / total_contacts) * 100)
+                db.commit()
+
             if sent_count >= remaining_limit:
                 break
 
@@ -524,7 +552,12 @@ def run_outreach_send_pipeline(
         db.commit()
 
         # Update job run
-        job_run.status = JobStatus.COMPLETED
+        db.refresh(job_run)
+        if job_run.is_cancel_requested == 1:
+            job_run.status = JobStatus.CANCELLED
+        else:
+            job_run.status = JobStatus.COMPLETED
+        job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps(counters)
         db.commit()

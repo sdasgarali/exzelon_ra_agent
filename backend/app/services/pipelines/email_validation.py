@@ -18,6 +18,7 @@ from app.services.adapters.email_validation.clearout import ClearoutAdapter
 from app.services.adapters.email_validation.emailable import EmailableAdapter
 from app.services.adapters.email_validation.mailboxvalidator import MailboxValidatorAdapter
 from app.services.adapters.email_validation.reacher import ReacherAdapter
+from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
@@ -102,7 +103,18 @@ def run_email_validation_pipeline(
         clean_emails = list(set([e.lower().strip() for e in emails if e]))
 
         # Validate
-        for email in clean_emails:
+        total_emails = len(clean_emails)
+        for idx, email in enumerate(clean_emails):
+            # Cancel check
+            if check_cancel(job_run.run_id, db):
+                logger.info("Email validation cancelled by user", processed=idx)
+                break
+
+            # Update progress every 10 items
+            if total_emails > 0 and idx % 10 == 0:
+                job_run.progress_pct = int((idx / total_emails) * 100)
+                db.commit()
+
             try:
                 # Check if already validated
                 existing = db.query(EmailValidationResult).filter(
@@ -157,7 +169,12 @@ def run_email_validation_pipeline(
         counters["estimated_bounce_rate"] = round(bounce_rate, 2)
 
         # Update job run
-        job_run.status = JobStatus.COMPLETED
+        db.refresh(job_run)
+        if job_run.is_cancel_requested == 1:
+            job_run.status = JobStatus.CANCELLED
+        else:
+            job_run.status = JobStatus.COMPLETED
+        job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps(counters)
         db.commit()

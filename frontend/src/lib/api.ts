@@ -260,6 +260,16 @@ export const pipelinesApi = {
     const response = await api.get(`/pipelines/runs/${runId}`)
     return response.data
   },
+  cancelJob: async (runId: number) => {
+    const response = await api.post(`/pipelines/jobs/${runId}/cancel`)
+    return response.data
+  },
+  runEmailValidationSelected: async (contactIds: number[]) => {
+    const response = await api.post('/pipelines/email-validation/run-selected', {
+      contact_ids: contactIds,
+    })
+    return response.data
+  },
 }
 
 // Settings API

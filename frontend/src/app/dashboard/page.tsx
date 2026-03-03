@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { dashboardApi, pipelinesApi } from '@/lib/api'
 import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Building,
   Users,
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   const { toast } = useToast()
   const user = useAuthStore((s) => s.user)
   const [quickLoading, setQuickLoading] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<string | null>(null)
 
   const { data: kpis, isLoading } = useQuery({
     queryKey: ['dashboard-kpis'],
@@ -165,68 +167,126 @@ export default function DashboardPage() {
       {user?.role !== 'viewer' && <div className="card">
         <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button
-            className="btn-primary"
-            disabled={quickLoading !== null}
-            onClick={async () => {
-              setQuickLoading('sourcing')
-              try {
-                await pipelinesApi.runLeadSourcing(['linkedin', 'indeed'])
-                toast('success', 'Lead sourcing pipeline started')
-                router.push('/dashboard/pipelines')
-              } catch { toast('error', 'Failed to start lead sourcing') }
-              setQuickLoading(null)
-            }}
-          >
-            {quickLoading === 'sourcing' ? 'Starting...' : 'Run Lead Sourcing'}
-          </button>
-          <button
-            className="btn-secondary"
-            disabled={quickLoading !== null}
-            onClick={async () => {
-              setQuickLoading('enrich')
-              try {
-                await pipelinesApi.runContactEnrichment()
-                toast('success', 'Contact enrichment pipeline started')
-                router.push('/dashboard/pipelines')
-              } catch { toast('error', 'Failed to start contact enrichment') }
-              setQuickLoading(null)
-            }}
-          >
-            {quickLoading === 'enrich' ? 'Starting...' : 'Enrich Contacts'}
-          </button>
-          <button
-            className="btn-secondary"
-            disabled={quickLoading !== null}
-            onClick={async () => {
-              setQuickLoading('validate')
-              try {
-                await pipelinesApi.runEmailValidation()
-                toast('success', 'Email validation pipeline started')
-                router.push('/dashboard/pipelines')
-              } catch { toast('error', 'Failed to start email validation') }
-              setQuickLoading(null)
-            }}
-          >
-            {quickLoading === 'validate' ? 'Starting...' : 'Validate Emails'}
-          </button>
-          <button
-            className="btn-secondary"
-            disabled={quickLoading !== null}
-            onClick={async () => {
-              setQuickLoading('outreach')
-              try {
-                await pipelinesApi.runOutreach('mailmerge', true)
-                toast('success', 'Mailmerge export pipeline started')
-                router.push('/dashboard/pipelines')
-              } catch { toast('error', 'Failed to start mailmerge export') }
-              setQuickLoading(null)
-            }}
-          >
-            {quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
-          </button>
+          <div className="flex flex-col">
+            <button
+              className="btn-primary"
+              disabled={quickLoading !== null}
+              onClick={() => setConfirmAction('sourcing')}
+            >
+              {quickLoading === 'sourcing' ? 'Starting...' : 'Run Lead Sourcing'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Scrape job postings from Indeed, LinkedIn, and Glassdoor</p>
+          </div>
+          <div className="flex flex-col">
+            <button
+              className="btn-secondary"
+              disabled={quickLoading !== null}
+              onClick={() => setConfirmAction('enrich')}
+            >
+              {quickLoading === 'enrich' ? 'Starting...' : 'Enrich Contacts'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Find decision-maker contacts for all leads without contacts</p>
+          </div>
+          <div className="flex flex-col">
+            <button
+              className="btn-secondary"
+              disabled={quickLoading !== null}
+              onClick={() => setConfirmAction('validate')}
+            >
+              {quickLoading === 'validate' ? 'Starting...' : 'Validate Emails'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Validate all unvalidated contact email addresses</p>
+          </div>
+          <div className="flex flex-col">
+            <button
+              className="btn-secondary"
+              disabled={quickLoading !== null}
+              onClick={() => setConfirmAction('outreach')}
+            >
+              {quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Generate mail merge CSV export for verified contacts</p>
+          </div>
         </div>
       </div>}
+
+      {/* Confirmation Dialogs */}
+      <ConfirmDialog
+        open={confirmAction === 'sourcing'}
+        onClose={() => setConfirmAction(null)}
+        title="Run Lead Sourcing?"
+        message="This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records."
+        confirmLabel="Run Pipeline"
+        variant="info"
+        loading={quickLoading === 'sourcing'}
+        onConfirm={async () => {
+          setQuickLoading('sourcing')
+          try {
+            await pipelinesApi.runLeadSourcing(['linkedin', 'indeed'])
+            toast('success', 'Lead sourcing pipeline started')
+            setConfirmAction(null)
+            router.push('/dashboard/pipelines')
+          } catch { toast('error', 'Failed to start lead sourcing') }
+          setQuickLoading(null)
+        }}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'enrich'}
+        onClose={() => setConfirmAction(null)}
+        title="Run Contact Enrichment?"
+        message="This will search for decision-maker contacts for all leads that don't have contacts yet. API credits will be consumed."
+        confirmLabel="Run Pipeline"
+        variant="info"
+        loading={quickLoading === 'enrich'}
+        onConfirm={async () => {
+          setQuickLoading('enrich')
+          try {
+            await pipelinesApi.runContactEnrichment()
+            toast('success', 'Contact enrichment pipeline started')
+            setConfirmAction(null)
+            router.push('/dashboard/pipelines')
+          } catch { toast('error', 'Failed to start contact enrichment') }
+          setQuickLoading(null)
+        }}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'validate'}
+        onClose={() => setConfirmAction(null)}
+        title="Run Email Validation?"
+        message="This will validate all unvalidated contact email addresses using the configured provider. API credits will be consumed."
+        confirmLabel="Run Pipeline"
+        variant="info"
+        loading={quickLoading === 'validate'}
+        onConfirm={async () => {
+          setQuickLoading('validate')
+          try {
+            await pipelinesApi.runEmailValidation()
+            toast('success', 'Email validation pipeline started')
+            setConfirmAction(null)
+            router.push('/dashboard/pipelines')
+          } catch { toast('error', 'Failed to start email validation') }
+          setQuickLoading(null)
+        }}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'outreach'}
+        onClose={() => setConfirmAction(null)}
+        title="Export Mailmerge?"
+        message="This will generate a mail merge CSV export containing all verified contacts eligible for outreach."
+        confirmLabel="Export"
+        variant="info"
+        loading={quickLoading === 'outreach'}
+        onConfirm={async () => {
+          setQuickLoading('outreach')
+          try {
+            await pipelinesApi.runOutreach('mailmerge', true)
+            toast('success', 'Mailmerge export pipeline started')
+            setConfirmAction(null)
+            router.push('/dashboard/pipelines')
+          } catch { toast('error', 'Failed to start mailmerge export') }
+          setQuickLoading(null)
+        }}
+      />
     </div>
   )
 }

@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.services.adapters.contact_discovery.mock import MockContactDiscoveryAdapter
 from app.services.adapters.contact_discovery.apollo import ApolloAdapter, ApolloCreditsExhaustedError
 from app.services.adapters.contact_discovery.seamless import SeamlessAdapter
+from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
@@ -231,8 +232,18 @@ def run_contact_enrichment_pipeline(
 
         logger.info(f"Found {len(leads)} leads to enrich")
         batch_lead_ids = {l.lead_id for l in leads}
+        total_leads = len(leads)
 
-        for lead in leads:
+        for idx, lead in enumerate(leads):
+            # Cancel check
+            if check_cancel(job_run.run_id, db):
+                logger.info("Contact enrichment cancelled by user", processed=idx)
+                break
+
+            # Update progress every 5 items
+            if total_leads > 0 and idx % 5 == 0:
+                job_run.progress_pct = int((idx / total_leads) * 100)
+                db.commit()
             try:
                 existing_count = db.query(ContactDetails).filter(
                     ContactDetails.lead_id == lead.lead_id
@@ -396,7 +407,12 @@ def run_contact_enrichment_pipeline(
 
         db.commit()
 
-        job_run.status = JobStatus.COMPLETED
+        db.refresh(job_run)
+        if job_run.is_cancel_requested == 1:
+            job_run.status = JobStatus.CANCELLED
+        else:
+            job_run.status = JobStatus.COMPLETED
+        job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
