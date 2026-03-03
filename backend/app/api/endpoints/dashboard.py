@@ -313,6 +313,9 @@ async def get_dashboard_stats(
     total_bounced = db.query(OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.BOUNCED
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
+    total_skipped = db.query(OutreachEvent).filter(
+        OutreachEvent.status == OutreachStatus.SKIPPED
+    ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
     reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
     bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
 
@@ -324,9 +327,16 @@ async def get_dashboard_stats(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status == WarmupStatus.ACTIVE
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
+    ready_to_send = db.query(SenderMailbox).filter(
+        SenderMailbox.is_active == True,
+        SenderMailbox.warmup_status.in_([WarmupStatus.ACTIVE, WarmupStatus.COLD_READY])
+    ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
     warming_up_mailboxes = db.query(SenderMailbox).filter(
         SenderMailbox.warmup_status == WarmupStatus.WARMING_UP
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
+    by_warmup_status = db.query(SenderMailbox).with_entities(
+        SenderMailbox.warmup_status, func.count(SenderMailbox.mailbox_id)
+    ).group_by(SenderMailbox.warmup_status).all()
 
     # Templates
     total_templates = db.query(EmailTemplate).with_entities(
@@ -350,13 +360,16 @@ async def get_dashboard_stats(
             "total_sent": total_sent,
             "total_replied": total_replied,
             "total_bounced": total_bounced,
+            "total_skipped": total_skipped,
             "reply_rate": round(reply_rate, 2),
             "bounce_rate": round(bounce_rate, 2)
         },
         "mailboxes": {
             "total": total_mailboxes,
             "active": active_mailboxes,
-            "warming_up": warming_up_mailboxes
+            "ready_to_send": ready_to_send,
+            "warming_up": warming_up_mailboxes,
+            "by_warmup_status": {s.value if s else "unknown": c for s, c in by_warmup_status}
         },
         "templates": {
             "total": total_templates,

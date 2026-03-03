@@ -81,6 +81,23 @@ const VALIDATION_COLORS: Record<string, string> = {
   pending: '#cbd5e1',
 }
 
+const OUTREACH_COLORS: Record<string, string> = {
+  sent: '#6366f1',
+  replied: '#22c55e',
+  bounced: '#ef4444',
+  skipped: '#f97316',
+}
+
+const WARMUP_STATUS_COLORS: Record<string, string> = {
+  active: '#22c55e',
+  cold_ready: '#3b82f6',
+  warming_up: '#eab308',
+  paused: '#94a3b8',
+  inactive: '#cbd5e1',
+  blacklisted: '#ef4444',
+  recovering: '#f97316',
+}
+
 function getLeadStatusBadge(status: string) {
   const colors: Record<string, string> = {
     new: 'bg-slate-100 text-slate-800',
@@ -448,6 +465,23 @@ export default function DashboardPage() {
       }))
     : []
 
+  const outreachOutcomeData = stats?.outreach
+    ? [
+        { name: 'Sent', value: stats.outreach.total_sent || 0, fill: OUTREACH_COLORS.sent },
+        { name: 'Replied', value: stats.outreach.total_replied || 0, fill: OUTREACH_COLORS.replied },
+        { name: 'Bounced', value: stats.outreach.total_bounced || 0, fill: OUTREACH_COLORS.bounced },
+        { name: 'Skipped', value: stats.outreach.total_skipped || 0, fill: OUTREACH_COLORS.skipped },
+      ].filter(d => d.value > 0)
+    : []
+
+  const warmupStatusData = stats?.mailboxes?.by_warmup_status
+    ? Object.entries(stats.mailboxes.by_warmup_status).map(([name, value]) => ({
+        name: name === 'cold_ready' ? 'Cold Ready' : name === 'warming_up' ? 'Warming Up' : name.charAt(0).toUpperCase() + name.slice(1),
+        value: value as number,
+        fill: WARMUP_STATUS_COLORS[name] || '#94a3b8',
+      }))
+    : []
+
   // --- Selector computed values ---
 
   const selectorTotalPages = Math.ceil(selectorTotal / SELECTOR_PAGE_SIZE) || 1
@@ -687,6 +721,45 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Outreach Outcomes */}
+      {outreachOutcomeData.length > 0 && (
+        <div className="card">
+          <h3 className="text-lg font-semibold mb-2">Outreach Outcomes</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Breakdown of all outreach emails by final status
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {[
+              { label: 'Sent', value: stats?.outreach?.total_sent || 0, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+              { label: 'Replied', value: stats?.outreach?.total_replied || 0, color: 'text-green-600', bg: 'bg-green-50' },
+              { label: 'Bounced', value: stats?.outreach?.total_bounced || 0, color: 'text-red-600', bg: 'bg-red-50' },
+              { label: 'Skipped', value: stats?.outreach?.total_skipped || 0, color: 'text-orange-600', bg: 'bg-orange-50' },
+            ].map(item => (
+              <div key={item.label} className={`${item.bg} rounded-lg p-4 text-center`}>
+                <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
+                <p className="text-sm text-gray-600 mt-1">{item.label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-gray-600">Reply Rate</span>
+              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(stats?.outreach?.reply_rate || 0, 100)}%` }} />
+              </div>
+              <span className="text-sm font-bold text-green-600">{stats?.outreach?.reply_rate || 0}%</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+              <span className="text-sm text-gray-600">Bounce Rate</span>
+              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${(stats?.outreach?.bounce_rate || 0) <= 2 ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min(stats?.outreach?.bounce_rate || 0, 100)}%` }} />
+              </div>
+              <span className={`text-sm font-bold ${(stats?.outreach?.bounce_rate || 0) <= 2 ? 'text-green-600' : 'text-red-600'}`}>{stats?.outreach?.bounce_rate || 0}%</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Distribution Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Lead Status Distribution */}
@@ -739,44 +812,62 @@ export default function DashboardPage() {
 
       {/* System Health */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="card flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Inbox className="w-5 h-5 text-blue-600" />
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="card flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <Inbox className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Ready to Send</p>
+                <p className="text-lg font-bold">{stats.mailboxes?.ready_to_send || 0}<span className="text-sm font-normal text-gray-400">/{stats.mailboxes?.total || 0}</span></p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">Active Mailboxes</p>
-              <p className="text-lg font-bold">{stats.mailboxes?.active || 0}<span className="text-sm font-normal text-gray-400">/{stats.mailboxes?.total || 0}</span></p>
+            <div className="card flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
+                <Activity className="w-5 h-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Warming Up</p>
+                <p className="text-lg font-bold">{stats.mailboxes?.warming_up || 0}</p>
+              </div>
+            </div>
+            <div className="card flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <FileEdit className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Active Templates</p>
+                <p className="text-lg font-bold">{stats.templates?.active_count || 0}<span className="text-sm font-normal text-gray-400">/{stats.templates?.total || 0}</span></p>
+              </div>
+            </div>
+            <div className="card flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Lead Sources</p>
+                <p className="text-lg font-bold">{stats.leads?.by_source ? Object.keys(stats.leads.by_source).length : 0}</p>
+              </div>
             </div>
           </div>
-          <div className="card flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
-              <Activity className="w-5 h-5 text-yellow-600" />
+
+          {/* Mailbox Status Breakdown */}
+          {warmupStatusData.length > 0 && (
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4">Mailbox Status Breakdown</h3>
+              <div className="flex flex-wrap gap-3">
+                {warmupStatusData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.fill }} />
+                    <span className="text-sm text-gray-700">{item.name}</span>
+                    <span className="text-sm font-bold text-gray-900">{item.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">Warming Up</p>
-              <p className="text-lg font-bold">{stats.mailboxes?.warming_up || 0}</p>
-            </div>
-          </div>
-          <div className="card flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <FileEdit className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Active Templates</p>
-              <p className="text-lg font-bold">{stats.templates?.active_count || 0}<span className="text-sm font-normal text-gray-400">/{stats.templates?.total || 0}</span></p>
-            </div>
-          </div>
-          <div className="card flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Lead Sources</p>
-              <p className="text-lg font-bold">{stats.leads?.by_source ? Object.keys(stats.leads.by_source).length : 0}</p>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
       {/* ===== Confirmation Dialogs ===== */}
