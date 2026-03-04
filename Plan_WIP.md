@@ -1,17 +1,28 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 22: Implemented granular per-tab Settings permissions. Super admin can control which Settings tabs each admin can view/edit via Roles & Permissions page. Backend enforces tab-level read/write access on GET/PUT endpoints.
+> Session 25: Implemented SESSION CONTINUITY requirements — created self-contained deploy/deploy.sh, deploy/systemd/ service files, updated CLAUDE.md with comprehensive Deployment section, Mandatory Update Table. Enterprise_Readiness_Improvements.md complete from Session 24. Next: deploy latest to VPS, begin Phase 1 enterprise improvements.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
 - [x] Granular Settings tab permissions (per-tab view/edit control for admin role)
+- [x] Pipeline improvements: confirmations, contact selector, cancel, progress tracking
+- [ ] Deploy latest changes to VPS (pipelines + granular settings)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
-- [ ] Deploy granular settings permissions to VPS
 
 ## Completed
+- [x] Session 23: Pipeline Confirmations, Contact Selector, Cancel & Progress (2026-03-03)
+  - All 4 dashboard quick actions now require confirmation before executing
+  - Lead Sourcing on Pipelines page requires confirmation
+  - "Run for All" on lead/contact selectors shows warning confirmation
+  - Contact Selector modal for Email Validation (search, filter by validation status, pagination)
+  - Cooperative cancellation: cancel_helper.py checks is_cancel_requested in all 4 pipeline loops
+  - Progress tracking (progress_pct) updated incrementally during pipeline execution
+  - Cancel button in run history table with "Cancelling..." state
+  - 13 new tests (3 unit + 10 integration), 213 total pass
+  - Commit: d53ea47
 - [x] Session 22: Granular Settings Tab Permissions (2026-03-01)
   - Roles & Permissions: Settings module now has 6 independently configurable sub-tabs (Job Sources, AI/LLM, Contacts, Validation, Outreach, Business Rules)
   - Frontend: Tab visibility, read-only mode with fieldset disabled, save button hidden for read-only, All Settings filtered
