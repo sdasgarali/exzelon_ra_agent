@@ -1,9 +1,18 @@
-"""Unit tests for pipeline summary scoring and fallback generation."""
+"""Unit tests for pipeline summary scoring, builder functions, and fallback generation."""
 import json
 import pytest
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone
 
-from app.services.pipeline_summary import calculate_success_score, generate_pipeline_summary, _fallback_summary
+from app.services.pipeline_summary import (
+    calculate_success_score,
+    generate_pipeline_summary,
+    _fallback_summary,
+    _build_run_metadata,
+    _build_source_breakdown,
+    _build_api_diagnostics,
+    ADAPTER_LABELS,
+)
 from app.db.models.job_run import JobRun, JobStatus
 
 
@@ -76,6 +85,194 @@ class TestCalculateSuccessScore:
         assert calculate_success_score("lead_sourcing", {}, "completed") == 0
 
 
+class TestBuildRunMetadata:
+    """Tests for _build_run_metadata."""
+
+    def test_basic_metadata(self, db_session):
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        meta = _build_run_metadata(run)
+        assert meta["run_id"] == run.run_id
+        assert meta["pipeline_name"] == "lead_sourcing"
+        assert meta["pipeline_label"] == "Lead Sourcing"
+        assert meta["status"] == "completed"
+        assert meta["triggered_by"] == "admin@test.com"
+
+    def test_duration_calculation(self, db_session):
+        run = JobRun(
+            pipeline_name="contact_enrichment",
+            status=JobStatus.COMPLETED,
+            triggered_by="test@test.com",
+            started_at=datetime(2026, 1, 1, 10, 0, 0),
+            ended_at=datetime(2026, 1, 1, 10, 5, 30),
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        meta = _build_run_metadata(run)
+        assert meta["duration_seconds"] == 330.0
+
+    def test_no_timestamps(self, db_session):
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.RUNNING,
+            triggered_by="test@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        meta = _build_run_metadata(run)
+        assert meta["duration_seconds"] is None
+
+
+class TestBuildSourceBreakdown:
+    """Tests for _build_source_breakdown."""
+
+    def test_lead_sourcing_new_format(self):
+        counters = {
+            "per_source_detail": {
+                "jsearch": {"fetched": 45, "new": 30, "existing_in_db": 10, "skipped_dedup": 5},
+                "apollo": {"fetched": 20, "new": 15, "existing_in_db": 3, "skipped_dedup": 2},
+            }
+        }
+        result = _build_source_breakdown("lead_sourcing", counters)
+        assert len(result) == 2
+        jsearch = next(r for r in result if r["source_name"] == "jsearch")
+        assert jsearch["source_label"] == "JSearch (RapidAPI)"
+        assert jsearch["total_retrieved"] == 45
+        assert jsearch["new_records"] == 30
+        assert jsearch["existing_in_db"] == 10
+        assert jsearch["skipped"] == 5
+
+    def test_lead_sourcing_legacy_format(self):
+        counters = {
+            "per_source": {"jsearch": 30, "apollo": 0},
+        }
+        result = _build_source_breakdown("lead_sourcing", counters)
+        assert len(result) == 2
+        jsearch = next(r for r in result if r["source_name"] == "jsearch")
+        assert jsearch["total_retrieved"] == 30
+        assert jsearch["status"] == "success"
+        apollo = next(r for r in result if r["source_name"] == "apollo")
+        assert apollo["total_retrieved"] == 0
+        assert apollo["status"] == "warning"
+
+    def test_lead_sourcing_empty_counters(self):
+        result = _build_source_breakdown("lead_sourcing", {})
+        assert result == []
+
+    def test_contact_enrichment_with_adapter_stats(self):
+        counters = {
+            "adapter_stats": {
+                "apollo": {"calls": 10, "contacts_returned": 25, "no_results": 2, "errors": 0},
+            },
+            "contacts_reused": 5,
+        }
+        result = _build_source_breakdown("contact_enrichment", counters)
+        assert len(result) == 1
+        assert result[0]["source_name"] == "apollo"
+        assert result[0]["total_retrieved"] == 25
+        assert result[0]["existing_in_db"] == 5
+
+    def test_email_validation_breakdown(self):
+        counters = {"provider_used": "neverbounce", "validated": 100, "valid": 85, "invalid": 10, "catch_all": 3, "unknown": 2, "errors": 0}
+        result = _build_source_breakdown("email_validation", counters)
+        assert len(result) == 1
+        assert result[0]["source_name"] == "neverbounce"
+        assert result[0]["total_retrieved"] == 100
+        assert result[0]["new_records"] == 85
+
+    def test_outreach_send_with_per_mailbox(self):
+        counters = {
+            "per_mailbox": {
+                "sales@co.com": {"sent": 10, "errors": 0},
+                "outreach@co.com": {"sent": 8, "errors": 1},
+            }
+        }
+        result = _build_source_breakdown("outreach_send", counters)
+        assert len(result) == 2
+        sales = next(r for r in result if r["source_name"] == "sales@co.com")
+        assert sales["new_records"] == 10
+        assert sales["errors"] == 0
+
+    def test_outreach_mailmerge_breakdown(self):
+        counters = {"exported": 50, "skipped": 3}
+        result = _build_source_breakdown("outreach_mailmerge", counters)
+        assert len(result) == 1
+        assert result[0]["source_name"] == "mailmerge"
+        assert result[0]["total_retrieved"] == 50
+
+    def test_api_diagnostics_overrides_status(self):
+        """When api_diagnostics shows error, source_breakdown status is updated."""
+        counters = {
+            "per_source_detail": {
+                "jsearch": {"fetched": 45, "new": 30, "existing_in_db": 10, "skipped_dedup": 5},
+                "apollo": {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0},
+            },
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "jobs_returned": 45, "error_type": None, "error_message": None},
+                {"adapter": "apollo", "status": "error", "jobs_returned": 0, "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ],
+        }
+        result = _build_source_breakdown("lead_sourcing", counters)
+        apollo = next(r for r in result if r["source_name"] == "apollo")
+        assert apollo["status"] == "error"
+        assert apollo["status_detail"] == "api_key_invalid"
+
+
+class TestBuildApiDiagnostics:
+    """Tests for _build_api_diagnostics."""
+
+    def test_new_format_diagnostics(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "jobs_returned": 45, "error_type": None, "error_message": None},
+                {"adapter": "apollo", "status": "error", "jobs_returned": 0, "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ]
+        }
+        result = _build_api_diagnostics("lead_sourcing", counters)
+        assert len(result) == 2
+        assert result[0]["adapter_label"] == "JSearch (RapidAPI)"
+        assert result[0]["status"] == "success"
+        assert result[0]["records_returned"] == 45
+        assert result[1]["status"] == "error"
+        assert result[1]["status_detail"] == "api_key_invalid"
+
+    def test_legacy_lead_sourcing_diagnostics(self):
+        counters = {"sources": ["jsearch"], "per_source": {"jsearch": 30}, "errors": 0}
+        result = _build_api_diagnostics("lead_sourcing", counters)
+        assert len(result) == 1
+        assert result[0]["adapter_name"] == "jsearch"
+        assert result[0]["records_returned"] == 30
+
+    def test_legacy_email_validation_diagnostics(self):
+        counters = {"provider_used": "zerobounce", "validated": 50, "errors": 2}
+        result = _build_api_diagnostics("email_validation", counters)
+        assert len(result) == 1
+        assert result[0]["adapter_name"] == "zerobounce"
+        assert result[0]["status"] == "warning"
+
+    def test_legacy_outreach_diagnostics(self):
+        counters = {"sent": 20, "errors": 0}
+        result = _build_api_diagnostics("outreach_send", counters)
+        assert len(result) == 1
+        assert result[0]["adapter_name"] == "smtp"
+        assert result[0]["status"] == "success"
+
+    def test_empty_counters_returns_empty(self):
+        result = _build_api_diagnostics("lead_sourcing", {})
+        assert result == []
+
+
 class TestFallbackSummary:
     """Tests for the template-based fallback summary."""
 
@@ -118,7 +315,7 @@ class TestGeneratePipelineSummary:
     """Tests for the full summary generation with AI fallback."""
 
     def test_fallback_summary_no_ai(self, db_session):
-        """When no AI adapter is configured, returns valid fallback dict."""
+        """When no AI adapter is configured, returns valid fallback dict with enhanced fields."""
         run = JobRun(
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
@@ -138,6 +335,13 @@ class TestGeneratePipelineSummary:
         assert "suggestions" in result
         assert "highlights" in result
         assert "generated_at" in result
+        # Enhanced fields
+        assert "run_metadata" in result
+        assert "source_breakdown" in result
+        assert "api_diagnostics" in result
+        assert "counters" in result
+        assert result["run_metadata"]["pipeline_name"] == "lead_sourcing"
+        assert result["run_metadata"]["pipeline_label"] == "Lead Sourcing"
 
     def test_summary_with_ai_adapter(self, db_session):
         """When AI adapter is available, uses it for narrative."""
@@ -164,6 +368,8 @@ class TestGeneratePipelineSummary:
         assert result["ai_generated"] is True
         assert result["summary"] == "AI generated summary text."
         assert len(result["suggestions"]) == 1
+        assert "source_breakdown" in result
+        assert "api_diagnostics" in result
         mock_adapter._call_api.assert_called_once()
 
     def test_ai_failure_falls_back(self, db_session):
@@ -187,6 +393,8 @@ class TestGeneratePipelineSummary:
         assert result["ai_generated"] is False
         assert result["success_score"] == 100
         assert isinstance(result["summary"], str)
+        assert isinstance(result["source_breakdown"], list)
+        assert isinstance(result["api_diagnostics"], list)
 
     def test_failed_run_score_zero(self, db_session):
         """Failed runs always get score 0."""
@@ -205,3 +413,45 @@ class TestGeneratePipelineSummary:
             result = generate_pipeline_summary(db_session, run)
 
         assert result["success_score"] == 0
+        assert "run_metadata" in result
+
+    def test_enriched_counters_produce_source_breakdown(self, db_session):
+        """Enriched lead_sourcing counters produce detailed source breakdown."""
+        counters = json.dumps({
+            "inserted": 25, "updated": 0, "skipped": 5, "errors": 1,
+            "sources": ["jsearch", "apollo"],
+            "per_source": {"jsearch": 30, "apollo": 0},
+            "per_source_detail": {
+                "jsearch": {"fetched": 30, "new": 25, "existing_in_db": 0, "skipped_dedup": 5},
+                "apollo": {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0},
+            },
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "jobs_returned": 30, "error_type": None, "error_message": None},
+                {"adapter": "apollo", "status": "error", "jobs_returned": 0, "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ],
+        })
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json=counters,
+            triggered_by="test@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            result = generate_pipeline_summary(db_session, run)
+
+        assert len(result["source_breakdown"]) == 2
+        jsearch = next(s for s in result["source_breakdown"] if s["source_name"] == "jsearch")
+        assert jsearch["new_records"] == 25
+        assert jsearch["status"] == "success"
+
+        apollo = next(s for s in result["source_breakdown"] if s["source_name"] == "apollo")
+        assert apollo["status"] == "error"
+        assert apollo["status_detail"] == "api_key_invalid"
+
+        assert len(result["api_diagnostics"]) == 2
+        apollo_diag = next(d for d in result["api_diagnostics"] if d["adapter_name"] == "apollo")
+        assert apollo_diag["error_message"] == "401 Unauthorized"

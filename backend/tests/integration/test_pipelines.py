@@ -126,7 +126,7 @@ class TestRunSummaryEndpoint:
     """Tests for GET /api/v1/pipelines/runs/{run_id}/summary."""
 
     def test_get_summary_completed_run(self, client, auth_headers, db_session):
-        """Completed run returns valid summary structure."""
+        """Completed run returns valid enhanced summary structure."""
         run = JobRun(
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
@@ -143,6 +143,7 @@ class TestRunSummaryEndpoint:
             )
         assert response.status_code == 200
         data = response.json()
+        # Existing fields
         assert "success_score" in data
         assert "summary" in data
         assert "suggestions" in data
@@ -151,6 +152,15 @@ class TestRunSummaryEndpoint:
         assert "ai_generated" in data
         assert isinstance(data["success_score"], int)
         assert 0 <= data["success_score"] <= 100
+        # Enhanced fields
+        assert "run_metadata" in data
+        assert "source_breakdown" in data
+        assert "api_diagnostics" in data
+        assert "counters" in data
+        assert data["run_metadata"]["pipeline_name"] == "lead_sourcing"
+        assert data["run_metadata"]["pipeline_label"] == "Lead Sourcing"
+        assert isinstance(data["source_breakdown"], list)
+        assert isinstance(data["api_diagnostics"], list)
 
     def test_summary_cached_on_second_call(self, client, auth_headers, db_session):
         """Second call returns same cached summary (same generated_at)."""
@@ -170,6 +180,68 @@ class TestRunSummaryEndpoint:
         assert resp1.status_code == 200
         assert resp2.status_code == 200
         assert resp1.json()["generated_at"] == resp2.json()["generated_at"]
+
+    def test_summary_regenerate_param(self, client, auth_headers, db_session):
+        """?regenerate=true forces fresh generation even when cached."""
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json='{"inserted": 5, "updated": 0, "skipped": 0, "errors": 0}',
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            # First call caches
+            resp1 = client.get(f"/api/v1/pipelines/runs/{run.run_id}/summary", headers=auth_headers)
+            gen1 = resp1.json()["generated_at"]
+
+            # Second call with regenerate=true gets fresh result
+            resp2 = client.get(
+                f"/api/v1/pipelines/runs/{run.run_id}/summary?regenerate=true",
+                headers=auth_headers,
+            )
+            gen2 = resp2.json()["generated_at"]
+
+        assert resp2.status_code == 200
+        # generated_at should differ (regenerated)
+        assert gen1 != gen2
+
+    def test_summary_old_format_auto_regenerates(self, client, auth_headers, db_session):
+        """Old-format cached summary (missing source_breakdown) is auto-regenerated."""
+        old_summary = json.dumps({
+            "success_score": 80,
+            "summary": "Old format summary.",
+            "suggestions": ["old suggestion"],
+            "highlights": ["old highlight"],
+            "generated_at": "2026-01-01T00:00:00Z",
+            "ai_generated": False,
+        })
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json='{"inserted": 10, "updated": 0, "skipped": 0, "errors": 0}',
+            summary_json=old_summary,
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            response = client.get(
+                f"/api/v1/pipelines/runs/{run.run_id}/summary",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        # Should have been regenerated with new fields
+        assert "source_breakdown" in data
+        assert "api_diagnostics" in data
+        assert "run_metadata" in data
+        # generated_at should be different from old cached
+        assert data["generated_at"] != "2026-01-01T00:00:00Z"
 
     def test_summary_running_run_returns_400(self, client, auth_headers, db_session):
         """In-progress runs return 400."""
@@ -220,3 +292,5 @@ class TestRunSummaryEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["success_score"] == 0
+        assert "run_metadata" in data
+        assert data["run_metadata"]["status"] == "failed"

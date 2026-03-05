@@ -274,8 +274,10 @@ export const pipelinesApi = {
     })
     return response.data
   },
-  getRunSummary: async (runId: number) => {
-    const response = await api.get(`/pipelines/runs/${runId}/summary`)
+  getRunSummary: async (runId: number, regenerate: boolean = false) => {
+    const response = await api.get(`/pipelines/runs/${runId}/summary`, {
+      params: regenerate ? { regenerate: true } : undefined,
+    })
     return response.data
   },
 }

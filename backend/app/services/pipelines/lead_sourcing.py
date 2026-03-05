@@ -126,15 +126,21 @@ def fetch_from_source(
     target_industries: List[str],
     exclude_keywords: List[str],
     target_job_titles: List[str]
-) -> Tuple[str, List[Dict[str, Any]], Optional[str]]:
+) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
 
     IMPACT ON LEAD COUNT: Exclude keywords are passed to adapters which filter
     internally. No secondary filtering is done here to avoid double-filtering
     which previously dropped ~20% extra leads redundantly.
 
-    Returns: (source_name, jobs_list, error_message)
+    Returns: (source_name, jobs_list, error_message, diagnostics)
     """
+    diagnostics: Dict[str, Any] = {
+        "status": "success",
+        "jobs_returned": 0,
+        "error_type": None,
+        "error_message": None,
+    }
     try:
         jobs = adapter.fetch_jobs(
             location="United States",
@@ -143,12 +149,30 @@ def fetch_from_source(
             exclude_keywords=exclude_keywords,
             job_titles=target_job_titles
         )
+        diagnostics["jobs_returned"] = len(jobs)
+        if len(jobs) == 0:
+            diagnostics["status"] = "warning"
+            diagnostics["error_type"] = "no_match"
         logger.info(f"Source {source_name} returned {len(jobs)} jobs after adapter-level filtering")
-        return (source_name, jobs, None)
+        return (source_name, jobs, None, diagnostics)
     except Exception as e:
         error_msg = str(e)
+        error_lower = error_msg.lower()
+        # Classify error type
+        if "401" in error_msg or "unauthorized" in error_lower or "invalid" in error_lower and "key" in error_lower:
+            diagnostics["error_type"] = "api_key_invalid"
+        elif "credit" in error_lower or "quota" in error_lower or "exhausted" in error_lower:
+            diagnostics["error_type"] = "credits_exhausted"
+        elif "429" in error_msg or "rate" in error_lower and "limit" in error_lower:
+            diagnostics["error_type"] = "rate_limited"
+        elif "timeout" in error_lower or "connection" in error_lower:
+            diagnostics["error_type"] = "connection_error"
+        else:
+            diagnostics["error_type"] = "unknown"
+        diagnostics["status"] = "error"
+        diagnostics["error_message"] = error_msg[:300]
         logger.error(f"Error fetching from {source_name}", error=error_msg)
-        return (source_name, [], error_msg)
+        return (source_name, [], error_msg, diagnostics)
 
 
 def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
@@ -328,8 +352,10 @@ def run_lead_sourcing_pipeline(
         "skipped": 0,
         "errors": 0,
         "sources_used": [],
-        "jobs_per_source": {}
+        "jobs_per_source": {},
     }
+    per_source_detail: Dict[str, Dict[str, int]] = {}
+    api_diagnostics_list: List[Dict[str, Any]] = []
 
     # Create job run record
     job_run = JobRun(
@@ -374,24 +400,45 @@ def run_lead_sourcing_pipeline(
 
             # Collect results
             for future in concurrent.futures.as_completed(futures):
-                source_name, jobs, error = future.result()
+                source_name, jobs, error, diag = future.result()
                 counters["sources_used"].append(source_name)
                 counters["jobs_per_source"][source_name] = len(jobs)
+                per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                api_diagnostics_list.append({
+                    "adapter": source_name,
+                    "status": diag["status"],
+                    "jobs_returned": diag["jobs_returned"],
+                    "error_type": diag["error_type"],
+                    "error_message": diag["error_message"],
+                })
 
                 if error:
                     counters["errors"] += 1
                     logger.error(f"Source {source_name} failed", error=error)
                 else:
                     logger.info(f"Fetched {len(jobs)} jobs from {source_name}")
+                    # Tag each job with its source for per-source tracking
+                    for job in jobs:
+                        job["_pipeline_source"] = source_name
                     all_jobs.extend(jobs)
 
         logger.info(f"Total jobs fetched from all sources: {len(all_jobs)}")
 
         # Deduplicate jobs (both within batch and against DB)
         unique_jobs = deduplicate_jobs(all_jobs, db)
-        counters["skipped"] = len(all_jobs) - len(unique_jobs)
+        skipped_count = len(all_jobs) - len(unique_jobs)
+        counters["skipped"] = skipped_count
 
-        logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {counters['skipped']} duplicates)")
+        # Track per-source dedup: compare which source jobs survived
+        unique_sources = {}
+        for job in unique_jobs:
+            src = job.get("_pipeline_source", "unknown")
+            unique_sources[src] = unique_sources.get(src, 0) + 1
+        for src, detail in per_source_detail.items():
+            survived = unique_sources.get(src, 0)
+            detail["skipped_dedup"] = detail["fetched"] - survived
+
+        logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {skipped_count} duplicates)")
 
         # Process unique jobs
         newly_inserted_leads = []
@@ -429,6 +476,11 @@ def run_lead_sourcing_pipeline(
                 counters["inserted"] += 1
                 newly_inserted_leads.append(lead)
 
+                # Track per-source new insertions
+                job_src = job_data.get("_pipeline_source", "unknown")
+                if job_src in per_source_detail:
+                    per_source_detail[job_src]["new"] += 1
+
                 # Upsert client_info with normalized name
                 upsert_client(db, job_data["client_name"])
 
@@ -456,6 +508,10 @@ def run_lead_sourcing_pipeline(
             job_run.status = JobStatus.COMPLETED
         job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
+        # Compute existing_in_db for each source (fetched - new - skipped_dedup)
+        for src, detail in per_source_detail.items():
+            detail["existing_in_db"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
+
         job_run.counters_json = json.dumps({
             "inserted": counters["inserted"],
             "updated": counters["updated"],
@@ -463,7 +519,9 @@ def run_lead_sourcing_pipeline(
             "errors": counters["errors"],
             "auto_enriched": counters.get("auto_enriched", 0),
             "sources": counters["sources_used"],
-            "per_source": counters["jobs_per_source"]
+            "per_source": counters["jobs_per_source"],
+            "per_source_detail": per_source_detail,
+            "api_diagnostics": api_diagnostics_list,
         })
         db.commit()
 

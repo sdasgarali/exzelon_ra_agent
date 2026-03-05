@@ -168,6 +168,24 @@ def run_email_validation_pipeline(
         bounce_rate = (counters["invalid"] / total_validated * 100) if total_validated > 0 else 0
         counters["estimated_bounce_rate"] = round(bounce_rate, 2)
 
+        # Add provider and diagnostics info
+        provider_name = provider or settings.EMAIL_VALIDATION_PROVIDER
+        counters["provider_used"] = provider_name
+        diag_status = "success"
+        diag_error_type = None
+        if counters["errors"] > 0 and counters["errors"] > total_validated * 0.5:
+            diag_status = "error"
+            diag_error_type = "high_error_rate"
+        elif counters["errors"] > 0:
+            diag_status = "warning"
+        counters["api_diagnostics"] = [{
+            "adapter": provider_name,
+            "status": diag_status,
+            "emails_checked": counters["validated"],
+            "error_type": diag_error_type,
+            "error_message": None,
+        }]
+
         # Update job run
         db.refresh(job_run)
         if job_run.is_cancel_requested == 1:

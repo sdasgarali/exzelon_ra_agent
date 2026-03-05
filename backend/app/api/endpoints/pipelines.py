@@ -215,10 +215,15 @@ async def get_job_run(
 @router.get("/runs/{run_id}/summary")
 async def get_run_summary(
     run_id: int,
+    regenerate: bool = Query(False, description="Force re-generation of summary report"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Get or generate an AI-powered summary report for a completed pipeline run."""
+    """Get or generate an AI-powered summary report for a completed pipeline run.
+
+    Pass ?regenerate=true to force fresh generation (ignores cache).
+    Old-format cached summaries (missing source_breakdown) are auto-regenerated.
+    """
     run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job run not found")
@@ -230,10 +235,13 @@ async def get_run_summary(
             detail=f"Summary is only available for completed, failed, or cancelled runs. Current status: {run.status.value}"
         )
 
-    # Return cached summary if available
-    if run.summary_json:
+    # Return cached summary if available (skip if regenerate=True)
+    if not regenerate and run.summary_json:
         try:
-            return json.loads(run.summary_json)
+            cached = json.loads(run.summary_json)
+            # Auto-regenerate if old format (missing source_breakdown)
+            if "source_breakdown" in cached:
+                return cached
         except (json.JSONDecodeError, TypeError):
             pass
 

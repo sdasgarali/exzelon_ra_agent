@@ -392,6 +392,8 @@ def run_outreach_send_pipeline(
     """
     db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0}
+    skip_reasons: Dict[str, int] = {"cooldown": 0, "daily_limit": 0, "no_mailbox": 0, "dry_run": 0, "not_eligible": 0}
+    per_mailbox: Dict[str, Dict[str, int]] = {}
 
     # Create job run record
     job_run = JobRun(
@@ -451,6 +453,12 @@ def run_outreach_send_pipeline(
             eligible, reason = check_send_eligibility(db, contact)
             if not eligible:
                 counters["skipped"] += 1
+                if "cooldown" in reason.lower():
+                    skip_reasons["cooldown"] += 1
+                elif "limit" in reason.lower():
+                    skip_reasons["daily_limit"] += 1
+                else:
+                    skip_reasons["not_eligible"] += 1
                 continue
 
             # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
@@ -464,6 +472,7 @@ def run_outreach_send_pipeline(
             if not sending_mailbox:
                 logger.warning("No available sender mailbox with successful connection")
                 counters["skipped"] += 1
+                skip_reasons["no_mailbox"] += 1
                 continue
 
             signature_html = ""
@@ -505,11 +514,17 @@ def run_outreach_send_pipeline(
                 body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
                 body_text += unsub_footer["text"]
 
+            # Initialize per-mailbox tracking
+            mbx_email = sending_mailbox.email
+            if mbx_email not in per_mailbox:
+                per_mailbox[mbx_email] = {"sent": 0, "errors": 0}
+
             try:
                 if dry_run:
                     logger.info("DRY RUN - Would send to", email=contact.email, via=sending_mailbox.email)
                     event.status = OutreachStatus.SKIPPED
                     event.skip_reason = "dry_run"
+                    skip_reasons["dry_run"] += 1
                 else:
                     result = send_outreach_email(
                         sender_mailbox=sending_mailbox,
@@ -524,6 +539,7 @@ def run_outreach_send_pipeline(
                         event.skip_reason = None
                         counters["sent"] += 1
                         sent_count += 1
+                        per_mailbox[mbx_email]["sent"] += 1
                         # Update mailbox counters
                         sending_mailbox.emails_sent_today += 1
                         sending_mailbox.total_emails_sent += 1
@@ -532,6 +548,7 @@ def run_outreach_send_pipeline(
                         event.status = OutreachStatus.SKIPPED
                         event.skip_reason = result.get("error", "Unknown error")
                         counters["errors"] += 1
+                        per_mailbox[mbx_email]["errors"] += 1
 
                 # Update event with email content
                 event.subject = subject
@@ -548,8 +565,26 @@ def run_outreach_send_pipeline(
                 event.status = OutreachStatus.SKIPPED
                 event.skip_reason = str(e)
                 counters["errors"] += 1
+                per_mailbox[mbx_email]["errors"] += 1
 
         db.commit()
+
+        # Add enriched counter data
+        counters["skip_reasons"] = skip_reasons
+        counters["per_mailbox"] = per_mailbox
+        counters["total"] = counters["sent"] + counters["skipped"] + counters["errors"]
+        diag_status = "success"
+        if counters["errors"] > 0 and counters["sent"] == 0:
+            diag_status = "error"
+        elif counters["errors"] > 0:
+            diag_status = "warning"
+        counters["api_diagnostics"] = [{
+            "adapter": "smtp",
+            "status": diag_status,
+            "emails_sent": counters["sent"],
+            "error_type": None,
+            "error_message": None,
+        }]
 
         # Update job run
         db.refresh(job_run)
@@ -570,6 +605,11 @@ def run_outreach_send_pipeline(
         job_run.status = JobStatus.FAILED
         job_run.error_message = str(e)
         job_run.ended_at = datetime.utcnow()
+        counters["skip_reasons"] = skip_reasons
+        counters["per_mailbox"] = per_mailbox
+        counters["total"] = counters["sent"] + counters["skipped"] + counters["errors"]
+        counters["api_diagnostics"] = [{"adapter": "smtp", "status": "error", "emails_sent": counters["sent"], "error_type": "smtp_failure", "error_message": str(e)[:200]}]
+        job_run.counters_json = json.dumps(counters)
         db.commit()
         raise
     finally:

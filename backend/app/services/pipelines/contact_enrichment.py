@@ -191,6 +191,8 @@ def run_contact_enrichment_pipeline(
     counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0}
     lead_results = []
     auto_enriched_companies = set()
+    adapter_stats: Dict[str, Dict[str, int]] = {}  # per-adapter call/result tracking
+    adapter_errors: Dict[str, str] = {}  # last error per adapter
 
     # Reuse pre-created job run or create a new one
     if run_id:
@@ -283,7 +285,10 @@ def run_contact_enrichment_pipeline(
                 needed = max_contacts_per_job - existing_count
                 contacts = []
                 for adapter_name, adapter in adapters:
+                    if adapter_name not in adapter_stats:
+                        adapter_stats[adapter_name] = {"calls": 0, "contacts_returned": 0, "no_results": 0, "errors": 0}
                     try:
+                        adapter_stats[adapter_name]["calls"] += 1
                         result = adapter.search_contacts(
                             company_name=lead.client_name,
                             job_title=lead.job_title,
@@ -293,11 +298,18 @@ def run_contact_enrichment_pipeline(
                         for c in result:
                             c["source"] = c.get("source", adapter_name)
                         contacts.extend(result)
+                        adapter_stats[adapter_name]["contacts_returned"] += len(result)
+                        if len(result) == 0:
+                            adapter_stats[adapter_name]["no_results"] += 1
                         logger.debug(f"Adapter {adapter_name} returned {len(result)} contacts for {lead.client_name}")
                     except ApolloCreditsExhaustedError:
+                        adapter_stats[adapter_name]["errors"] += 1
+                        adapter_errors[adapter_name] = "Apollo credits exhausted"
                         raise
                     except Exception as e:
                         logger.error(f"Adapter {adapter_name} failed for {lead.client_name}: {e}")
+                        adapter_stats[adapter_name]["errors"] += 1
+                        adapter_errors[adapter_name] = str(e)[:200]
                         counters["errors"] += 1
 
                 seen_emails = set()
@@ -414,6 +426,36 @@ def run_contact_enrichment_pipeline(
             job_run.status = JobStatus.COMPLETED
         job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
+        # Build api_diagnostics from adapter_stats
+        api_diag = []
+        for aname, astats in adapter_stats.items():
+            diag_status = "success"
+            diag_error_type = None
+            diag_error_msg = None
+            if astats["errors"] > 0:
+                diag_status = "error"
+                err_msg = adapter_errors.get(aname, "Unknown error")
+                if "credits" in err_msg.lower() or "exhausted" in err_msg.lower():
+                    diag_error_type = "credits_exhausted"
+                elif "401" in err_msg or "unauthorized" in err_msg.lower():
+                    diag_error_type = "api_key_invalid"
+                else:
+                    diag_error_type = "unknown"
+                diag_error_msg = err_msg
+            elif astats["no_results"] > astats["calls"] * 0.5:
+                diag_status = "warning"
+                diag_error_type = "low_results"
+            api_diag.append({
+                "adapter": aname,
+                "status": diag_status,
+                "total_calls": astats["calls"],
+                "contacts_returned": astats["contacts_returned"],
+                "error_type": diag_error_type,
+                "error_message": diag_error_msg,
+            })
+
+        counters["adapter_stats"] = adapter_stats
+        counters["api_diagnostics"] = api_diag
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
         db.commit()
@@ -426,6 +468,19 @@ def run_contact_enrichment_pipeline(
         job_run.status = JobStatus.FAILED
         job_run.error_message = str(e)
         job_run.ended_at = datetime.utcnow()
+        # Still save adapter stats even on failure
+        counters["adapter_stats"] = adapter_stats
+        api_diag = []
+        for aname, astats in adapter_stats.items():
+            err_msg = adapter_errors.get(aname)
+            api_diag.append({
+                "adapter": aname, "status": "error" if astats["errors"] > 0 else "success",
+                "total_calls": astats["calls"], "contacts_returned": astats["contacts_returned"],
+                "error_type": "credits_exhausted" if err_msg and "credits" in err_msg.lower() else None,
+                "error_message": err_msg,
+            })
+        counters["api_diagnostics"] = api_diag
+        job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
         db.commit()
         raise

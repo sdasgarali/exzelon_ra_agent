@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 25: Implemented SESSION CONTINUITY requirements — created self-contained deploy/deploy.sh, deploy/systemd/ service files, updated CLAUDE.md with comprehensive Deployment section, Mandatory Update Table. Enterprise_Readiness_Improvements.md complete from Session 24. Next: deploy latest to VPS, begin Phase 1 enterprise improvements.
+> Session 26: Implemented Phase 2 Enhanced Pipeline Run Summary Reports. Enriched counters_json in all 4 pipelines (per_source_detail, adapter_stats, api_diagnostics, skip_reasons, per_mailbox). Rewrote pipeline_summary.py with source_breakdown, api_diagnostics, run_metadata builder functions + mechanism knowledge for AI prompts. Added ?regenerate=true + auto-upgrade old format cache. Rewrote frontend modal with source breakdown table + API diagnostics section. 262 tests pass, frontend builds clean. Next: deploy to VPS, commit.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)

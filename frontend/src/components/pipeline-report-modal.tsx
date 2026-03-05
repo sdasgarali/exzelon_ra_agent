@@ -2,7 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { pipelinesApi } from '@/lib/api'
-import { X, FileText, RefreshCw, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react'
+import {
+  X,
+  FileText,
+  RefreshCw,
+  CheckCircle,
+  AlertTriangle,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
 
 interface PipelineReportModalProps {
   open: boolean
@@ -13,6 +22,38 @@ interface PipelineReportModalProps {
   durationSeconds: number | null
 }
 
+interface SourceBreakdown {
+  source_name: string
+  source_label: string
+  status: string
+  status_detail: string | null
+  total_retrieved: number
+  new_records: number
+  existing_in_db: number
+  skipped: number
+  errors: number
+}
+
+interface ApiDiagnostic {
+  adapter_name: string
+  adapter_label: string
+  status: string
+  status_detail: string | null
+  error_message: string | null
+  records_returned: number
+}
+
+interface RunMetadata {
+  run_id: number
+  pipeline_name: string
+  pipeline_label: string
+  status: string
+  triggered_by: string
+  started_at: string | null
+  ended_at: string | null
+  duration_seconds: number | null
+}
+
 interface SummaryData {
   success_score: number
   summary: string
@@ -20,6 +61,10 @@ interface SummaryData {
   highlights: string[]
   generated_at: string
   ai_generated: boolean
+  run_metadata?: RunMetadata
+  source_breakdown?: SourceBreakdown[]
+  api_diagnostics?: ApiDiagnostic[]
+  counters?: Record<string, number | string>
 }
 
 export function PipelineReportModal({
@@ -33,22 +78,24 @@ export function PipelineReportModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [data, setData] = useState<SummaryData | null>(null)
+  const [diagExpanded, setDiagExpanded] = useState(false)
 
   useEffect(() => {
     if (open && runId) {
-      fetchSummary()
+      fetchSummary(false)
     }
     if (!open) {
       setData(null)
       setError('')
+      setDiagExpanded(false)
     }
   }, [open, runId])
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (regenerate: boolean) => {
     setLoading(true)
     setError('')
     try {
-      const result = await pipelinesApi.getRunSummary(runId)
+      const result = await pipelinesApi.getRunSummary(runId, regenerate)
       setData(result)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate summary report')
@@ -85,9 +132,19 @@ export function PipelineReportModal({
     return map[s?.toLowerCase()] || 'bg-gray-100 text-gray-800'
   }
 
+  const getStatusDot = (s: string) => {
+    if (s === 'success') return 'bg-green-500'
+    if (s === 'warning') return 'bg-yellow-500'
+    return 'bg-red-500'
+  }
+
+  const sourceBreakdown = data?.source_breakdown || []
+  const apiDiagnostics = data?.api_diagnostics || []
+  const showDiagToggle = apiDiagnostics.length > 3
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -95,21 +152,39 @@ export function PipelineReportModal({
             <h3 className="text-lg font-semibold text-gray-800">Pipeline Run Report</h3>
             <span className="text-sm text-gray-400 font-mono">#{runId}</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {data && !loading && (
+              <button
+                onClick={() => fetchSummary(true)}
+                className="text-gray-400 hover:text-blue-600 p-1 rounded transition-colors"
+                title="Regenerate report"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="overflow-y-auto flex-1 px-6 py-4">
           {/* Pipeline info bar */}
           <div className="flex items-center gap-3 mb-5 p-3 bg-gray-50 rounded-lg">
-            <span className="font-medium text-gray-800">{formatPipelineName(pipelineName)}</span>
+            <span className="font-medium text-gray-800">
+              {data?.run_metadata?.pipeline_label || formatPipelineName(pipelineName)}
+            </span>
             <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(status)}`}>
               {status}
             </span>
+            {data?.run_metadata?.triggered_by && (
+              <span className="text-xs text-gray-400">
+                by {data.run_metadata.triggered_by}
+              </span>
+            )}
             <span className="text-sm text-gray-500 ml-auto">
-              Duration: {formatDuration(durationSeconds)}
+              Duration: {formatDuration(data?.run_metadata?.duration_seconds ?? durationSeconds)}
             </span>
           </div>
 
@@ -126,7 +201,7 @@ export function PipelineReportModal({
                 {error}
               </div>
               <button
-                onClick={fetchSummary}
+                onClick={() => fetchSummary(false)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
               >
                 Retry
@@ -159,6 +234,108 @@ export function PipelineReportModal({
                   </div>
                 )
               })()}
+
+              {/* Source Breakdown Table */}
+              {sourceBreakdown.length > 0 && (
+                <div className="mb-5">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Source Breakdown</h4>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-3 py-2 text-gray-600 font-medium">Source</th>
+                          <th className="text-center px-3 py-2 text-gray-600 font-medium">Status</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium">Retrieved</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium">New</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium">Existing</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium">Skipped</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sourceBreakdown.map((sb, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 text-gray-800 font-medium">{sb.source_label}</td>
+                            <td className="px-3 py-2 text-center">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${getStatusDot(sb.status)}`} />
+                                <span className="text-xs text-gray-500">
+                                  {sb.status_detail || sb.status}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">{sb.total_retrieved}</td>
+                            <td className="px-3 py-2 text-right text-green-700 font-medium">{sb.new_records}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{sb.existing_in_db}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{sb.skipped}</td>
+                          </tr>
+                        ))}
+                        {sourceBreakdown.length > 1 && (
+                          <tr className="bg-gray-50 font-medium">
+                            <td className="px-3 py-2 text-gray-700">Total</td>
+                            <td className="px-3 py-2" />
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {sourceBreakdown.reduce((s, b) => s + b.total_retrieved, 0)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-green-700">
+                              {sourceBreakdown.reduce((s, b) => s + b.new_records, 0)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-500">
+                              {sourceBreakdown.reduce((s, b) => s + b.existing_in_db, 0)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-500">
+                              {sourceBreakdown.reduce((s, b) => s + b.skipped, 0)}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* API / Tool Status */}
+              {apiDiagnostics.length > 0 && (
+                <div className="mb-5">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">API / Tool Status</h4>
+                  <div className="border rounded-lg p-3 space-y-2">
+                    {(showDiagToggle && !diagExpanded ? apiDiagnostics.slice(0, 3) : apiDiagnostics).map((ad, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-2 text-sm">
+                          <span className={`w-2 h-2 rounded-full ${getStatusDot(ad.status)}`} />
+                          <span className="text-gray-700 font-medium">{ad.adapter_label}</span>
+                        </span>
+                        <span className="text-sm">
+                          {ad.status === 'success' ? (
+                            <span className="text-green-600">
+                              {ad.records_returned > 0 ? `${ad.records_returned} records` : 'OK'}
+                            </span>
+                          ) : ad.status === 'warning' ? (
+                            <span className="text-yellow-600">
+                              {ad.status_detail || 'Warning'}{ad.error_message ? ` - ${ad.error_message.slice(0, 60)}` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-red-600">
+                              {ad.status_detail || 'Error'}{ad.error_message ? ` - ${ad.error_message.slice(0, 60)}` : ''}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                    {showDiagToggle && (
+                      <button
+                        onClick={() => setDiagExpanded(!diagExpanded)}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 mt-1"
+                      >
+                        {diagExpanded ? (
+                          <>Show less <ChevronUp className="w-3 h-3" /></>
+                        ) : (
+                          <>Show {apiDiagnostics.length - 3} more <ChevronDown className="w-3 h-3" /></>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Summary */}
               <div className="mb-5">
