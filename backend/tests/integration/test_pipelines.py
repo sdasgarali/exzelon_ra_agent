@@ -1,5 +1,7 @@
 """Integration tests for pipeline endpoints."""
+import json
 import pytest
+from unittest.mock import patch
 
 from app.db.models.job_run import JobRun, JobStatus
 
@@ -118,3 +120,103 @@ class TestCancelEndpoint:
             headers=viewer_headers,
         )
         assert response.status_code == 403
+
+
+class TestRunSummaryEndpoint:
+    """Tests for GET /api/v1/pipelines/runs/{run_id}/summary."""
+
+    def test_get_summary_completed_run(self, client, auth_headers, db_session):
+        """Completed run returns valid summary structure."""
+        run = JobRun(
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json='{"inserted": 10, "updated": 2, "skipped": 1, "errors": 0}',
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            response = client.get(
+                f"/api/v1/pipelines/runs/{run.run_id}/summary",
+                headers=auth_headers,
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "success_score" in data
+        assert "summary" in data
+        assert "suggestions" in data
+        assert "highlights" in data
+        assert "generated_at" in data
+        assert "ai_generated" in data
+        assert isinstance(data["success_score"], int)
+        assert 0 <= data["success_score"] <= 100
+
+    def test_summary_cached_on_second_call(self, client, auth_headers, db_session):
+        """Second call returns same cached summary (same generated_at)."""
+        run = JobRun(
+            pipeline_name="email_validation",
+            status=JobStatus.COMPLETED,
+            counters_json='{"validated": 10, "valid": 8, "invalid": 2, "errors": 0}',
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            resp1 = client.get(f"/api/v1/pipelines/runs/{run.run_id}/summary", headers=auth_headers)
+            resp2 = client.get(f"/api/v1/pipelines/runs/{run.run_id}/summary", headers=auth_headers)
+
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        assert resp1.json()["generated_at"] == resp2.json()["generated_at"]
+
+    def test_summary_running_run_returns_400(self, client, auth_headers, db_session):
+        """In-progress runs return 400."""
+        run = JobRun(
+            pipeline_name="contact_enrichment",
+            status=JobStatus.RUNNING,
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        response = client.get(
+            f"/api/v1/pipelines/runs/{run.run_id}/summary",
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    def test_summary_not_found(self, client, auth_headers):
+        """Nonexistent run returns 404."""
+        response = client.get(
+            "/api/v1/pipelines/runs/99999/summary",
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
+    def test_summary_unauthenticated(self, client):
+        """Unauthenticated request returns 401."""
+        response = client.get("/api/v1/pipelines/runs/1/summary")
+        assert response.status_code == 401
+
+    def test_summary_failed_run(self, client, auth_headers, db_session):
+        """Failed runs get score 0 and include error info."""
+        run = JobRun(
+            pipeline_name="outreach",
+            status=JobStatus.FAILED,
+            counters_json='{"sent": 0, "total": 10, "errors": 10}',
+            error_message="SMTP auth failed",
+            triggered_by="admin@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            response = client.get(
+                f"/api/v1/pipelines/runs/{run.run_id}/summary",
+                headers=auth_headers,
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success_score"] == 0

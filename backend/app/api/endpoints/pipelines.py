@@ -212,6 +212,42 @@ async def get_job_run(
     }
 
 
+@router.get("/runs/{run_id}/summary")
+async def get_run_summary(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get or generate an AI-powered summary report for a completed pipeline run."""
+    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job run not found")
+
+    terminal_statuses = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+    if run.status not in terminal_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Summary is only available for completed, failed, or cancelled runs. Current status: {run.status.value}"
+        )
+
+    # Return cached summary if available
+    if run.summary_json:
+        try:
+            return json.loads(run.summary_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Generate new summary
+    from app.services.pipeline_summary import generate_pipeline_summary
+    summary = generate_pipeline_summary(db, run)
+
+    # Cache it
+    run.summary_json = json.dumps(summary)
+    db.commit()
+
+    return summary
+
+
 @router.post("/jobs/{run_id}/cancel")
 async def cancel_job_run(
     run_id: int,

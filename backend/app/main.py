@@ -242,6 +242,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for lead_results_json: {e}")
 
+    # Migration: add summary_json column to job_runs if missing
+    try:
+        from sqlalchemy import text as sa_text_summary
+        with engine.connect() as conn:
+            try:
+                conn.execute(sa_text_summary("SELECT summary_json FROM job_runs LIMIT 1"))
+            except Exception:
+                conn.execute(sa_text_summary("ALTER TABLE job_runs ADD COLUMN summary_json TEXT"))
+                conn.commit()
+                logger.info("Migration: added summary_json column to job_runs")
+    except Exception as e:
+        logger.warning(f"Migration check for summary_json: {e}")
+
     # Migration: add is_archived column to all tables if missing
     try:
         from sqlalchemy import text as sa_text2, inspect as sa_inspect

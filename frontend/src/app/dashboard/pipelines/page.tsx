@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Search, UserPlus, ShieldCheck, Send } from 'lucide-react'
+import { PipelineReportModal } from '@/components/pipeline-report-modal'
+import { Search, UserPlus, ShieldCheck, Send, FileText } from 'lucide-react'
 
 interface PipelineRun {
   run_id: number
@@ -88,6 +89,13 @@ export default function PipelinesPage() {
   const [contactSelectorPage, setContactSelectorPage] = useState(1)
   const [contactSelectorTotal, setContactSelectorTotal] = useState(0)
   const [contactSelectorSelected, setContactSelectorSelected] = useState<Set<number>>(new Set())
+
+  // Report modal state
+  const [showReport, setShowReport] = useState(false)
+  const [reportRunId, setReportRunId] = useState(0)
+  const [reportPipeline, setReportPipeline] = useState('')
+  const [reportStatus, setReportStatus] = useState('')
+  const [reportDuration, setReportDuration] = useState<number | null>(null)
 
   const SELECTOR_PAGE_SIZE = 20
 
@@ -778,17 +786,34 @@ export default function PipelinesPage() {
                   {run.triggered_by || 'system'}
                 </td>
                 <td className="px-6 py-4 text-sm">
-                  {run.status?.toLowerCase() === 'running' && !run.is_cancel_requested && (
-                    <button
-                      onClick={() => handleCancelJob(run.run_id)}
-                      className="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full hover:bg-red-200"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  {run.status?.toLowerCase() === 'running' && run.is_cancel_requested && (
-                    <span className="text-xs text-gray-500 animate-pulse">Cancelling...</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {run.status?.toLowerCase() === 'running' && !run.is_cancel_requested && (
+                      <button
+                        onClick={() => handleCancelJob(run.run_id)}
+                        className="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full hover:bg-red-200"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {run.status?.toLowerCase() === 'running' && run.is_cancel_requested && (
+                      <span className="text-xs text-gray-500 animate-pulse">Cancelling...</span>
+                    )}
+                    {['completed', 'failed', 'cancelled'].includes(run.status?.toLowerCase()) && (
+                      <button
+                        onClick={() => {
+                          setReportRunId(run.run_id)
+                          setReportPipeline(run.pipeline_name)
+                          setReportStatus(run.status)
+                          setReportDuration(run.duration_seconds)
+                          setShowReport(true)
+                        }}
+                        className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 flex items-center gap-1"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Report
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1020,6 +1045,16 @@ export default function PipelinesPage() {
           </div>
         </div>
       )}
+
+      {/* Pipeline Report Modal */}
+      <PipelineReportModal
+        open={showReport}
+        onClose={() => setShowReport(false)}
+        runId={reportRunId}
+        pipelineName={reportPipeline}
+        status={reportStatus}
+        durationSeconds={reportDuration}
+      />
 
       {/* Contact Selector Modal (for Email Validation) */}
       {showContactSelector && (

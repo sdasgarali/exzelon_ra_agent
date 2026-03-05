@@ -274,6 +274,10 @@ export const pipelinesApi = {
     })
     return response.data
   },
+  getRunSummary: async (runId: number) => {
+    const response = await api.get(`/pipelines/runs/${runId}/summary`)
+    return response.data
+  },
 }
 
 // Settings API
