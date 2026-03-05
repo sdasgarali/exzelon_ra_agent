@@ -264,12 +264,12 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             return existing  # existing wins
 
     for job in jobs:
-        ext_id = job.get("external_job_id", "")
-        emp_linkedin = job.get("employer_linkedin_url", "")
-        company_normalized = normalize_company_name(job.get("client_name", ""))
-        title_normalized = normalize_job_title(job.get("job_title", ""))
-        state = job.get("state", "")
-        city = job.get("city", "").lower().strip()
+        ext_id = job.get("external_job_id") or ""
+        emp_linkedin = job.get("employer_linkedin_url") or ""
+        company_normalized = normalize_company_name(job.get("client_name") or "")
+        title_normalized = normalize_job_title(job.get("job_title") or "")
+        state = job.get("state") or ""
+        city = (job.get("city") or "").lower().strip()
 
         matched = False
 
@@ -319,10 +319,10 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
     # Now filter against database
     unique_jobs = []
     for job in batch_unique:
-        company_name = job.get("client_name", "")
+        company_name = job.get("client_name") or ""
 
         # DB Layer 1: Check external_job_id
-        ext_id = job.get("external_job_id", "")
+        ext_id = job.get("external_job_id") or ""
         if ext_id:
             existing = db.query(LeadDetails).filter(
                 LeadDetails.external_job_id == ext_id
@@ -331,7 +331,7 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 continue
 
         # DB Layer 2: Check job_link (only for real posting URLs)
-        job_link = job.get("job_link", "")
+        job_link = job.get("job_link") or ""
         if job_link and "/company/" not in job_link and "#job-" not in job_link:
             existing = db.query(LeadDetails).filter(
                 LeadDetails.job_link == job_link
@@ -341,9 +341,9 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
 
         # DB Layer 3: Check normalized company + normalized title + state
         company_normalized = normalize_company_name(company_name)
-        title_normalized = normalize_job_title(job.get("job_title", ""))
+        title_normalized = normalize_job_title(job.get("job_title") or "")
         existing_leads = db.query(LeadDetails).filter(
-            LeadDetails.state == job.get("state")
+            LeadDetails.state == (job.get("state") or "")
         ).all()
 
         found_match = False
@@ -353,7 +353,7 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             if existing_company == company_normalized and existing_title == title_normalized:
                 # Additional city check: if both have city, must match
                 existing_city = (existing_lead.city or "").lower().strip()
-                new_city = job.get("city", "").lower().strip()
+                new_city = (job.get("city") or "").lower().strip()
                 if existing_city and new_city and existing_city != new_city:
                     continue  # Different cities → not a duplicate
                 found_match = True

@@ -231,10 +231,10 @@ class JSearchAdapter(JobSourceAdapter):
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": source,
-            # Enhanced dedup fields
-            "external_job_id": raw_data.get("job_id", ""),
-            "city": raw_data.get("job_city", ""),
-            "employer_linkedin_url": raw_data.get("employer_linkedin", ""),
-            "employer_website": raw_data.get("employer_website", ""),
-            "job_publisher": raw_data.get("job_publisher", ""),
+            # Enhanced dedup fields (use `or ""` since API returns null, not missing keys)
+            "external_job_id": raw_data.get("job_id") or "",
+            "city": raw_data.get("job_city") or "",
+            "employer_linkedin_url": raw_data.get("employer_linkedin") or "",
+            "employer_website": raw_data.get("employer_website") or "",
+            "job_publisher": raw_data.get("job_publisher") or "",
         }
