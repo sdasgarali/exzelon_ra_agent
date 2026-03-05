@@ -12,6 +12,15 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 
+SUB_SOURCE_LABELS = {
+    "linkedin": "LinkedIn",
+    "indeed": "Indeed",
+    "glassdoor": "Glassdoor",
+    "ziprecruiter": "ZipRecruiter",
+    "jsearch": "Other (JSearch)",
+    "apollo": "Apollo.io",
+}
+
 ADAPTER_LABELS = {
     "jsearch": "JSearch (RapidAPI)",
     "apollo": "Apollo.io",
@@ -208,7 +217,29 @@ def _build_source_breakdown(pipeline_name: str, counters: Dict[str, Any]) -> Lis
                     "existing_in_db": detail.get("existing_in_db", 0),
                     "skipped": detail.get("skipped_dedup", 0),
                     "errors": 0,
+                    "is_sub_source": False,
+                    "parent_source": None,
                 })
+
+            # Add sub-source breakdown rows (LinkedIn, Indeed, Glassdoor, etc.)
+            pssd = counters.get("per_sub_source_detail")
+            if pssd and isinstance(pssd, dict) and len(pssd) > 1:
+                # Sort sub-sources by fetched count descending for readability
+                sorted_subs = sorted(pssd.items(), key=lambda x: x[1].get("fetched", 0), reverse=True)
+                for sub_src, sub_detail in sorted_subs:
+                    breakdown.append({
+                        "source_name": f"sub:{sub_src}",
+                        "source_label": SUB_SOURCE_LABELS.get(sub_src, sub_src.title()),
+                        "status": "success" if sub_detail.get("fetched", 0) > 0 else "warning",
+                        "status_detail": None,
+                        "total_retrieved": sub_detail.get("fetched", 0),
+                        "new_records": sub_detail.get("new", 0),
+                        "existing_in_db": sub_detail.get("existing_in_db", 0),
+                        "skipped": sub_detail.get("skipped_dedup", 0),
+                        "errors": 0,
+                        "is_sub_source": True,
+                        "parent_source": "jsearch",
+                    })
         else:
             # Legacy fallback: per_source / jobs_per_source
             per_source = counters.get("per_source") or counters.get("jobs_per_source") or {}
@@ -223,6 +254,8 @@ def _build_source_breakdown(pipeline_name: str, counters: Dict[str, Any]) -> Lis
                     "existing_in_db": 0,
                     "skipped": 0,
                     "errors": 0,
+                    "is_sub_source": False,
+                    "parent_source": None,
                 })
 
     elif pipeline == "contact_enrichment":

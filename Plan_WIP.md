@@ -1,18 +1,31 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 26: Implemented Phase 2 Enhanced Pipeline Run Summary Reports. Enriched counters_json in all 4 pipelines (per_source_detail, adapter_stats, api_diagnostics, skip_reasons, per_mailbox). Rewrote pipeline_summary.py with source_breakdown, api_diagnostics, run_metadata builder functions + mechanism knowledge for AI prompts. Added ?regenerate=true + auto-upgrade old format cache. Rewrote frontend modal with source breakdown table + API diagnostics section. 262 tests pass, frontend builds clean. Next: deploy to VPS, commit.
+> Session 27: Implemented enhanced deduplication + JSearch sub-source tracking. Added 4 new DB columns (external_job_id, city, employer_linkedin_url, employer_website), 3-layer dedup (external_job_id → employer_linkedin → company+title+state+city), title normalization with abbreviation expansion (HR→Human Resources, Mgr→Manager, etc.), per_sub_source_detail tracking (LinkedIn/Indeed/Glassdoor breakdown in pipeline reports), tree-style sub-source display in frontend report modal. 262 tests pass, frontend builds clean. Next: commit, deploy to VPS.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
 - [x] Granular Settings tab permissions (per-tab view/edit control for admin role)
 - [x] Pipeline improvements: confirmations, contact selector, cancel, progress tracking
-- [ ] Deploy latest changes to VPS (pipelines + granular settings)
+- [x] Enhanced deduplication + JSearch sub-source tracking (2026-03-05)
+- [ ] Deploy latest changes to VPS (dedup + sub-source + pipelines + granular settings)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
 
 ## Completed
+- [x] Session 27: Enhanced Deduplication + JSearch Sub-Source Tracking (2026-03-05)
+  - 4 new DB columns: external_job_id, city, employer_linkedin_url, employer_website
+  - Auto-migration in main.py lifespan for new columns + index
+  - JSearch adapter captures job_id, city, employer_linkedin, employer_website, job_publisher
+  - normalize_job_title() with 20 abbreviation expansions (HR→Human Resources, Mgr→Manager, etc.)
+  - 3-layer dedup: external_job_id → employer_linkedin+title → company+title+state+city
+  - Sub-source tracking: per_sub_source_detail in counters_json (LinkedIn, Indeed, Glassdoor, ZipRecruiter)
+  - Pipeline report: tree-style sub-source rows under JSearch parent
+  - Frontend: is_sub_source styling with tree connectors, correct total row (excludes sub-sources)
+  - Dedup accuracy: ~75-80% → ~92-95% estimated
+  - 262 tests pass, frontend builds clean
+  - Plan: Dedup_SubSource_Enhancement_Plan.md
 - [x] Session 23: Pipeline Confirmations, Contact Selector, Cancel & Progress (2026-03-03)
   - All 4 dashboard quick actions now require confirmation before executing
   - Lead Sourcing on Pipelines page requires confirmation

@@ -230,5 +230,11 @@ class JSearchAdapter(JobSourceAdapter):
             "job_link": raw_data.get("job_apply_link", "") or raw_data.get("job_google_link", ""),
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
-            "source": source
+            "source": source,
+            # Enhanced dedup fields
+            "external_job_id": raw_data.get("job_id", ""),
+            "city": raw_data.get("job_city", ""),
+            "employer_linkedin_url": raw_data.get("employer_linkedin", ""),
+            "employer_website": raw_data.get("employer_website", ""),
+            "job_publisher": raw_data.get("job_publisher", ""),
         }

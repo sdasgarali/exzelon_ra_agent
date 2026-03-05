@@ -309,6 +309,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for unsubscribe columns: {e}")
 
+    # Migration: add enhanced dedup columns to lead_details
+    try:
+        from sqlalchemy import text as sa_text_dedup, inspect as sa_inspect_dedup
+        with engine.connect() as conn:
+            inspector_dedup = sa_inspect_dedup(engine)
+            lead_cols = [c["name"] for c in inspector_dedup.get_columns("lead_details")]
+            for col_name, col_def in [
+                ("external_job_id", "VARCHAR(255) NULL"),
+                ("city", "VARCHAR(100) NULL"),
+                ("employer_linkedin_url", "VARCHAR(500) NULL"),
+                ("employer_website", "VARCHAR(500) NULL"),
+            ]:
+                if col_name not in lead_cols:
+                    conn.execute(sa_text_dedup(f"ALTER TABLE lead_details ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to lead_details")
+            # Add index on external_job_id if not exists
+            try:
+                conn.execute(sa_text_dedup("CREATE INDEX idx_lead_external_job_id ON lead_details(external_job_id)"))
+                conn.commit()
+                logger.info("Migration: added index idx_lead_external_job_id")
+            except Exception:
+                pass  # Index already exists
+    except Exception as e:
+        logger.warning(f"Migration check for dedup columns: {e}")
+
     # Migration: encrypt existing plaintext mailbox passwords
     try:
         from app.core.encryption import encrypt_field, is_encrypted

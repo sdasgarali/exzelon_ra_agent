@@ -61,6 +61,12 @@ class LeadDetails(Base):
     salary_max = Column(Numeric(10, 2), nullable=True)
     source = Column(String(50), nullable=True)  # linkedin, indeed, glassdoor, simplyhired
 
+    # Enhanced deduplication fields
+    external_job_id = Column(String(255), nullable=True, index=True)  # JSearch job_id for cross-run dedup
+    city = Column(String(100), nullable=True)  # City name (more granular than state)
+    employer_linkedin_url = Column(String(500), nullable=True)  # Company LinkedIn URL for identity matching
+    employer_website = Column(String(500), nullable=True)  # Company website URL
+
     # Contact information (denormalized - primary contact for quick access)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)

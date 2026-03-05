@@ -66,6 +66,52 @@ def normalize_company_name(name: str) -> str:
     return normalized
 
 
+# Job title abbreviation map for normalization
+# Only includes common business/staffing titles to reduce false negatives
+TITLE_ABBREVIATIONS = {
+    r'\bhr\b': 'human resources',
+    r'\bmgr\b': 'manager',
+    r'\bsr\b': 'senior',
+    r'\bjr\b': 'junior',
+    r'\bvp\b': 'vice president',
+    r'\bsvp\b': 'senior vice president',
+    r'\bevp\b': 'executive vice president',
+    r'\bdir\b': 'director',
+    r'\basst\b': 'assistant',
+    r'\badmin\b': 'administrator',
+    r'\bcoord\b': 'coordinator',
+    r'\bsupr\b': 'supervisor',
+    r'\bsupv\b': 'supervisor',
+    r'\bmfg\b': 'manufacturing',
+    r'\beng\b': 'engineering',
+    r'\bops\b': 'operations',
+    r'\bmaint\b': 'maintenance',
+    r'\bqa\b': 'quality assurance',
+    r'\bqc\b': 'quality control',
+}
+
+
+def normalize_job_title(title: str) -> str:
+    """Normalize job title for deduplication: expand abbreviations, lowercase, strip punctuation.
+
+    Examples:
+        "HR Manager" -> "human resources manager"
+        "Sr. VP of Ops" -> "senior vice president of operations"
+        "QA Mgr" -> "quality assurance manager"
+    """
+    if not title:
+        return ""
+    normalized = title.lower().strip()
+    # Remove common punctuation but keep spaces
+    normalized = re.sub(r'[,\.\-/\\()&]', ' ', normalized)
+    # Expand abbreviations (word-boundary aware)
+    for abbrev, full in TITLE_ABBREVIATIONS.items():
+        normalized = re.sub(abbrev, full, normalized)
+    # Collapse spaces
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    return normalized
+
+
 def get_db_setting(db, key: str, default=None):
     """Get a setting value from database, falling back to config."""
     try:
@@ -176,12 +222,17 @@ def fetch_from_source(
 
 
 def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
-    """Deduplicate jobs using normalized company names.
+    """Deduplicate jobs using a 3-layer strategy for maximum accuracy.
 
-    IMPACT ON LEAD COUNT: Deduplication uses company name + job title + state as key.
-    Company names are normalized (legal suffixes stripped) to catch true duplicates.
-    Previously stripped too many suffixes causing false matches. Now only strips
-    legal entity suffixes (Inc, LLC, Corp, Ltd).
+    Layer 1: external_job_id (JSearch job_id) — 100% accurate for same posting
+    Layer 2: employer_linkedin_url + normalized title — near-100% company identity
+    Layer 3: normalized company + normalized title + state + city — enhanced rule-based
+
+    IMPACT ON LEAD COUNT: Deduplication uses company name + job title + state + city as key.
+    Company names are normalized (legal suffixes stripped). Job titles are normalized
+    (abbreviations expanded: HR→Human Resources, Mgr→Manager, etc.).
+    Previously used state-only granularity; now includes city to avoid merging
+    different locations (e.g., Walmart Houston vs Walmart Dallas).
 
     Priority for keeping duplicates:
     1. Has more contact info
@@ -189,47 +240,97 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
     3. Has job link
     4. Most recent
     """
-    # First, dedupe within the incoming batch
-    seen = {}  # normalized_key -> job
+    # First, dedupe within the incoming batch using 3-layer keys
+    seen_by_ext_id = {}  # external_job_id -> job
+    seen_by_linkedin = {}  # employer_linkedin + normalized_title -> job
+    seen = {}  # normalized company|title|state|city -> job
+
+    def _merge_sources(winner, loser):
+        """Merge source lists from two duplicate jobs."""
+        winner["all_sources"] = list(set(
+            winner.get("all_sources", [winner.get("source", "unknown")]) +
+            loser.get("all_sources", [loser.get("source", "unknown")])
+        ))
+
+    def _try_merge(existing, job):
+        """Keep the higher quality job, merge sources."""
+        new_score = _job_quality_score(job)
+        existing_score = _job_quality_score(existing)
+        if new_score > existing_score:
+            _merge_sources(job, existing)
+            return job  # new wins
+        else:
+            _merge_sources(existing, job)
+            return existing  # existing wins
 
     for job in jobs:
+        ext_id = job.get("external_job_id", "")
+        emp_linkedin = job.get("employer_linkedin_url", "")
         company_normalized = normalize_company_name(job.get("client_name", ""))
-        job_title_normalized = job.get("job_title", "").lower().strip()
+        title_normalized = normalize_job_title(job.get("job_title", ""))
         state = job.get("state", "")
+        city = job.get("city", "").lower().strip()
 
-        key = f"{company_normalized}|{job_title_normalized}|{state}"
+        matched = False
 
-        if key in seen:
-            existing = seen[key]
-            # Keep the one with more info
-            new_score = _job_quality_score(job)
-            existing_score = _job_quality_score(existing)
+        # Layer 1: external_job_id (exact match, highest confidence)
+        if ext_id:
+            if ext_id in seen_by_ext_id:
+                winner = _try_merge(seen_by_ext_id[ext_id], job)
+                seen_by_ext_id[ext_id] = winner
+                matched = True
 
-            if new_score > existing_score:
-                # Merge sources
-                job["all_sources"] = list(set(
-                    existing.get("all_sources", [existing.get("source", "unknown")]) +
-                    [job.get("source", "unknown")]
-                ))
-                seen[key] = job
-            else:
-                # Keep existing, but add source
-                existing["all_sources"] = list(set(
-                    existing.get("all_sources", [existing.get("source", "unknown")]) +
-                    [job.get("source", "unknown")]
-                ))
-        else:
+        # Layer 2: employer_linkedin + normalized title (company identity match)
+        if not matched and emp_linkedin and title_normalized:
+            linkedin_key = f"{emp_linkedin}|{title_normalized}"
+            if linkedin_key in seen_by_linkedin:
+                winner = _try_merge(seen_by_linkedin[linkedin_key], job)
+                seen_by_linkedin[linkedin_key] = winner
+                matched = True
+
+        # Layer 3: normalized company + title + state + city (rule-based)
+        if not matched:
+            key = f"{company_normalized}|{title_normalized}|{state}|{city}"
+            if key in seen:
+                winner = _try_merge(seen[key], job)
+                seen[key] = winner
+                matched = True
+
+        if not matched:
             job["all_sources"] = [job.get("source", "unknown")]
+            # Register in all applicable indexes
+            if ext_id:
+                seen_by_ext_id[ext_id] = job
+            if emp_linkedin and title_normalized:
+                seen_by_linkedin[f"{emp_linkedin}|{title_normalized}"] = job
+            key = f"{company_normalized}|{title_normalized}|{state}|{city}"
             seen[key] = job
+
+    # Collect all unique jobs (dedupe across the three maps)
+    all_unique = {}  # id(job) -> job
+    for job in seen_by_ext_id.values():
+        all_unique[id(job)] = job
+    for job in seen_by_linkedin.values():
+        all_unique[id(job)] = job
+    for job in seen.values():
+        all_unique[id(job)] = job
+    batch_unique = list(all_unique.values())
 
     # Now filter against database
     unique_jobs = []
-    for key, job in seen.items():
+    for job in batch_unique:
         company_name = job.get("client_name", "")
 
-        # Check for existing by job_link - only for specific job posting URLs
-        # Skip generic company URLs (linkedin.com/company/, website homepages)
-        # which would incorrectly dedup different job postings at same company
+        # DB Layer 1: Check external_job_id
+        ext_id = job.get("external_job_id", "")
+        if ext_id:
+            existing = db.query(LeadDetails).filter(
+                LeadDetails.external_job_id == ext_id
+            ).first()
+            if existing:
+                continue
+
+        # DB Layer 2: Check job_link (only for real posting URLs)
         job_link = job.get("job_link", "")
         if job_link and "/company/" not in job_link and "#job-" not in job_link:
             existing = db.query(LeadDetails).filter(
@@ -238,18 +339,23 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             if existing:
                 continue
 
-        # Check for existing by normalized company + title
-        # Use LIKE for fuzzy matching on company name
+        # DB Layer 3: Check normalized company + normalized title + state
         company_normalized = normalize_company_name(company_name)
+        title_normalized = normalize_job_title(job.get("job_title", ""))
         existing_leads = db.query(LeadDetails).filter(
-            LeadDetails.job_title == job.get("job_title"),
             LeadDetails.state == job.get("state")
         ).all()
 
         found_match = False
         for existing_lead in existing_leads:
-            existing_normalized = normalize_company_name(existing_lead.client_name or "")
-            if existing_normalized == company_normalized:
+            existing_company = normalize_company_name(existing_lead.client_name or "")
+            existing_title = normalize_job_title(existing_lead.job_title or "")
+            if existing_company == company_normalized and existing_title == title_normalized:
+                # Additional city check: if both have city, must match
+                existing_city = (existing_lead.city or "").lower().strip()
+                new_city = job.get("city", "").lower().strip()
+                if existing_city and new_city and existing_city != new_city:
+                    continue  # Different cities → not a duplicate
                 found_match = True
                 break
 
@@ -355,6 +461,7 @@ def run_lead_sourcing_pipeline(
         "jobs_per_source": {},
     }
     per_source_detail: Dict[str, Dict[str, int]] = {}
+    per_sub_source_detail: Dict[str, Dict[str, int]] = {}  # linkedin, indeed, glassdoor, etc.
     api_diagnostics_list: List[Dict[str, Any]] = []
 
     # Create job run record
@@ -420,6 +527,12 @@ def run_lead_sourcing_pipeline(
                     # Tag each job with its source for per-source tracking
                     for job in jobs:
                         job["_pipeline_source"] = source_name
+                        # Track sub-source (linkedin, indeed, glassdoor, etc.)
+                        sub_src = job.get("source", "unknown")
+                        job["_sub_source"] = sub_src
+                        if sub_src not in per_sub_source_detail:
+                            per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                        per_sub_source_detail[sub_src]["fetched"] += 1
                     all_jobs.extend(jobs)
 
         logger.info(f"Total jobs fetched from all sources: {len(all_jobs)}")
@@ -431,11 +544,17 @@ def run_lead_sourcing_pipeline(
 
         # Track per-source dedup: compare which source jobs survived
         unique_sources = {}
+        unique_sub_sources = {}
         for job in unique_jobs:
             src = job.get("_pipeline_source", "unknown")
             unique_sources[src] = unique_sources.get(src, 0) + 1
+            sub_src = job.get("_sub_source", job.get("source", "unknown"))
+            unique_sub_sources[sub_src] = unique_sub_sources.get(sub_src, 0) + 1
         for src, detail in per_source_detail.items():
             survived = unique_sources.get(src, 0)
+            detail["skipped_dedup"] = detail["fetched"] - survived
+        for sub_src, detail in per_sub_source_detail.items():
+            survived = unique_sub_sources.get(sub_src, 0)
             detail["skipped_dedup"] = detail["fetched"] - survived
 
         logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {skipped_count} duplicates)")
@@ -471,6 +590,11 @@ def run_lead_sourcing_pipeline(
                     last_name=job_data.get("contact_last_name"),
                     contact_email=job_data.get("contact_email"),
                     contact_title=job_data.get("contact_title"),
+                    # Enhanced dedup fields
+                    external_job_id=job_data.get("external_job_id") or None,
+                    city=job_data.get("city") or None,
+                    employer_linkedin_url=job_data.get("employer_linkedin_url") or None,
+                    employer_website=job_data.get("employer_website") or None,
                 )
                 db.add(lead)
                 counters["inserted"] += 1
@@ -480,6 +604,10 @@ def run_lead_sourcing_pipeline(
                 job_src = job_data.get("_pipeline_source", "unknown")
                 if job_src in per_source_detail:
                     per_source_detail[job_src]["new"] += 1
+                # Track per-sub-source new insertions
+                sub_src = job_data.get("_sub_source", job_data.get("source", "unknown"))
+                if sub_src in per_sub_source_detail:
+                    per_sub_source_detail[sub_src]["new"] += 1
 
                 # Upsert client_info with normalized name
                 upsert_client(db, job_data["client_name"])
@@ -511,6 +639,8 @@ def run_lead_sourcing_pipeline(
         # Compute existing_in_db for each source (fetched - new - skipped_dedup)
         for src, detail in per_source_detail.items():
             detail["existing_in_db"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
+        for sub_src, detail in per_sub_source_detail.items():
+            detail["existing_in_db"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
 
         job_run.counters_json = json.dumps({
             "inserted": counters["inserted"],
@@ -521,6 +651,7 @@ def run_lead_sourcing_pipeline(
             "sources": counters["sources_used"],
             "per_source": counters["jobs_per_source"],
             "per_source_detail": per_source_detail,
+            "per_sub_source_detail": per_sub_source_detail,
             "api_diagnostics": api_diagnostics_list,
         })
         db.commit()

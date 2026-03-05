@@ -80,7 +80,7 @@ All external integrations implement abstract base classes from `adapters/base.py
 ### Pipeline Pattern (`services/pipelines/`)
 
 Four sequential data-processing stages, each independently executable via API:
-1. **Lead Sourcing** -- fetch jobs from boards, normalize, deduplicate, store
+1. **Lead Sourcing** -- fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id → employer_linkedin → company+title+state+city), sub-source tracking (LinkedIn/Indeed/Glassdoor), store
 2. **Contact Enrichment** -- discover decision-makers via Apollo/Seamless
 3. **Email Validation** -- verify email addresses before sending
 4. **Outreach** -- AI-generate email content, enforce rate limits and cooldowns, send
@@ -106,7 +106,7 @@ Domain reputation management subsystem:
 
 ## Key Data Models
 
-- **LeadDetails** -- job postings with status tracking (open/hunting/closed)
+- **LeadDetails** -- job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
 - **ContactDetails** -- decision-makers with priority levels (P1 job poster through P5 functional manager)
 - **LeadContactAssociation** -- many-to-many junction table
 - **ClientInfo** -- companies/organizations

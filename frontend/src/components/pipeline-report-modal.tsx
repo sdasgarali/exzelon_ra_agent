@@ -32,6 +32,8 @@ interface SourceBreakdown {
   existing_in_db: number
   skipped: number
   errors: number
+  is_sub_source?: boolean
+  parent_source?: string | null
 }
 
 interface ApiDiagnostic {
@@ -252,41 +254,73 @@ export function PipelineReportModal({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {sourceBreakdown.map((sb, i) => (
-                          <tr key={i} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 text-gray-800 font-medium">{sb.source_label}</td>
-                            <td className="px-3 py-2 text-center">
-                              <span className="inline-flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${getStatusDot(sb.status)}`} />
-                                <span className="text-xs text-gray-500">
-                                  {sb.status_detail || sb.status}
+                        {sourceBreakdown.map((sb, i) => {
+                          const isSubSource = sb.is_sub_source === true
+                          // Check if this is the last sub-source in a group
+                          const isLastSub = isSubSource && (
+                            i === sourceBreakdown.length - 1 ||
+                            !sourceBreakdown[i + 1]?.is_sub_source
+                          )
+                          return (
+                            <tr
+                              key={i}
+                              className={`hover:bg-gray-50 ${isSubSource ? 'bg-blue-50/30' : ''}`}
+                            >
+                              <td className="px-3 py-2 text-gray-800 font-medium">
+                                {isSubSource ? (
+                                  <span className="flex items-center gap-1.5 pl-4">
+                                    <span className="text-gray-300 text-xs">{isLastSub ? '└' : '├'}</span>
+                                    <span className="text-gray-600 font-normal text-xs">{sb.source_label}</span>
+                                  </span>
+                                ) : (
+                                  sb.source_label
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className={`w-2 h-2 rounded-full ${getStatusDot(sb.status)}`} />
+                                  <span className="text-xs text-gray-500">
+                                    {sb.status_detail || sb.status}
+                                  </span>
                                 </span>
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-700">{sb.total_retrieved}</td>
-                            <td className="px-3 py-2 text-right text-green-700 font-medium">{sb.new_records}</td>
-                            <td className="px-3 py-2 text-right text-gray-500">{sb.existing_in_db}</td>
-                            <td className="px-3 py-2 text-right text-gray-500">{sb.skipped}</td>
-                          </tr>
-                        ))}
-                        {sourceBreakdown.length > 1 && (
-                          <tr className="bg-gray-50 font-medium">
-                            <td className="px-3 py-2 text-gray-700">Total</td>
-                            <td className="px-3 py-2" />
-                            <td className="px-3 py-2 text-right text-gray-700">
-                              {sourceBreakdown.reduce((s, b) => s + b.total_retrieved, 0)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-green-700">
-                              {sourceBreakdown.reduce((s, b) => s + b.new_records, 0)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-500">
-                              {sourceBreakdown.reduce((s, b) => s + b.existing_in_db, 0)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-500">
-                              {sourceBreakdown.reduce((s, b) => s + b.skipped, 0)}
-                            </td>
-                          </tr>
-                        )}
+                              </td>
+                              <td className={`px-3 py-2 text-right ${isSubSource ? 'text-gray-500 text-xs' : 'text-gray-700'}`}>
+                                {sb.total_retrieved}
+                              </td>
+                              <td className={`px-3 py-2 text-right ${isSubSource ? 'text-green-600 text-xs' : 'text-green-700 font-medium'}`}>
+                                {sb.new_records}
+                              </td>
+                              <td className={`px-3 py-2 text-right text-gray-500 ${isSubSource ? 'text-xs' : ''}`}>
+                                {sb.existing_in_db}
+                              </td>
+                              <td className={`px-3 py-2 text-right text-gray-500 ${isSubSource ? 'text-xs' : ''}`}>
+                                {sb.skipped}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {/* Total row: only sum top-level sources (not sub-sources) */}
+                        {(() => {
+                          const topLevel = sourceBreakdown.filter(sb => !sb.is_sub_source)
+                          return topLevel.length > 1 ? (
+                            <tr className="bg-gray-50 font-medium">
+                              <td className="px-3 py-2 text-gray-700">Total</td>
+                              <td className="px-3 py-2" />
+                              <td className="px-3 py-2 text-right text-gray-700">
+                                {topLevel.reduce((s, b) => s + b.total_retrieved, 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-green-700">
+                                {topLevel.reduce((s, b) => s + b.new_records, 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-gray-500">
+                                {topLevel.reduce((s, b) => s + b.existing_in_db, 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-gray-500">
+                                {topLevel.reduce((s, b) => s + b.skipped, 0)}
+                              </td>
+                            </tr>
+                          ) : null
+                        })()}
                       </tbody>
                     </table>
                   </div>
