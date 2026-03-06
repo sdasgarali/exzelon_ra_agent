@@ -395,7 +395,24 @@ export default function PipelinesPage() {
   // Polling helper
   const startPolling = (pipelineType: string) => {
     let attempts = 0
-    const maxAttempts = 60
+    const maxAttempts = 200  // ~10 minutes at 3s intervals (pipelines can take 5+ min)
+
+    const stopPolling = (runsData: PipelineRun[]) => {
+      if (pipelineType === 'lead-sourcing') setLeadSourcingRunning(false)
+      if (pipelineType === 'contact-enrichment') setContactEnrichmentRunning(false)
+      if (pipelineType === 'email-validation') setEmailValidationRunning(false)
+      if (pipelineType === 'outreach') setOutreachRunning(false)
+
+      const latestRun = runsData[0]
+      if (latestRun && latestRun.status === 'completed') {
+        setSuccess(`Pipeline completed! Processed: ${latestRun.records_processed}, Success: ${latestRun.records_success}, Failed: ${latestRun.records_failed}`)
+      } else if (latestRun && latestRun.status === 'failed') {
+        setError(`Pipeline failed: ${latestRun.error_message || 'Unknown error'}`)
+      } else if (attempts >= maxAttempts) {
+        // Timed out but pipeline may still be running — do one final fetch
+        fetchData()
+      }
+    }
 
     const poll = async () => {
       attempts++
@@ -406,15 +423,7 @@ export default function PipelinesPage() {
       )
 
       if (!stillRunning || attempts >= maxAttempts) {
-        if (pipelineType === 'lead-sourcing') setLeadSourcingRunning(false)
-        if (pipelineType === 'contact-enrichment') setContactEnrichmentRunning(false)
-        if (pipelineType === 'email-validation') setEmailValidationRunning(false)
-        if (pipelineType === 'outreach') setOutreachRunning(false)
-
-        const latestRun = runsData[0]
-        if (latestRun && latestRun.status === 'completed') {
-          setSuccess(`Pipeline completed! Processed: ${latestRun.records_processed}, Success: ${latestRun.records_success}, Failed: ${latestRun.records_failed}`)
-        }
+        stopPolling(runsData)
         return
       }
 
