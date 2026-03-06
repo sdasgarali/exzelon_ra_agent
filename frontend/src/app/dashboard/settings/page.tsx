@@ -19,7 +19,7 @@ interface JobSourceConfig {
   jsearch_api_key: string
   indeed_publisher_id: string
   apollo_api_key: string  // Apollo can also be used for lead sourcing
-  lead_sources: string[]  // Enabled lead sources: jsearch, apollo
+  lead_sources: string[]  // Enabled lead sources: jsearch, apollo, theirstack, serpapi, adzuna
   enabled_sources: string[]
   target_states: string[]
   available_job_titles: string[]  // Master list of all available titles
@@ -30,6 +30,10 @@ interface JobSourceConfig {
   company_size_priority_2_max: number
   exclude_it_keywords: string[]
   exclude_staffing_keywords: string[]
+  theirstack_api_key: string
+  serpapi_api_key: string
+  adzuna_app_id: string
+  adzuna_api_key: string
 }
 
 interface AIConfig {
@@ -46,6 +50,15 @@ interface ContactConfig {
   contact_providers: string[]
   apollo_api_key: string
   seamless_api_key: string
+  hunter_contact_api_key: string
+  snovio_client_id: string
+  snovio_client_secret: string
+  rocketreach_api_key: string
+  pdl_api_key: string
+  proxycurl_api_key: string
+  clearbit_api_key: string
+  opencorporates_api_key: string
+  company_enrichment_providers: string[]
 }
 
 interface ValidationConfig {
@@ -205,6 +218,10 @@ export default function SettingsPage() {
     company_size_priority_2_max: 500,
     exclude_it_keywords: DEFAULT_IT_EXCLUSIONS,
     exclude_staffing_keywords: DEFAULT_STAFFING_EXCLUSIONS,
+    theirstack_api_key: '',
+    serpapi_api_key: '',
+    adzuna_app_id: '',
+    adzuna_api_key: '',
   })
 
   // State for adding new job title
@@ -230,6 +247,15 @@ export default function SettingsPage() {
     contact_providers: ['mock'],
     apollo_api_key: '',
     seamless_api_key: '',
+    hunter_contact_api_key: '',
+    snovio_client_id: '',
+    snovio_client_secret: '',
+    rocketreach_api_key: '',
+    pdl_api_key: '',
+    proxycurl_api_key: '',
+    clearbit_api_key: '',
+    opencorporates_api_key: '',
+    company_enrichment_providers: [],
   })
 
   // Validation configuration
@@ -362,6 +388,10 @@ export default function SettingsPage() {
         company_size_priority_2_max: settingsMap.company_size_priority_2_max || 500,
         exclude_it_keywords: settingsMap.exclude_it_keywords || DEFAULT_IT_EXCLUSIONS,
         exclude_staffing_keywords: settingsMap.exclude_staffing_keywords || DEFAULT_STAFFING_EXCLUSIONS,
+        theirstack_api_key: settingsMap.theirstack_api_key || '',
+        serpapi_api_key: settingsMap.serpapi_api_key || '',
+        adzuna_app_id: settingsMap.adzuna_app_id || '',
+        adzuna_api_key: settingsMap.adzuna_api_key || '',
       }))
 
       setAIConfig(prev => ({
@@ -380,6 +410,15 @@ export default function SettingsPage() {
         contact_providers: settingsMap.contact_providers || (isLocal ? ['mock'] : []),
         apollo_api_key: settingsMap.apollo_api_key || '',
         seamless_api_key: settingsMap.seamless_api_key || '',
+        hunter_contact_api_key: settingsMap.hunter_contact_api_key || '',
+        snovio_client_id: settingsMap.snovio_client_id || '',
+        snovio_client_secret: settingsMap.snovio_client_secret || '',
+        rocketreach_api_key: settingsMap.rocketreach_api_key || '',
+        pdl_api_key: settingsMap.pdl_api_key || '',
+        proxycurl_api_key: settingsMap.proxycurl_api_key || '',
+        clearbit_api_key: settingsMap.clearbit_api_key || '',
+        opencorporates_api_key: settingsMap.opencorporates_api_key || '',
+        company_enrichment_providers: settingsMap.company_enrichment_providers || [],
       }))
 
       setValidationConfig(prev => ({
@@ -459,6 +498,10 @@ export default function SettingsPage() {
           saveSetting('company_size_priority_2_max', jobSourceConfig.company_size_priority_2_max, 'integer'),
           saveSetting('exclude_it_keywords', jobSourceConfig.exclude_it_keywords, 'list'),
           saveSetting('exclude_staffing_keywords', jobSourceConfig.exclude_staffing_keywords, 'list'),
+          saveSetting('theirstack_api_key', jobSourceConfig.theirstack_api_key),
+          saveSetting('serpapi_api_key', jobSourceConfig.serpapi_api_key),
+          saveSetting('adzuna_app_id', jobSourceConfig.adzuna_app_id),
+          saveSetting('adzuna_api_key', jobSourceConfig.adzuna_api_key),
         ])
       } else if (configType === 'ai') {
         await Promise.all([
@@ -475,6 +518,15 @@ export default function SettingsPage() {
           saveSetting('contact_providers', contactConfig.contact_providers, 'list'),
           saveSetting('apollo_api_key', contactConfig.apollo_api_key),
           saveSetting('seamless_api_key', contactConfig.seamless_api_key),
+          saveSetting('hunter_contact_api_key', contactConfig.hunter_contact_api_key),
+          saveSetting('snovio_client_id', contactConfig.snovio_client_id),
+          saveSetting('snovio_client_secret', contactConfig.snovio_client_secret),
+          saveSetting('rocketreach_api_key', contactConfig.rocketreach_api_key),
+          saveSetting('pdl_api_key', contactConfig.pdl_api_key),
+          saveSetting('proxycurl_api_key', contactConfig.proxycurl_api_key),
+          saveSetting('clearbit_api_key', contactConfig.clearbit_api_key),
+          saveSetting('opencorporates_api_key', contactConfig.opencorporates_api_key),
+          saveSetting('company_enrichment_providers', contactConfig.company_enrichment_providers, 'list'),
         ])
       } else if (configType === 'validation') {
         await Promise.all([
@@ -788,6 +840,54 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('theirstack')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
+                        {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('serpapi')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
+                        {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('adzuna')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
+                        {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={jobSourceConfig.lead_sources.includes('mock')}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -836,6 +936,65 @@ export default function SettingsPage() {
                         <p className={`text-sm mt-1 ${testResults.apollo.success ? 'text-green-600' : 'text-red-600'}`}>
                           {testResults.apollo.message}
                         </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TheirStack API Key */}
+                  {jobSourceConfig.lead_sources.includes('theirstack') && (
+                    <div>
+                      <label className="label">TheirStack API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.theirstack_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, theirstack_api_key: e.target.value })} placeholder="Enter TheirStack API key" className="input flex-1" />
+                        <button onClick={() => testConnection('theirstack')} disabled={testing === 'theirstack' || !jobSourceConfig.theirstack_api_key} className="btn-secondary text-sm">
+                          {testing === 'theirstack' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get key at <a href="https://theirstack.com/" target="_blank" className="text-blue-600 underline">theirstack.com</a> — Free: 100 req/mo | Paid: from $49/mo
+                      </p>
+                      {testResults.theirstack && (
+                        <p className={`text-sm mt-1 ${testResults.theirstack.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.theirstack.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SerpAPI Key */}
+                  {jobSourceConfig.lead_sources.includes('serpapi') && (
+                    <div>
+                      <label className="label">SerpAPI Key (Google Jobs)</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.serpapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, serpapi_api_key: e.target.value })} placeholder="Enter SerpAPI key" className="input flex-1" />
+                        <button onClick={() => testConnection('serpapi')} disabled={testing === 'serpapi' || !jobSourceConfig.serpapi_api_key} className="btn-secondary text-sm">
+                          {testing === 'serpapi' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get key at <a href="https://serpapi.com/" target="_blank" className="text-blue-600 underline">serpapi.com</a> — Free: 100 req/mo | Paid: from $50/mo
+                      </p>
+                      {testResults.serpapi && (
+                        <p className={`text-sm mt-1 ${testResults.serpapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.serpapi.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Adzuna Credentials */}
+                  {jobSourceConfig.lead_sources.includes('adzuna') && (
+                    <div>
+                      <label className="label">Adzuna App ID</label>
+                      <input type="text" value={jobSourceConfig.adzuna_app_id} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_app_id: e.target.value })} placeholder="Enter Adzuna App ID" className="input w-full mb-2" />
+                      <label className="label">Adzuna API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.adzuna_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_api_key: e.target.value })} placeholder="Enter Adzuna API key" className="input flex-1" />
+                        <button onClick={() => testConnection('adzuna')} disabled={testing === 'adzuna' || !jobSourceConfig.adzuna_app_id || !jobSourceConfig.adzuna_api_key} className="btn-secondary text-sm">
+                          {testing === 'adzuna' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get credentials at <a href="https://developer.adzuna.com/" target="_blank" className="text-blue-600 underline">developer.adzuna.com</a> — Free: 250 req/mo | Paid: from $99/mo
+                      </p>
+                      {testResults.adzuna && (
+                        <p className={`text-sm mt-1 ${testResults.adzuna.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.adzuna.message}</p>
                       )}
                     </div>
                   )}
@@ -1650,6 +1809,31 @@ export default function SettingsPage() {
                     <span className="text-sm font-medium">Seamless.ai</span>
                     {contactConfig.seamless_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('hunter_contact')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'hunter_contact'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'hunter_contact') }) } }} className="w-4 h-4" />
+                    <span className="text-sm font-medium">Hunter.io (Contact Finder)</span>
+                    {contactConfig.hunter_contact_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('snovio')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'snovio'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'snovio') }) } }} className="w-4 h-4" />
+                    <span className="text-sm font-medium">Snov.io</span>
+                    {contactConfig.snovio_client_id && contactConfig.snovio_client_secret && <span className="text-xs text-green-600">Credentials configured</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('rocketreach')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'rocketreach'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'rocketreach') }) } }} className="w-4 h-4" />
+                    <span className="text-sm font-medium">RocketReach</span>
+                    {contactConfig.rocketreach_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('pdl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'pdl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'pdl') }) } }} className="w-4 h-4" />
+                    <span className="text-sm font-medium">People Data Labs</span>
+                    {contactConfig.pdl_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('proxycurl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'proxycurl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'proxycurl') }) } }} className="w-4 h-4" />
+                    <span className="text-sm font-medium">Proxycurl (LinkedIn)</span>
+                    {contactConfig.proxycurl_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                  </label>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   {contactConfig.contact_providers.length === 0 && <span className="text-red-500">Select at least one provider</span>}
@@ -1686,12 +1870,161 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+
+              {contactConfig.contact_providers.includes('hunter_contact') && (
+                <div>
+                  <label className="label">Hunter.io API Key (Contact Finder)</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 25 req/mo | Paid: from $49/mo — <a href="https://hunter.io/api" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.hunter_contact_api_key} onChange={(e) => setContactConfig({ ...contactConfig, hunter_contact_api_key: e.target.value })} placeholder="Enter Hunter.io API key" className="input flex-1" />
+                    <button onClick={() => testConnection('hunter_contact')} disabled={testing === 'hunter_contact' || !contactConfig.hunter_contact_api_key} className="btn-secondary text-sm">
+                      {testing === 'hunter_contact' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.hunter_contact && (
+                    <p className={`text-sm mt-1 ${testResults.hunter_contact.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.hunter_contact.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {contactConfig.contact_providers.includes('snovio') && (
+                <div>
+                  <label className="label">Snov.io Credentials</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 50 credits/mo | Paid: from $39/mo — <a href="https://snov.io/app/api" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get credentials</a></p>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input type="password" value={contactConfig.snovio_client_id} onChange={(e) => setContactConfig({ ...contactConfig, snovio_client_id: e.target.value })} placeholder="Client ID" className="input flex-1" />
+                    </div>
+                    <div className="flex gap-2">
+                      <input type="password" value={contactConfig.snovio_client_secret} onChange={(e) => setContactConfig({ ...contactConfig, snovio_client_secret: e.target.value })} placeholder="Client Secret" className="input flex-1" />
+                      <button onClick={() => testConnection('snovio')} disabled={testing === 'snovio' || !contactConfig.snovio_client_id || !contactConfig.snovio_client_secret} className="btn-secondary text-sm">
+                        {testing === 'snovio' ? 'Testing...' : 'Test'}
+                      </button>
+                    </div>
+                  </div>
+                  {testResults.snovio && (
+                    <p className={`text-sm mt-1 ${testResults.snovio.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.snovio.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {contactConfig.contact_providers.includes('rocketreach') && (
+                <div>
+                  <label className="label">RocketReach API Key</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 5 lookups/mo | Paid: from $99/mo — <a href="https://rocketreach.co/api" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.rocketreach_api_key} onChange={(e) => setContactConfig({ ...contactConfig, rocketreach_api_key: e.target.value })} placeholder="Enter RocketReach API key" className="input flex-1" />
+                    <button onClick={() => testConnection('rocketreach')} disabled={testing === 'rocketreach' || !contactConfig.rocketreach_api_key} className="btn-secondary text-sm">
+                      {testing === 'rocketreach' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.rocketreach && (
+                    <p className={`text-sm mt-1 ${testResults.rocketreach.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.rocketreach.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {contactConfig.contact_providers.includes('pdl') && (
+                <div>
+                  <label className="label">People Data Labs API Key</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 100 req/mo | Paid: $0.01/match — <a href="https://www.peopledatalabs.com/signup" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.pdl_api_key} onChange={(e) => setContactConfig({ ...contactConfig, pdl_api_key: e.target.value })} placeholder="Enter PDL API key" className="input flex-1" />
+                    <button onClick={() => testConnection('pdl')} disabled={testing === 'pdl' || !contactConfig.pdl_api_key} className="btn-secondary text-sm">
+                      {testing === 'pdl' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.pdl && (
+                    <p className={`text-sm mt-1 ${testResults.pdl.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.pdl.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {contactConfig.contact_providers.includes('proxycurl') && (
+                <div>
+                  <label className="label">Proxycurl API Key</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 10 credits | Paid: $0.01/call — <a href="https://nubela.co/proxycurl" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.proxycurl_api_key} onChange={(e) => setContactConfig({ ...contactConfig, proxycurl_api_key: e.target.value })} placeholder="Enter Proxycurl API key" className="input flex-1" />
+                    <button onClick={() => testConnection('proxycurl')} disabled={testing === 'proxycurl' || !contactConfig.proxycurl_api_key} className="btn-secondary text-sm">
+                      {testing === 'proxycurl' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.proxycurl && (
+                    <p className={`text-sm mt-1 ${testResults.proxycurl.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.proxycurl.message}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
-            {contactConfig.contact_providers.length === 1 && contactConfig.contact_providers[0] === 'mock' && (
+            {/* Company Enrichment Providers */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h4 className="text-md font-semibold text-gray-700 mb-2">Company Enrichment</h4>
+              <p className="text-xs text-gray-500 mb-3">Enrich company data with firmographics, tech stack, and corporate records. These providers supplement your lead data.</p>
+              <div className="space-y-2 border rounded-lg p-3 bg-gray-50 mb-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('clearbit')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'clearbit'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'clearbit') }) } }} className="w-4 h-4" />
+                  <span className="text-sm font-medium">Clearbit (Breeze)</span>
+                  {contactConfig.clearbit_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('opencorporates')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'opencorporates'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'opencorporates') }) } }} className="w-4 h-4" />
+                  <span className="text-sm font-medium">OpenCorporates</span>
+                  {contactConfig.opencorporates_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                </label>
+              </div>
+
+              {contactConfig.company_enrichment_providers.includes('clearbit') && (
+                <div className="mb-3">
+                  <label className="label">Clearbit API Key</label>
+                  <p className="text-xs text-gray-500 mb-1">Free with HubSpot | API: from $99/mo — <a href="https://dashboard.clearbit.com/api" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.clearbit_api_key} onChange={(e) => setContactConfig({ ...contactConfig, clearbit_api_key: e.target.value })} placeholder="Enter Clearbit API key" className="input flex-1" />
+                    <button onClick={() => testConnection('clearbit')} disabled={testing === 'clearbit' || !contactConfig.clearbit_api_key} className="btn-secondary text-sm">
+                      {testing === 'clearbit' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.clearbit && (
+                    <p className={`text-sm mt-1 ${testResults.clearbit.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.clearbit.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {contactConfig.company_enrichment_providers.includes('opencorporates') && (
+                <div className="mb-3">
+                  <label className="label">OpenCorporates API Key</label>
+                  <p className="text-xs text-gray-500 mb-1">Free: 500 req/mo | Paid: custom pricing — <a href="https://opencorporates.com/api_accounts/new" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Get API key</a></p>
+                  <div className="flex gap-2">
+                    <input type="password" value={contactConfig.opencorporates_api_key} onChange={(e) => setContactConfig({ ...contactConfig, opencorporates_api_key: e.target.value })} placeholder="Enter OpenCorporates API key" className="input flex-1" />
+                    <button onClick={() => testConnection('opencorporates')} disabled={testing === 'opencorporates' || !contactConfig.opencorporates_api_key} className="btn-secondary text-sm">
+                      {testing === 'opencorporates' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  {testResults.opencorporates && (
+                    <p className={`text-sm mt-1 ${testResults.opencorporates.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.opencorporates.message}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {contactConfig.contact_providers.length === 1 && contactConfig.contact_providers[0] === 'mock' && contactConfig.company_enrichment_providers.length === 0 && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-700">
-                  <strong>Mock Mode:</strong> Using simulated contact data. Add Apollo or Seamless for real contact discovery.
+                  <strong>Mock Mode:</strong> Using simulated contact data. Enable a provider above for real contact discovery and company enrichment.
                 </p>
               </div>
             )}

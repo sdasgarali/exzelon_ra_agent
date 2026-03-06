@@ -1,19 +1,31 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 27: Implemented enhanced deduplication + JSearch sub-source tracking. Added 4 new DB columns (external_job_id, city, employer_linkedin_url, employer_website), 3-layer dedup (external_job_id → employer_linkedin → company+title+state+city), title normalization with abbreviation expansion (HR→Human Resources, Mgr→Manager, etc.), per_sub_source_detail tracking (LinkedIn/Indeed/Glassdoor breakdown in pipeline reports), tree-style sub-source display in frontend report modal. 262 tests pass, frontend builds clean. Next: commit, deploy to VPS.
+> Session 28: Added 10 new data source adapters (TheirStack, SerpAPI, Adzuna for jobs; Hunter.io, Snov.io, RocketReach, PDL, Proxycurl for contacts; Clearbit, OpenCorporates for company enrichment). All adapters implemented, registered in pipelines, backend settings updated, frontend UI complete with pricing info, 313 tests pass (70 adapter tests), frontend builds clean. Assessment doc generated. Next: commit all changes, deploy to VPS.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
 - [x] Granular Settings tab permissions (per-tab view/edit control for admin role)
 - [x] Pipeline improvements: confirmations, contact selector, cancel, progress tracking
 - [x] Enhanced deduplication + JSearch sub-source tracking (2026-03-05)
-- [ ] Deploy latest changes to VPS (dedup + sub-source + pipelines + granular settings)
+- [x] Add 10 new data source adapters (TheirStack, SerpAPI, Adzuna, Hunter, Snov.io, RocketReach, PDL, Proxycurl, Clearbit, OpenCorporates) (2026-03-05)
+- [ ] Deploy latest changes to VPS (dedup + sub-source + pipelines + granular settings + new adapters)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
 
 ## Completed
+- [x] Session 28: 10 New Data Source Adapters (2026-03-05)
+  - 3 job source adapters: TheirStack, SerpAPI (Google Jobs), Adzuna
+  - 5 contact discovery adapters: Hunter.io, Snov.io, RocketReach, People Data Labs, Proxycurl
+  - 2 company enrichment adapters: Clearbit (Breeze), OpenCorporates
+  - CompanyEnrichmentAdapter base class added to base.py
+  - Backend: SETTINGS_TAB_MAP, DEFAULT_SETTINGS, PROVIDER_TAB_MAP, test_provider_connection (10 new blocks)
+  - Pipeline registration: lead_sourcing.py (3 new), contact_enrichment.py (5 new)
+  - Frontend: Settings UI with checkboxes, API key inputs, Test buttons, pricing info for all 10
+  - 70 adapter unit tests (313 total pass), frontend builds clean
+  - Assessment document: New_Data_Sources_Assessment.docx
+  - Rollback tag: pre-adapter-expansion-v1
 - [x] Session 27: Enhanced Deduplication + JSearch Sub-Source Tracking (2026-03-05)
   - 4 new DB columns: external_job_id, city, employer_linkedin_url, employer_website
   - Auto-migration in main.py lifespan for new columns + index

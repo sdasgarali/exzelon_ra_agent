@@ -132,6 +132,9 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     """
     from app.services.adapters.job_sources.jsearch import JSearchAdapter
     from app.services.adapters.job_sources.apollo import ApolloJobSourceAdapter
+    from app.services.adapters.job_sources.theirstack import TheirStackAdapter
+    from app.services.adapters.job_sources.serpapi import SerpAPIAdapter
+    from app.services.adapters.job_sources.adzuna import AdzunaAdapter
 
     adapters = []
 
@@ -152,6 +155,28 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
         if apollo_api_key:
             adapters.append(("apollo", ApolloJobSourceAdapter(api_key=apollo_api_key)))
             logger.info("Apollo adapter configured")
+
+    # TheirStack adapter
+    if "theirstack" in enabled_sources:
+        theirstack_key = get_db_setting(db, "theirstack_api_key")
+        if theirstack_key:
+            adapters.append(("theirstack", TheirStackAdapter(api_key=theirstack_key)))
+            logger.info("TheirStack adapter configured")
+
+    # SerpAPI adapter
+    if "serpapi" in enabled_sources:
+        serpapi_key = get_db_setting(db, "serpapi_api_key")
+        if serpapi_key:
+            adapters.append(("serpapi", SerpAPIAdapter(api_key=serpapi_key)))
+            logger.info("SerpAPI adapter configured")
+
+    # Adzuna adapter
+    if "adzuna" in enabled_sources:
+        adzuna_app_id = get_db_setting(db, "adzuna_app_id")
+        adzuna_api_key = get_db_setting(db, "adzuna_api_key")
+        if adzuna_app_id and adzuna_api_key:
+            adapters.append(("adzuna", AdzunaAdapter(app_id=adzuna_app_id, api_key=adzuna_api_key)))
+            logger.info("Adzuna adapter configured")
 
     # Mock adapter (for development/testing)
     if "mock" in enabled_sources:

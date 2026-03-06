@@ -136,6 +136,39 @@ class EmailSendAdapter(BaseAdapter):
         pass
 
 
+class CompanyEnrichmentAdapter(BaseAdapter):
+    """Base adapter for company enrichment providers."""
+
+    @abstractmethod
+    def enrich_company(
+        self,
+        company_name: str,
+        domain: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Enrich company data.
+
+        Returns dict with keys (all optional except company_name):
+        - company_name: str
+        - domain: str
+        - industry: str
+        - employee_count: int
+        - revenue: str
+        - description: str
+        - address: str
+        - country: str
+        - tech_stack: list
+        - founded_year: int
+        - raw_response: dict
+        """
+        pass
+
+    @abstractmethod
+    def normalize(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize raw company data to standard format."""
+        pass
+
+
 class AIAdapter(BaseAdapter):
     """Base adapter for AI/LLM providers used for email content generation."""
 

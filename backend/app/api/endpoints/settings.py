@@ -31,6 +31,10 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'company_size_priority_2_max': 'job_sources',
     'exclude_it_keywords': 'job_sources',
     'exclude_staffing_keywords': 'job_sources',
+    'theirstack_api_key': 'job_sources',
+    'serpapi_api_key': 'job_sources',
+    'adzuna_app_id': 'job_sources',
+    'adzuna_api_key': 'job_sources',
     # AI/LLM
     'ai_provider': 'ai_llm',
     'groq_api_key': 'ai_llm',
@@ -42,6 +46,15 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'contact_provider': 'contacts',
     'contact_providers': 'contacts',
     'seamless_api_key': 'contacts',
+    'hunter_contact_api_key': 'contacts',
+    'snovio_client_id': 'contacts',
+    'snovio_client_secret': 'contacts',
+    'rocketreach_api_key': 'contacts',
+    'pdl_api_key': 'contacts',
+    'proxycurl_api_key': 'contacts',
+    'clearbit_api_key': 'contacts',
+    'opencorporates_api_key': 'contacts',
+    'company_enrichment_providers': 'contacts',
     # Validation
     'email_validation_provider': 'validation',
     'neverbounce_api_key': 'validation',
@@ -89,6 +102,25 @@ DEFAULT_SETTINGS = {
     "catch_all_policy": {"value": "exclude", "type": "string", "description": "Policy for catch-all emails"},
     "unsubscribe_footer": {"value": True, "type": "boolean", "description": "Include unsubscribe footer"},
     "company_address": {"value": "123 Business St, City, State 12345", "type": "string", "description": "Company mailing address for footer"},
+
+    # New Job Source API Keys
+    "theirstack_api_key": {"value": "", "type": "string", "description": "TheirStack API key (Free: 100 req/mo | Paid: from $49/mo)"},
+    "serpapi_api_key": {"value": "", "type": "string", "description": "SerpAPI key for Google Jobs (Free: 100 req/mo | Paid: from $50/mo)"},
+    "adzuna_app_id": {"value": "", "type": "string", "description": "Adzuna App ID (Free: 250 req/mo | Paid: from $99/mo)"},
+    "adzuna_api_key": {"value": "", "type": "string", "description": "Adzuna API Key"},
+
+    # New Contact Discovery API Keys
+    "hunter_contact_api_key": {"value": "", "type": "string", "description": "Hunter.io API key for contact finder (Free: 25 req/mo | Paid: from $49/mo)"},
+    "snovio_client_id": {"value": "", "type": "string", "description": "Snov.io OAuth Client ID (Free: 50 credits/mo | Paid: from $39/mo)"},
+    "snovio_client_secret": {"value": "", "type": "string", "description": "Snov.io OAuth Client Secret"},
+    "rocketreach_api_key": {"value": "", "type": "string", "description": "RocketReach API key (Free: 5 lookups/mo | Paid: from $99/mo)"},
+    "pdl_api_key": {"value": "", "type": "string", "description": "People Data Labs API key (Free: 100 req/mo | Paid: $0.01/match)"},
+    "proxycurl_api_key": {"value": "", "type": "string", "description": "Proxycurl API key (Free: 10 credits | Paid: $0.01/call)"},
+
+    # Company Enrichment API Keys
+    "clearbit_api_key": {"value": "", "type": "string", "description": "Clearbit API key (Free with HubSpot | API: from $99/mo)"},
+    "opencorporates_api_key": {"value": "", "type": "string", "description": "OpenCorporates API key (Free: 500 req/mo | Paid: custom)"},
+    "company_enrichment_providers": {"value": [], "type": "list", "description": "Enabled company enrichment providers"},
 
     # Job Sources Configuration
     "job_source_provider": {"value": "jsearch", "type": "string", "description": "Primary job source provider"},
@@ -423,7 +455,17 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
     'apollo': 'job_sources',
     'jsearch': 'job_sources',
     'indeed': 'job_sources',
+    'theirstack': 'job_sources',
+    'serpapi': 'job_sources',
+    'adzuna': 'job_sources',
     'seamless': 'contacts',
+    'hunter_contact': 'contacts',
+    'snovio': 'contacts',
+    'rocketreach': 'contacts',
+    'pdl': 'contacts',
+    'proxycurl': 'contacts',
+    'clearbit': 'contacts',
+    'opencorporates': 'contacts',
     'neverbounce': 'validation',
     'zerobounce': 'validation',
     'smtp': 'outreach',
@@ -592,6 +634,101 @@ async def test_provider_connection(
             adapter = IndeedAdapter(publisher_id=publisher_id)
             result = adapter.test_connection()
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your Publisher ID", "provider": provider}
+
+        # New Job Source Providers
+        elif provider == "theirstack":
+            api_key = get_setting_value(db, "theirstack_api_key")
+            if not api_key:
+                return {"status": "error", "message": "TheirStack API key not configured. Get one at https://theirstack.com/", "provider": provider}
+            from app.services.adapters.job_sources.theirstack import TheirStackAdapter
+            adapter = TheirStackAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "serpapi":
+            api_key = get_setting_value(db, "serpapi_api_key")
+            if not api_key:
+                return {"status": "error", "message": "SerpAPI key not configured. Get one at https://serpapi.com/", "provider": provider}
+            from app.services.adapters.job_sources.serpapi import SerpAPIAdapter
+            adapter = SerpAPIAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "adzuna":
+            app_id = get_setting_value(db, "adzuna_app_id")
+            api_key = get_setting_value(db, "adzuna_api_key")
+            if not app_id or not api_key:
+                return {"status": "error", "message": "Adzuna credentials not configured. Get them at https://developer.adzuna.com/", "provider": provider}
+            from app.services.adapters.job_sources.adzuna import AdzunaAdapter
+            adapter = AdzunaAdapter(app_id=app_id, api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your credentials", "provider": provider}
+
+        # New Contact Discovery Providers
+        elif provider == "hunter_contact":
+            api_key = get_setting_value(db, "hunter_contact_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Hunter.io API key not configured. Get one at https://hunter.io/", "provider": provider}
+            from app.services.adapters.contact_discovery.hunter_contact import HunterContactAdapter
+            adapter = HunterContactAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "snovio":
+            client_id = get_setting_value(db, "snovio_client_id")
+            client_secret = get_setting_value(db, "snovio_client_secret")
+            if not client_id or not client_secret:
+                return {"status": "error", "message": "Snov.io credentials not configured. Get them at https://snov.io/", "provider": provider}
+            from app.services.adapters.contact_discovery.snovio import SnovioAdapter
+            adapter = SnovioAdapter(client_id=client_id, client_secret=client_secret)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your credentials", "provider": provider}
+
+        elif provider == "rocketreach":
+            api_key = get_setting_value(db, "rocketreach_api_key")
+            if not api_key:
+                return {"status": "error", "message": "RocketReach API key not configured. Get one at https://rocketreach.co/", "provider": provider}
+            from app.services.adapters.contact_discovery.rocketreach import RocketReachAdapter
+            adapter = RocketReachAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "pdl":
+            api_key = get_setting_value(db, "pdl_api_key")
+            if not api_key:
+                return {"status": "error", "message": "People Data Labs API key not configured. Get one at https://www.peopledatalabs.com/", "provider": provider}
+            from app.services.adapters.contact_discovery.pdl import PDLAdapter
+            adapter = PDLAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "proxycurl":
+            api_key = get_setting_value(db, "proxycurl_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Proxycurl API key not configured. Get one at https://nubela.co/proxycurl/", "provider": provider}
+            from app.services.adapters.contact_discovery.proxycurl import ProxycurlAdapter
+            adapter = ProxycurlAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        # Company Enrichment Providers
+        elif provider == "clearbit":
+            api_key = get_setting_value(db, "clearbit_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Clearbit API key not configured. Get one at https://clearbit.com/", "provider": provider}
+            from app.services.adapters.company.clearbit import ClearbitAdapter
+            adapter = ClearbitAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "opencorporates":
+            api_key = get_setting_value(db, "opencorporates_api_key")
+            if not api_key:
+                return {"status": "error", "message": "OpenCorporates API key not configured. Get one at https://opencorporates.com/", "provider": provider}
+            from app.services.adapters.company.opencorporates import OpenCorporatesAdapter
+            adapter = OpenCorporatesAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         else:
             return {"status": "error", "message": f"Unknown provider: {provider}", "provider": provider}

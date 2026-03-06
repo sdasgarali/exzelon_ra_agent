@@ -36,6 +36,12 @@ def _get_db_setting(db, key, default=None):
 def get_contact_discovery_adapters(db=None):
     """Get all configured contact discovery adapters with DB-stored API keys."""
     import json as _json
+    from app.services.adapters.contact_discovery.hunter_contact import HunterContactAdapter
+    from app.services.adapters.contact_discovery.snovio import SnovioAdapter
+    from app.services.adapters.contact_discovery.rocketreach import RocketReachAdapter
+    from app.services.adapters.contact_discovery.pdl import PDLAdapter
+    from app.services.adapters.contact_discovery.proxycurl import ProxycurlAdapter
+
     adapters = []
 
     providers = [settings.CONTACT_PROVIDER]
@@ -67,6 +73,42 @@ def get_contact_discovery_adapters(db=None):
                 continue
             adapters.append(("seamless", SeamlessAdapter(api_key=seamless_key)))
             logger.info("Seamless adapter configured", has_key=bool(seamless_key))
+        elif p == "hunter_contact":
+            key = _get_db_setting(db, "hunter_contact_api_key", "") if db else ""
+            if not key:
+                logger.error("Hunter.io selected but no API key configured in Settings")
+                continue
+            adapters.append(("hunter_contact", HunterContactAdapter(api_key=key)))
+            logger.info("Hunter.io contact adapter configured")
+        elif p == "snovio":
+            client_id = _get_db_setting(db, "snovio_client_id", "") if db else ""
+            client_secret = _get_db_setting(db, "snovio_client_secret", "") if db else ""
+            if not client_id or not client_secret:
+                logger.error("Snov.io selected but credentials not configured in Settings")
+                continue
+            adapters.append(("snovio", SnovioAdapter(client_id=client_id, client_secret=client_secret)))
+            logger.info("Snov.io adapter configured")
+        elif p == "rocketreach":
+            key = _get_db_setting(db, "rocketreach_api_key", "") if db else ""
+            if not key:
+                logger.error("RocketReach selected but no API key configured in Settings")
+                continue
+            adapters.append(("rocketreach", RocketReachAdapter(api_key=key)))
+            logger.info("RocketReach adapter configured")
+        elif p == "pdl":
+            key = _get_db_setting(db, "pdl_api_key", "") if db else ""
+            if not key:
+                logger.error("PDL selected but no API key configured in Settings")
+                continue
+            adapters.append(("pdl", PDLAdapter(api_key=key)))
+            logger.info("People Data Labs adapter configured")
+        elif p == "proxycurl":
+            key = _get_db_setting(db, "proxycurl_api_key", "") if db else ""
+            if not key:
+                logger.error("Proxycurl selected but no API key configured in Settings")
+                continue
+            adapters.append(("proxycurl", ProxycurlAdapter(api_key=key)))
+            logger.info("Proxycurl adapter configured")
         elif p == "mock":
             adapters.append(("mock", MockContactDiscoveryAdapter()))
 

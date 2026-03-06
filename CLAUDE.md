@@ -71,8 +71,9 @@ All external integrations implement abstract base classes from `adapters/base.py
 
 | Category | Adapters | Config key |
 |---|---|---|
-| Job Sources | Apollo, Indeed, JSearch | `JOB_SOURCES`, `JSEARCH_API_KEY` |
-| Contact Discovery | Apollo, Seamless | `CONTACT_PROVIDER` |
+| Job Sources | Apollo, Indeed, JSearch, TheirStack, SerpAPI (Google Jobs), Adzuna | `JOB_SOURCES`, `JSEARCH_API_KEY`, `THEIRSTACK_API_KEY`, `SERPAPI_API_KEY`, `ADZUNA_APP_ID`+`ADZUNA_API_KEY` |
+| Contact Discovery | Apollo, Seamless, Hunter.io, Snov.io, RocketReach, People Data Labs, Proxycurl | `CONTACT_PROVIDER`, `HUNTER_CONTACT_API_KEY`, `SNOVIO_CLIENT_ID`+`SNOVIO_CLIENT_SECRET`, `ROCKETREACH_API_KEY`, `PDL_API_KEY`, `PROXYCURL_API_KEY` |
+| Company Enrichment | Clearbit (Breeze), OpenCorporates | `CLEARBIT_API_KEY`, `OPENCORPORATES_API_KEY` |
 | Email Validation | NeverBounce, ZeroBounce, Hunter, Clearout, Emailable, MailboxValidator, Reacher | `EMAIL_VALIDATION_PROVIDER` |
 | Email Sending | SMTP, Mock | `EMAIL_SEND_MODE` |
 | AI Content | Groq, OpenAI, Anthropic, Gemini | per-adapter API keys |
@@ -81,7 +82,7 @@ All external integrations implement abstract base classes from `adapters/base.py
 
 Four sequential data-processing stages, each independently executable via API:
 1. **Lead Sourcing** -- fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id → employer_linkedin → company+title+state+city), sub-source tracking (LinkedIn/Indeed/Glassdoor), store
-2. **Contact Enrichment** -- discover decision-makers via Apollo/Seamless
+2. **Contact Enrichment** -- discover decision-makers via Apollo/Seamless/Hunter/Snov.io/RocketReach/PDL/Proxycurl
 3. **Email Validation** -- verify email addresses before sending
 4. **Outreach** -- AI-generate email content, enforce rate limits and cooldowns, send
 
