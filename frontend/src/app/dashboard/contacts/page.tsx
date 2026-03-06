@@ -253,11 +253,16 @@ export default function ContactsPage() {
             <option value="pending">Pending</option>
             <option value="unknown">Unknown</option>
           </select>
-          <select value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-36">
+          <select value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-44">
             <option value="">All Sources</option>
             <option value="mock">Mock</option>
             <option value="apollo">Apollo</option>
             <option value="seamless">Seamless</option>
+            <option value="hunter_contact">Hunter.io</option>
+            <option value="snovio">Snov.io</option>
+            <option value="rocketreach">RocketReach</option>
+            <option value="pdl">People Data Labs</option>
+            <option value="proxycurl">Proxycurl</option>
           </select>
           <select value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-40">
             <option value="">All Status</option>
@@ -303,6 +308,7 @@ export default function ContactsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lead ID</th>
@@ -313,9 +319,9 @@ export default function ContactsPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
               ) : (
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
@@ -330,6 +336,11 @@ export default function ContactsPage() {
                     <td className="px-4 py-3 text-sm">
                       {contact.email ? (
                         <a href={'mailto:' + contact.email} className="text-blue-600 hover:underline">{contact.email}</a>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {contact.phone ? (
+                        <a href={'tel:' + contact.phone} className="text-blue-600 hover:underline">{contact.phone}</a>
                       ) : '-'}
                     </td>
                     <td className="px-4 py-3">
