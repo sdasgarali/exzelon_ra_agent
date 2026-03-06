@@ -37,6 +37,8 @@ export default function ContactsPage() {
   const [filterSource, setFilterSource] = useState('')
   const [filterOutreachStatus, setFilterOutreachStatus] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [sortBy, setSortBy] = useState('')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Multi-select & delete
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -50,7 +52,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts()
-  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, showArchived])
+  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, showArchived, sortBy, sortOrder])
 
   const fetchContacts = async () => {
     try {
@@ -63,6 +65,7 @@ export default function ContactsPage() {
       if (filterSource) params.source = filterSource
       if (filterOutreachStatus) params.outreach_status = filterOutreachStatus
       if (showArchived) params.show_archived = true
+      if (sortBy) { params.sort_by = sortBy; params.sort_order = sortOrder }
       const response = await contactsApi.list(params)
       const contactList = Array.isArray(response) ? response : (response?.items || [])
       setContacts(contactList)
@@ -164,6 +167,27 @@ export default function ContactsPage() {
       unsubscribed: 'Unsubscribed',
     }
     return labels[status] || 'Active'
+  }
+
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      if (sortOrder === 'asc') {
+        setSortOrder('desc')
+      } else {
+        // Third click: clear sort
+        setSortBy('')
+        setSortOrder('desc')
+      }
+    } else {
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+    setPage(1)
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortBy !== column) return ' \u2195'
+    return sortOrder === 'asc' ? ' \u2191' : ' \u2193'
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
@@ -305,16 +329,22 @@ export default function ContactsPage() {
                 <th className="px-4 py-3 w-10">
                   <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lead ID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unsub Date</th>
+                {[
+                  { key: 'name', label: 'Name' },
+                  { key: 'company', label: 'Company' },
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone' },
+                  { key: 'priority', label: 'Priority' },
+                  { key: 'validation', label: 'Validation' },
+                  { key: 'lead_id', label: 'Lead ID' },
+                  { key: 'source', label: 'Source' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'unsubscribed_at', label: 'Unsub Date' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => handleSort(col.key)} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 hover:bg-gray-100 select-none whitespace-nowrap">
+                    {col.label}{getSortIcon(col.key)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">

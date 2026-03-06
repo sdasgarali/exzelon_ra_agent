@@ -45,6 +45,8 @@ async def list_contacts(
     search: Optional[str] = None,
     outreach_status: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived contacts"),
+    sort_by: Optional[str] = Query(None, description="Column to sort by"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -85,7 +87,27 @@ async def list_contacts(
 
     total = query.count()
     offset = (page - 1) * page_size
-    contacts = query.order_by(ContactDetails.created_at.desc()).offset(offset).limit(page_size).all()
+
+    # Sortable columns mapping
+    sort_columns = {
+        "name": ContactDetails.first_name,
+        "company": ContactDetails.client_name,
+        "email": ContactDetails.email,
+        "phone": ContactDetails.phone,
+        "priority": ContactDetails.priority_level,
+        "validation": ContactDetails.validation_status,
+        "lead_id": ContactDetails.lead_id,
+        "source": ContactDetails.source,
+        "status": ContactDetails.outreach_status,
+        "unsubscribed_at": ContactDetails.unsubscribed_at,
+    }
+    order_col = sort_columns.get(sort_by, ContactDetails.created_at)
+    if sort_order == "asc":
+        query = query.order_by(order_col.asc())
+    else:
+        query = query.order_by(order_col.desc())
+
+    contacts = query.offset(offset).limit(page_size).all()
     pages = (total + page_size - 1) // page_size
 
     # Batch fetch lead_ids from junction table
