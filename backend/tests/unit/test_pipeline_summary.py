@@ -15,6 +15,8 @@ from app.services.pipeline_summary import (
 )
 from app.db.models.job_run import JobRun, JobStatus
 
+pytestmark = pytest.mark.unit
+
 
 class TestCalculateSuccessScore:
     """Tests for the deterministic success score calculator."""

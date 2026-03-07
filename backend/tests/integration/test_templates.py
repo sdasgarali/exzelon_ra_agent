@@ -2,6 +2,8 @@
 import pytest
 from app.db.models.email_template import EmailTemplate, TemplateStatus
 
+pytestmark = pytest.mark.integration
+
 
 class TestTemplateEndpoints:
     """Tests for /api/v1/templates endpoints."""

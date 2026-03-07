@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from app.db.models.job_run import JobRun, JobStatus
 
+pytestmark = pytest.mark.integration
+
 
 class TestPipelineEndpoints:
     """Tests for /api/v1/pipelines endpoints."""

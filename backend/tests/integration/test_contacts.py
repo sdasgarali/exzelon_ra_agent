@@ -2,6 +2,8 @@
 import pytest
 from app.db.models.contact import ContactDetails, PriorityLevel
 
+pytestmark = pytest.mark.integration
+
 
 class TestContactsEndpoints:
     """Tests for contacts API endpoints."""

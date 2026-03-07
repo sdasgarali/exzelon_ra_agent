@@ -2,6 +2,8 @@
 import pytest
 from datetime import date
 
+pytestmark = pytest.mark.e2e
+
 
 class TestCompleteWorkflow:
     """End-to-end tests for the complete cold-email automation workflow."""

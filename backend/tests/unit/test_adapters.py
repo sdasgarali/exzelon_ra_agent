@@ -20,6 +20,8 @@ from app.services.adapters.contact_discovery.proxycurl import ProxycurlAdapter
 from app.services.adapters.company.clearbit import ClearbitAdapter
 from app.services.adapters.company.opencorporates import OpenCorporatesAdapter
 
+pytestmark = pytest.mark.unit
+
 
 class TestMockJobSourceAdapter:
     """Tests for MockJobSourceAdapter."""

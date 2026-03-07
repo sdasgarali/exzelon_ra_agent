@@ -5,6 +5,8 @@ from datetime import datetime
 from app.db.models.job_run import JobRun, JobStatus
 from app.services.pipelines.cancel_helper import check_cancel
 
+pytestmark = pytest.mark.unit
+
 
 class TestCheckCancel:
     """Tests for check_cancel() helper function."""

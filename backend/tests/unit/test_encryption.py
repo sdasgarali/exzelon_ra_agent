@@ -1,6 +1,8 @@
 """Unit tests for the encryption module."""
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 class TestEncryption:
     """Test field-level encryption/decryption."""

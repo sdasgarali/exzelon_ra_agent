@@ -1,6 +1,8 @@
 """Integration tests for warmup engine endpoints."""
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 class TestWarmupEndpoints:
     """Tests for /api/v1/warmup endpoints."""

@@ -3,6 +3,8 @@ import pytest
 from app.db.models.lead import LeadStatus
 from app.core.state_machine import validate_transition, get_allowed_transitions
 
+pytestmark = pytest.mark.unit
+
 
 class TestValidateTransition:
     """Test status transition validation."""

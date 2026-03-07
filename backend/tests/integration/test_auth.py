@@ -1,6 +1,8 @@
 """Integration tests for authentication endpoints."""
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 class TestAuthEndpoints:
     """Tests for authentication API endpoints."""

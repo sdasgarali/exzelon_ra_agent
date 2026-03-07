@@ -2,6 +2,8 @@
 import pytest
 from app.db.models.user import UserRole
 
+pytestmark = pytest.mark.integration
+
 
 class TestSuperAdminBypass:
     """Test that super_admin bypasses all role checks."""

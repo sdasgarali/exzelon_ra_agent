@@ -2,6 +2,8 @@
 import pytest
 from datetime import date, timedelta
 
+pytestmark = pytest.mark.integration
+
 
 class TestDashboardEndpoints:
     """Tests for /api/v1/dashboard endpoints."""

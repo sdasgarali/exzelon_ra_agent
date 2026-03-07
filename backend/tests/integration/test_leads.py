@@ -3,6 +3,8 @@ import pytest
 from datetime import date
 from app.db.models.lead import LeadDetails, LeadStatus
 
+pytestmark = pytest.mark.integration
+
 
 class TestLeadsEndpoints:
     """Tests for leads API endpoints."""
