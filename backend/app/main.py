@@ -356,6 +356,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for password encryption: {e}")
 
+    # Cleanup: mark orphaned pipeline runs as failed on startup
+    # (runs stuck as 'running' from server crashes or restarts)
+    try:
+        from app.db.base import SessionLocal as _CleanupSession
+        from app.db.models.job_run import JobRun, JobStatus
+        from datetime import datetime, timedelta
+        _cleanup_db = _CleanupSession()
+        try:
+            stale_cutoff = datetime.utcnow() - timedelta(hours=1)
+            stale_runs = _cleanup_db.query(JobRun).filter(
+                JobRun.status == JobStatus.RUNNING,
+                JobRun.created_at < stale_cutoff,
+            ).all()
+            for run in stale_runs:
+                run.status = JobStatus.FAILED
+                run.error_message = "Orphaned run - process crashed or server restarted"
+                run.ended_at = datetime.utcnow()
+            if stale_runs:
+                _cleanup_db.commit()
+                logger.info(f"Cleanup: marked {len(stale_runs)} orphaned pipeline run(s) as failed")
+        finally:
+            _cleanup_db.close()
+    except Exception as e:
+        logger.warning(f"Cleanup check for orphaned runs: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
 

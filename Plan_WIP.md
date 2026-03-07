@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 28: Added 10 new data source adapters (TheirStack, SerpAPI, Adzuna for jobs; Hunter.io, Snov.io, RocketReach, PDL, Proxycurl for contacts; Clearbit, OpenCorporates for company enrichment). All adapters implemented, registered in pipelines, backend settings updated, frontend UI complete with pricing info, 313 tests pass (70 adapter tests), frontend builds clean. Assessment doc generated. Next: commit all changes, deploy to VPS.
+> Session 30: Fixed pipeline "running without result" bug (3 orphaned Jan 24 runs stuck as running, polling checked ALL runs). Fixed frontend polling to only check latest run per pipeline type. Added backend startup cleanup for orphaned runs. Improved mailbox connection testing: SSL/port 465 support, M365 BasicAuthBlocked detection, decryption failure handling, better error messages. Deploying all to VPS.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -9,12 +9,27 @@
 - [x] Pipeline improvements: confirmations, contact selector, cancel, progress tracking
 - [x] Enhanced deduplication + JSearch sub-source tracking (2026-03-05)
 - [x] Add 10 new data source adapters (TheirStack, SerpAPI, Adzuna, Hunter, Snov.io, RocketReach, PDL, Proxycurl, Clearbit, OpenCorporates) (2026-03-05)
-- [ ] Deploy latest changes to VPS (dedup + sub-source + pipelines + granular settings + new adapters)
+- [x] Deploy all changes to VPS (adapters, dedup, sub-source, pipelines, granular settings) (2026-03-06)
+- [x] Fix pipeline polling timeout (maxAttempts 60→200, ~10 min) (2026-03-06)
+- [x] Add Phone column to contacts table + server-side column sorting for all columns (2026-03-06)
+- [x] Add new contact adapter sources to Source filter dropdown (2026-03-06)
+- [x] Fix pipeline orphaned runs + polling logic (2026-03-07)
+- [x] Improve mailbox connection testing error handling (2026-03-07)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
+- [ ] Enable SMTP AUTH in M365 Admin for failing mailboxes (BasicAuthBlocked)
 
 ## Completed
+- [x] Session 29: Contacts UI Enhancements + Deployment + Bug Fixes (2026-03-06)
+  - Deployed all pending changes to VPS (adapters, dedup, sub-source, granular settings)
+  - Fixed pipeline polling timeout: maxAttempts 60→200 (~10 min), added error display + final fetchData on timeout
+  - Added Phone column to contacts table with clickable tel: links
+  - Added 5 new contact adapter sources to Source filter dropdown (Hunter.io, Snov.io, RocketReach, PDL, Proxycurl)
+  - Added server-side column sorting for all 10 contacts columns (backend sort_by/sort_order params + frontend clickable headers with asc/desc/clear)
+  - Verified 0/511 existing contacts have phone data (phone column exists, original API responses didn't include phones)
+  - Commits: 7b9b3bb (phone column), ea7393d (sort feature), de9953a (polling fix)
+  - 313 backend tests pass, 9 contact integration tests pass, frontend builds clean
 - [x] Session 28: 10 New Data Source Adapters (2026-03-05)
   - 3 job source adapters: TheirStack, SerpAPI (Google Jobs), Adzuna
   - 5 contact discovery adapters: Hunter.io, Snov.io, RocketReach, People Data Labs, Proxycurl

@@ -2,6 +2,9 @@
 import asyncio
 import smtplib
 import imaplib
+import socket
+import ssl
+import structlog
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -11,7 +14,9 @@ from sqlalchemy import func
 from app.api.deps import get_db, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus, EmailProvider
-from app.core.encryption import encrypt_field, decrypt_field
+from app.core.encryption import encrypt_field, decrypt_field, is_encrypted
+
+logger = structlog.get_logger()
 from app.schemas.sender_mailbox import (
     SenderMailboxCreate,
     SenderMailboxUpdate,
@@ -283,15 +288,36 @@ async def delete_mailbox(
 def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str) -> tuple[bool, str]:
     """Blocking SMTP test — run via asyncio.to_thread()."""
     try:
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-        server.starttls()
+        if smtp_port == 465:
+            # Port 465 uses implicit SSL (SMTP_SSL)
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+        else:
+            # Port 587 (default) uses STARTTLS
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server.starttls()
         server.login(email, password)
         server.quit()
         return True, "SMTP connection successful"
-    except smtplib.SMTPAuthenticationError:
-        return False, "SMTP authentication failed - check credentials"
+    except smtplib.SMTPAuthenticationError as e:
+        error_str = str(e)
+        # Detect Microsoft 365 Basic Auth blocked
+        if "BasicAuthBlocked" in error_str or "5.7.139" in error_str:
+            return False, (
+                "Microsoft 365 has blocked Basic Authentication for this account. "
+                "Enable SMTP AUTH in M365 Admin Center (Users > Active Users > Mail > Manage email apps) "
+                "or use an App Password if MFA is enabled."
+            )
+        return False, "SMTP authentication failed — check email and password (or App Password if MFA is enabled)"
     except smtplib.SMTPConnectError:
-        return False, f"Could not connect to SMTP server {smtp_host}"
+        return False, f"Could not connect to SMTP server {smtp_host}:{smtp_port} — check hostname and port"
+    except socket.gaierror:
+        return False, f"DNS resolution failed for {smtp_host} — check the SMTP hostname"
+    except socket.timeout:
+        return False, f"Connection to {smtp_host}:{smtp_port} timed out — check firewall or network"
+    except ConnectionRefusedError:
+        return False, f"Connection refused by {smtp_host}:{smtp_port} — server may be down or port blocked"
+    except ssl.SSLError as e:
+        return False, f"SSL/TLS error: {e} — try port 587 (STARTTLS) instead of 465 (SSL), or vice versa"
     except Exception as e:
         return False, f"SMTP error: {str(e)}"
 
@@ -299,11 +325,17 @@ def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str) -
 def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str) -> tuple[bool, str]:
     """Blocking IMAP test — run via asyncio.to_thread()."""
     try:
-        imap = imaplib.IMAP4_SSL(imap_host, imap_port)
+        imap = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=15)
         imap.login(email, password)
         imap.logout()
         return True, "IMAP connection successful"
     except Exception as e:
+        error_str = str(e)
+        if "BasicAuthBlocked" in error_str:
+            return False, (
+                "IMAP Basic Auth blocked by M365. "
+                "Enable IMAP in M365 Admin Center or use OAuth2."
+            )
         return False, f"IMAP error: {str(e)}"
 
 
@@ -322,7 +354,28 @@ async def test_mailbox_connection(
         )
 
     messages = []
-    plain_password = decrypt_field(mailbox.password)
+
+    # Decrypt password with error handling
+    try:
+        plain_password = decrypt_field(mailbox.password)
+        # Check if decryption returned the encrypted blob (key mismatch)
+        if plain_password and is_encrypted(plain_password):
+            logger.error("Password decryption returned encrypted blob", mailbox_id=mailbox_id)
+            return TestMailboxConnectionResponse(
+                success=False,
+                message="Password decryption failed — encryption key may have changed. Re-save the mailbox password.",
+                smtp_connected=False,
+                imap_connected=False,
+            )
+    except RuntimeError as e:
+        logger.error("Encryption key error", error=str(e))
+        return TestMailboxConnectionResponse(
+            success=False,
+            message="Server encryption key not configured — contact administrator",
+            smtp_connected=False,
+            imap_connected=False,
+        )
+
     smtp_host = mailbox.smtp_host or "smtp.office365.com"
 
     # Run blocking I/O in thread pool

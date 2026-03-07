@@ -414,16 +414,27 @@ export default function PipelinesPage() {
       }
     }
 
+    // Map pipeline type to backend pipeline_name
+    const pipelineNameMap: Record<string, string> = {
+      'lead-sourcing': 'lead_sourcing',
+      'contact-enrichment': 'contact_enrichment',
+      'email-validation': 'email_validation',
+      'outreach': 'outreach',
+    }
+    const targetPipeline = pipelineNameMap[pipelineType] || pipelineType
+
     const poll = async () => {
       attempts++
       const runsData = await fetchData()
 
-      const stillRunning = runsData.some((r: PipelineRun) =>
-        r.status && r.status.toLowerCase() === 'running'
+      // Only check runs for THIS specific pipeline type (not all runs)
+      const pipelineRuns = runsData.filter((r: PipelineRun) =>
+        r.pipeline_name === targetPipeline
       )
+      const stillRunning = pipelineRuns.length > 0 && pipelineRuns[0]?.status?.toLowerCase() === 'running'
 
       if (!stillRunning || attempts >= maxAttempts) {
-        stopPolling(runsData)
+        stopPolling(pipelineRuns.length > 0 ? pipelineRuns : runsData)
         return
       }
 
