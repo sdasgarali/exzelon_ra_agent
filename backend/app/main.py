@@ -361,6 +361,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for client enrichment columns: {e}")
 
+    # Migration: add OAuth2 columns to sender_mailboxes
+    try:
+        from sqlalchemy import text as sa_text_oauth, inspect as sa_inspect_oauth
+        with engine.connect() as conn:
+            inspector_oauth = sa_inspect_oauth(engine)
+            mb_cols = [c["name"] for c in inspector_oauth.get_columns("sender_mailboxes")]
+            for col_name, col_def in [
+                ("auth_method", "VARCHAR(20) DEFAULT 'password'"),
+                ("oauth_access_token", "TEXT NULL"),
+                ("oauth_refresh_token", "TEXT NULL"),
+                ("oauth_token_expires_at", "DATETIME NULL"),
+                ("oauth_tenant_id", "VARCHAR(100) NULL"),
+            ]:
+                if col_name not in mb_cols:
+                    conn.execute(sa_text_oauth(f"ALTER TABLE sender_mailboxes ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to sender_mailboxes")
+    except Exception as e:
+        logger.warning(f"Migration check for OAuth2 columns: {e}")
+
     # Migration: encrypt existing plaintext mailbox passwords
     try:
         from app.core.encryption import encrypt_field, is_encrypted

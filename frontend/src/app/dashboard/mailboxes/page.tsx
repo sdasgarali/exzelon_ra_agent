@@ -30,6 +30,9 @@ interface Mailbox {
   connection_error: string | null
   last_connection_test_at: string | null
   email_signature_json: string | null
+  auth_method: string
+  oauth_tenant_id: string | null
+  oauth_connected: boolean
 }
 
 interface MailboxStats {
@@ -120,7 +123,33 @@ export default function MailboxesPage() {
     daily_send_limit: 30,
     notes: '',
     email_signature_json: '',
+    auth_method: 'password' as 'password' | 'oauth2',
+    oauth_tenant_id: '',
   })
+  const [oauthConnecting, setOauthConnecting] = useState(false)
+
+  // Handle OAuth callback (query params ?code=...&state=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    if (code && state) {
+      // Remove query params from URL to prevent re-processing
+      window.history.replaceState({}, '', window.location.pathname)
+      ;(async () => {
+        try {
+          const result = await mailboxesApi.oauthCallback(code, state)
+          setTestResult({ success: true, message: result.message || 'OAuth2 connected successfully' })
+          fetchData()
+        } catch (error: any) {
+          setTestResult({
+            success: false,
+            message: error.response?.data?.detail || 'OAuth2 callback failed',
+          })
+        }
+      })()
+    }
+  }, [])
 
   useEffect(() => {
     fetchData()
@@ -269,13 +298,26 @@ export default function MailboxesPage() {
       const sigJson = hasSig ? JSON.stringify(sigData) : ''
 
       if (editingMailbox) {
-        const updateData = { ...formData, email_signature_json: sigJson }
+        const updateData = {
+          ...formData,
+          email_signature_json: sigJson,
+          oauth_tenant_id: formData.oauth_tenant_id || undefined,
+        }
         if (!updateData.password) {
           delete (updateData as any).password
         }
         await mailboxesApi.update(editingMailbox.mailbox_id, updateData)
       } else {
-        await mailboxesApi.create({ ...formData, email_signature_json: sigJson })
+        const createData = {
+          ...formData,
+          email_signature_json: sigJson,
+          oauth_tenant_id: formData.oauth_tenant_id || undefined,
+        }
+        // For OAuth2 mailboxes, password is not required
+        if (formData.auth_method === 'oauth2' && !createData.password) {
+          delete (createData as any).password
+        }
+        await mailboxesApi.create(createData)
       }
       setShowAddModal(false)
       setEditingMailbox(null)
@@ -300,6 +342,8 @@ export default function MailboxesPage() {
       daily_send_limit: mailbox.daily_send_limit,
       notes: mailbox.notes || '',
       email_signature_json: mailbox.email_signature_json || '',
+      auth_method: (mailbox.auth_method || 'password') as 'password' | 'oauth2',
+      oauth_tenant_id: mailbox.oauth_tenant_id || '',
     })
     // Populate signature fields from saved JSON
     if (mailbox.email_signature_json) {
@@ -419,8 +463,22 @@ export default function MailboxesPage() {
       daily_send_limit: 30,
       notes: '',
       email_signature_json: '',
+      auth_method: 'password',
+      oauth_tenant_id: '',
     })
     setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
+  }
+
+  const handleOAuthConnect = async (mailboxId?: number) => {
+    setOauthConnecting(true)
+    try {
+      const result = await mailboxesApi.oauthInitiate(mailboxId, formData.email || undefined)
+      // Open authorization URL — redirect in same window for SPA callback
+      window.location.href = result.authorization_url
+    } catch (error: any) {
+      toast('error', error.response?.data?.detail || 'Failed to initiate OAuth')
+      setOauthConnecting(false)
+    }
   }
 
   const clearFilters = () => {
@@ -633,7 +691,18 @@ export default function MailboxesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {PROVIDER_LABELS[mailbox.provider] || mailbox.provider}
+                  <div className="flex items-center gap-1.5">
+                    {PROVIDER_LABELS[mailbox.provider] || mailbox.provider}
+                    {mailbox.auth_method === 'oauth2' && (
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        mailbox.oauth_connected
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {mailbox.oauth_connected ? 'OAuth' : 'OAuth (not connected)'}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <select
@@ -731,10 +800,6 @@ export default function MailboxesPage() {
                 <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian from Exzelon" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingMailbox ? '(leave blank to keep current)' : '*'}</label>
-                <input type="password" required={!editingMailbox} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="********" />
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
                 <select value={formData.provider} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
                   <option value="microsoft_365">Microsoft 365</option>
@@ -743,6 +808,88 @@ export default function MailboxesPage() {
                   <option value="other">Other</option>
                 </select>
               </div>
+
+              {/* Authentication Method */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Authentication Method</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="auth_method"
+                      value="password"
+                      checked={formData.auth_method === 'password'}
+                      onChange={() => setFormData({ ...formData, auth_method: 'password' })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm">Password / App Password</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="auth_method"
+                      value="oauth2"
+                      checked={formData.auth_method === 'oauth2'}
+                      onChange={() => setFormData({ ...formData, auth_method: 'oauth2' })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm">Microsoft OAuth2</span>
+                  </label>
+                </div>
+              </div>
+
+              {formData.auth_method === 'password' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password {editingMailbox ? '(leave blank to keep current)' : '*'}</label>
+                  <input type="password" required={!editingMailbox && formData.auth_method === 'password'} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="********" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Azure AD Tenant ID (optional)</label>
+                    <input type="text" value={formData.oauth_tenant_id} onChange={(e) => setFormData({ ...formData, oauth_tenant_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="common (multi-tenant)" />
+                    <p className="text-xs text-gray-500 mt-1">Leave blank for &quot;common&quot; (works for most M365 tenants)</p>
+                  </div>
+                  {editingMailbox && (
+                    <div className="flex items-center gap-3">
+                      {editingMailbox.oauth_connected ? (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">OAuth Connected</span>
+                          <button
+                            type="button"
+                            onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)}
+                            disabled={oauthConnecting}
+                            className="text-sm text-blue-600 hover:text-blue-800 underline"
+                          >
+                            {oauthConnecting ? 'Redirecting...' : 'Re-authorize'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)}
+                          disabled={oauthConnecting}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                        >
+                          <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                            <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                            <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                            <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                          </svg>
+                          {oauthConnecting ? 'Redirecting...' : 'Connect with Microsoft'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!editingMailbox && (
+                    <p className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+                      Save the mailbox first, then click &quot;Edit&quot; to connect OAuth2.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {formData.provider === 'smtp' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>

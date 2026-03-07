@@ -92,6 +92,12 @@ class Settings(BaseSettings):
             return self.BASE_URL.rstrip("/")
         return f"http://{self.HOST}:{self.PORT}"
 
+    # Microsoft 365 OAuth2
+    MS365_OAUTH_CLIENT_ID: str = ""
+    MS365_OAUTH_CLIENT_SECRET: str = ""
+    MS365_OAUTH_TENANT_ID: str = "common"  # "common" for multi-tenant
+    MS365_OAUTH_REDIRECT_URI: str = ""  # e.g. https://ra.partnerwithus.tech/dashboard/mailboxes
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 

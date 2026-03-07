@@ -31,6 +31,126 @@ from app.schemas.sender_mailbox import (
 router = APIRouter(prefix="/mailboxes", tags=["Mailboxes"])
 
 
+# ---- OAuth2 endpoints (placed BEFORE /{mailbox_id} routes) ----
+
+@router.get("/oauth/initiate")
+async def oauth_initiate(
+    mailbox_id: Optional[int] = Query(None, description="Existing mailbox ID to connect OAuth"),
+    email: Optional[str] = Query(None, description="Email address for new mailbox OAuth"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
+):
+    """Initiate Microsoft OAuth2 authorization flow.
+
+    Returns the authorization URL to redirect the user to Microsoft login.
+    """
+    from app.core.config import settings as app_settings
+    if not app_settings.MS365_OAUTH_CLIENT_ID:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MS365 OAuth not configured — set MS365_OAUTH_CLIENT_ID in .env"
+        )
+
+    # Determine email and tenant
+    target_email = email
+    tenant_id = None
+    if mailbox_id:
+        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        if not mailbox:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
+        target_email = mailbox.email
+        tenant_id = mailbox.oauth_tenant_id
+
+    if not target_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either mailbox_id or email is required"
+        )
+
+    # Build state: encode mailbox_id or email for the callback
+    import json as _json, base64 as _b64
+    state_data = {"mailbox_id": mailbox_id, "email": target_email, "user_id": current_user.user_id}
+    state = _b64.urlsafe_b64encode(_json.dumps(state_data).encode()).decode()
+
+    from app.services.oauth_helper import get_oauth_authorization_url
+    auth_url = get_oauth_authorization_url(
+        email=target_email,
+        tenant_id=tenant_id,
+        state=state,
+    )
+
+    return {"authorization_url": auth_url}
+
+
+@router.post("/oauth/callback")
+async def oauth_callback(
+    request_body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN]))
+):
+    """Handle OAuth2 callback — exchange authorization code for tokens.
+
+    Body: { "code": "...", "state": "..." }
+    """
+    code = request_body.get("code")
+    state = request_body.get("state")
+    if not code or not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both 'code' and 'state' are required"
+        )
+
+    # Decode state
+    import json as _json, base64 as _b64
+    try:
+        state_data = _json.loads(_b64.urlsafe_b64decode(state).decode())
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter")
+
+    mailbox_id = state_data.get("mailbox_id")
+    target_email = state_data.get("email")
+
+    # Find or validate the mailbox
+    if mailbox_id:
+        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        if not mailbox:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
+    else:
+        # For new mailbox flow — find by email
+        mailbox = db.query(SenderMailbox).filter(SenderMailbox.email == target_email).first()
+        if not mailbox:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mailbox not found — create the mailbox first, then connect OAuth"
+            )
+
+    # Exchange code for tokens
+    from app.services.oauth_helper import exchange_code_for_tokens
+    from datetime import timedelta
+    try:
+        token_data = exchange_code_for_tokens(
+            code=code,
+            tenant_id=mailbox.oauth_tenant_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Store encrypted tokens on the mailbox
+    mailbox.auth_method = "oauth2"
+    mailbox.oauth_access_token = encrypt_field(token_data["access_token"])
+    mailbox.oauth_refresh_token = encrypt_field(token_data["refresh_token"])
+    mailbox.oauth_token_expires_at = datetime.utcnow() + timedelta(seconds=token_data["expires_in"])
+    db.commit()
+
+    logger.info("OAuth2 tokens stored", mailbox_id=mailbox.mailbox_id, email=mailbox.email)
+
+    return {
+        "success": True,
+        "mailbox_id": mailbox.mailbox_id,
+        "message": "OAuth2 connected successfully",
+    }
+
+
 def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
     """Convert mailbox model to response schema."""
     return SenderMailboxResponse(
@@ -63,7 +183,10 @@ def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
         can_send=mailbox.can_send,
         remaining_daily_quota=mailbox.remaining_daily_quota,
         email_signature_json=mailbox.email_signature_json,
-        is_archived=mailbox.is_archived
+        is_archived=mailbox.is_archived,
+        auth_method=mailbox.auth_method or "password",
+        oauth_tenant_id=mailbox.oauth_tenant_id,
+        oauth_connected=bool(mailbox.oauth_refresh_token),
     )
 
 
@@ -199,7 +322,9 @@ async def create_mailbox(
     mailbox = SenderMailbox(
         email=mailbox_in.email,
         display_name=mailbox_in.display_name,
-        password=encrypt_field(mailbox_in.password),
+        password=encrypt_field(mailbox_in.password) if mailbox_in.password else None,
+        auth_method=mailbox_in.auth_method,
+        oauth_tenant_id=mailbox_in.oauth_tenant_id,
         provider=EmailProvider(mailbox_in.provider),
         smtp_host=smtp_host,
         smtp_port=mailbox_in.smtp_port,
@@ -285,27 +410,34 @@ async def delete_mailbox(
     return {"message": f"Mailbox {mailbox.email} archived successfully"}
 
 
-def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str) -> tuple[bool, str]:
-    """Blocking SMTP test — run via asyncio.to_thread()."""
+def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str = None, mailbox=None, db=None) -> tuple[bool, str]:
+    """Blocking SMTP test — run via asyncio.to_thread().
+
+    Supports both password-based and OAuth2 (XOAUTH2) authentication.
+    """
     try:
         if smtp_port == 465:
-            # Port 465 uses implicit SSL (SMTP_SSL)
             server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
         else:
-            # Port 587 (default) uses STARTTLS
             server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
             server.starttls()
-        server.login(email, password)
+
+        # Use OAuth2 if mailbox is configured for it
+        if mailbox and getattr(mailbox, "auth_method", "password") == "oauth2" and db:
+            from app.services.oauth_helper import smtp_authenticate
+            smtp_authenticate(server, email, mailbox, db)
+        else:
+            server.login(email, password)
+
         server.quit()
         return True, "SMTP connection successful"
     except smtplib.SMTPAuthenticationError as e:
         error_str = str(e)
-        # Detect Microsoft 365 Basic Auth blocked
         if "BasicAuthBlocked" in error_str or "5.7.139" in error_str:
             return False, (
                 "Microsoft 365 has blocked Basic Authentication for this account. "
-                "Enable SMTP AUTH in M365 Admin Center (Users > Active Users > Mail > Manage email apps) "
-                "or use an App Password if MFA is enabled."
+                "Use OAuth2 authentication or enable SMTP AUTH in M365 Admin Center "
+                "(Users > Active Users > Mail > Manage email apps)."
             )
         return False, "SMTP authentication failed — check email and password (or App Password if MFA is enabled)"
     except smtplib.SMTPConnectError:
@@ -318,15 +450,27 @@ def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str) -
         return False, f"Connection refused by {smtp_host}:{smtp_port} — server may be down or port blocked"
     except ssl.SSLError as e:
         return False, f"SSL/TLS error: {e} — try port 587 (STARTTLS) instead of 465 (SSL), or vice versa"
+    except ValueError as e:
+        # OAuth2-specific errors (token refresh failed, no refresh token, etc.)
+        return False, f"OAuth2 error: {str(e)}"
     except Exception as e:
         return False, f"SMTP error: {str(e)}"
 
 
-def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str) -> tuple[bool, str]:
-    """Blocking IMAP test — run via asyncio.to_thread()."""
+def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str = None, mailbox=None, db=None) -> tuple[bool, str]:
+    """Blocking IMAP test — run via asyncio.to_thread().
+
+    Supports both password-based and OAuth2 (XOAUTH2) authentication.
+    """
     try:
         imap = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=15)
-        imap.login(email, password)
+
+        if mailbox and getattr(mailbox, "auth_method", "password") == "oauth2" and db:
+            from app.services.oauth_helper import imap_authenticate
+            imap_authenticate(imap, email, mailbox, db)
+        else:
+            imap.login(email, password)
+
         imap.logout()
         return True, "IMAP connection successful"
     except Exception as e:
@@ -334,7 +478,7 @@ def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str) -
         if "BasicAuthBlocked" in error_str:
             return False, (
                 "IMAP Basic Auth blocked by M365. "
-                "Enable IMAP in M365 Admin Center or use OAuth2."
+                "Use OAuth2 authentication or enable IMAP in M365 Admin Center."
             )
         return False, f"IMAP error: {str(e)}"
 
@@ -354,40 +498,57 @@ async def test_mailbox_connection(
         )
 
     messages = []
+    plain_password = None
 
-    # Decrypt password with error handling
-    try:
-        plain_password = decrypt_field(mailbox.password)
-        # Check if decryption returned the encrypted blob (key mismatch)
-        if plain_password and is_encrypted(plain_password):
-            logger.error("Password decryption returned encrypted blob", mailbox_id=mailbox_id)
+    # For password-based auth, decrypt the password
+    if getattr(mailbox, "auth_method", "password") != "oauth2":
+        try:
+            plain_password = decrypt_field(mailbox.password)
+            if plain_password and is_encrypted(plain_password):
+                logger.error("Password decryption returned encrypted blob", mailbox_id=mailbox_id)
+                return TestMailboxConnectionResponse(
+                    success=False,
+                    message="Password decryption failed — encryption key may have changed. Re-save the mailbox password.",
+                    smtp_connected=False,
+                    imap_connected=False,
+                )
+        except RuntimeError as e:
+            logger.error("Encryption key error", error=str(e))
             return TestMailboxConnectionResponse(
                 success=False,
-                message="Password decryption failed — encryption key may have changed. Re-save the mailbox password.",
+                message="Server encryption key not configured — contact administrator",
                 smtp_connected=False,
                 imap_connected=False,
             )
-    except RuntimeError as e:
-        logger.error("Encryption key error", error=str(e))
-        return TestMailboxConnectionResponse(
-            success=False,
-            message="Server encryption key not configured — contact administrator",
-            smtp_connected=False,
-            imap_connected=False,
-        )
+    else:
+        # For OAuth2, verify tokens exist
+        if not mailbox.oauth_refresh_token:
+            return TestMailboxConnectionResponse(
+                success=False,
+                message="OAuth2 not connected — click 'Connect with Microsoft' first",
+                smtp_connected=False,
+                imap_connected=False,
+            )
 
     smtp_host = mailbox.smtp_host or "smtp.office365.com"
 
+    # For OAuth2 mailboxes, skip password decryption errors — we use tokens instead
+    is_oauth = getattr(mailbox, "auth_method", "password") == "oauth2"
+
     # Run blocking I/O in thread pool
     smtp_connected, smtp_msg = await asyncio.to_thread(
-        _test_smtp_sync, smtp_host, mailbox.smtp_port, mailbox.email, plain_password
+        _test_smtp_sync, smtp_host, mailbox.smtp_port, mailbox.email,
+        plain_password if not is_oauth else None,
+        mailbox, db,
     )
     messages.append(smtp_msg)
 
     imap_connected = False
     if mailbox.imap_host:
         imap_connected, imap_msg = await asyncio.to_thread(
-            _test_imap_sync, mailbox.imap_host, mailbox.imap_port, mailbox.email, plain_password
+            _test_imap_sync, mailbox.imap_host, mailbox.imap_port, mailbox.email,
+            plain_password if not is_oauth else None,
+            mailbox, db,
         )
         messages.append(imap_msg)
 

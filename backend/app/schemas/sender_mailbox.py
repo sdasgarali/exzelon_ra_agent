@@ -39,7 +39,9 @@ class SenderMailboxBase(BaseModel):
 
 class SenderMailboxCreate(SenderMailboxBase):
     """Schema for creating a sender mailbox."""
-    password: str = Field(..., min_length=1)
+    password: Optional[str] = None  # Optional for OAuth2 mailboxes
+    auth_method: str = "password"  # "password" | "oauth2"
+    oauth_tenant_id: Optional[str] = None
     warmup_status: WarmupStatusEnum = WarmupStatusEnum.INACTIVE
     is_active: bool = True
 
@@ -49,6 +51,8 @@ class SenderMailboxUpdate(BaseModel):
     email: Optional[EmailStr] = None
     display_name: Optional[str] = None
     password: Optional[str] = None
+    auth_method: Optional[str] = None
+    oauth_tenant_id: Optional[str] = None
     provider: Optional[EmailProviderEnum] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
@@ -84,6 +88,11 @@ class SenderMailboxResponse(SenderMailboxBase):
     email_signature_json: Optional[str] = None
 
     is_archived: bool = False
+
+    # OAuth fields
+    auth_method: str = "password"
+    oauth_tenant_id: Optional[str] = None
+    oauth_connected: bool = False  # True if OAuth tokens are stored
 
     # Computed fields
     can_send: bool = False

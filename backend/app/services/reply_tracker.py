@@ -81,9 +81,9 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
     imap_port = mailbox.imap_port or 993
 
     try:
-        from app.core.encryption import decrypt_field
+        from app.services.oauth_helper import imap_authenticate
         imap = imaplib.IMAP4_SSL(imap_host, imap_port)
-        imap.login(mailbox.email, decrypt_field(mailbox.password))
+        imap_authenticate(imap, mailbox.email, mailbox, db)
         imap.select("INBOX")
     except Exception as e:
         logger.error("IMAP connection failed", mailbox=mailbox.email, error=str(e))

@@ -375,6 +375,16 @@ export const mailboxesApi = {
     })
     return response.data
   },
+  oauthInitiate: async (mailboxId?: number, email?: string) => {
+    const response = await api.get('/mailboxes/oauth/initiate', {
+      params: { mailbox_id: mailboxId, email }
+    })
+    return response.data
+  },
+  oauthCallback: async (code: string, state: string) => {
+    const response = await api.post('/mailboxes/oauth/callback', { code, state })
+    return response.data
+  },
 }
 
 // Warmup Engine API

@@ -37,7 +37,12 @@ class SenderMailbox(Base):
     display_name = Column(String(255), nullable=True)
 
     # Authentication
-    password = Column(String(500), nullable=False)
+    password = Column(String(500), nullable=True)  # Nullable for OAuth2-only mailboxes
+    auth_method = Column(String(20), default="password")  # "password" | "oauth2"
+    oauth_access_token = Column(Text, nullable=True)
+    oauth_refresh_token = Column(Text, nullable=True)
+    oauth_token_expires_at = Column(DateTime, nullable=True)
+    oauth_tenant_id = Column(String(100), nullable=True)  # Azure AD tenant ID
 
     # Provider configuration
     provider = Column(Enum(EmailProvider, values_callable=lambda x: [e.value for e in x]), default=EmailProvider.MICROSOFT_365)
