@@ -335,6 +335,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for dedup columns: {e}")
 
+    # Migration: add enrichment columns to client_info
+    try:
+        from sqlalchemy import text as sa_text_enrich, inspect as sa_inspect_enrich
+        with engine.connect() as conn:
+            inspector_enrich = sa_inspect_enrich(engine)
+            client_cols = [c["name"] for c in inspector_enrich.get_columns("client_info")]
+            for col_name, col_def in [
+                ("website", "VARCHAR(500) NULL"),
+                ("linkedin_url", "VARCHAR(500) NULL"),
+                ("domain", "VARCHAR(255) NULL"),
+                ("description", "VARCHAR(2000) NULL"),
+                ("logo_url", "VARCHAR(500) NULL"),
+                ("employee_count", "INT NULL"),
+                ("founded_year", "INT NULL"),
+                ("headquarters", "VARCHAR(255) NULL"),
+                ("phone", "VARCHAR(50) NULL"),
+                ("enrichment_source", "VARCHAR(100) NULL"),
+                ("enriched_at", "DATETIME NULL"),
+            ]:
+                if col_name not in client_cols:
+                    conn.execute(sa_text_enrich(f"ALTER TABLE client_info ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to client_info")
+    except Exception as e:
+        logger.warning(f"Migration check for client enrichment columns: {e}")
+
     # Migration: encrypt existing plaintext mailbox passwords
     try:
         from app.core.encryption import encrypt_field, is_encrypted

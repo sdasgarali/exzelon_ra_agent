@@ -1,6 +1,6 @@
 """Client info model for company lifecycle tracking."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Enum
+from sqlalchemy import Column, Integer, String, Date, DateTime, Enum
 from app.db.base import Base
 
 
@@ -35,6 +35,19 @@ class ClientInfo(Base):
     industry = Column(String(100), nullable=True)
     company_size = Column(String(50), nullable=True)  # e.g., "1-50", "51-200", "201-500"
     location_state = Column(String(50), nullable=True)
+
+    # Enrichment fields
+    website = Column(String(500), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    domain = Column(String(255), nullable=True)
+    description = Column(String(2000), nullable=True)
+    logo_url = Column(String(500), nullable=True)
+    employee_count = Column(Integer, nullable=True)
+    founded_year = Column(Integer, nullable=True)
+    headquarters = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    enrichment_source = Column(String(100), nullable=True)
+    enriched_at = Column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
         return f"<ClientInfo(client_id={self.client_id}, name='{self.client_name}', category='{self.client_category}')>"

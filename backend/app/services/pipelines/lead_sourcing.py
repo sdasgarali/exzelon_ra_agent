@@ -634,8 +634,12 @@ def run_lead_sourcing_pipeline(
                 if sub_src in per_sub_source_detail:
                     per_sub_source_detail[sub_src]["new"] += 1
 
-                # Upsert client_info with normalized name
-                upsert_client(db, job_data["client_name"])
+                # Upsert client_info with normalized name + enrichment data
+                upsert_client(
+                    db, job_data["client_name"],
+                    employer_website=job_data.get("employer_website"),
+                    employer_linkedin_url=job_data.get("employer_linkedin_url"),
+                )
 
             except Exception as e:
                 logger.error("Error processing job", error=str(e), job=job_data.get("client_name"))
@@ -699,7 +703,22 @@ def run_lead_sourcing_pipeline(
         db.close()
 
 
-def upsert_client(db, client_name: str):
+def _extract_domain(url: str) -> str:
+    """Extract domain from URL (e.g., 'https://www.example.com/page' -> 'example.com')."""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url if url.startswith("http") else f"https://{url}")
+        host = parsed.hostname or ""
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except Exception:
+        return ""
+
+
+def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None):
     """Create or update client_info record with normalized matching."""
     try:
         # Try exact match first
@@ -722,10 +741,24 @@ def upsert_client(db, client_name: str):
                 service_count=1,
                 client_category=ClientCategory.PROSPECT,
             )
+            # Populate enrichment fields from lead data
+            if employer_website:
+                client.website = employer_website
+                client.domain = _extract_domain(employer_website)
+            if employer_linkedin_url:
+                client.linkedin_url = employer_linkedin_url
             db.add(client)
             db.flush()
         else:
             client.service_count = (client.service_count or 0) + 1
+
+            # Backfill missing website/linkedin from lead data
+            if employer_website and not client.website:
+                client.website = employer_website
+                if not client.domain:
+                    client.domain = _extract_domain(employer_website)
+            if employer_linkedin_url and not client.linkedin_url:
+                client.linkedin_url = employer_linkedin_url
 
             # Compute client category based on posting frequency
             # Read thresholds from settings DB (same keys as clients endpoint)

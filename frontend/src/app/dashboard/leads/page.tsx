@@ -17,9 +17,16 @@ interface Lead {
   salary_min: number
   salary_max: number
   contact_count: number  // Number of contacts linked to this lead
+  industry: string | null
+  company_size: string | null
   is_archived: boolean
   created_at: string
   updated_at: string
+}
+
+interface LeadFilterOptions {
+  industries: string[]
+  company_sizes: string[]
 }
 
 interface Contact {
@@ -55,7 +62,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'lead_status' | 'contact_count'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'lead_status' | 'contact_count' | 'industry' | 'company_size'
 type SortOrder = 'asc' | 'desc'
 
 export default function LeadsPage() {
@@ -76,6 +83,11 @@ export default function LeadsPage() {
   const [filterState, setFilterState] = useState('')
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
+  const [filterIndustry, setFilterIndustry] = useState('')
+  const [filterCompanySize, setFilterCompanySize] = useState('')
+
+  // Filter options from backend
+  const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [] })
 
   // Sorting
   const [sortBy, setSortBy] = useState<SortField>('created_at')
@@ -140,6 +152,11 @@ export default function LeadsPage() {
     }
   }, [leads])
 
+  // Load filter options on mount
+  useEffect(() => {
+    leadsApi.filterOptions().then(setLeadFilterOptions).catch(() => {})
+  }, [])
+
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('')
   useEffect(() => {
@@ -149,7 +166,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -167,6 +184,8 @@ export default function LeadsPage() {
       if (filterState) params.state = filterState
       if (filterFromDate) params.from_date = filterFromDate
       if (filterToDate) params.to_date = filterToDate
+      if (filterIndustry) params.industry = filterIndustry
+      if (filterCompanySize) params.company_size = filterCompanySize
       if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
@@ -214,6 +233,8 @@ export default function LeadsPage() {
     setFilterState('')
     setFilterFromDate('')
     setFilterToDate('')
+    setFilterIndustry('')
+    setFilterCompanySize('')
     setShowArchived(false)
     setPage(1)
   }
@@ -508,7 +529,7 @@ export default function LeadsPage() {
     return sortOrder === 'asc' ? <span className="ml-1">&#8593;</span> : <span className="ml-1">&#8595;</span>
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterState, filterFromDate, filterToDate, search].filter(Boolean).length + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, search].filter(Boolean).length + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -701,7 +722,7 @@ export default function LeadsPage() {
         {/* Expanded Filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t">
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
             <div>
               <label className="label text-sm">State</label>
               <select
@@ -711,6 +732,32 @@ export default function LeadsPage() {
               >
                 <option value="">All States</option>
                 {US_STATES.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label text-sm">Industry</label>
+              <select
+                value={filterIndustry}
+                onChange={(e) => { setFilterIndustry(e.target.value); setPage(1); }}
+                className="input w-full"
+              >
+                <option value="">All Industries</option>
+                {leadFilterOptions.industries.map(i => (
+                  <option key={i} value={i}>{i}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label text-sm">Company Size</label>
+              <select
+                value={filterCompanySize}
+                onChange={(e) => { setFilterCompanySize(e.target.value); setPage(1); }}
+                className="input w-full"
+              >
+                <option value="">All Sizes</option>
+                {leadFilterOptions.company_sizes.map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -803,6 +850,18 @@ export default function LeadsPage() {
                 >
                   Source <SortIcon field="source" />
                 </th>
+                <th
+                  onClick={() => handleSort('industry')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Industry <SortIcon field="industry" />
+                </th>
+                <th
+                  onClick={() => handleSort('company_size')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Size <SortIcon field="company_size" />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Link
                 </th>
@@ -823,13 +882,13 @@ export default function LeadsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                     Loading leads...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                     No leads found. {activeFiltersCount > 0 ? 'Try adjusting your filters.' : 'Run the Lead Sourcing pipeline to fetch jobs.'}
                   </td>
                 </tr>
@@ -866,6 +925,12 @@ export default function LeadsPage() {
                       <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">
                         {lead.source}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {lead.industry || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {lead.company_size || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {lead.job_link ? (

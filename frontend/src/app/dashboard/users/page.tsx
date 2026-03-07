@@ -511,21 +511,22 @@ export default function UsersPage() {
                 />
               </div>
 
-              {/* Password (create only) */}
-              {!editingUser && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Password <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Min 8 characters"
-                  />
-                </div>
-              )}
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Password {!editingUser && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder={editingUser ? "Leave blank to keep current password" : "Min 8 characters"}
+                />
+                {editingUser && (
+                  <p className="text-xs text-gray-400 mt-1">Only fill if you want to change the password.</p>
+                )}
+              </div>
 
               {/* Full Name */}
               <div>

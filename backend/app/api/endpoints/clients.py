@@ -18,6 +18,7 @@ from app.db.models.contact import ContactDetails
 from app.db.models.settings import Settings as SettingsModel
 from app.db.query_helpers import active_query
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
+from app.services.company_enrichment import enrich_client, bulk_enrich_clients
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -28,6 +29,8 @@ SORT_COLUMNS = {
     "status": ClientInfo.status,
     "client_category": ClientInfo.client_category,
     "industry": ClientInfo.industry,
+    "company_size": ClientInfo.company_size,
+    "location_state": ClientInfo.location_state,
     "created_at": ClientInfo.created_at,
 }
 
@@ -81,6 +84,9 @@ async def list_clients(
     limit: int = Query(100, ge=1, le=500),
     status: Optional[ClientStatus] = None,
     category: Optional[ClientCategory] = None,
+    industry: Optional[str] = None,
+    company_size: Optional[str] = None,
+    location_state: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("client_name", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
@@ -95,6 +101,12 @@ async def list_clients(
         query = query.filter(ClientInfo.status == status)
     if category:
         query = query.filter(ClientInfo.client_category == category)
+    if industry:
+        query = query.filter(ClientInfo.industry == industry)
+    if company_size:
+        query = query.filter(ClientInfo.company_size == company_size)
+    if location_state:
+        query = query.filter(ClientInfo.location_state == location_state)
     if search:
         search_stripped = search.lstrip('#').strip()
         if search_stripped.isdigit():
@@ -216,6 +228,31 @@ async def export_clients_csv(
     )
 
 
+@router.get("/filter-options")
+async def get_client_filter_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get distinct values for client filter dropdowns."""
+    industries = [r[0] for r in db.query(ClientInfo.industry).filter(
+        ClientInfo.industry.isnot(None), ClientInfo.industry != ""
+    ).distinct().order_by(ClientInfo.industry).all()]
+
+    sizes = [r[0] for r in db.query(ClientInfo.company_size).filter(
+        ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
+    ).distinct().order_by(ClientInfo.company_size).all()]
+
+    states = [r[0] for r in db.query(ClientInfo.location_state).filter(
+        ClientInfo.location_state.isnot(None), ClientInfo.location_state != ""
+    ).distinct().order_by(ClientInfo.location_state).all()]
+
+    return {
+        "industries": industries,
+        "company_sizes": sizes,
+        "location_states": states,
+    }
+
+
 @router.delete("/bulk")
 async def bulk_delete_clients(
     request: BulkClientIdsRequest,
@@ -251,6 +288,39 @@ async def bulk_delete_clients(
         "archived_count": archived_count,
         "archived_ids": found_ids
     }
+
+
+@router.post("/bulk/enrich")
+async def bulk_enrich(
+    request: BulkClientIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Enrich multiple clients with data aggregated from leads."""
+    client_ids = request.client_ids
+    if not client_ids:
+        raise HTTPException(status_code=400, detail="No client IDs provided")
+    if len(client_ids) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 clients per batch")
+
+    result = bulk_enrich_clients(db, client_ids)
+    return result
+
+
+@router.post("/{client_id}/enrich")
+async def enrich_single_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Enrich a single client with data aggregated from leads."""
+    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    result = enrich_client(db, client)
+    db.commit()
+    return result
 
 
 @router.get("/{client_id}", response_model=ClientResponse)

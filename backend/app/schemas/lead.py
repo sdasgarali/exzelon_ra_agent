@@ -57,6 +57,8 @@ class LeadResponse(LeadBase):
     lead_status: LeadStatus
     skip_reason: Optional[str] = None
     contact_count: Optional[int] = 0
+    industry: Optional[str] = None
+    company_size: Optional[str] = None
     is_archived: bool = False
     created_at: datetime
     updated_at: datetime

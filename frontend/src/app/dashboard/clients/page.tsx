@@ -12,9 +12,17 @@ interface Client {
   location_state: string
   client_category: string
   service_count: number
+  website: string | null
+  linkedin_url: string | null
   is_archived: boolean
   created_at: string
   updated_at: string
+}
+
+interface FilterOptions {
+  industries: string[]
+  company_sizes: string[]
+  location_states: string[]
 }
 
 const STATUS_OPTIONS = [
@@ -29,7 +37,7 @@ const CATEGORY_OPTIONS = [
   { value: 'dormant', label: 'Dormant', color: 'bg-gray-100 text-gray-800' },
 ]
 
-type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'created_at'
+type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'created_at'
 type SortOrder = 'asc' | 'desc'
 
 export default function ClientsPage() {
@@ -51,7 +59,13 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [filterIndustry, setFilterIndustry] = useState('')
+  const [filterSize, setFilterSize] = useState('')
+  const [filterState, setFilterState] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+
+  // Filter options from backend
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ industries: [], company_sizes: [], location_states: [] })
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -69,9 +83,14 @@ export default function ClientsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
+  // Load filter options on mount
+  useEffect(() => {
+    clientsApi.filterOptions().then(setFilterOptions).catch(() => {})
+  }, [])
+
   useEffect(() => {
     fetchClients()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterSize, filterState, sortBy, sortOrder, showArchived])
 
   const fetchClients = async () => {
     try {
@@ -86,6 +105,9 @@ export default function ClientsPage() {
       if (debouncedSearch) params.search = debouncedSearch
       if (filterStatus) params.status = filterStatus
       if (filterCategory) params.category = filterCategory
+      if (filterIndustry) params.industry = filterIndustry
+      if (filterSize) params.company_size = filterSize
+      if (filterState) params.location_state = filterState
       if (showArchived) params.show_archived = true
 
       const response = await clientsApi.list(params)
@@ -194,6 +216,9 @@ export default function ClientsPage() {
     setSearch('')
     setFilterStatus('')
     setFilterCategory('')
+    setFilterIndustry('')
+    setFilterSize('')
+    setFilterState('')
     setShowArchived(false)
     setPage(1)
   }
@@ -224,7 +249,7 @@ export default function ClientsPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
-  const activeFiltersCount = [filterStatus, filterCategory, search].filter(Boolean).length + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterSize, filterState, search].filter(Boolean).length + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -313,6 +338,45 @@ export default function ClientsPage() {
             ))}
           </select>
 
+          {filterOptions.industries.length > 0 && (
+            <select
+              value={filterIndustry}
+              onChange={(e) => { setFilterIndustry(e.target.value); setPage(1); }}
+              className="input w-44"
+            >
+              <option value="">All Industries</option>
+              {filterOptions.industries.map(i => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          )}
+
+          {filterOptions.company_sizes.length > 0 && (
+            <select
+              value={filterSize}
+              onChange={(e) => { setFilterSize(e.target.value); setPage(1); }}
+              className="input w-36"
+            >
+              <option value="">All Sizes</option>
+              {filterOptions.company_sizes.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
+
+          {filterOptions.location_states.length > 0 && (
+            <select
+              value={filterState}
+              onChange={(e) => { setFilterState(e.target.value); setPage(1); }}
+              className="input w-36"
+            >
+              <option value="">All States</option>
+              {filterOptions.location_states.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          )}
+
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -371,8 +435,11 @@ export default function ClientsPage() {
                 >
                   Industry <SortIcon field="industry" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Size
+                <th
+                  onClick={() => handleSort('company_size')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Size <SortIcon field="company_size" />
                 </th>
                 <th
                   onClick={() => handleSort('status')}
@@ -445,7 +512,23 @@ export default function ClientsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900">{client.client_name}</div>
+                      <div className="text-sm font-medium">
+                        {client.website ? (
+                          <a
+                            href={client.website.startsWith('http') ? client.website : `https://${client.website}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1"
+                          >
+                            {client.client_name}
+                            <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <span className="text-gray-900">{client.client_name}</span>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">{client.location_state || '-'}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">

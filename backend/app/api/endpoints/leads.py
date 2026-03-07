@@ -11,6 +11,7 @@ from sqlalchemy import func, asc, desc
 from app.api.deps import get_db, get_current_active_user, require_role
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
+from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.outreach import OutreachEvent
@@ -61,6 +62,8 @@ async def list_leads(
     state: Optional[str] = None,
     client_name: Optional[str] = None,
     job_title: Optional[str] = None,
+    industry: Optional[str] = None,
+    company_size: Optional[str] = None,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
@@ -91,6 +94,22 @@ async def list_leads(
         query = query.filter(LeadDetails.client_name.ilike(f"%{client_name}%"))
     if job_title:
         query = query.filter(LeadDetails.job_title.ilike(f"%{job_title}%"))
+
+    # Filter by industry/company_size via client_info JOIN
+    if industry or company_size:
+        # Get matching client names from client_info
+        client_q = db.query(ClientInfo.client_name)
+        if industry:
+            client_q = client_q.filter(ClientInfo.industry == industry)
+        if company_size:
+            client_q = client_q.filter(ClientInfo.company_size == company_size)
+        matching_names = [r[0] for r in client_q.all()]
+        if matching_names:
+            query = query.filter(LeadDetails.client_name.in_(matching_names))
+        else:
+            # No clients match — return empty
+            query = query.filter(LeadDetails.lead_id == -1)
+
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
     if to_date:
@@ -123,6 +142,16 @@ async def list_leads(
             query = query.order_by(asc(count_expr))
         else:
             query = query.order_by(desc(count_expr))
+    elif sort_by in ("industry", "company_size"):
+        # Sort by client_info columns via subquery JOIN
+        ci_col = ClientInfo.industry if sort_by == "industry" else ClientInfo.company_size
+        ci_sub = db.query(ClientInfo.client_name, ci_col.label("sort_val")).subquery()
+        query = query.outerjoin(ci_sub, LeadDetails.client_name == ci_sub.c.client_name)
+        sort_expr = func.coalesce(ci_sub.c.sort_val, "")
+        if sort_order == "asc":
+            query = query.order_by(asc(sort_expr))
+        else:
+            query = query.order_by(desc(sort_expr))
     else:
         sort_column = SORT_COLUMNS.get(sort_by, LeadDetails.created_at)
         if sort_order == "asc":
@@ -159,10 +188,23 @@ async def list_leads(
         for lid, cnt in legacy_counts:
             contact_counts[lid] = max(contact_counts.get(lid, 0), cnt)
 
+    # Batch fetch industry/company_size from client_info
+    client_names = list({lead.client_name for lead in leads if lead.client_name})
+    client_info_map = {}
+    if client_names:
+        client_rows = db.query(ClientInfo.client_name, ClientInfo.industry, ClientInfo.company_size).filter(
+            ClientInfo.client_name.in_(client_names)
+        ).all()
+        for name, ind, size in client_rows:
+            client_info_map[name] = {"industry": ind, "company_size": size}
+
     lead_responses = []
     for lead in leads:
         lead_dict = LeadResponse.model_validate(lead).model_dump()
         lead_dict['contact_count'] = contact_counts.get(lead.lead_id, 0)
+        ci = client_info_map.get(lead.client_name, {})
+        lead_dict['industry'] = ci.get("industry")
+        lead_dict['company_size'] = ci.get("company_size")
         lead_responses.append(lead_dict)
 
     return {
@@ -311,6 +353,26 @@ async def export_leads_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/filter-options")
+async def get_lead_filter_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get distinct values for lead filter dropdowns (industry/company_size from client_info)."""
+    industries = [r[0] for r in db.query(ClientInfo.industry).filter(
+        ClientInfo.industry.isnot(None), ClientInfo.industry != ""
+    ).distinct().order_by(ClientInfo.industry).all()]
+
+    sizes = [r[0] for r in db.query(ClientInfo.company_size).filter(
+        ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
+    ).distinct().order_by(ClientInfo.company_size).all()]
+
+    return {
+        "industries": industries,
+        "company_sizes": sizes,
+    }
 
 
 @router.post("/import/preview")

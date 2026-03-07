@@ -145,6 +145,10 @@ export const leadsApi = {
     const response = await api.put('/leads/bulk/unarchive', { lead_ids: leadIds })
     return response.data
   },
+  filterOptions: async () => {
+    const response = await api.get('/leads/filter-options')
+    return response.data
+  },
 }
 
 // Clients API
@@ -174,6 +178,18 @@ export const clientsApi = {
   },
   exportCsv: async (params?: Record<string, any>) => {
     const response = await api.get('/clients/export/csv', { params, responseType: 'blob' })
+    return response.data
+  },
+  filterOptions: async () => {
+    const response = await api.get('/clients/filter-options')
+    return response.data
+  },
+  enrich: async (id: number) => {
+    const response = await api.post(`/clients/${id}/enrich`)
+    return response.data
+  },
+  bulkEnrich: async (ids: number[]) => {
+    const response = await api.post('/clients/bulk/enrich', { client_ids: ids })
     return response.data
   },
 }
