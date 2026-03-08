@@ -361,6 +361,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for client enrichment columns: {e}")
 
+    # Migration: make sender_mailboxes.password nullable (for OAuth2 mailboxes)
+    try:
+        from sqlalchemy import text as sa_text_pw_null
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                try:
+                    conn.execute(sa_text_pw_null(
+                        "ALTER TABLE sender_mailboxes MODIFY COLUMN password VARCHAR(500) NULL"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: made sender_mailboxes.password nullable")
+                except Exception as e2:
+                    logger.debug(f"Password nullable migration (may already be done): {e2}")
+    except Exception as e:
+        logger.warning(f"Migration check for password nullable: {e}")
+
     # Migration: add OAuth2 columns to sender_mailboxes
     try:
         from sqlalchemy import text as sa_text_oauth, inspect as sa_inspect_oauth
