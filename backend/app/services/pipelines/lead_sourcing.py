@@ -365,10 +365,13 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 continue
 
         # DB Layer 3: Check normalized company + normalized title + state
+        # Only check leads from the last 30 days to allow re-discovery of refreshed postings
         company_normalized = normalize_company_name(company_name)
         title_normalized = normalize_job_title(job.get("job_title") or "")
+        dedup_cutoff = datetime.utcnow() - timedelta(days=30)
         existing_leads = db.query(LeadDetails).filter(
-            LeadDetails.state == (job.get("state") or "")
+            LeadDetails.state == (job.get("state") or ""),
+            LeadDetails.created_at >= dedup_cutoff
         ).all()
 
         found_match = False
@@ -517,7 +520,7 @@ def run_lead_sourcing_pipeline(
         all_jobs = []
 
         # Fetch from all sources in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             futures = []
             for source_name, adapter in adapters:
                 future = executor.submit(

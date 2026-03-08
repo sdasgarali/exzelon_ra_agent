@@ -49,7 +49,7 @@ class TheirStackAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 500,
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from TheirStack API."""
         if not self.api_key:
@@ -75,7 +75,7 @@ class TheirStackAdapter(JobSourceAdapter):
 
         with httpx.Client(timeout=30) as client:
             try:
-                pages_to_fetch = max(1, limit // 100)
+                pages_to_fetch = min(10, max(1, limit // 100))
                 for page in range(pages_to_fetch):
                     payload["page"] = page
                     response = client.post(

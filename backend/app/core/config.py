@@ -176,7 +176,14 @@ class Settings(BaseSettings):
         "Shipping Manager", "Receiving Manager", "Fleet Manager",
         "Store Manager", "Restaurant Manager", "Hotel Manager",
         "Construction Manager", "Field Manager", "Service Manager",
-        "Account Manager", "Territory Manager", "Area Manager"
+        "Account Manager", "Territory Manager", "Area Manager",
+        "Warehouse Supervisor", "Production Manager", "VP Operations",
+        "VP Human Resources", "Director of HR", "Director of Operations",
+        "Staffing Coordinator", "Talent Manager", "Workforce Manager",
+        "EHS Manager", "Environmental Health Safety Manager",
+        "Training Manager", "Compliance Manager", "Risk Manager",
+        "Claims Manager", "Dispatch Manager", "Transportation Manager",
+        "Food Service Manager", "Housekeeping Manager"
     ]
 
     # Target Job Titles
@@ -192,7 +199,14 @@ class Settings(BaseSettings):
         "Shipping Manager", "Receiving Manager", "Fleet Manager",
         "Store Manager", "Restaurant Manager", "Hotel Manager",
         "Construction Manager", "Field Manager", "Service Manager",
-        "Account Manager", "Territory Manager", "Area Manager"
+        "Account Manager", "Territory Manager", "Area Manager",
+        "Warehouse Supervisor", "Production Manager", "VP Operations",
+        "VP Human Resources", "Director of HR", "Director of Operations",
+        "Staffing Coordinator", "Talent Manager", "Workforce Manager",
+        "EHS Manager", "Environmental Health Safety Manager",
+        "Training Manager", "Compliance Manager", "Risk Manager",
+        "Claims Manager", "Dispatch Manager", "Transportation Manager",
+        "Food Service Manager", "Housekeeping Manager"
     ]
 
 

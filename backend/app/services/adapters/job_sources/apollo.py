@@ -62,7 +62,7 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 500  # IMPACT: Increased to 500 for more results
+        limit: int = 1000  # IMPACT: Increased to 1000 for higher throughput
     ) -> List[Dict[str, Any]]:
         """Fetch companies with job openings from Apollo API.
 
@@ -110,7 +110,7 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                 # IMPACT: Search industries in groups of 3 for more diverse results
                 # Previously searched all industries at once, getting same 12 companies.
                 # Now cycles through industry groups, each returning different companies.
-                max_pages = 2  # 2 pages per industry group
+                max_pages = 5  # 5 pages per industry group for deeper coverage
                 all_organizations = []
                 industry_groups = []
                 for i in range(0, len(industry_keywords), 3):

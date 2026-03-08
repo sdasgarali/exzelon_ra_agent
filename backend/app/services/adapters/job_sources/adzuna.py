@@ -49,7 +49,7 @@ class AdzunaAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 500,
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Adzuna API."""
         if not self.app_id or not self.api_key:
@@ -73,7 +73,7 @@ class AdzunaAdapter(JobSourceAdapter):
             for query in batched_queries:
                 try:
                     # Adzuna uses page-based pagination (1-indexed)
-                    for page in range(1, 4):  # Up to 3 pages per query
+                    for page in range(1, 11):  # Up to 10 pages per query
                         params = {
                             "app_id": self.app_id,
                             "app_key": self.api_key,

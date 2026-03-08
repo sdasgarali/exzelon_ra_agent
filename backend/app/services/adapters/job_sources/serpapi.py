@@ -47,7 +47,7 @@ class SerpAPIAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 500,
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Google Jobs via SerpAPI."""
         if not self.api_key:
@@ -82,29 +82,39 @@ class SerpAPIAdapter(JobSourceAdapter):
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
                 try:
-                    params = {
-                        "engine": "google_jobs",
-                        "q": query,
-                        "location": location,
-                        "api_key": self.api_key,
-                        "chips": f"date_posted:{date_filter}",
-                    }
+                    # Google Jobs supports offset-based pagination via `start` param
+                    for start_offset in range(0, 30, 10):  # 3 pages: 0, 10, 20
+                        params = {
+                            "engine": "google_jobs",
+                            "q": query,
+                            "location": location,
+                            "api_key": self.api_key,
+                            "chips": f"date_posted:{date_filter}",
+                            "start": start_offset,
+                        }
 
-                    response = client.get(self.BASE_URL, params=params, timeout=30)
-                    response.raise_for_status()
-                    data = response.json()
+                        response = client.get(self.BASE_URL, params=params, timeout=30)
+                        response.raise_for_status()
+                        data = response.json()
 
-                    for result in data.get("jobs_results", []):
-                        job = self.normalize(result)
-                        if not job:
-                            continue
+                        results = data.get("jobs_results", [])
+                        if not results:
+                            break  # No more results for this query
 
-                        if exclude_keywords:
-                            job_text = f"{job['job_title']} {job['client_name']}".lower()
-                            if any(kw.lower() in job_text for kw in exclude_keywords):
+                        for result in results:
+                            job = self.normalize(result)
+                            if not job:
                                 continue
 
-                        jobs.append(job)
+                            if exclude_keywords:
+                                job_text = f"{job['job_title']} {job['client_name']}".lower()
+                                if any(kw.lower() in job_text for kw in exclude_keywords):
+                                    continue
+
+                            jobs.append(job)
+                            if len(jobs) >= limit:
+                                break
+
                         if len(jobs) >= limit:
                             break
 

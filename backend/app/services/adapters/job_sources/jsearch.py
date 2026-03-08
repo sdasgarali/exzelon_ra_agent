@@ -63,10 +63,10 @@ class JSearchAdapter(JobSourceAdapter):
     def _batch_queries(self, titles, location, batch_size=4):
         """Batch job titles into grouped search queries.
 
-        IMPACT: Instead of 37 separate API calls (one per title),
-        groups 4 titles per query = ~9 API calls total.
-        Each call with num_pages=3 returns up to 30 results.
-        Total potential: 9 calls x 30 results = 270 results.
+        IMPACT: Instead of 50+ separate API calls (one per title),
+        groups 4 titles per query = ~13 API calls total.
+        Each call with num_pages=10 returns up to 100 results.
+        Total potential: 13 calls x 100 results = ~1,300 results.
         """
         queries = []
         for i in range(0, len(titles), batch_size):
@@ -82,7 +82,7 @@ class JSearchAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 500  # IMPACT: Increased from 200
+        limit: int = 1000  # IMPACT: Increased from 500 for higher throughput
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from JSearch API (aggregates LinkedIn, Indeed, Glassdoor).
 
@@ -132,7 +132,7 @@ class JSearchAdapter(JobSourceAdapter):
         with httpx.Client(timeout=30) as client:
           for query in search_queries:
             try:
-                # IMPACT: num_pages=3 fetches 30 results per call (was 10)
+                # IMPACT: num_pages=10 fetches 100 results per call
                 response = client.get(
                     f"{self.BASE_URL}/search",
                     headers={
@@ -142,7 +142,7 @@ class JSearchAdapter(JobSourceAdapter):
                     params={
                         "query": query,
                         "page": "1",
-                        "num_pages": "3",  # IMPACT: 3 pages = 30 results per call
+                        "num_pages": "10",  # IMPACT: 10 pages = 100 results per call
                         "date_posted": date_posted,
                         "remote_jobs_only": "false"
                     },

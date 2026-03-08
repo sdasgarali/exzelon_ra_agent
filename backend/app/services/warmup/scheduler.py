@@ -35,6 +35,8 @@ def init_scheduler():
         _scheduler.add_job(job_daily_backup, CronTrigger(hour=2, minute=0), id="daily_backup", name="Daily Database Backup", replace_existing=True)
         _scheduler.add_job(job_backup_cleanup, CronTrigger(hour=2, minute=30), id="backup_cleanup", name="Backup Cleanup", replace_existing=True)
 
+        _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour="6,12,18", minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -220,6 +222,19 @@ def job_check_outreach_replies():
         logger.error("Outreach reply check failed", error=str(e))
     finally:
         db.close()
+
+
+def job_lead_sourcing_run():
+    logger.info("Running scheduled lead sourcing pipeline")
+    try:
+        from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
+        result = run_lead_sourcing_pipeline(sources=["auto"], triggered_by="scheduler")
+        logger.info("Scheduled lead sourcing complete",
+                    inserted=result.get("inserted", 0),
+                    skipped=result.get("skipped", 0),
+                    sources=result.get("sources_used", []))
+    except Exception as e:
+        logger.error("Scheduled lead sourcing failed", error=str(e))
 
 
 def job_daily_backup():
