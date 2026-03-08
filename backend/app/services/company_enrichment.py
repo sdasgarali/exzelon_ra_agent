@@ -1,12 +1,14 @@
 """Company enrichment service.
 
-Three-tier enrichment strategy:
+Multi-tier enrichment strategy:
 1. Aggregate from leads (free, always) — website/linkedin from lead data, most common state
-2. OpenCorporates (free 500/month) — if configured
-3. Clearbit (paid) — if configured
+2. LLM research (uses configured AI adapter) — fills remaining gaps via AI knowledge
+3. OpenCorporates (free 500/month) — if configured
+4. Clearbit (paid) — if configured
 
 Only fills missing fields (never overwrites existing data).
 """
+import json
 import structlog
 from datetime import datetime, date
 from typing import Optional
@@ -15,6 +17,7 @@ from sqlalchemy import func
 
 from app.db.models.client import ClientInfo
 from app.db.models.lead import LeadDetails
+from app.db.models.settings import Settings
 from app.core.config import settings
 
 logger = structlog.get_logger()
@@ -92,6 +95,126 @@ def enrich_from_leads(db: Session, client: ClientInfo) -> dict:
     return updated
 
 
+def _get_setting(db: Session, key: str, default=None):
+    """Read a single setting value from the settings table."""
+    setting = db.query(Settings).filter(Settings.key == key).first()
+    if setting and setting.value_json:
+        try:
+            return json.loads(setting.value_json)
+        except Exception:
+            pass
+    return default
+
+
+def _get_ai_adapter(db: Session):
+    """Load the configured AI adapter from settings."""
+    provider = _get_setting(db, "warmup_ai_provider", "groq")
+    api_key_map = {
+        "groq": "groq_api_key",
+        "openai": "openai_api_key",
+        "anthropic": "anthropic_api_key",
+        "gemini": "gemini_api_key",
+    }
+    api_key = _get_setting(db, api_key_map.get(provider, "groq_api_key"), "")
+    if not api_key:
+        return None
+    try:
+        if provider == "groq":
+            from app.services.adapters.ai.groq import GroqAdapter
+            return GroqAdapter(api_key=api_key)
+        elif provider == "openai":
+            from app.services.adapters.ai.openai_adapter import OpenAIAdapter
+            return OpenAIAdapter(api_key=api_key)
+        elif provider == "anthropic":
+            from app.services.adapters.ai.anthropic_adapter import AnthropicAdapter
+            return AnthropicAdapter(api_key=api_key)
+        elif provider == "gemini":
+            from app.services.adapters.ai.gemini import GeminiAdapter
+            return GeminiAdapter(api_key=api_key)
+    except Exception:
+        pass
+    return None
+
+
+# Fields that LLM can fill, mapped to max lengths for string columns
+_LLM_FIELD_LIMITS = {
+    "website": 500,
+    "industry": 100,
+    "description": 2000,
+    "company_size": 50,
+    "headquarters": 255,
+    "founded_year": None,  # int
+    "employee_count": None,  # int
+}
+
+
+def enrich_from_llm(db: Session, client: ClientInfo) -> dict:
+    """Tier 2: Use configured AI adapter to research missing company fields.
+
+    Only fills null fields, never overwrites existing data.
+    Returns dict of fields that were updated.
+    """
+    # Check which fields are still missing
+    missing = []
+    for field in _LLM_FIELD_LIMITS:
+        if getattr(client, field, None) is None:
+            missing.append(field)
+
+    if not missing:
+        return {}
+
+    adapter = _get_ai_adapter(db)
+    if not adapter:
+        logger.debug("llm_enrich_skipped", reason="no_ai_adapter_configured")
+        return {}
+
+    try:
+        data = adapter.research_company(
+            company_name=client.client_name,
+            domain=client.domain,
+            location=client.location_state,
+        )
+    except Exception as exc:
+        logger.warning("llm_enrich_failed", client=client.client_name, error=str(exc))
+        return {}
+
+    if not data or not isinstance(data, dict):
+        return {}
+
+    updated = {}
+    for field in missing:
+        val = data.get(field)
+        if val is None:
+            continue
+
+        limit = _LLM_FIELD_LIMITS[field]
+        if limit is not None:
+            # String field — validate type and truncate
+            if not isinstance(val, str):
+                val = str(val)
+            val = val[:limit]
+        else:
+            # Integer field — validate type
+            if not isinstance(val, int):
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    continue
+
+        setattr(client, field, val)
+        updated[field] = val
+
+    if updated:
+        sources = [client.enrichment_source] if client.enrichment_source else []
+        if "llm" not in sources:
+            sources.append("llm")
+        client.enrichment_source = ", ".join(sources)
+        client.enriched_at = datetime.utcnow()
+        logger.info("llm_enrich_success", client=client.client_name, fields=list(updated.keys()))
+
+    return updated
+
+
 def enrich_client(db: Session, client: ClientInfo) -> dict:
     """Run all enrichment tiers for a single client.
 
@@ -103,6 +226,11 @@ def enrich_client(db: Session, client: ClientInfo) -> dict:
     lead_updates = enrich_from_leads(db, client)
     if lead_updates:
         result["fields_updated"].extend(list(lead_updates.keys()))
+
+    # Tier 2: LLM research (uses configured AI adapter)
+    llm_updates = enrich_from_llm(db, client)
+    if llm_updates:
+        result["fields_updated"].extend(list(llm_updates.keys()))
 
     return result
 

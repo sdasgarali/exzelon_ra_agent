@@ -1,5 +1,7 @@
 """Google Gemini adapter for email content generation."""
 from typing import List, Dict, Any, Optional
+import json
+import re
 import httpx
 from app.services.adapters.base import AIAdapter
 from app.core.config import settings
@@ -79,6 +81,35 @@ class GeminiAdapter(AIAdapter):
             response.raise_for_status()
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def research_company(
+        self,
+        company_name: str,
+        domain: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Research a company using Google Gemini."""
+        system_prompt = "You are a business research assistant. Return ONLY valid JSON with no markdown formatting, no code blocks, no explanation."
+        hints = f"Company name: {company_name}"
+        if domain:
+            hints += f"\nKnown domain: {domain}"
+        if location:
+            hints += f"\nLocation: {location}"
+        user_prompt = f"""{hints}
+
+Return a JSON object with these fields (use null for any field you are not confident about):
+{{"website": "company website URL or null", "industry": "primary industry or null", "description": "1-2 sentence company description or null", "company_size": "employee range like 1-50, 51-200, 201-500, 501-1000, 1001-5000, 5000+ or null", "headquarters": "city, state or null", "founded_year": year_as_integer_or_null, "employee_count": approximate_integer_or_null}}"""
+        try:
+            result = self._call_api(
+                prompt=user_prompt,
+                system_instruction=system_prompt,
+                temperature=0.3,
+                max_tokens=500
+            )
+            cleaned = re.sub(r"```(?:json)?\s*", "", result).strip().rstrip("`")
+            return json.loads(cleaned)
+        except Exception:
+            return {}
 
     def generate_email(
         self,

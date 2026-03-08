@@ -75,6 +75,8 @@ export default function ClientsPage() {
   const [deleting, setDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [togglingStatus, setTogglingStatus] = useState<number | null>(null)
+  const [enrichingId, setEnrichingId] = useState<number | null>(null)
+  const [bulkEnriching, setBulkEnriching] = useState(false)
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -212,6 +214,36 @@ export default function ClientsPage() {
     }
   }
 
+  const handleEnrich = async (clientId: number) => {
+    try {
+      setEnrichingId(clientId)
+      const result = await clientsApi.enrich(clientId)
+      const count = result?.fields_updated?.length || 0
+      setSuccess(count > 0 ? `Enriched ${count} field(s): ${result.fields_updated.join(', ')}` : 'No new data found')
+      fetchClients()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Enrichment failed')
+    } finally {
+      setEnrichingId(null)
+    }
+  }
+
+  const handleBulkEnrich = async () => {
+    try {
+      setBulkEnriching(true)
+      const result = await clientsApi.bulkEnrich(Array.from(selectedIds))
+      setSuccess(`Enriched ${result.enriched} of ${result.total} client(s)`)
+      setSelectedIds(new Set())
+      fetchClients()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Bulk enrichment failed')
+    } finally {
+      setBulkEnriching(false)
+    }
+  }
+
   const clearFilters = () => {
     setSearch('')
     setFilterStatus('')
@@ -243,6 +275,15 @@ export default function ClientsPage() {
     }
   }
 
+  const _extractDomain = (url: string) => {
+    try {
+      const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+      return u.hostname.replace(/^www\./, '')
+    } catch {
+      return url
+    }
+  }
+
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortBy !== field) return <span className="text-gray-300 ml-1">&#8645;</span>
     return sortOrder === 'asc' ? <span className="ml-1">&#8593;</span> : <span className="ml-1">&#8595;</span>
@@ -263,12 +304,21 @@ export default function ClientsPage() {
         </div>
         <div className="flex gap-2">
           {selectedIds.size > 0 && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
-            >
-              Archive Selected ({selectedIds.size})
-            </button>
+            <>
+              <button
+                onClick={handleBulkEnrich}
+                disabled={bulkEnriching}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+              >
+                {bulkEnriching ? 'Enriching...' : `Enrich Selected (${selectedIds.size})`}
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
+              >
+                Archive Selected ({selectedIds.size})
+              </button>
+            </>
           )}
           <button
             onClick={handleExport}
@@ -456,24 +506,33 @@ export default function ClientsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Services
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Website
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  LinkedIn
+                </th>
                 <th
                   onClick={() => handleSort('created_at')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   Created <SortIcon field="created_at" />
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
                     Loading clients...
                   </td>
                 </tr>
               ) : clients.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center">
+                  <td colSpan={12} className="px-4 py-8 text-center">
                     <div className="flex flex-col items-center justify-center py-4">
                       <div className="text-gray-300 mb-4">
                         <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,8 +614,52 @@ export default function ClientsPage() {
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {client.service_count || 0}
                     </td>
+                    <td className="px-4 py-3 text-sm">
+                      {client.website ? (
+                        <a
+                          href={client.website.startsWith('http') ? client.website : `https://${client.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 max-w-[200px] truncate"
+                          title={client.website}
+                        >
+                          {_extractDomain(client.website)}
+                          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {client.linkedin_url ? (
+                        <a
+                          href={client.linkedin_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800"
+                          title={client.linkedin_url}
+                        >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                          </svg>
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDate(client.created_at)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleEnrich(client.client_id)}
+                        disabled={enrichingId === client.client_id}
+                        className="px-2.5 py-1 text-xs font-medium rounded bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {enrichingId === client.client_id ? '...' : 'Enrich'}
+                      </button>
                     </td>
                   </tr>
                 ))

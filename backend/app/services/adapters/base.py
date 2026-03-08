@@ -172,6 +172,25 @@ class CompanyEnrichmentAdapter(BaseAdapter):
 class AIAdapter(BaseAdapter):
     """Base adapter for AI/LLM providers used for email content generation."""
 
+    def research_company(
+        self,
+        company_name: str,
+        domain: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Research a company using LLM knowledge.
+
+        Returns dict with keys (all optional):
+        - website: str
+        - industry: str
+        - description: str
+        - company_size: str
+        - headquarters: str
+        - founded_year: int
+        - employee_count: int
+        """
+        raise NotImplementedError("research_company not implemented for this adapter")
+
     @abstractmethod
     def generate_email(
         self,

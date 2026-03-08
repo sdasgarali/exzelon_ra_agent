@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 30: Fixed pipeline "running without result" bug (3 orphaned Jan 24 runs stuck as running, polling checked ALL runs). Fixed frontend polling to only check latest run per pipeline type. Added backend startup cleanup for orphaned runs. Improved mailbox connection testing: SSL/port 465 support, M365 BasicAuthBlocked detection, decryption failure handling, better error messages. Deploying all to VPS.
+> Session 32: Implemented LLM fallback enrichment (Tier 2 after leads) in company_enrichment.py + research_company() in all 4 AI adapters. Added Website, LinkedIn, and Actions (Enrich button) columns to clients table. Bulk Enrich button for selected clients. All tests pass (346 backend, 58 frontend), clean build. Ready to commit and deploy.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -15,6 +15,8 @@
 - [x] Add new contact adapter sources to Source filter dropdown (2026-03-06)
 - [x] Fix pipeline orphaned runs + polling logic (2026-03-07)
 - [x] Improve mailbox connection testing error handling (2026-03-07)
+- [x] OAuth2 (Microsoft 365) mailbox support (2026-03-07)
+- [x] Automated regression testing system: backend markers, frontend tests, Playwright E2E, CI/CD coverage (2026-03-08)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
