@@ -3,6 +3,17 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 
+class RateLimitError(RuntimeError):
+    """Raised when an API returns HTTP 429 (rate limit exceeded).
+
+    Carries any partial results collected before the rate limit was hit.
+    """
+
+    def __init__(self, message: str = "Rate limit exceeded", partial_results: list = None):
+        super().__init__(message)
+        self.partial_results = partial_results or []
+
+
 class BaseAdapter(ABC):
     """Base class for all adapters."""
 

@@ -10,7 +10,7 @@ from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
 import structlog
-from app.services.adapters.base import JobSourceAdapter
+from app.services.adapters.base import JobSourceAdapter, RateLimitError
 
 logger = structlog.get_logger()
 
@@ -150,6 +150,12 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                         if len(all_organizations) >= limit:
                             break
                     else:
+                        if response.status_code == 429:
+                            logger.warning("Apollo rate limit hit (HTTP 429)", orgs_so_far=len(all_organizations))
+                            raise RateLimitError(
+                                f"Apollo rate limit exceeded after {len(all_organizations)} organizations",
+                                partial_results=[],
+                            )
                         break
 
                 if all_organizations:
@@ -174,7 +180,14 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                         limit
                     )
 
+        except RateLimitError:
+            raise
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise RateLimitError(
+                    f"Apollo rate limit exceeded (HTTPStatusError)",
+                    partial_results=jobs,
+                )
             logger.error(f"Apollo API HTTP error: {e}")
         except Exception as e:
             logger.error(f"Apollo API error: {e}")

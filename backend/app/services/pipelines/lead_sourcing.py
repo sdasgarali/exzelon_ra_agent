@@ -14,6 +14,7 @@ from app.db.models.client import ClientInfo, ClientCategory, ClientStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.models.settings import Settings
 from app.core.config import settings
+from app.services.adapters.base import RateLimitError
 from app.services.adapters.job_sources.mock import MockJobSourceAdapter
 from app.services.pipelines.cancel_helper import check_cancel
 
@@ -226,6 +227,18 @@ def fetch_from_source(
             diagnostics["error_type"] = "no_match"
         logger.info(f"Source {source_name} returned {len(jobs)} jobs after adapter-level filtering")
         return (source_name, jobs, None, diagnostics)
+    except RateLimitError as e:
+        partial = e.partial_results or []
+        diagnostics["status"] = "error"
+        diagnostics["error_type"] = "rate_limited"
+        diagnostics["error_message"] = str(e)[:300]
+        diagnostics["jobs_returned"] = len(partial)
+        logger.warning(
+            f"Source {source_name} hit rate limit",
+            partial_results=len(partial),
+            error=str(e),
+        )
+        return (source_name, partial, str(e), diagnostics)
     except Exception as e:
         error_msg = str(e)
         error_lower = error_msg.lower()

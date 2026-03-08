@@ -9,8 +9,11 @@ IMPACT ON LEAD COUNT:
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter
+import structlog
+from app.services.adapters.base import JobSourceAdapter, RateLimitError
 from app.core.config import settings
+
+logger = structlog.get_logger()
 
 
 class JSearchAdapter(JobSourceAdapter):
@@ -172,14 +175,19 @@ class JSearchAdapter(JobSourceAdapter):
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
-                    print(f"JSearch rate limit hit after {len(jobs)} jobs. Stopping.")
-                    break
-                print(f"JSearch API error: {str(e)}")
+                    logger.warning("JSearch rate limit hit (HTTP 429)", jobs_so_far=len(jobs))
+                    raise RateLimitError(
+                        f"JSearch rate limit exceeded after {len(jobs)} jobs",
+                        partial_results=jobs,
+                    )
+                logger.error("JSearch API HTTP error", status=e.response.status_code, error=str(e))
+            except RateLimitError:
+                raise
             except Exception as e:
-                print(f"JSearch error: {str(e)}")
+                logger.error("JSearch error for query", error=str(e))
                 continue
 
-        print(f"JSearch total: {len(jobs)} jobs from {len(search_queries)} batched queries")
+        logger.info("JSearch fetch complete", total_jobs=len(jobs), batched_queries=len(search_queries))
 
         return jobs
 
