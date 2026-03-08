@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 32: Implemented LLM fallback enrichment (Tier 2 after leads) in company_enrichment.py + research_company() in all 4 AI adapters. Added Website, LinkedIn, and Actions (Enrich button) columns to clients table. Bulk Enrich button for selected clients. All tests pass (346 backend, 58 frontend), clean build. Ready to commit and deploy.
+> Session 35: Implemented Instantly.ai-style mailbox connection wizard. Replaced flat "Add Mailbox" form with 3-card provider selector (Google, Microsoft, Any Provider) + multi-step wizard with prerequisite instructions, pre-filled forms, auto-test, and post-connection settings. Google flow uses App Password, Microsoft uses OAuth2, SMTP/IMAP flow has full server config. Edit flow preserved as-is. Frontend builds clean. Next: deploy to VPS.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -17,12 +17,38 @@
 - [x] Improve mailbox connection testing error handling (2026-03-07)
 - [x] OAuth2 (Microsoft 365) mailbox support (2026-03-07)
 - [x] Automated regression testing system: backend markers, frontend tests, Playwright E2E, CI/CD coverage (2026-03-08)
+- [x] Lead Sourcing Performance Overhaul: pagination, titles, dedup window, scheduling, threading (2026-03-08)
+- [x] Instantly.ai vs Exzelon RA comparison document (.docx) with gap analysis & roadmap (2026-03-08)
+- [ ] **P0: Multi-step email sequences** (follow-ups with configurable delays) — 40-60 hrs
+- [ ] **P0: Unified Inbox (Unibox)** — centralized reply management across all mailboxes — 60-80 hrs
+- [ ] **P1: A/B testing framework** — up to 5 variants per step with auto-optimize — 20-30 hrs
+- [ ] **P1: AI reply agent** — auto-generate responses with human-in-the-loop — 40-60 hrs
+- [ ] **P1: AI sentiment analysis** — auto-categorize replies (Interested/Not Interested/OOO) — 20-30 hrs
+- [ ] **P1: Spintax engine** — text variations for deliverability — 15-20 hrs
+- [ ] **P1: Webhook system** — push events to external systems — 10-15 hrs
+- [ ] **P1: CRM deal pipeline** — Kanban board with revenue tracking — 40-60 hrs
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
 - [ ] Enable SMTP AUTH in M365 Admin for failing mailboxes (BasicAuthBlocked)
 
 ## Completed
+- [x] Session 33: Lead Sourcing Performance Overhaul + Instantly.ai Comparison (2026-03-08)
+  - Pagination increases: JSearch 3→10 pages, Apollo 2→5, Adzuna 3→10, SerpAPI added 3-page pagination, TheirStack 10-page cap
+  - All adapter limits raised from 500 to 1000
+  - Expanded TARGET_JOB_TITLES from 36 to 55 (added VP, Director, Supervisor roles)
+  - Added 30-day rolling dedup window (was all-time) in DB Layer 3
+  - ThreadPoolExecutor workers 3→6
+  - Scheduled lead sourcing 3x/day (6am/12pm/6pm UTC) via APScheduler
+  - Added python-docx dependency, created scripts/generate_analysis_doc.py
+  - Generated Lead_Sourcing_Performance_Analysis.docx (bottleneck analysis, capacity comparison, projected impact)
+  - Generated Instantly_vs_Exzelon_Comparison.docx (18 sections, 14-category scoring, 23 gaps, 4-phase roadmap)
+  - Instantly 87% vs Exzelon 54% — biggest gaps: sequences, Unibox, A/B testing, AI reply agent
+  - Commit: 444cebc, deployed to VPS, all 346 tests pass, frontend builds clean
+- [x] Session 32: LLM Fallback Enrichment + Clients Page Columns (2026-03-08)
+  - LLM fallback enrichment in company_enrichment.py + research_company() in 4 AI adapters
+  - Website, LinkedIn, Actions columns on clients page
+  - Bulk Enrich button
 - [x] Session 29: Contacts UI Enhancements + Deployment + Bug Fixes (2026-03-06)
   - Deployed all pending changes to VPS (adapters, dedup, sub-source, granular settings)
   - Fixed pipeline polling timeout: maxAttempts 60→200 (~10 min), added error display + final fetchData on timeout
