@@ -30,6 +30,9 @@ import {
   UserCog,
   Shield,
   HardDrive,
+  Zap,
+  MessageSquare,
+  DollarSign,
 } from 'lucide-react'
 
 const navigation = [
@@ -38,7 +41,10 @@ const navigation = [
   { name: 'Clients', href: '/dashboard/clients', icon: Building },
   { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['super_admin', 'admin', 'operator'] as string[] },

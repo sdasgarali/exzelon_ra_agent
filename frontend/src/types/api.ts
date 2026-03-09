@@ -156,3 +156,251 @@ export interface AuditLog {
   notes: string | null;
   created_at: string;
 }
+
+// ─── Campaign types ───────────────────────────────────────────────
+
+export interface Campaign {
+  campaign_id: number;
+  name: string;
+  description: string | null;
+  status: 'draft' | 'active' | 'paused' | 'completed' | 'archived';
+  timezone: string;
+  send_window_start: string;
+  send_window_end: string;
+  send_days: string[];
+  mailbox_ids: number[];
+  daily_limit: number;
+  total_contacts: number;
+  total_sent: number;
+  total_opened: number;
+  total_replied: number;
+  total_bounced: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+  is_archived: boolean;
+  steps?: SequenceStep[];
+}
+
+export interface SequenceStep {
+  step_id: number;
+  campaign_id: number;
+  step_order: number;
+  step_type: 'email' | 'wait' | 'condition';
+  subject: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  template_id: number | null;
+  delay_days: number;
+  delay_hours: number;
+  reply_to_thread: boolean;
+  condition_type: string | null;
+  condition_window_hours: number | null;
+  yes_next_step: number | null;
+  no_next_step: number | null;
+  variants_json: string | null;
+  total_sent: number;
+  total_opened: number;
+  total_clicked: number;
+  total_replied: number;
+  total_bounced: number;
+  created_at: string;
+}
+
+export interface CampaignContact {
+  id: number;
+  campaign_id: number;
+  contact_id: number;
+  lead_id: number | null;
+  status: string;
+  current_step: number;
+  next_send_at: string | null;
+  enrolled_at: string | null;
+  completed_at: string | null;
+  contact_name?: string;
+  contact_email?: string;
+  contact_company?: string;
+}
+
+// ─── Inbox types ──────────────────────────────────────────────────
+
+export interface InboxThread {
+  thread_id: string;
+  subject: string | null;
+  latest_message_at: string | null;
+  from_email: string;
+  contact_name: string;
+  contact_id: number | null;
+  mailbox_id: number | null;
+  campaign_id: number | null;
+  category: string | null;
+  sentiment: string | null;
+  message_count: number;
+  unread_count: number;
+  snippet: string;
+  direction: string;
+}
+
+export interface InboxMessage {
+  message_id: number;
+  direction: 'sent' | 'received';
+  from_email: string;
+  to_email: string;
+  subject: string | null;
+  body_html: string | null;
+  body_text: string | null;
+  received_at: string | null;
+  is_read: boolean;
+  category: string | null;
+  sentiment: string | null;
+}
+
+export interface InboxThreadDetail {
+  thread_id: string;
+  contact: {
+    contact_id: number;
+    name: string;
+    email: string;
+    title: string | null;
+    company: string | null;
+    phone: string | null;
+  } | null;
+  messages: InboxMessage[];
+}
+
+// ─── Automation types ─────────────────────────────────────────────
+
+export interface AutomationEvent {
+  event_id: number;
+  event_type: string;
+  source: string;
+  title: string;
+  details: Record<string, any> | null;
+  status: string;
+  created_at: string;
+}
+
+export interface AutomationSummary {
+  period_hours: number;
+  total_events: number;
+  total_errors: number;
+  by_type: Record<string, { total: number; success: number; error: number; skipped: number }>;
+  latest_event: { title: string; event_type: string; status: string; created_at: string } | null;
+}
+
+// ─── Deal types ───────────────────────────────────────────────────
+
+export interface DealStage {
+  stage_id: number;
+  name: string;
+  stage_order: number;
+  color: string;
+  is_won: boolean;
+  is_lost: boolean;
+}
+
+export interface Deal {
+  deal_id: number;
+  name: string;
+  stage_id: number;
+  contact_id: number | null;
+  client_id: number | null;
+  campaign_id: number | null;
+  value: number;
+  probability: number;
+  expected_close_date: string | null;
+  owner_id: number | null;
+  notes: string | null;
+  is_auto_created: boolean;
+  probability_manual: boolean;
+  won_at: string | null;
+  lost_at: string | null;
+  lost_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  stage_name?: string;
+  stage_color?: string;
+  contact_name?: string;
+  contact_email?: string;
+  client_name?: string;
+  activities?: DealActivity[];
+}
+
+export interface DealActivity {
+  activity_id: number;
+  activity_type: string;
+  description: string | null;
+  metadata_json: string | null;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+export interface DealContactSearch {
+  contact_id: number;
+  name: string;
+  email: string;
+  company: string | null;
+  title: string | null;
+}
+
+export interface DealClientSearch {
+  client_id: number;
+  name: string;
+}
+
+export interface DealForecast {
+  weighted_value: number;
+  total_pipeline_value: number;
+  active_deals: number;
+}
+
+export interface StaleDeal {
+  deal_id: number;
+  name: string;
+  stage_id: number;
+  value: number;
+  days_idle: number;
+  last_activity: string;
+}
+
+export interface DealPipelineStage extends DealStage {
+  deals: Deal[];
+  total_value: number;
+  count: number;
+}
+
+export interface DealStats {
+  total_deals: number;
+  total_pipeline_value: number;
+  won_count: number;
+  lost_count: number;
+  win_rate: number;
+  avg_deal_size: number;
+  won_value: number;
+}
+
+// ─── Webhook types ────────────────────────────────────────────────
+
+export interface Webhook {
+  webhook_id: number;
+  name: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  last_triggered_at: string | null;
+  total_deliveries: number;
+  total_failures: number;
+  created_at: string;
+}
+
+// ─── API Key types ────────────────────────────────────────────────
+
+export interface ApiKeyInfo {
+  key_id: number;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}

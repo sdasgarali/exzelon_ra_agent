@@ -109,6 +109,10 @@ export const leadsApi = {
     const response = await api.get('/leads/stats/summary')
     return response.data
   },
+  listWithContactCounts: async (params?: Record<string, any>) => {
+    const response = await api.get('/leads/with-contact-counts', { params })
+    return response.data
+  },
   getDetail: async (id: number) => {
     const response = await api.get(`/leads/${id}/detail`)
     return response.data
@@ -615,5 +619,253 @@ export const outreachApi = {
   deleteEvents: async (eventIds: number[]) => {
     const response = await api.delete("/outreach/events/bulk", { data: { event_ids: eventIds } })
     return response.data
+  },
+}
+
+// Campaigns API
+export const campaignsApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/campaigns', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/campaigns/${id}`)
+    return response.data
+  },
+  create: async (data: any) => {
+    const response = await api.post('/campaigns', data)
+    return response.data
+  },
+  update: async (id: number, data: any) => {
+    const response = await api.put(`/campaigns/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/campaigns/${id}`)
+  },
+  activate: async (id: number) => {
+    const response = await api.post(`/campaigns/${id}/activate`)
+    return response.data
+  },
+  pause: async (id: number) => {
+    const response = await api.post(`/campaigns/${id}/pause`)
+    return response.data
+  },
+  resume: async (id: number) => {
+    const response = await api.post(`/campaigns/${id}/resume`)
+    return response.data
+  },
+  duplicate: async (id: number) => {
+    const response = await api.post(`/campaigns/${id}/duplicate`)
+    return response.data
+  },
+  // Steps
+  listSteps: async (campaignId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/steps`)
+    return response.data
+  },
+  addStep: async (campaignId: number, data: any) => {
+    const response = await api.post(`/campaigns/${campaignId}/steps`, data)
+    return response.data
+  },
+  updateStep: async (campaignId: number, stepId: number, data: any) => {
+    const response = await api.put(`/campaigns/${campaignId}/steps/${stepId}`, data)
+    return response.data
+  },
+  deleteStep: async (campaignId: number, stepId: number) => {
+    await api.delete(`/campaigns/${campaignId}/steps/${stepId}`)
+  },
+  reorderSteps: async (campaignId: number, stepIds: number[]) => {
+    const response = await api.put(`/campaigns/${campaignId}/steps/reorder`, { step_ids: stepIds })
+    return response.data
+  },
+  // Contacts
+  listContacts: async (campaignId: number, params?: Record<string, any>) => {
+    const response = await api.get(`/campaigns/${campaignId}/contacts`, { params })
+    return response.data
+  },
+  enrollContacts: async (campaignId: number, contactIds: number[], leadId?: number) => {
+    const response = await api.post(`/campaigns/${campaignId}/contacts`, { contact_ids: contactIds, lead_id: leadId })
+    return response.data
+  },
+  removeContacts: async (campaignId: number, contactIds: number[]) => {
+    const response = await api.delete(`/campaigns/${campaignId}/contacts`, { data: { contact_ids: contactIds } })
+    return response.data
+  },
+  // Analytics
+  analytics: async (id: number) => {
+    const response = await api.get(`/campaigns/${id}/analytics`)
+    return response.data
+  },
+  abResults: async (campaignId: number, stepId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/steps/${stepId}/ab-results`)
+    return response.data
+  },
+}
+
+// Inbox API (Unibox)
+export const inboxApi = {
+  listThreads: async (params?: Record<string, any>) => {
+    const response = await api.get('/inbox/threads', { params })
+    return response.data
+  },
+  getThread: async (threadId: string) => {
+    const response = await api.get(`/inbox/threads/${threadId}`)
+    return response.data
+  },
+  markRead: async (threadId: string) => {
+    const response = await api.put(`/inbox/threads/${threadId}/read`)
+    return response.data
+  },
+  setCategory: async (threadId: string, category: string) => {
+    const response = await api.put(`/inbox/threads/${threadId}/category`, { category })
+    return response.data
+  },
+  reply: async (data: { thread_id: string; body_html: string; body_text?: string }) => {
+    const response = await api.post('/inbox/reply', data)
+    return response.data
+  },
+  stats: async () => {
+    const response = await api.get('/inbox/stats')
+    return response.data
+  },
+  sync: async () => {
+    const response = await api.post('/inbox/sync')
+    return response.data
+  },
+  suggestReply: async (threadId: string) => {
+    const response = await api.post(`/inbox/threads/${threadId}/suggest-reply`)
+    return response.data
+  },
+}
+
+// Deals API (CRM Pipeline)
+export const dealsApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/deals', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/deals/${id}`)
+    return response.data
+  },
+  create: async (data: any) => {
+    const response = await api.post('/deals', data)
+    return response.data
+  },
+  update: async (id: number, data: any) => {
+    const response = await api.put(`/deals/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/deals/${id}`)
+  },
+  pipeline: async () => {
+    const response = await api.get('/deals/pipeline')
+    return response.data
+  },
+  stats: async () => {
+    const response = await api.get('/deals/stats')
+    return response.data
+  },
+  addActivity: async (dealId: number, data: any) => {
+    const response = await api.post(`/deals/${dealId}/activities`, data)
+    return response.data
+  },
+  // Stages
+  listStages: async () => {
+    const response = await api.get('/deals/stages')
+    return response.data
+  },
+  createStage: async (data: any) => {
+    const response = await api.post('/deals/stages', data)
+    return response.data
+  },
+  updateStage: async (id: number, data: any) => {
+    const response = await api.put(`/deals/stages/${id}`, data)
+    return response.data
+  },
+  deleteStage: async (id: number) => {
+    await api.delete(`/deals/stages/${id}`)
+  },
+  // Automation extras
+  forecast: async () => {
+    const response = await api.get('/deals/forecast')
+    return response.data
+  },
+  stale: async (days?: number) => {
+    const response = await api.get('/deals/stale', { params: days ? { days } : {} })
+    return response.data
+  },
+  searchContacts: async (q: string) => {
+    const response = await api.get('/deals/search/contacts', { params: { q } })
+    return response.data
+  },
+  searchClients: async (q: string) => {
+    const response = await api.get('/deals/search/clients', { params: { q } })
+    return response.data
+  },
+}
+
+// Webhooks API
+export const webhooksApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/webhooks', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/webhooks/${id}`)
+    return response.data
+  },
+  create: async (data: any) => {
+    const response = await api.post('/webhooks', data)
+    return response.data
+  },
+  update: async (id: number, data: any) => {
+    const response = await api.put(`/webhooks/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/webhooks/${id}`)
+  },
+  deliveries: async (id: number, params?: Record<string, any>) => {
+    const response = await api.get(`/webhooks/${id}/deliveries`, { params })
+    return response.data
+  },
+}
+
+// Automation Activity API
+export const automationApi = {
+  events: async (params?: Record<string, any>) => {
+    const response = await api.get('/automation/events', { params })
+    return response.data
+  },
+  summary: async () => {
+    const response = await api.get('/automation/events/summary')
+    return response.data
+  },
+}
+
+// AI Copilot API
+export const copilotApi = {
+  chat: async (messages: { role: string; content: string }[], context?: string) => {
+    const response = await api.post('/copilot/chat', { messages, context })
+    return response.data
+  },
+}
+
+// Integrations API (API Keys)
+export const integrationsApi = {
+  // API Keys
+  listApiKeys: async () => {
+    const response = await api.get('/integrations/api-keys')
+    return response.data
+  },
+  createApiKey: async (data: { name: string; scopes?: string[]; expires_in_days?: number }) => {
+    const response = await api.post('/integrations/api-keys', data)
+    return response.data
+  },
+  revokeApiKey: async (id: number) => {
+    await api.delete(`/integrations/api-keys/${id}`)
   },
 }

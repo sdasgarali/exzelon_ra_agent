@@ -76,7 +76,45 @@ All external integrations implement abstract base classes from `adapters/base.py
 | Company Enrichment | Clearbit (Breeze), OpenCorporates | `CLEARBIT_API_KEY`, `OPENCORPORATES_API_KEY` |
 | Email Validation | NeverBounce, ZeroBounce, Hunter, Clearout, Emailable, MailboxValidator, Reacher | `EMAIL_VALIDATION_PROVIDER` |
 | Email Sending | SMTP, Mock | `EMAIL_SEND_MODE` |
-| AI Content | Groq, OpenAI, Anthropic, Gemini | per-adapter API keys |
+| AI Content | Groq, OpenAI, Anthropic, Gemini | per-adapter API keys, shared factory in `adapters/ai_content.py` |
+| CRM | HubSpot, Salesforce | `HUBSPOT_API_KEY`, `SALESFORCE_CLIENT_ID` |
+| Notifications | Slack, Microsoft Teams | Webhook URLs in settings |
+| Communications | Twilio (SMS + Calling) | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
+
+### Campaign Engine (`services/campaign_engine.py`)
+
+Multi-step email sequence processor:
+- Processes campaign queue every 2 minutes (scheduler job)
+- Supports email, wait, and condition (if/then branching) steps
+- A/B testing with weighted variant assignment + chi-squared auto-optimize
+- Spintax text variation (`{option1|option2}`) with nested pattern support
+- Round-robin mailbox selection from campaign's assigned mailboxes
+- Handles replies, bounces, and unsubscribes per campaign contact
+- Timezone-aware send windows using contact's US state
+
+### Unified Inbox (`services/inbox_syncer.py`)
+
+Centralized reply management:
+- Syncs OutreachEvents into inbox_messages table
+- Thread grouping via Message-ID chain or email+subject hash
+- AI sentiment analysis on received messages (rule-based + LLM fallback)
+- AI reply suggestions from conversation context
+- Category labels: interested, not_interested, ooo, question, referral, do_not_contact
+
+### CRM Deal Pipeline (`api/endpoints/deals.py`)
+
+Kanban-style deal tracking:
+- 7 default stages (New Lead → Won/Lost), auto-seeded on startup
+- Pipeline view grouped by stage for frontend Kanban board
+- Deal stats: win rate, avg deal size, pipeline value
+- Activity timeline per deal
+
+### Webhook System (`services/webhook_dispatcher.py`)
+
+Event-driven webhook delivery:
+- HMAC-SHA256 signed payloads with `X-Webhook-Signature` header
+- Events: email.sent, email.opened, email.clicked, email.replied, email.bounced, contact.unsubscribed, campaign.completed, lead.created
+- Exponential backoff retry (3 attempts: 1min, 5min, 15min)
 
 ### Pipeline Pattern (`services/pipelines/`)
 
@@ -112,8 +150,17 @@ Domain reputation management subsystem:
 - **LeadContactAssociation** -- many-to-many junction table
 - **ClientInfo** -- companies/organizations
 - **SenderMailbox** -- email accounts with daily limits, health scores, warmup status
-- **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced)
+- **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
+- **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment
+- **SequenceStep** -- campaign steps (email/wait/condition) with delay, A/B variants, stats
+- **CampaignContact** -- contact enrollment tracking with current_step, next_send_at, status
+- **InboxMessage** -- unified inbox messages with thread_id, direction, category, sentiment
+- **Deal** -- CRM deals with value, probability, stage, contact/client associations
+- **DealStage** -- pipeline stages (New Lead, Contacted, Qualified, Proposal, Negotiation, Won, Lost)
+- **Webhook** -- webhook subscriptions with URL, HMAC secret, event filter
+- **ApiKey** -- API key auth with SHA-256 hash, scopes, expiry
+- **AutomationEvent** -- system activity log (scheduler runs, AI classifications, campaign sends) for user transparency
 
 ## Business Rules (configured in `core/config.py`)
 

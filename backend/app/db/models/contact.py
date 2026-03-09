@@ -1,5 +1,5 @@
 """Contact details model for discovered contacts."""
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from enum import Enum as PyEnum
 from app.db.base import Base
@@ -57,6 +57,18 @@ class ContactDetails(Base):
     # Outreach status and unsubscribe tracking
     outreach_status = Column(Enum(OutreachStatus, values_callable=lambda x: [e.value for e in x]), default=OutreachStatus.ACTIVE, nullable=False, server_default="active")
     unsubscribed_at = Column(DateTime, nullable=True)
+
+    # Timezone (resolved from state)
+    timezone = Column(String(50), nullable=True)
+
+    # Lead scoring
+    lead_score = Column(Integer, nullable=True)
+    lead_score_factors_json = Column(Text, nullable=True)
+    lead_score_updated_at = Column(DateTime, nullable=True)
+
+    # CRM integration IDs
+    hubspot_id = Column(String(50), nullable=True, index=True)
+    salesforce_id = Column(String(50), nullable=True, index=True)
 
     # Relationship to lead
     lead = relationship("LeadDetails", back_populates="contacts")

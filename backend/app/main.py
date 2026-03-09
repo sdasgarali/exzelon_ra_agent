@@ -187,6 +187,40 @@ def _seed_default_email_template():
         db.close()
 
 
+def _seed_deal_stages():
+    """Seed default CRM deal pipeline stages if none exist."""
+    from app.db.base import SessionLocal
+    from app.db.models.deal import DealStage
+    db = SessionLocal()
+    try:
+        existing = db.query(DealStage).count()
+        if existing > 0:
+            return
+        stages = [
+            {"name": "New Lead", "stage_order": 1, "color": "#6366f1"},
+            {"name": "Contacted", "stage_order": 2, "color": "#3b82f6"},
+            {"name": "Qualified", "stage_order": 3, "color": "#0ea5e9"},
+            {"name": "Proposal", "stage_order": 4, "color": "#f59e0b"},
+            {"name": "Negotiation", "stage_order": 5, "color": "#f97316"},
+            {"name": "Won", "stage_order": 6, "color": "#22c55e", "is_won": True},
+            {"name": "Lost", "stage_order": 7, "color": "#ef4444", "is_lost": True},
+        ]
+        for s in stages:
+            db.add(DealStage(
+                name=s["name"],
+                stage_order=s["stage_order"],
+                color=s["color"],
+                is_won=s.get("is_won", False),
+                is_lost=s.get("is_lost", False),
+            ))
+        db.commit()
+        logger.info("Seeded 7 default deal pipeline stages")
+    except Exception as e:
+        logger.error("Failed to seed deal stages", error=str(e))
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
@@ -201,7 +235,10 @@ async def lifespan(app: FastAPI):
         required_tables = {
             "users", "lead_details", "contact_details", "lead_contact_associations",
             "client_info", "sender_mailboxes", "outreach_events", "email_templates",
-            "warmup_profiles", "job_runs", "audit_logs"
+            "warmup_profiles", "job_runs", "audit_logs",
+            "campaigns", "sequence_steps", "campaign_contacts",
+            "inbox_messages", "webhooks", "webhook_deliveries",
+            "deals", "deal_stages", "deal_activities", "api_keys",
         }
         missing = required_tables - existing_tables
         if missing:
@@ -397,6 +434,58 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for OAuth2 columns: {e}")
 
+    # Migration: add campaign columns to outreach_events
+    try:
+        from sqlalchemy import text as sa_text_camp, inspect as sa_inspect_camp
+        with engine.connect() as conn:
+            inspector_camp = sa_inspect_camp(engine)
+            oe_cols = [c["name"] for c in inspector_camp.get_columns("outreach_events")]
+            for col_name, col_def in [
+                ("campaign_id", "INT NULL"),
+                ("step_id", "INT NULL"),
+                ("variant_index", "INT NULL"),
+            ]:
+                if col_name not in oe_cols:
+                    conn.execute(sa_text_camp(f"ALTER TABLE outreach_events ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to outreach_events")
+    except Exception as e:
+        logger.warning(f"Migration check for campaign columns on outreach_events: {e}")
+
+    # Migration: add timezone, lead_score, CRM ID columns to contact_details
+    try:
+        from sqlalchemy import text as sa_text_tz, inspect as sa_inspect_tz
+        with engine.connect() as conn:
+            inspector_tz = sa_inspect_tz(engine)
+            cd_cols = [c["name"] for c in inspector_tz.get_columns("contact_details")]
+            for col_name, col_def in [
+                ("timezone", "VARCHAR(50) NULL"),
+                ("lead_score", "INT NULL"),
+                ("lead_score_factors_json", "TEXT NULL"),
+                ("lead_score_updated_at", "DATETIME NULL"),
+                ("hubspot_id", "VARCHAR(50) NULL"),
+                ("salesforce_id", "VARCHAR(50) NULL"),
+            ]:
+                if col_name not in cd_cols:
+                    conn.execute(sa_text_tz(f"ALTER TABLE contact_details ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to contact_details")
+    except Exception as e:
+        logger.warning(f"Migration check for contact timezone/lead_score columns: {e}")
+
+    # Migration: add smtp_relay_config_json to sender_mailboxes
+    try:
+        from sqlalchemy import text as sa_text_relay, inspect as sa_inspect_relay
+        with engine.connect() as conn:
+            inspector_relay = sa_inspect_relay(engine)
+            mb_cols_relay = [c["name"] for c in inspector_relay.get_columns("sender_mailboxes")]
+            if "smtp_relay_config_json" not in mb_cols_relay:
+                conn.execute(sa_text_relay("ALTER TABLE sender_mailboxes ADD COLUMN smtp_relay_config_json TEXT NULL"))
+                conn.commit()
+                logger.info("Migration: added smtp_relay_config_json column to sender_mailboxes")
+    except Exception as e:
+        logger.warning(f"Migration check for smtp_relay_config_json: {e}")
+
     # Migration: encrypt existing plaintext mailbox passwords
     try:
         from app.core.encryption import encrypt_field, is_encrypted
@@ -417,6 +506,23 @@ async def lifespan(app: FastAPI):
             _mig_db.close()
     except Exception as e:
         logger.warning(f"Migration check for password encryption: {e}")
+
+    # Migration: add deal automation columns (is_auto_created, probability_manual)
+    try:
+        from sqlalchemy import text as sa_text_deal, inspect as sa_inspect_deal
+        with engine.connect() as conn:
+            inspector_deal = sa_inspect_deal(engine)
+            deal_cols = [c["name"] for c in inspector_deal.get_columns("deals")]
+            for col_name, col_def in [
+                ("is_auto_created", "BOOLEAN DEFAULT 0 NOT NULL"),
+                ("probability_manual", "BOOLEAN DEFAULT 0 NOT NULL"),
+            ]:
+                if col_name not in deal_cols:
+                    conn.execute(sa_text_deal(f"ALTER TABLE deals ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to deals")
+    except Exception as e:
+        logger.warning(f"Migration check for deal automation columns: {e}")
 
     # Cleanup: mark orphaned pipeline runs as failed on startup
     # (runs stuck as 'running' from server crashes or restarts)
@@ -445,6 +551,7 @@ async def lifespan(app: FastAPI):
 
     _seed_warmup_profiles()
     _seed_default_email_template()
+    _seed_deal_stages()
 
     # Seed admin user
     try:

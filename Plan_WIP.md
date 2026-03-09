@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 35: Implemented Instantly.ai-style mailbox connection wizard. Replaced flat "Add Mailbox" form with 3-card provider selector (Google, Microsoft, Any Provider) + multi-step wizard with prerequisite instructions, pre-filled forms, auto-test, and post-connection settings. Google flow uses App Password, Microsoft uses OAuth2, SMTP/IMAP flow has full server config. Edit flow preserved as-is. Frontend builds clean. Next: deploy to VPS.
+> Session 39 (continued from 38): Fixed 2 bugs in deal_automation.py. Added 45 unit tests. Added manual contact creation/link modals. Then: Replaced campaign enrollment modal — now lead-based (expandable leads → contacts with status badges + checkboxes). Backend: `GET /leads/with-contact-counts` endpoint. Frontend: lead search, expand to see contacts, select all eligible per lead, disabled for archived/unsubscribed/invalid. All 391 tests pass, 40.48% coverage, frontend builds clean.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -19,14 +19,26 @@
 - [x] Automated regression testing system: backend markers, frontend tests, Playwright E2E, CI/CD coverage (2026-03-08)
 - [x] Lead Sourcing Performance Overhaul: pagination, titles, dedup window, scheduling, threading (2026-03-08)
 - [x] Instantly.ai vs Exzelon RA comparison document (.docx) with gap analysis & roadmap (2026-03-08)
-- [ ] **P0: Multi-step email sequences** (follow-ups with configurable delays) — 40-60 hrs
-- [ ] **P0: Unified Inbox (Unibox)** — centralized reply management across all mailboxes — 60-80 hrs
-- [ ] **P1: A/B testing framework** — up to 5 variants per step with auto-optimize — 20-30 hrs
-- [ ] **P1: AI reply agent** — auto-generate responses with human-in-the-loop — 40-60 hrs
-- [ ] **P1: AI sentiment analysis** — auto-categorize replies (Interested/Not Interested/OOO) — 20-30 hrs
-- [ ] **P1: Spintax engine** — text variations for deliverability — 15-20 hrs
-- [ ] **P1: Webhook system** — push events to external systems — 10-15 hrs
-- [ ] **P1: CRM deal pipeline** — Kanban board with revenue tracking — 40-60 hrs
+- [x] **P0: Multi-step email sequences** — campaigns + sequence steps + conditional branching (2026-03-08)
+- [x] **P0: Unified Inbox (Unibox)** — three-panel inbox with thread view, reply, AI suggest (2026-03-08)
+- [x] **P1: A/B testing framework** — variant assignment + chi-squared auto-optimize (2026-03-08)
+- [x] **P1: AI reply agent** — generate reply suggestions from conversation context (2026-03-08)
+- [x] **P1: AI sentiment analysis** — rule-based + AI fallback categorization (2026-03-08)
+- [x] **P1: Spintax engine** — nested {option1|option2} with deterministic seeding (2026-03-08)
+- [x] **P1: Webhook system** — HMAC-signed delivery with retry + event matching (2026-03-08)
+- [x] **P1: CRM deal pipeline** — Kanban board with drag-and-drop stage changes (2026-03-08)
+- [x] **P2: API key auth** — SHA-256 key hash + X-API-Key header support (2026-03-08)
+- [x] **P2: Zapier/Make integration** — REST hook subscribe/unsubscribe + sample payloads (2026-03-08)
+- [x] **P2: HubSpot/Salesforce adapters** — CRM sync base + adapters (2026-03-08)
+- [x] **P2: AI copilot** — chat endpoint with platform context (2026-03-08)
+- [x] **P2: Lead scoring** — 0-100 weighted scoring with 4 factors (2026-03-08)
+- [x] **P2: Timezone resolver** — US state → IANA timezone mapping (2026-03-08)
+- [x] **P3: White-label tenant model** — feature-flagged multi-tenancy (2026-03-08)
+- [x] **P3: Twilio SMS/calling adapter** — send_sms + initiate_call stubs (2026-03-08)
+- [x] **P3: Slack/Teams notifications** — webhook-based adapters (2026-03-08)
+- [x] **P3: Waterfall enrichment** — 7-provider fallthrough chain (2026-03-08)
+- [x] Fix AI modules + add Automation Activity transparency (2026-03-09)
+- [x] Deal Pipeline Automation — signal-driven CRM with auto-create, auto-advance, activity logging, contact/client pickers, forecast, stale detection (2026-03-09)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads

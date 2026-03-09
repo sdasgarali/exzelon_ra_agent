@@ -3,7 +3,8 @@ from fastapi import APIRouter
 from app.api.endpoints import (
     auth, users, leads, clients, contacts,
     validation, outreach, settings, pipelines, dashboard, mailboxes, warmup,
-    templates, audit, backups
+    templates, audit, backups,
+    campaigns, inbox, webhooks, deals, copilot, integrations, automation,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,10 @@ api_router.include_router(warmup.router)
 api_router.include_router(templates.router)
 api_router.include_router(audit.router)
 api_router.include_router(backups.router)
+api_router.include_router(campaigns.router)
+api_router.include_router(inbox.router)
+api_router.include_router(webhooks.router)
+api_router.include_router(deals.router)
+api_router.include_router(copilot.router)
+api_router.include_router(integrations.router)
+api_router.include_router(automation.router)

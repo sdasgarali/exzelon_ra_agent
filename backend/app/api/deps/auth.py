@@ -1,22 +1,54 @@
 """Authentication dependencies for FastAPI."""
 import json
-from typing import List
-from fastapi import Depends, HTTPException, status, Request
+import hashlib
+from datetime import datetime
+from typing import List, Optional
+from fastapi import Depends, HTTPException, status, Request, Header
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.api.deps.database import get_db
 from app.core.security import decode_access_token
 from app.db.models.user import User, UserRole
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_current_user(
     request: Request,
     db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
+    token: Optional[str] = Depends(oauth2_scheme),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ) -> User:
-    """Get the current authenticated user."""
+    """Get the current authenticated user via JWT token or API key."""
+    # Try API key first
+    if x_api_key:
+        from app.db.models.api_key import ApiKey
+        key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+        api_key = db.query(ApiKey).filter(
+            ApiKey.key_hash == key_hash,
+            ApiKey.is_active == True,
+        ).first()
+        if api_key:
+            # Check expiry
+            if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key expired")
+            # Update last used
+            api_key.last_used_at = datetime.utcnow()
+            db.commit()
+            # Return the user who owns this key
+            user = db.query(User).filter(User.user_id == api_key.user_id).first()
+            if user:
+                return user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    # Fall back to JWT
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

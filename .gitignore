@@ -79,6 +79,9 @@ Thumbs.db
 images/
 test_screenshots/
 
+# Claude Code
+.claude/
+
 # Stray / dev artifacts
 .last_startup.json
 kill_python.py

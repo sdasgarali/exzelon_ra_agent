@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { leadsApi, outreachApi } from '@/lib/api'
+import { leadsApi, outreachApi, contactsApi } from '@/lib/api'
 
 interface Contact {
   contact_id: number
@@ -150,6 +150,14 @@ export default function LeadDetailPage() {
   const [checkingReplies, setCheckingReplies] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
+  // Link contact modal
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkSearch, setLinkSearch] = useState('')
+  const [linkResults, setLinkResults] = useState<any[]>([])
+  const [linkSearching, setLinkSearching] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const linkSearchTimeout = useRef<NodeJS.Timeout | null>(null)
+
   useEffect(() => {
     if (leadId) fetchLeadDetail()
   }, [leadId])
@@ -211,6 +219,49 @@ export default function LeadDetailPage() {
       setError(err.response?.data?.detail || 'Failed to check replies')
     } finally {
       setCheckingReplies(false)
+    }
+  }
+
+  // Search contacts for linking (search by company name by default)
+  const handleLinkSearch = (query: string) => {
+    setLinkSearch(query)
+    if (linkSearchTimeout.current) clearTimeout(linkSearchTimeout.current)
+    if (!query || query.length < 2) { setLinkResults([]); return }
+    linkSearchTimeout.current = setTimeout(async () => {
+      try {
+        setLinkSearching(true)
+        const results = await contactsApi.list({ search: query, page_size: 20 })
+        const items = Array.isArray(results) ? results : (results?.items || [])
+        // Filter out already-linked contacts
+        const existingIds = new Set((lead?.contacts || []).map((c: any) => c.contact_id))
+        setLinkResults(items.filter((c: any) => !existingIds.has(c.contact_id)))
+      } catch { setLinkResults([]) }
+      finally { setLinkSearching(false) }
+    }, 300)
+  }
+
+  const handleLinkContact = async (contactId: number) => {
+    try {
+      setLinking(true)
+      await leadsApi.manageContacts(leadId, { add_contact_ids: [contactId] })
+      setSuccess('Contact linked to this lead!')
+      fetchLeadDetail()
+      setShowLinkModal(false)
+      setLinkSearch('')
+      setLinkResults([])
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to link contact')
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  const openLinkModal = () => {
+    setShowLinkModal(true)
+    // Pre-search by company name
+    if (lead?.client_name) {
+      handleLinkSearch(lead.client_name)
     }
   }
 
@@ -330,16 +381,93 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
+      {/* Link Contact Modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Link Contact to Lead</h3>
+              <button onClick={() => { setShowLinkModal(false); setLinkSearch(''); setLinkResults([]) }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+
+            <div className="mb-3">
+              <input
+                value={linkSearch}
+                onChange={e => handleLinkSearch(e.target.value)}
+                className="input w-full"
+                placeholder="Search contacts by name, email, or company..."
+                autoFocus
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {linkSearching && <p className="text-sm text-gray-500 text-center py-4">Searching...</p>}
+
+              {!linkSearching && linkResults.length > 0 && (
+                <div className="divide-y divide-gray-100">
+                  {linkResults.map((c: any) => (
+                    <div key={c.contact_id} className="flex items-center justify-between py-3 px-2 hover:bg-gray-50 rounded">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{c.first_name} {c.last_name}</p>
+                        <p className="text-xs text-gray-500">{c.email} {c.client_name ? `— ${c.client_name}` : ''}</p>
+                        {c.title && <p className="text-xs text-gray-400">{c.title}</p>}
+                      </div>
+                      <button
+                        onClick={() => handleLinkContact(c.contact_id)}
+                        disabled={linking}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Link
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!linkSearching && linkSearch.length >= 2 && linkResults.length === 0 && (
+                <div className="text-center py-6">
+                  <p className="text-sm text-gray-500 mb-2">No matching contacts found.</p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
+                    <p className="text-sm font-medium text-blue-800 mb-1">Need to add a new contact?</p>
+                    <p className="text-sm text-blue-700 mb-2">
+                      Create the contact first on the{' '}
+                      <Link href="/dashboard/contacts" className="underline font-medium">Contacts page</Link>{' '}
+                      under the company <strong>{lead.client_name}</strong>, then come back here to link them.
+                    </p>
+                    <Link href="/dashboard/contacts" className="inline-block px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                      Go to Contacts Page
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {!linkSearching && linkSearch.length < 2 && (
+                <p className="text-sm text-gray-400 text-center py-4">Type at least 2 characters to search.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Contacts Section */}
       <div className="card mb-6">
         <div className="px-6 py-4 border-b flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-800">
             Contacts ({lead.contacts.length})
           </h2>
+          <button
+            onClick={openLinkModal}
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            + Link Contact
+          </button>
         </div>
         {lead.contacts.length === 0 ? (
           <div className="px-6 py-8 text-center text-gray-500">
-            No contacts linked to this lead. Run Contact Enrichment to discover contacts.
+            <p>No contacts linked to this lead.</p>
+            <p className="text-sm mt-2">Run Contact Enrichment to discover contacts, or{' '}
+              <button onClick={openLinkModal} className="text-blue-600 hover:underline font-medium">link an existing contact</button> manually.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

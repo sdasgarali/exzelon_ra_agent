@@ -248,6 +248,59 @@ async def get_lead_stats(
 
 
 
+@router.get("/with-contact-counts")
+async def list_leads_with_contact_counts(
+    search: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """List active leads with their linked contact counts (for campaign enrollment)."""
+    query = db.query(LeadDetails).filter(LeadDetails.is_archived == False)
+
+    if search:
+        q = f"%{search}%"
+        query = query.filter(
+            LeadDetails.client_name.ilike(q)
+            | LeadDetails.job_title.ilike(q)
+            | LeadDetails.state.ilike(q)
+        )
+
+    total = query.count()
+    leads = query.order_by(LeadDetails.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    # Batch-fetch contact counts via junction table
+    lead_ids = [l.lead_id for l in leads]
+    count_rows = (
+        db.query(LeadContactAssociation.lead_id, func.count(LeadContactAssociation.contact_id))
+        .filter(LeadContactAssociation.lead_id.in_(lead_ids))
+        .group_by(LeadContactAssociation.lead_id)
+        .all()
+    ) if lead_ids else []
+    count_map = {lid: cnt for lid, cnt in count_rows}
+
+    items = []
+    for l in leads:
+        items.append({
+            "lead_id": l.lead_id,
+            "client_name": l.client_name,
+            "job_title": l.job_title,
+            "state": l.state,
+            "lead_status": l.lead_status.value if l.lead_status else None,
+            "source": l.source,
+            "posting_date": l.posting_date.isoformat() if l.posting_date else None,
+            "contact_count": count_map.get(l.lead_id, 0),
+        })
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
 @router.get("/status-transitions")
 async def get_status_transitions(
     current_status: Optional[LeadStatus] = None,

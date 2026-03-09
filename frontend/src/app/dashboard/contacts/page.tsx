@@ -22,6 +22,12 @@ interface Contact {
   unsubscribed_at: string | null
 }
 
+const EMPTY_FORM = {
+  first_name: '', last_name: '', email: '', client_name: '',
+  title: '', phone: '', location_state: '', source: 'manual',
+  priority_level: '',
+}
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,6 +50,11 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // Create contact modal
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState({ ...EMPTY_FORM })
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
@@ -113,6 +124,24 @@ export default function ContactsPage() {
       setShowDeleteModal(false)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleCreateContact = async () => {
+    if (!createForm.first_name || !createForm.last_name || !createForm.email || !createForm.client_name) return
+    try {
+      setCreating(true)
+      setError('')
+      await contactsApi.create(createForm)
+      setSuccess('Contact created successfully!')
+      setShowCreateModal(false)
+      setCreateForm({ ...EMPTY_FORM })
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create contact')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -225,21 +254,94 @@ export default function ContactsPage() {
         </div>
       )}
 
+      {/* Create Contact Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Create Contact</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                  <input value={createForm.first_name} onChange={e => setCreateForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" placeholder="John" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                  <input value={createForm.last_name} onChange={e => setCreateForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" placeholder="Doe" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="john.doe@company.com" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company / Client Name *</label>
+                <input value={createForm.client_name} onChange={e => setCreateForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" placeholder="Acme Corp" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                <input value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} className="input w-full" placeholder="HR Manager" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+1 555-0123" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input value={createForm.location_state} onChange={e => setCreateForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" placeholder="CA" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
+                <select value={createForm.priority_level} onChange={e => setCreateForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
+                  <option value="">-- Select --</option>
+                  <option value="p1_job_poster">P1 - Job Poster</option>
+                  <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
+                  <option value="p3_hr_manager">P3 - HR Manager</option>
+                  <option value="p4_ops_leader">P4 - Ops Leader</option>
+                  <option value="p5_functional_manager">P5 - Functional Manager</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button
+                  onClick={handleCreateContact}
+                  disabled={!createForm.first_name || !createForm.last_name || !createForm.email || !createForm.client_name || creating}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {creating ? 'Creating...' : 'Create Contact'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Contacts</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {total} contacts discovered from lead enrichment
+            {total} contacts total
           </p>
         </div>
-        {selectedIds.size > 0 && (
+        <div className="flex gap-3">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
+              Archive Selected ({selectedIds.size})
+            </button>
+          )}
           <button
-            onClick={() => setShowDeleteModal(true)}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
-            Archive Selected ({selectedIds.size})
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+            + Create Contact
           </button>
-        )}
+        </div>
       </div>
 
       {error && (

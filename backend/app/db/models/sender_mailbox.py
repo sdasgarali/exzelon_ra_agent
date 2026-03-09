@@ -75,6 +75,9 @@ class SenderMailbox(Base):
     notes = Column(Text, nullable=True)
     email_signature_json = Column(Text, nullable=True)  # JSON: {sender_name, title, phone, email, company, website}
 
+    # SMTP relay rotation (JSON array of {host, port, ip})
+    smtp_relay_config_json = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

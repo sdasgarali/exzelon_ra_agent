@@ -37,6 +37,10 @@ def init_scheduler():
 
         _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour="6,12,18", minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
 
+        _scheduler.add_job(job_campaign_processor, IntervalTrigger(minutes=2), id="campaign_processor", name="Campaign Sequence Processor", replace_existing=True)
+        _scheduler.add_job(job_inbox_sync, CronTrigger(hour="8-19", minute="*/5"), id="inbox_sync", name="Inbox Sync", replace_existing=True)
+        _scheduler.add_job(job_lead_scoring, CronTrigger(hour=3, minute=0), id="lead_scoring", name="Daily Lead Scoring", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -218,14 +222,24 @@ def job_check_outreach_replies():
         from app.services.reply_tracker import check_all_mailbox_replies
         result = check_all_mailbox_replies(db)
         logger.info("Outreach reply check complete", result=result)
+        from app.services.automation_logger import log_automation_event
+        replies_found = result.get("replies_found", 0) if isinstance(result, dict) else 0
+        if replies_found > 0:
+            log_automation_event(db, "reply_detected", f"Detected {replies_found} new replies", details=result)
     except Exception as e:
         logger.error("Outreach reply check failed", error=str(e))
+        try:
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "reply_detected", f"Reply check failed: {str(e)[:100]}", status="error")
+        except Exception:
+            pass
     finally:
         db.close()
 
 
 def job_lead_sourcing_run():
     logger.info("Running scheduled lead sourcing pipeline")
+    db = _get_db()
     try:
         from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
         result = run_lead_sourcing_pipeline(sources=["auto"], triggered_by="scheduler")
@@ -233,8 +247,18 @@ def job_lead_sourcing_run():
                     inserted=result.get("inserted", 0),
                     skipped=result.get("skipped", 0),
                     sources=result.get("sources_used", []))
+        from app.services.automation_logger import log_automation_event
+        inserted = result.get("inserted", 0)
+        log_automation_event(db, "lead_sourcing", f"Lead sourcing: {inserted} leads found", details=result)
     except Exception as e:
         logger.error("Scheduled lead sourcing failed", error=str(e))
+        try:
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "lead_sourcing", f"Lead sourcing failed: {str(e)[:100]}", status="error")
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 
 def job_daily_backup():
@@ -258,6 +282,62 @@ def job_backup_cleanup():
         logger.info("Backup cleanup complete", deleted_count=deleted, retention_days=retention)
     except Exception as e:
         logger.error("Backup cleanup failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_campaign_processor():
+    logger.info("Running campaign sequence processor")
+    db = _get_db()
+    try:
+        from app.services.campaign_engine import process_campaign_queue
+        result = process_campaign_queue(db)
+        logger.info("Campaign processor complete", result=result)
+        from app.services.automation_logger import log_automation_event
+        log_automation_event(db, "campaign_send", f"Campaign processor ran", details=result)
+    except Exception as e:
+        logger.error("Campaign processor failed", error=str(e))
+        try:
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "campaign_send", f"Campaign processor failed: {str(e)[:100]}", status="error")
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def job_inbox_sync():
+    logger.info("Running inbox sync")
+    db = _get_db()
+    try:
+        from app.services.inbox_syncer import sync_inbox
+        result = sync_inbox(db)
+        logger.info("Inbox sync complete", result=result)
+        from app.services.automation_logger import log_automation_event
+        sent = result.get("sent_synced", 0)
+        replies = result.get("replies_synced", 0)
+        if sent > 0 or replies > 0:
+            log_automation_event(db, "inbox_sync", f"Inbox sync: {sent} sent, {replies} replies synced", details=result)
+    except Exception as e:
+        logger.error("Inbox sync failed", error=str(e))
+        try:
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "inbox_sync", f"Inbox sync failed: {str(e)[:100]}", status="error")
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def job_lead_scoring():
+    logger.info("Running daily lead scoring")
+    db = _get_db()
+    try:
+        from app.services.lead_scorer import recalculate_all_scores
+        result = recalculate_all_scores(db)
+        logger.info("Lead scoring complete", result=result)
+    except Exception as e:
+        logger.error("Lead scoring failed", error=str(e))
     finally:
         db.close()
 

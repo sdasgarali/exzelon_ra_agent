@@ -87,6 +87,12 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'category_regular_threshold': 'business_rules',
     'category_occasional_threshold': 'business_rules',
     'backup_retention_days': 'business_rules',
+    # Deal Automation
+    'deal_auto_create_on_interested': 'business_rules',
+    'deal_auto_advance_stages': 'business_rules',
+    'deal_auto_log_activities': 'business_rules',
+    'deal_stale_threshold_days': 'business_rules',
+    'deal_score_to_probability': 'business_rules',
 }
 
 # Default settings for seed data
@@ -272,6 +278,13 @@ DEFAULT_SETTINGS = {
     "warmup_alert_on_health_drop": {"value": True, "type": "boolean", "description": "Alert when health score drops"},
     "warmup_alert_health_drop_threshold": {"value": 20, "type": "integer", "description": "Health score drop threshold for alerts (%)"},
     "warmup_default_profile": {"value": "Standard", "type": "string", "description": "Default warmup profile name"},
+
+    # Deal Pipeline Automation
+    "deal_auto_create_on_interested": {"value": True, "type": "boolean", "description": "Auto-create deal when inbox reply is classified as interested"},
+    "deal_auto_advance_stages": {"value": True, "type": "boolean", "description": "Auto-advance deal stages on email sent/reply received signals"},
+    "deal_auto_log_activities": {"value": True, "type": "boolean", "description": "Auto-log email events (sent/received/bounced) as deal activities"},
+    "deal_stale_threshold_days": {"value": 7, "type": "integer", "description": "Flag deals with no activity for this many days as stale"},
+    "deal_score_to_probability": {"value": True, "type": "boolean", "description": "Auto-update deal probability from contact lead score"},
 
 }
 

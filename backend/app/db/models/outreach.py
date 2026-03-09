@@ -53,6 +53,11 @@ class OutreachEvent(Base):
     reply_subject = Column(String(500), nullable=True)
     reply_body = Column(Text, nullable=True)
 
+    # Campaign tracking
+    campaign_id = Column(Integer, ForeignKey('campaigns.campaign_id'), nullable=True)
+    step_id = Column(Integer, ForeignKey('sequence_steps.step_id'), nullable=True)
+    variant_index = Column(Integer, nullable=True)
+
     __table_args__ = (
         Index('idx_outreach_contact', 'contact_id'),
         Index('idx_outreach_lead', 'lead_id'),
