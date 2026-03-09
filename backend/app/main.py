@@ -224,7 +224,14 @@ def _seed_deal_stages():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        # With multiple workers, race conditions can cause "table already exists" errors
+        if "already exists" in str(e):
+            logger.warning("Table creation race condition (harmless)", error=str(e))
+        else:
+            raise
     logger.info("Database tables created/verified")
 
     # Validate database schema
