@@ -40,10 +40,10 @@ class JSearchAdapter(JobSourceAdapter):
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'JSEARCH_API_KEY', None) or getattr(settings, 'RAPIDAPI_KEY', None)
 
-    def test_connection(self) -> bool:
-        """Test connection to JSearch API."""
+    def test_connection(self) -> dict:
+        """Test connection to JSearch API. Returns dict with status and detail."""
         if not self.api_key:
-            return False
+            return {"ok": False, "error": "API key not configured"}
 
         try:
             with httpx.Client() as client:
@@ -59,9 +59,17 @@ class JSearchAdapter(JobSourceAdapter):
                     },
                     timeout=15
                 )
-                return response.status_code == 200
-        except Exception:
-            return False
+                if response.status_code == 200:
+                    return {"ok": True}
+                if response.status_code == 429:
+                    return {"ok": False, "error": "Monthly API quota exceeded. Upgrade plan at RapidAPI or wait for reset."}
+                if response.status_code == 403:
+                    return {"ok": False, "error": "API key is invalid or subscription inactive."}
+                return {"ok": False, "error": f"HTTP {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"ok": False, "error": "Request timed out. Try again."}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def _batch_queries(self, titles, location, batch_size=4):
         """Batch job titles into grouped search queries.

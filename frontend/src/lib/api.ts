@@ -701,6 +701,15 @@ export const campaignsApi = {
     const response = await api.get(`/campaigns/${campaignId}/steps/${stepId}/ab-results`)
     return response.data
   },
+  // Auto-enrollment
+  enrollmentPreview: async (campaignId: number, rules: any) => {
+    const response = await api.post(`/campaigns/${campaignId}/enrollment-preview`, { rules })
+    return response.data
+  },
+  triggerAutoEnroll: async (campaignId: number) => {
+    const response = await api.post(`/campaigns/${campaignId}/auto-enroll`)
+    return response.data
+  },
 }
 
 // Inbox API (Unibox)
@@ -844,12 +853,184 @@ export const automationApi = {
     const response = await api.get('/automation/events/summary')
     return response.data
   },
+  getControls: async () => {
+    const response = await api.get('/automation/controls')
+    return response.data
+  },
+  updateControls: async (data: Record<string, any>) => {
+    const response = await api.put('/automation/controls', data)
+    return response.data
+  },
 }
 
 // AI Copilot API
 export const copilotApi = {
   chat: async (messages: { role: string; content: string }[], context?: string) => {
     const response = await api.post('/copilot/chat', { messages, context })
+    return response.data
+  },
+}
+
+// Analytics API
+export const analyticsApi = {
+  teamLeaderboard: async () => {
+    const response = await api.get('/analytics/team-leaderboard')
+    return response.data
+  },
+  campaignComparison: async () => {
+    const response = await api.get('/analytics/campaign-comparison')
+    return response.data
+  },
+  revenue: async () => {
+    const response = await api.get('/analytics/revenue')
+    return response.data
+  },
+  costs: async (params?: Record<string, any>) => {
+    const response = await api.get('/analytics/costs', { params })
+    return response.data
+  },
+  addCost: async (data: { category: string; amount: number; entry_date: string; notes?: string }) => {
+    const response = await api.post('/analytics/costs', data)
+    return response.data
+  },
+  deleteCost: async (id: number) => {
+    await api.delete(`/analytics/costs/${id}`)
+  },
+}
+
+// ICP Wizard API
+export const icpWizardApi = {
+  generate: async (data: { company_description: string; offering: string; pain_points: string }) => {
+    const response = await api.post('/icp/generate', data)
+    return response.data
+  },
+  listProfiles: async () => {
+    const response = await api.get('/icp/profiles')
+    return response.data
+  },
+  getProfile: async (id: number) => {
+    const response = await api.get(`/icp/profiles/${id}`)
+    return response.data
+  },
+  saveProfile: async (data: any) => {
+    const response = await api.post('/icp/profiles', data)
+    return response.data
+  },
+  updateProfile: async (id: number, data: any) => {
+    const response = await api.put(`/icp/profiles/${id}`, data)
+    return response.data
+  },
+  deleteProfile: async (id: number) => {
+    await api.delete(`/icp/profiles/${id}`)
+  },
+  applyProfile: async (id: number) => {
+    const response = await api.post(`/icp/profiles/${id}/apply`)
+    return response.data
+  },
+}
+
+// Saved Searches API
+export const savedSearchesApi = {
+  list: async () => {
+    const response = await api.get('/saved-searches')
+    return response.data
+  },
+  create: async (data: { name: string; description?: string; filters_json: string; is_shared?: boolean }) => {
+    const response = await api.post('/saved-searches', data)
+    return response.data
+  },
+  update: async (id: number, data: any) => {
+    const response = await api.put(`/saved-searches/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/saved-searches/${id}`)
+  },
+  execute: async (id: number, params?: Record<string, any>) => {
+    const response = await api.post(`/saved-searches/${id}/execute`, null, { params })
+    return response.data
+  },
+}
+
+// Lead AI Search API
+export const leadSearchApi = {
+  aiSearch: async (query: string, limit?: number, offset?: number) => {
+    const response = await api.post('/leads/ai-search', { query, limit, offset })
+    return response.data
+  },
+}
+
+// Sequence Generator API
+export const sequenceGeneratorApi = {
+  generate: async (data: { goal: string; product: string; tone?: string; num_steps?: number }) => {
+    const response = await api.post('/sequence-generator/generate', data)
+    return response.data
+  },
+}
+
+// CRM Sync API
+export const crmSyncApi = {
+  run: async (crm_type?: string) => {
+    const response = await api.post('/crm-sync/run', null, { params: crm_type ? { crm_type } : {} })
+    return response.data
+  },
+  history: async (params?: Record<string, any>) => {
+    const response = await api.get('/crm-sync/history', { params })
+    return response.data
+  },
+}
+
+// Deal Tasks API
+export const dealTasksApi = {
+  listForDeal: async (dealId: number) => {
+    const response = await api.get(`/deals/${dealId}/tasks`)
+    return response.data
+  },
+  create: async (dealId: number, data: any) => {
+    const response = await api.post(`/deals/${dealId}/tasks`, data)
+    return response.data
+  },
+  update: async (taskId: number, data: any) => {
+    const response = await api.put(`/tasks/${taskId}`, data)
+    return response.data
+  },
+  complete: async (taskId: number) => {
+    const response = await api.post(`/tasks/${taskId}/complete`)
+    return response.data
+  },
+  myTasks: async (params?: Record<string, any>) => {
+    const response = await api.get('/tasks/my-tasks', { params })
+    return response.data
+  },
+}
+
+// Spam Check API
+export const spamCheckApi = {
+  check: async (data: { subject: string; body_html: string }) => {
+    const response = await api.post('/spam-check', data)
+    return response.data
+  },
+}
+
+// Tracking Domains API
+export const trackingDomainsApi = {
+  list: async () => {
+    const response = await api.get('/tracking-domains')
+    return response.data
+  },
+  create: async (data: { domain_name: string; cname_target?: string; mailbox_id?: number }) => {
+    const response = await api.post('/tracking-domains', data)
+    return response.data
+  },
+  verify: async (id: number) => {
+    const response = await api.post(`/tracking-domains/${id}/verify`)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/tracking-domains/${id}`)
+  },
+  setDefault: async (id: number) => {
+    const response = await api.put(`/tracking-domains/${id}/default`)
     return response.data
   },
 }

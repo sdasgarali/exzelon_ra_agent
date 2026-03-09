@@ -19,6 +19,17 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 # ─── Schemas ───────────────────────────────────────────────────────
 
+class EnrollmentRules(BaseModel):
+    enabled: bool = False
+    validation_status: List[str] = ["Valid"]
+    priority_levels: List[str] = []
+    states: List[str] = []
+    job_title_keywords: List[str] = []
+    sources: List[str] = []
+    min_lead_score: Optional[int] = None
+    max_per_run: int = 50
+    daily_cap: int = 200
+
 class CampaignCreate(BaseModel):
     name: str = Field(..., max_length=255)
     description: Optional[str] = None
@@ -28,6 +39,7 @@ class CampaignCreate(BaseModel):
     send_days: List[str] = ["mon", "tue", "wed", "thu", "fri"]
     mailbox_ids: List[int] = []
     daily_limit: int = 30
+    enrollment_rules: Optional[EnrollmentRules] = None
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -38,6 +50,7 @@ class CampaignUpdate(BaseModel):
     send_days: Optional[List[str]] = None
     mailbox_ids: Optional[List[int]] = None
     daily_limit: Optional[int] = None
+    enrollment_rules: Optional[EnrollmentRules] = None
 
 class StepCreate(BaseModel):
     step_type: str  # email/wait/condition
@@ -102,6 +115,8 @@ def _campaign_to_dict(c: Campaign, include_steps: bool = False, db: Session = No
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "is_archived": c.is_archived,
+        "enrollment_rules": json.loads(c.enrollment_rules_json) if c.enrollment_rules_json else None,
+        "auto_enrolled_today": c.auto_enrolled_today or 0,
     }
     if include_steps and db:
         steps = db.query(SequenceStep).filter(
@@ -194,6 +209,7 @@ def create_campaign(
         send_days_json=json.dumps(data.send_days),
         mailbox_ids_json=json.dumps(data.mailbox_ids) if data.mailbox_ids else None,
         daily_limit=data.daily_limit,
+        enrollment_rules_json=json.dumps(data.enrollment_rules.model_dump()) if data.enrollment_rules else None,
         created_by=user.user_id,
     )
     db.add(campaign)
@@ -241,6 +257,8 @@ def update_campaign(
         campaign.mailbox_ids_json = json.dumps(data.mailbox_ids)
     if data.daily_limit is not None:
         campaign.daily_limit = data.daily_limit
+    if data.enrollment_rules is not None:
+        campaign.enrollment_rules_json = json.dumps(data.enrollment_rules.model_dump())
 
     db.commit()
     db.refresh(campaign)
@@ -301,6 +319,17 @@ def activate_campaign(
             cc.next_send_at = now + timedelta(days=step.delay_days, hours=step.delay_hours)
 
     db.commit()
+
+    # Dispatch webhook event
+    try:
+        from app.services.webhook_dispatcher import dispatch_webhook_event
+        dispatch_webhook_event("campaign.started", {
+            "campaign_id": campaign.campaign_id,
+            "name": campaign.name,
+        }, db)
+    except Exception:
+        pass
+
     return {"message": "Campaign activated", "status": "active"}
 
 
@@ -315,6 +344,16 @@ def pause_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign.status = CampaignStatus.PAUSED
     db.commit()
+
+    try:
+        from app.services.webhook_dispatcher import dispatch_webhook_event
+        dispatch_webhook_event("campaign.paused", {
+            "campaign_id": campaign.campaign_id,
+            "name": campaign.name,
+        }, db)
+    except Exception:
+        pass
+
     return {"message": "Campaign paused", "status": "paused"}
 
 
@@ -538,6 +577,43 @@ def list_campaign_contacts(
     }
 
 
+class EnrollmentPreviewRequest(BaseModel):
+    rules: EnrollmentRules
+
+
+@router.post("/{campaign_id}/enrollment-preview")
+def enrollment_preview(
+    campaign_id: int,
+    data: EnrollmentPreviewRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    """Preview how many contacts match the given enrollment rules."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    from app.services.auto_enrollment import preview_enrollment_matches
+    count = preview_enrollment_matches(campaign_id, data.rules.model_dump(), db)
+    return {"count": count}
+
+
+@router.post("/{campaign_id}/auto-enroll")
+def trigger_auto_enroll(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Manually trigger auto-enrollment for one campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if campaign.status != CampaignStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Campaign must be active for auto-enrollment")
+    from app.services.auto_enrollment import run_auto_enrollment_for_campaign
+    result = run_auto_enrollment_for_campaign(campaign, db)
+    return result
+
+
 # ─── Analytics ─────────────────────────────────────────────────────
 
 @router.get("/{campaign_id}/analytics")
@@ -649,6 +725,7 @@ def duplicate_campaign(
         send_days_json=original.send_days_json,
         mailbox_ids_json=original.mailbox_ids_json,
         daily_limit=original.daily_limit,
+        enrollment_rules_json=original.enrollment_rules_json,
         created_by=user.user_id,
     )
     db.add(clone)

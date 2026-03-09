@@ -60,6 +60,10 @@ class Campaign(Base):
     # Limits
     daily_limit = Column(Integer, default=30, nullable=False)
 
+    # Auto-enrollment rules (JSON) and daily counter
+    enrollment_rules_json = Column(Text, nullable=True)
+    auto_enrolled_today = Column(Integer, default=0, nullable=False)
+
     # Denormalized stats
     total_contacts = Column(Integer, default=0, nullable=False)
     total_sent = Column(Integer, default=0, nullable=False)

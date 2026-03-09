@@ -161,6 +161,39 @@ Domain reputation management subsystem:
 - **Webhook** -- webhook subscriptions with URL, HMAC secret, event filter
 - **ApiKey** -- API key auth with SHA-256 hash, scopes, expiry
 - **AutomationEvent** -- system activity log (scheduler runs, AI classifications, campaign sends) for user transparency
+- **TrackingDomain** -- custom tracking domains for email deliverability (domain, CNAME verification, default flag)
+- **SavedSearch** -- saved lead filter sets (smart lists) with sharing support
+- **CostEntry** -- cost tracking for revenue/ROI analytics (category, amount, date)
+- **ICPProfile** -- AI-generated Ideal Customer Profiles (industries, job titles, states, company sizes)
+- **DealTask** -- task management within deals (assignee, due date, priority, status)
+- **CRMSyncLog** -- bidirectional CRM sync operation logging (direction, entity type, records synced)
+
+### Additional Services (Phase 5 — "Beat Instantly" Features)
+
+| Service | File | Purpose |
+|---------|------|---------|
+| Mailbox Selector | `services/mailbox_selector.py` | Health-aware mailbox selection (score = health*0.4 + quota*0.3 + warmup_age*0.15 + deliverability*0.15) |
+| AI Lead Search | `services/ai_lead_search.py` | NLP query parsing → SQL filter dict for natural language lead search |
+| Spam Checker | `services/spam_checker.py` | 100+ trigger words + pattern matching, score 0-100 |
+| AI ICP Wizard | `services/ai_icp_wizard.py` | AI-generated Ideal Customer Profiles with rule-based fallback |
+| AI Sequence Generator | `services/ai_sequence_generator.py` | AI email sequence generation with template fallback |
+| CRM Sync Engine | `services/crm_sync_engine.py` | Bidirectional HubSpot/Salesforce sync (pull contacts, push deals) |
+| CRM Auto-Forward | `services/crm_auto_forward.py` | Auto-forward interested inbox replies to CRM |
+| IMAP Reader | `services/warmup/imap_reader.py` | Read emulation for warmup (marks peer emails as read via IMAP) |
+
+### Additional API Endpoints
+
+| Prefix | File | Purpose |
+|--------|------|---------|
+| `/analytics` | `api/endpoints/analytics.py` | Team leaderboard, campaign comparison, revenue metrics, cost tracking |
+| `/icp` | `api/endpoints/icp_wizard.py` | ICP generation + profile CRUD |
+| `/leads/ai-search` | `api/endpoints/lead_search.py` | Natural language lead search |
+| `/saved-searches` | `api/endpoints/saved_searches.py` | Saved search/smart list CRUD + execute |
+| `/sequence-generator` | `api/endpoints/sequence_generator.py` | AI email sequence generation |
+| `/crm-sync` | `api/endpoints/crm_sync.py` | Manual CRM sync trigger + history |
+| `/deals/{id}/tasks` | `api/endpoints/deal_tasks.py` | Deal task CRUD + my-tasks |
+| `/spam-check` | `api/endpoints/spam_check.py` | Email spam score checking |
+| `/tracking-domains` | `api/endpoints/tracking_domains.py` | Custom tracking domain CRUD + verify |
 
 ## Business Rules (configured in `core/config.py`)
 

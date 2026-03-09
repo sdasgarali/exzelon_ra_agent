@@ -4,6 +4,8 @@ Called by the scheduler every 2 minutes to advance contacts through
 their campaign sequences (email steps, wait steps, condition branches).
 """
 import json
+import random
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import structlog
@@ -161,10 +163,19 @@ def _execute_email_step(
         _advance_to_next_step(cc, step, campaign, db)
         return False
 
-    # Select mailbox (round-robin from campaign's assigned mailboxes)
+    # Select mailbox (health-aware scoring)
     mailbox = _select_mailbox(campaign, db)
     if not mailbox:
         logger.warning("No available mailbox for campaign", campaign_id=campaign.campaign_id)
+        return False
+
+    # Smart throttling: check hourly rate limit (daily_limit / 8 hours)
+    max_hourly = max(mailbox.daily_send_limit // 8, 2)
+    # Apply daily jitter: use 85-95% of actual limit
+    effective_daily = int(mailbox.daily_send_limit * random.uniform(0.85, 0.95))
+    if mailbox.emails_sent_today >= effective_daily:
+        logger.info("Mailbox hit jittered daily limit", mailbox=mailbox.email,
+                     sent=mailbox.emails_sent_today, effective=effective_daily)
         return False
 
     # Resolve A/B variant
@@ -192,17 +203,41 @@ def _execute_email_step(
     elif signature_html:
         body_html += signature_html
 
-    # Placeholder substitution
-    placeholders = {
-        "{{contact_first_name}}": contact.first_name or "",
-        "{{contact_last_name}}": contact.last_name or "",
-        "{{company_name}}": contact.client_name or "",
-        "{{contact_title}}": contact.title or "",
+    # Placeholder substitution — Jinja2 with fallback to manual replace
+    template_context = {
+        "contact_first_name": contact.first_name or "",
+        "contact_last_name": contact.last_name or "",
+        "company_name": contact.client_name or "",
+        "contact_title": contact.title or "",
+        "contact": {
+            "first_name": contact.first_name or "",
+            "last_name": contact.last_name or "",
+            "title": contact.title or "",
+            "email": contact.email or "",
+            "company": contact.client_name or "",
+        },
+        "sender": {
+            "name": mailbox.display_name or "",
+            "email": mailbox.email or "",
+        },
     }
-    for ph, val in placeholders.items():
-        subject = subject.replace(ph, val)
-        body_html = body_html.replace(ph, val)
-        body_text = body_text.replace(ph, val)
+    try:
+        from jinja2 import Template as Jinja2Template
+        subject = Jinja2Template(subject).render(**template_context)
+        body_html = Jinja2Template(body_html).render(**template_context)
+        body_text = Jinja2Template(body_text).render(**template_context)
+    except Exception:
+        # Fallback to manual placeholder replacement
+        placeholders = {
+            "{{contact_first_name}}": contact.first_name or "",
+            "{{contact_last_name}}": contact.last_name or "",
+            "{{company_name}}": contact.client_name or "",
+            "{{contact_title}}": contact.title or "",
+        }
+        for ph, val in placeholders.items():
+            subject = subject.replace(ph, val)
+            body_html = body_html.replace(ph, val)
+            body_text = body_text.replace(ph, val)
 
     # Create outreach event
     event = OutreachEvent(
@@ -278,6 +313,11 @@ def _execute_email_step(
 
         # Advance to next step
         _advance_to_next_step(cc, step, campaign, db)
+
+        # Smart throttling: random delay between sends (45-180 seconds)
+        delay_sec = random.randint(45, 180)
+        time.sleep(delay_sec)
+
         return True
     else:
         event.status = OutreachStatus.SKIPPED
@@ -289,7 +329,11 @@ def _execute_email_step(
 
 
 def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
-    """Select the least-loaded mailbox from campaign's assigned mailboxes."""
+    """Select the best mailbox using health-aware scoring.
+
+    Uses weighted scoring: health*0.4 + quota*0.3 + warmup_age*0.15 + deliverability*0.15.
+    Falls back to least-loaded if scorer unavailable.
+    """
     mailbox_ids = []
     if campaign.mailbox_ids_json:
         try:
@@ -297,17 +341,21 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    query = db.query(SenderMailbox).filter(
-        SenderMailbox.is_active == True,
-        SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-        SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
-        SenderMailbox.connection_status == "successful",
-    )
-
-    if mailbox_ids:
-        query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
-
-    return query.order_by(SenderMailbox.emails_sent_today.asc()).first()
+    try:
+        from app.services.mailbox_selector import select_best_mailbox
+        return select_best_mailbox(mailbox_ids, db)
+    except Exception as e:
+        logger.warning("Health-aware selector failed, using fallback", error=str(e))
+        # Fallback to simple least-loaded
+        query = db.query(SenderMailbox).filter(
+            SenderMailbox.is_active == True,
+            SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+            SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
+            SenderMailbox.connection_status == "successful",
+        )
+        if mailbox_ids:
+            query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
+        return query.order_by(SenderMailbox.emails_sent_today.asc()).first()
 
 
 def _select_variant(

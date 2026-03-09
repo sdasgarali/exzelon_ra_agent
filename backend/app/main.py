@@ -524,6 +524,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for deal automation columns: {e}")
 
+    # Migration: add auto-enrollment columns to campaigns
+    try:
+        from sqlalchemy import text as sa_text_enroll, inspect as sa_inspect_enroll
+        with engine.connect() as conn:
+            inspector_enroll = sa_inspect_enroll(engine)
+            camp_cols = [c["name"] for c in inspector_enroll.get_columns("campaigns")]
+            for col_name, col_def in [
+                ("enrollment_rules_json", "TEXT NULL"),
+                ("auto_enrolled_today", "INT DEFAULT 0 NOT NULL"),
+            ]:
+                if col_name not in camp_cols:
+                    conn.execute(sa_text_enroll(f"ALTER TABLE campaigns ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                    logger.info(f"Migration: added {col_name} column to campaigns")
+    except Exception as e:
+        logger.warning(f"Migration check for enrollment columns: {e}")
+
     # Cleanup: mark orphaned pipeline runs as failed on startup
     # (runs stuck as 'running' from server crashes or restarts)
     try:

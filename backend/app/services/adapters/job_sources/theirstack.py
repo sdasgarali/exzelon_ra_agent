@@ -35,11 +35,15 @@ class TheirStackAdapter(JobSourceAdapter):
                     json={
                         "limit": 1,
                         "job_country_code_or": ["US"],
+                        "posted_at_max_age_days": 7,
                     },
                     timeout=15,
                 )
+                if response.status_code != 200:
+                    print(f"TheirStack test_connection: HTTP {response.status_code} - {response.text[:200]}")
                 return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            print(f"TheirStack test_connection exception: {type(e).__name__}: {e}")
             return False
 
     def fetch_jobs(

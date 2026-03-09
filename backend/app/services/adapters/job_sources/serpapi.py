@@ -21,22 +21,20 @@ class SerpAPIAdapter(JobSourceAdapter):
         self.api_key = api_key or getattr(settings, 'SERPAPI_API_KEY', None)
 
     def test_connection(self) -> bool:
-        """Test connection to SerpAPI."""
+        """Test connection to SerpAPI using the lightweight account endpoint."""
         if not self.api_key:
             return False
         try:
             with httpx.Client() as client:
                 response = client.get(
-                    self.BASE_URL,
-                    params={
-                        "engine": "google_jobs",
-                        "q": "HR Manager",
-                        "api_key": self.api_key,
-                        "num": "1",
-                    },
+                    "https://serpapi.com/account.json",
+                    params={"api_key": self.api_key},
                     timeout=15,
                 )
-                return response.status_code == 200
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("account_status") == "Active"
+                return False
         except Exception:
             return False
 

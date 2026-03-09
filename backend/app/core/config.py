@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     # Business Rules
     DAILY_SEND_LIMIT: int = 30
     COOLDOWN_DAYS: int = 10
+    # Smart Throttling
+    SEND_DELAY_MIN_SEC: int = 45
+    SEND_DELAY_MAX_SEC: int = 180
+    MAX_HOURLY_RATIO: int = 8  # daily_limit / this = max per hour
     MAX_CONTACTS_PER_COMPANY_PER_JOB: int = 4
     MIN_SALARY_THRESHOLD: int = 30000
     DATA_RETENTION_DAYS: int = 180
@@ -188,25 +192,81 @@ class Settings(BaseSettings):
 
     # Target Job Titles
     TARGET_JOB_TITLES: list[str] = [
-        "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
-        "Operations Manager", "Plant Manager", "Warehouse Manager",
-        "Production Supervisor", "Logistics Manager", "Supply Chain Manager",
-        "Maintenance Manager", "Quality Manager", "Safety Manager",
-        "Facilities Manager", "Branch Manager", "Regional Manager",
-        "General Manager", "Site Manager", "Distribution Manager",
-        "Manufacturing Manager", "Engineering Manager", "Project Manager",
-        "Purchasing Manager", "Procurement Manager", "Inventory Manager",
-        "Shipping Manager", "Receiving Manager", "Fleet Manager",
-        "Store Manager", "Restaurant Manager", "Hotel Manager",
-        "Construction Manager", "Field Manager", "Service Manager",
-        "Account Manager", "Territory Manager", "Area Manager",
-        "Warehouse Supervisor", "Production Manager", "VP Operations",
-        "VP Human Resources", "Director of HR", "Director of Operations",
-        "Staffing Coordinator", "Talent Manager", "Workforce Manager",
-        "EHS Manager", "Environmental Health Safety Manager",
-        "Training Manager", "Compliance Manager", "Risk Manager",
-        "Claims Manager", "Dispatch Manager", "Transportation Manager",
-        "Food Service Manager", "Housekeeping Manager"
+        # HR & Talent
+        "HR Manager", "HR Director", "HR Business Partner", "HR Generalist",
+        "HR Coordinator", "Recruiter", "Talent Acquisition", "Talent Acquisition Manager",
+        "Staffing Coordinator", "Staffing Manager", "Talent Manager", "Workforce Manager",
+        "Recruitment Manager", "People Operations Manager", "Employee Relations Manager",
+        "Compensation Manager", "Benefits Manager", "Payroll Manager",
+        "VP Human Resources", "Director of HR", "Chief People Officer",
+        # Operations & General Management
+        "Operations Manager", "Operations Director", "VP Operations",
+        "Director of Operations", "COO", "Chief Operating Officer",
+        "General Manager", "Assistant General Manager", "Regional Manager",
+        "Area Manager", "District Manager", "Territory Manager",
+        "Branch Manager", "Site Manager", "Field Manager",
+        # Manufacturing & Production
+        "Plant Manager", "Production Manager", "Production Supervisor",
+        "Manufacturing Manager", "Manufacturing Director", "Manufacturing Supervisor",
+        "Quality Manager", "Quality Control Manager", "Quality Assurance Manager",
+        "Lean Manager", "Continuous Improvement Manager", "Process Improvement Manager",
+        # Warehouse & Logistics
+        "Warehouse Manager", "Warehouse Supervisor", "Warehouse Director",
+        "Distribution Manager", "Distribution Center Manager",
+        "Logistics Manager", "Logistics Director", "Logistics Coordinator",
+        "Supply Chain Manager", "Supply Chain Director",
+        "Inventory Manager", "Inventory Control Manager",
+        "Shipping Manager", "Receiving Manager", "Freight Manager",
+        "Fleet Manager", "Dispatch Manager", "Transportation Manager",
+        # Facilities & Maintenance
+        "Facilities Manager", "Facilities Director", "Building Manager",
+        "Maintenance Manager", "Maintenance Director", "Maintenance Supervisor",
+        "Property Manager", "Property Management Director",
+        # Safety & Compliance
+        "Safety Manager", "Safety Director", "Safety Coordinator",
+        "EHS Manager", "Environmental Health Safety Manager", "HSE Manager",
+        "Compliance Manager", "Compliance Director", "Compliance Officer",
+        "Risk Manager", "Risk Director", "Loss Prevention Manager",
+        "Claims Manager", "Regulatory Affairs Manager",
+        # Construction & Engineering
+        "Construction Manager", "Construction Superintendent", "Construction Director",
+        "Project Manager", "Senior Project Manager", "Program Manager",
+        "Engineering Manager", "Engineering Director",
+        # Purchasing & Procurement
+        "Purchasing Manager", "Purchasing Director",
+        "Procurement Manager", "Procurement Director",
+        "Buyer", "Senior Buyer", "Category Manager",
+        "Vendor Manager", "Supplier Manager",
+        # Hospitality & Food Service
+        "Restaurant Manager", "Restaurant General Manager",
+        "Hotel Manager", "Hotel General Manager", "Front Desk Manager",
+        "Food Service Manager", "Food Service Director",
+        "Banquet Manager", "Catering Manager",
+        "Housekeeping Manager", "Housekeeping Director",
+        "Executive Chef", "Kitchen Manager",
+        # Retail
+        "Store Manager", "Store Director", "Retail Manager",
+        "Assistant Store Manager", "Retail Operations Manager",
+        "Merchandise Manager", "Visual Merchandising Manager",
+        # Healthcare & Social Services
+        "Nurse Manager", "Nursing Director", "Director of Nursing",
+        "Clinical Manager", "Practice Manager", "Office Manager",
+        "Healthcare Administrator", "Hospital Administrator",
+        "Social Services Director", "Case Manager",
+        # Training & Development
+        "Training Manager", "Training Director", "Learning and Development Manager",
+        "Organizational Development Manager",
+        # Finance & Accounting (non-IT)
+        "Controller", "Accounting Manager", "Finance Manager",
+        "Accounts Payable Manager", "Accounts Receivable Manager",
+        "Credit Manager", "Collections Manager",
+        # Sales & Business Development (field roles)
+        "Account Manager", "Sales Manager", "Regional Sales Manager",
+        "Business Development Manager", "Service Manager",
+        "Customer Service Manager", "Call Center Manager",
+        # Agriculture & Trades
+        "Farm Manager", "Ranch Manager", "Ag Operations Manager",
+        "Shop Manager", "Foreman", "Superintendent",
     ]
 
 

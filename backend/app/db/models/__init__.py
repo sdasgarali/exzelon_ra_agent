@@ -26,6 +26,12 @@ from app.db.models.seed_test import SeedTestAccount, SeedTestResult
 from app.db.models.tenant import Tenant
 from app.db.models.visitor import VisitorEvent
 from app.db.models.automation_event import AutomationEvent
+from app.db.models.tracking_domain import TrackingDomain
+from app.db.models.saved_search import SavedSearch
+from app.db.models.cost_tracking import CostEntry
+from app.db.models.icp_profile import ICPProfile
+from app.db.models.deal_task import DealTask, TaskStatus, TaskPriority
+from app.db.models.crm_sync_log import CRMSyncLog
 
 __all__ = [
     "User",
@@ -71,4 +77,12 @@ __all__ = [
     "Tenant",
     "VisitorEvent",
     "AutomationEvent",
+    "TrackingDomain",
+    "SavedSearch",
+    "CostEntry",
+    "ICPProfile",
+    "DealTask",
+    "TaskStatus",
+    "TaskPriority",
+    "CRMSyncLog",
 ]

@@ -144,7 +144,7 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
 
     Returns a dict like {'job_sources': 'full', 'ai_llm': 'read', ...}
     """
-    tabs = ['job_sources', 'ai_llm', 'contacts', 'validation', 'outreach', 'business_rules']
+    tabs = ['job_sources', 'ai_llm', 'contacts', 'validation', 'outreach', 'business_rules', 'automation']
 
     if user.role == UserRole.SUPER_ADMIN:
         return {tab: 'full' for tab in tabs}

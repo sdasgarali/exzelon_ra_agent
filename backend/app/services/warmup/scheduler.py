@@ -1,4 +1,5 @@
 """APScheduler Integration - background job scheduler for warmup tasks."""
+import json
 from datetime import date
 import structlog
 
@@ -41,6 +42,10 @@ def init_scheduler():
         _scheduler.add_job(job_inbox_sync, CronTrigger(hour="8-19", minute="*/5"), id="inbox_sync", name="Inbox Sync", replace_existing=True)
         _scheduler.add_job(job_lead_scoring, CronTrigger(hour=3, minute=0), id="lead_scoring", name="Daily Lead Scoring", replace_existing=True)
 
+        _scheduler.add_job(job_imap_read_cycle, IntervalTrigger(minutes=30), id="imap_read_cycle", name="IMAP Read Emulation", replace_existing=True)
+        _scheduler.add_job(job_crm_sync, CronTrigger(hour=4, minute=0), id="crm_sync", name="Nightly CRM Sync", replace_existing=True)
+        _scheduler.add_job(job_auto_enrollment, IntervalTrigger(minutes=30), id="auto_enrollment", name="Campaign Auto-Enrollment", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -65,7 +70,49 @@ def _get_db():
     return SessionLocal()
 
 
+def _is_job_enabled(job_id: str) -> bool:
+    """Check master + individual toggle from settings table."""
+    db = _get_db()
+    try:
+        from app.db.models.settings import Settings
+        # Check master toggle
+        master_row = db.query(Settings).filter(Settings.key == "automation_master_enabled").first()
+        if master_row and master_row.value_json:
+            master = json.loads(master_row.value_json)
+            if not master:
+                return False
+        # Check individual toggle
+        key = f"automation_{job_id}_enabled"
+        row = db.query(Settings).filter(Settings.key == key).first()
+        if row and row.value_json:
+            return bool(json.loads(row.value_json))
+        return True  # default enabled if no setting exists
+    except Exception as e:
+        logger.warning("Failed to check job toggle, defaulting to enabled", job_id=job_id, error=str(e))
+        return True
+    finally:
+        db.close()
+
+
+def _get_setting_bool(db, key: str, default: bool = False) -> bool:
+    """Read a boolean setting from DB."""
+    from app.db.models.settings import Settings
+    row = db.query(Settings).filter(Settings.key == key).first()
+    if row and row.value_json:
+        try:
+            return bool(json.loads(row.value_json))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return default
+
+
+# ─── Job functions ───────────────────────────────────────────────────────────
+
+
 def job_daily_assessment():
+    if not _is_job_enabled("daily_assessment"):
+        logger.info("Job daily_assessment skipped (disabled)")
+        return
     logger.info("Running daily warmup assessment")
     db = _get_db()
     try:
@@ -79,6 +126,9 @@ def job_daily_assessment():
 
 
 def job_peer_warmup_cycle():
+    if not _is_job_enabled("peer_warmup_cycle"):
+        logger.info("Job peer_warmup_cycle skipped (disabled)")
+        return
     logger.info("Running peer warmup cycle")
     db = _get_db()
     try:
@@ -91,9 +141,10 @@ def job_peer_warmup_cycle():
         db.close()
 
 
-
-
 def job_auto_reply_cycle():
+    if not _is_job_enabled("auto_reply_cycle"):
+        logger.info("Job auto_reply_cycle skipped (disabled)")
+        return
     logger.info("Running auto-reply cycle")
     db = _get_db()
     try:
@@ -107,6 +158,9 @@ def job_auto_reply_cycle():
 
 
 def job_daily_count_reset():
+    if not _is_job_enabled("daily_count_reset"):
+        logger.info("Job daily_count_reset skipped (disabled)")
+        return
     logger.info("Resetting daily email counts")
     db = _get_db()
     try:
@@ -114,6 +168,11 @@ def job_daily_count_reset():
         db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0}, synchronize_session=False)
         db.commit()
         logger.info("Daily count reset complete")
+        # Reset campaign auto-enrollment daily counters
+        from app.db.models.campaign import Campaign
+        db.query(Campaign).update({Campaign.auto_enrolled_today: 0}, synchronize_session=False)
+        db.commit()
+        logger.info("Campaign auto-enrollment daily counters reset")
     except Exception as e:
         logger.error("Daily count reset failed", error=str(e))
     finally:
@@ -121,6 +180,9 @@ def job_daily_count_reset():
 
 
 def job_dns_checks():
+    if not _is_job_enabled("dns_checks"):
+        logger.info("Job dns_checks skipped (disabled)")
+        return
     logger.info("Running DNS health checks")
     db = _get_db()
     try:
@@ -142,6 +204,9 @@ def job_dns_checks():
 
 
 def job_blacklist_checks():
+    if not _is_job_enabled("blacklist_checks"):
+        logger.info("Job blacklist_checks skipped (disabled)")
+        return
     logger.info("Running blacklist checks")
     db = _get_db()
     try:
@@ -163,6 +228,9 @@ def job_blacklist_checks():
 
 
 def job_daily_log_snapshot():
+    if not _is_job_enabled("daily_log_snapshot"):
+        logger.info("Job daily_log_snapshot skipped (disabled)")
+        return
     logger.info("Taking daily log snapshot")
     db = _get_db()
     try:
@@ -203,6 +271,9 @@ def job_daily_log_snapshot():
 
 
 def job_auto_recovery_check():
+    if not _is_job_enabled("auto_recovery_check"):
+        logger.info("Job auto_recovery_check skipped (disabled)")
+        return
     logger.info("Running auto-recovery check")
     db = _get_db()
     try:
@@ -216,6 +287,9 @@ def job_auto_recovery_check():
 
 
 def job_check_outreach_replies():
+    if not _is_job_enabled("check_outreach_replies"):
+        logger.info("Job check_outreach_replies skipped (disabled)")
+        return
     logger.info("Running outreach reply check")
     db = _get_db()
     try:
@@ -238,6 +312,9 @@ def job_check_outreach_replies():
 
 
 def job_lead_sourcing_run():
+    if not _is_job_enabled("lead_sourcing_run"):
+        logger.info("Job lead_sourcing_run skipped (disabled)")
+        return
     logger.info("Running scheduled lead sourcing pipeline")
     db = _get_db()
     try:
@@ -250,6 +327,9 @@ def job_lead_sourcing_run():
         from app.services.automation_logger import log_automation_event
         inserted = result.get("inserted", 0)
         log_automation_event(db, "lead_sourcing", f"Lead sourcing: {inserted} leads found", details=result)
+
+        # Auto-chain: sourcing → enrichment → validation
+        _run_auto_chain(db, inserted)
     except Exception as e:
         logger.error("Scheduled lead sourcing failed", error=str(e))
         try:
@@ -261,7 +341,92 @@ def job_lead_sourcing_run():
         db.close()
 
 
+def _run_auto_chain(db, leads_inserted: int):
+    """Auto-chain: lead sourcing → contact enrichment → email validation."""
+    from app.services.automation_logger import log_automation_event
+
+    if leads_inserted <= 0:
+        return
+
+    # Chain step 1: enrichment
+    if not _get_setting_bool(db, "automation_chain_enrichment", False):
+        return
+
+    logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted)
+    try:
+        from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
+        enrich_result = run_contact_enrichment_pipeline(triggered_by="auto_chain")
+        contacts_found = enrich_result.get("contacts_found", 0) if isinstance(enrich_result, dict) else 0
+        logger.info("Auto-chain: enrichment complete", contacts_found=contacts_found)
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain enrichment: {contacts_found} contacts found",
+            details=enrich_result, source="auto_chain",
+        )
+    except Exception as e:
+        logger.error("Auto-chain enrichment failed", error=str(e))
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain enrichment failed: {str(e)[:100]}",
+            status="error", source="auto_chain",
+        )
+        return
+
+    # Chain step 2: validation
+    if contacts_found <= 0:
+        return
+    if not _get_setting_bool(db, "automation_chain_validation", False):
+        return
+
+    logger.info("Auto-chain: starting email validation", contacts_found=contacts_found)
+    try:
+        from app.services.pipelines.email_validation import run_email_validation_pipeline
+        valid_result = run_email_validation_pipeline(triggered_by="auto_chain")
+        validated = valid_result.get("validated", 0) if isinstance(valid_result, dict) else 0
+        logger.info("Auto-chain: validation complete", validated=validated)
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain validation: {validated} emails validated",
+            details=valid_result, source="auto_chain",
+        )
+    except Exception as e:
+        logger.error("Auto-chain validation failed", error=str(e))
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain validation failed: {str(e)[:100]}",
+            status="error", source="auto_chain",
+        )
+
+    # Chain step 3: enrollment
+    if validated <= 0:
+        return
+    if not _get_setting_bool(db, "automation_chain_enrollment", False):
+        return
+
+    logger.info("Auto-chain: starting campaign auto-enrollment", validated=validated)
+    try:
+        from app.services.auto_enrollment import run_auto_enrollment
+        enroll_result = run_auto_enrollment(db)
+        total_enrolled = enroll_result.get("total_enrolled", 0)
+        logger.info("Auto-chain: enrollment complete", total_enrolled=total_enrolled)
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain enrollment: {total_enrolled} contacts enrolled",
+            details=enroll_result, source="auto_chain",
+        )
+    except Exception as e:
+        logger.error("Auto-chain enrollment failed", error=str(e))
+        log_automation_event(
+            db, "auto_chain",
+            f"Auto-chain enrollment failed: {str(e)[:100]}",
+            status="error", source="auto_chain",
+        )
+
+
 def job_daily_backup():
+    if not _is_job_enabled("daily_backup"):
+        logger.info("Job daily_backup skipped (disabled)")
+        return
     logger.info("Running daily database backup")
     try:
         from app.services.backup_service import create_backup
@@ -272,6 +437,9 @@ def job_daily_backup():
 
 
 def job_backup_cleanup():
+    if not _is_job_enabled("backup_cleanup"):
+        logger.info("Job backup_cleanup skipped (disabled)")
+        return
     logger.info("Running backup cleanup")
     db = _get_db()
     try:
@@ -287,6 +455,9 @@ def job_backup_cleanup():
 
 
 def job_campaign_processor():
+    if not _is_job_enabled("campaign_processor"):
+        logger.info("Job campaign_processor skipped (disabled)")
+        return
     logger.info("Running campaign sequence processor")
     db = _get_db()
     try:
@@ -307,6 +478,9 @@ def job_campaign_processor():
 
 
 def job_inbox_sync():
+    if not _is_job_enabled("inbox_sync"):
+        logger.info("Job inbox_sync skipped (disabled)")
+        return
     logger.info("Running inbox sync")
     db = _get_db()
     try:
@@ -330,6 +504,9 @@ def job_inbox_sync():
 
 
 def job_lead_scoring():
+    if not _is_job_enabled("lead_scoring"):
+        logger.info("Job lead_scoring skipped (disabled)")
+        return
     logger.info("Running daily lead scoring")
     db = _get_db()
     try:
@@ -338,6 +515,65 @@ def job_lead_scoring():
         logger.info("Lead scoring complete", result=result)
     except Exception as e:
         logger.error("Lead scoring failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_imap_read_cycle():
+    if not _is_job_enabled("imap_read_cycle"):
+        logger.info("Job imap_read_cycle skipped (disabled)")
+        return
+    logger.info("Running IMAP read emulation cycle")
+    db = _get_db()
+    try:
+        from app.services.warmup.imap_reader import run_imap_read_cycle
+        result = run_imap_read_cycle(db)
+        logger.info("IMAP read cycle complete", result=result)
+    except Exception as e:
+        logger.error("IMAP read cycle failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_crm_sync():
+    if not _is_job_enabled("crm_sync"):
+        logger.info("Job crm_sync skipped (disabled)")
+        return
+    logger.info("Running nightly CRM sync")
+    db = _get_db()
+    try:
+        from app.services.crm_sync_engine import run_crm_sync
+        result = run_crm_sync(db)
+        logger.info("CRM sync complete", result=result)
+        from app.services.automation_logger import log_automation_event
+        log_automation_event(db, "crm_sync", "Nightly CRM sync completed", details=result)
+    except Exception as e:
+        logger.error("CRM sync failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_auto_enrollment():
+    if not _is_job_enabled("auto_enrollment"):
+        logger.info("Job auto_enrollment skipped (disabled)")
+        return
+    logger.info("Running campaign auto-enrollment")
+    db = _get_db()
+    try:
+        from app.services.auto_enrollment import run_auto_enrollment
+        result = run_auto_enrollment(db)
+        logger.info("Auto-enrollment complete", result=result)
+        from app.services.automation_logger import log_automation_event
+        total = result.get("total_enrolled", 0)
+        if total > 0:
+            log_automation_event(db, "auto_enrollment", f"Auto-enrollment: {total} contacts enrolled", details=result)
+    except Exception as e:
+        logger.error("Auto-enrollment failed", error=str(e))
+        try:
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "auto_enrollment", f"Auto-enrollment failed: {str(e)[:100]}", status="error")
+        except Exception:
+            pass
     finally:
         db.close()
 

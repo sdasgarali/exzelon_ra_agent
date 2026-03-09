@@ -179,6 +179,8 @@ export interface Campaign {
   created_at: string;
   updated_at: string;
   is_archived: boolean;
+  enrollment_rules: Record<string, any> | null;
+  auto_enrolled_today: number;
   steps?: SequenceStep[];
 }
 

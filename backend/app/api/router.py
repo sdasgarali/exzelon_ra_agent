@@ -5,6 +5,8 @@ from app.api.endpoints import (
     validation, outreach, settings, pipelines, dashboard, mailboxes, warmup,
     templates, audit, backups,
     campaigns, inbox, webhooks, deals, copilot, integrations, automation,
+    tracking_domains, lead_search, saved_searches, analytics,
+    icp_wizard, sequence_generator, crm_sync, deal_tasks, spam_check,
 )
 
 api_router = APIRouter()
@@ -32,3 +34,13 @@ api_router.include_router(deals.router)
 api_router.include_router(copilot.router)
 api_router.include_router(integrations.router)
 api_router.include_router(automation.router)
+# Phase 1-5: Beat Instantly.ai endpoints
+api_router.include_router(tracking_domains.router)
+api_router.include_router(lead_search.router)
+api_router.include_router(saved_searches.router)
+api_router.include_router(analytics.router)
+api_router.include_router(icp_wizard.router)
+api_router.include_router(sequence_generator.router)
+api_router.include_router(crm_sync.router)
+api_router.include_router(deal_tasks.router)
+api_router.include_router(spam_check.router)

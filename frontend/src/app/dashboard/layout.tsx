@@ -33,6 +33,11 @@ import {
   Zap,
   MessageSquare,
   DollarSign,
+  Search,
+  Target,
+  TrendingUp,
+  Wand2,
+  ListChecks,
 } from 'lucide-react'
 
 const navigation = [
@@ -45,10 +50,13 @@ const navigation = [
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, roles: ['super_admin', 'admin'] as string[] },
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, roles: ['super_admin', 'admin'] as string[] },
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['super_admin', 'admin'] as string[] },
   { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, roles: ['super_admin'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, roles: ['super_admin', 'admin'] as string[] },

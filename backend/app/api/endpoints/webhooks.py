@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from typing import List
 from sqlalchemy.orm import Session
 
-from app.api.deps.database import get_db
+from app.db.base import get_db
 from app.api.deps.auth import require_role
 from app.db.models.user import User, UserRole
 from app.db.models.webhook import Webhook, WebhookDelivery
@@ -16,6 +16,9 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 VALID_EVENTS = [
     "email.sent", "email.opened", "email.clicked", "email.replied",
     "email.bounced", "contact.unsubscribed", "campaign.completed", "lead.created",
+    # Enhanced events (Phase 4.1)
+    "contact.created", "contact.validated", "campaign.started", "campaign.paused",
+    "deal.created", "deal.won", "deal.lost", "deal.stage_changed",
 ]
 
 
@@ -163,8 +166,10 @@ def list_deliveries(
                 "delivery_id": d.delivery_id,
                 "event": d.event,
                 "response_status": d.response_status,
+                "response_body": d.response_body[:200] if d.response_body else None,
                 "success": d.success,
                 "attempt_count": d.attempt_count,
+                "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
                 "created_at": d.created_at.isoformat() if d.created_at else None,
             }
             for d in items
@@ -173,3 +178,76 @@ def list_deliveries(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.get("/deliveries/all")
+def list_all_deliveries(
+    status: Optional[str] = Query(None, description="Filter: 'failed' or 'success'"),
+    webhook_id: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """List webhook deliveries with optional status filter."""
+    query = db.query(WebhookDelivery)
+
+    if webhook_id:
+        query = query.filter(WebhookDelivery.webhook_id == webhook_id)
+    if status == "failed":
+        query = query.filter(WebhookDelivery.success == False)
+    elif status == "success":
+        query = query.filter(WebhookDelivery.success == True)
+
+    total = query.count()
+    items = query.order_by(WebhookDelivery.created_at.desc()).offset(
+        (page - 1) * page_size
+    ).limit(page_size).all()
+
+    return {
+        "items": [
+            {
+                "delivery_id": d.delivery_id,
+                "webhook_id": d.webhook_id,
+                "event": d.event,
+                "response_status": d.response_status,
+                "response_body": d.response_body[:200] if d.response_body else None,
+                "success": d.success,
+                "attempt_count": d.attempt_count,
+                "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+            }
+            for d in items
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/deliveries/{delivery_id}/retry")
+def retry_delivery(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Manually retry a failed webhook delivery."""
+    delivery = db.query(WebhookDelivery).filter(
+        WebhookDelivery.delivery_id == delivery_id
+    ).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+
+    webhook = db.query(Webhook).filter(Webhook.webhook_id == delivery.webhook_id).first()
+    if not webhook:
+        raise HTTPException(status_code=404, detail="Parent webhook not found")
+
+    # Re-deliver
+    from app.services.webhook_dispatcher import _deliver_webhook
+    try:
+        payload = json.loads(delivery.payload_json) if delivery.payload_json else {}
+        event = delivery.event or "unknown"
+        _deliver_webhook(webhook, event, payload.get("data", payload), db)
+        return {"message": "Retry initiated", "delivery_id": delivery_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retry failed: {str(e)}")

@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 39 (continued from 38): Fixed 2 bugs in deal_automation.py. Added 45 unit tests. Added manual contact creation/link modals. Then: Replaced campaign enrollment modal — now lead-based (expandable leads → contacts with status badges + checkboxes). Backend: `GET /leads/with-contact-counts` endpoint. Frontend: lead search, expand to see contacts, select all eligible per lead, disabled for archived/unsubscribed/invalid. All 391 tests pass, 40.48% coverage, frontend builds clean.
+> Session 43: Implemented Campaign Auto-Enrollment Rules (10 files, all steps complete). New service at services/auto_enrollment.py with rule-based matching. Campaign model has enrollment_rules_json + auto_enrolled_today. Scheduler job runs every 30 min + auto-chain step 4. Frontend has Rules tab in campaigns + 4th pipeline stage in automation page. 391 tests pass, frontend builds clean. Next: commit, deploy to VPS.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -39,6 +39,14 @@
 - [x] **P3: Waterfall enrichment** — 7-provider fallthrough chain (2026-03-08)
 - [x] Fix AI modules + add Automation Activity transparency (2026-03-09)
 - [x] Deal Pipeline Automation — signal-driven CRM with auto-create, auto-advance, activity logging, contact/client pickers, forecast, stale detection (2026-03-09)
+- [x] **Beat Instantly.ai Plan — All 5 phases complete** (2026-03-09)
+  - Phase 1: Mailbox Infra (6→9) — health-aware selector, smart throttling, custom tracking domains
+  - Phase 2: Lead Intelligence (7→9) + Analytics (7→9) — AI NLP search, saved searches, team/revenue analytics
+  - Phase 3: AI (7→9) + Campaign (8→9) + Warmup (7→8) — ICP wizard, sequence generator, Jinja2, IMAP read emulation
+  - Phase 4: Integrations (5→8) — enhanced webhooks, Salesforce OAuth2, CRM sync, webhook delivery dashboard
+  - Phase 5: Inbox (8→9) + CRM (7→8) + Warmup (8→9) — CRM auto-forward, deal tasks, spam checker, inbox placement
+  - 6 new DB models, 8 new services, 9 new API endpoints, 2 new frontend pages
+  - Target: 126/140 (90%) vs Instantly 122/140 (87%)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads

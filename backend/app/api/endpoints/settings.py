@@ -93,6 +93,29 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'deal_auto_log_activities': 'business_rules',
     'deal_stale_threshold_days': 'business_rules',
     'deal_score_to_probability': 'business_rules',
+    # Automation Control Center
+    'automation_master_enabled': 'automation',
+    'automation_chain_enrichment': 'automation',
+    'automation_chain_validation': 'automation',
+    'automation_daily_assessment_enabled': 'automation',
+    'automation_peer_warmup_cycle_enabled': 'automation',
+    'automation_auto_reply_cycle_enabled': 'automation',
+    'automation_daily_count_reset_enabled': 'automation',
+    'automation_dns_checks_enabled': 'automation',
+    'automation_blacklist_checks_enabled': 'automation',
+    'automation_daily_log_snapshot_enabled': 'automation',
+    'automation_auto_recovery_check_enabled': 'automation',
+    'automation_check_outreach_replies_enabled': 'automation',
+    'automation_lead_sourcing_run_enabled': 'automation',
+    'automation_daily_backup_enabled': 'automation',
+    'automation_backup_cleanup_enabled': 'automation',
+    'automation_campaign_processor_enabled': 'automation',
+    'automation_inbox_sync_enabled': 'automation',
+    'automation_lead_scoring_enabled': 'automation',
+    'automation_imap_read_cycle_enabled': 'automation',
+    'automation_crm_sync_enabled': 'automation',
+    'automation_chain_enrollment': 'automation',
+    'automation_auto_enrollment_enabled': 'automation',
 }
 
 # Default settings for seed data
@@ -151,18 +174,81 @@ DEFAULT_SETTINGS = {
     # Available Job Titles (Master List)
     "available_job_titles": {
         "value": [
-            "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
-            "Operations Manager", "Plant Manager", "Warehouse Manager",
-            "Production Supervisor", "Logistics Manager", "Supply Chain Manager",
-            "Maintenance Manager", "Quality Manager", "Safety Manager",
-            "Facilities Manager", "Branch Manager", "Regional Manager",
-            "General Manager", "Site Manager", "Distribution Manager",
-            "Manufacturing Manager", "Engineering Manager", "Project Manager",
-            "Purchasing Manager", "Procurement Manager", "Inventory Manager",
-            "Shipping Manager", "Receiving Manager", "Fleet Manager",
-            "Store Manager", "Restaurant Manager", "Hotel Manager",
-            "Construction Manager", "Field Manager", "Service Manager",
-            "Account Manager", "Territory Manager", "Area Manager"
+            # HR & Talent
+            "HR Manager", "HR Director", "HR Business Partner", "HR Generalist",
+            "HR Coordinator", "Recruiter", "Talent Acquisition", "Talent Acquisition Manager",
+            "Staffing Coordinator", "Staffing Manager", "Talent Manager", "Workforce Manager",
+            "Recruitment Manager", "People Operations Manager", "Employee Relations Manager",
+            "Compensation Manager", "Benefits Manager", "Payroll Manager",
+            "VP Human Resources", "Director of HR", "Chief People Officer",
+            # Operations & General Management
+            "Operations Manager", "Operations Director", "VP Operations",
+            "Director of Operations", "COO", "Chief Operating Officer",
+            "General Manager", "Assistant General Manager", "Regional Manager",
+            "Area Manager", "District Manager", "Territory Manager",
+            "Branch Manager", "Site Manager", "Field Manager",
+            # Manufacturing & Production
+            "Plant Manager", "Production Manager", "Production Supervisor",
+            "Manufacturing Manager", "Manufacturing Director", "Manufacturing Supervisor",
+            "Quality Manager", "Quality Control Manager", "Quality Assurance Manager",
+            "Lean Manager", "Continuous Improvement Manager", "Process Improvement Manager",
+            # Warehouse & Logistics
+            "Warehouse Manager", "Warehouse Supervisor", "Warehouse Director",
+            "Distribution Manager", "Distribution Center Manager",
+            "Logistics Manager", "Logistics Director", "Logistics Coordinator",
+            "Supply Chain Manager", "Supply Chain Director",
+            "Inventory Manager", "Inventory Control Manager",
+            "Shipping Manager", "Receiving Manager", "Freight Manager",
+            "Fleet Manager", "Dispatch Manager", "Transportation Manager",
+            # Facilities & Maintenance
+            "Facilities Manager", "Facilities Director", "Building Manager",
+            "Maintenance Manager", "Maintenance Director", "Maintenance Supervisor",
+            "Property Manager", "Property Management Director",
+            # Safety & Compliance
+            "Safety Manager", "Safety Director", "Safety Coordinator",
+            "EHS Manager", "Environmental Health Safety Manager", "HSE Manager",
+            "Compliance Manager", "Compliance Director", "Compliance Officer",
+            "Risk Manager", "Risk Director", "Loss Prevention Manager",
+            "Claims Manager", "Regulatory Affairs Manager",
+            # Construction & Engineering
+            "Construction Manager", "Construction Superintendent", "Construction Director",
+            "Project Manager", "Senior Project Manager", "Program Manager",
+            "Engineering Manager", "Engineering Director",
+            # Purchasing & Procurement
+            "Purchasing Manager", "Purchasing Director",
+            "Procurement Manager", "Procurement Director",
+            "Buyer", "Senior Buyer", "Category Manager",
+            "Vendor Manager", "Supplier Manager",
+            # Hospitality & Food Service
+            "Restaurant Manager", "Restaurant General Manager",
+            "Hotel Manager", "Hotel General Manager", "Front Desk Manager",
+            "Food Service Manager", "Food Service Director",
+            "Banquet Manager", "Catering Manager",
+            "Housekeeping Manager", "Housekeeping Director",
+            "Executive Chef", "Kitchen Manager",
+            # Retail
+            "Store Manager", "Store Director", "Retail Manager",
+            "Assistant Store Manager", "Retail Operations Manager",
+            "Merchandise Manager", "Visual Merchandising Manager",
+            # Healthcare & Social Services
+            "Nurse Manager", "Nursing Director", "Director of Nursing",
+            "Clinical Manager", "Practice Manager", "Office Manager",
+            "Healthcare Administrator", "Hospital Administrator",
+            "Social Services Director", "Case Manager",
+            # Training & Development
+            "Training Manager", "Training Director", "Learning and Development Manager",
+            "Organizational Development Manager",
+            # Finance & Accounting
+            "Controller", "Accounting Manager", "Finance Manager",
+            "Accounts Payable Manager", "Accounts Receivable Manager",
+            "Credit Manager", "Collections Manager",
+            # Sales & Business Development
+            "Account Manager", "Sales Manager", "Regional Sales Manager",
+            "Business Development Manager", "Service Manager",
+            "Customer Service Manager", "Call Center Manager",
+            # Agriculture & Trades
+            "Farm Manager", "Ranch Manager", "Ag Operations Manager",
+            "Shop Manager", "Foreman", "Superintendent",
         ],
         "type": "list",
         "description": "Master list of all available job titles"
@@ -171,11 +257,81 @@ DEFAULT_SETTINGS = {
     # Target Job Titles (Selected for Search)
     "target_job_titles": {
         "value": [
-            "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
-            "Operations Manager", "Plant Manager", "Warehouse Manager",
-            "Production Supervisor", "Logistics Manager", "Supply Chain Manager",
-            "Maintenance Manager", "Quality Manager", "Safety Manager",
-            "Facilities Manager", "Branch Manager", "Regional Manager"
+            # HR & Talent
+            "HR Manager", "HR Director", "HR Business Partner", "HR Generalist",
+            "HR Coordinator", "Recruiter", "Talent Acquisition", "Talent Acquisition Manager",
+            "Staffing Coordinator", "Staffing Manager", "Talent Manager", "Workforce Manager",
+            "Recruitment Manager", "People Operations Manager", "Employee Relations Manager",
+            "Compensation Manager", "Benefits Manager", "Payroll Manager",
+            "VP Human Resources", "Director of HR", "Chief People Officer",
+            # Operations & General Management
+            "Operations Manager", "Operations Director", "VP Operations",
+            "Director of Operations", "COO", "Chief Operating Officer",
+            "General Manager", "Assistant General Manager", "Regional Manager",
+            "Area Manager", "District Manager", "Territory Manager",
+            "Branch Manager", "Site Manager", "Field Manager",
+            # Manufacturing & Production
+            "Plant Manager", "Production Manager", "Production Supervisor",
+            "Manufacturing Manager", "Manufacturing Director", "Manufacturing Supervisor",
+            "Quality Manager", "Quality Control Manager", "Quality Assurance Manager",
+            "Lean Manager", "Continuous Improvement Manager", "Process Improvement Manager",
+            # Warehouse & Logistics
+            "Warehouse Manager", "Warehouse Supervisor", "Warehouse Director",
+            "Distribution Manager", "Distribution Center Manager",
+            "Logistics Manager", "Logistics Director", "Logistics Coordinator",
+            "Supply Chain Manager", "Supply Chain Director",
+            "Inventory Manager", "Inventory Control Manager",
+            "Shipping Manager", "Receiving Manager", "Freight Manager",
+            "Fleet Manager", "Dispatch Manager", "Transportation Manager",
+            # Facilities & Maintenance
+            "Facilities Manager", "Facilities Director", "Building Manager",
+            "Maintenance Manager", "Maintenance Director", "Maintenance Supervisor",
+            "Property Manager", "Property Management Director",
+            # Safety & Compliance
+            "Safety Manager", "Safety Director", "Safety Coordinator",
+            "EHS Manager", "Environmental Health Safety Manager", "HSE Manager",
+            "Compliance Manager", "Compliance Director", "Compliance Officer",
+            "Risk Manager", "Risk Director", "Loss Prevention Manager",
+            "Claims Manager", "Regulatory Affairs Manager",
+            # Construction & Engineering
+            "Construction Manager", "Construction Superintendent", "Construction Director",
+            "Project Manager", "Senior Project Manager", "Program Manager",
+            "Engineering Manager", "Engineering Director",
+            # Purchasing & Procurement
+            "Purchasing Manager", "Purchasing Director",
+            "Procurement Manager", "Procurement Director",
+            "Buyer", "Senior Buyer", "Category Manager",
+            "Vendor Manager", "Supplier Manager",
+            # Hospitality & Food Service
+            "Restaurant Manager", "Restaurant General Manager",
+            "Hotel Manager", "Hotel General Manager", "Front Desk Manager",
+            "Food Service Manager", "Food Service Director",
+            "Banquet Manager", "Catering Manager",
+            "Housekeeping Manager", "Housekeeping Director",
+            "Executive Chef", "Kitchen Manager",
+            # Retail
+            "Store Manager", "Store Director", "Retail Manager",
+            "Assistant Store Manager", "Retail Operations Manager",
+            "Merchandise Manager", "Visual Merchandising Manager",
+            # Healthcare & Social Services
+            "Nurse Manager", "Nursing Director", "Director of Nursing",
+            "Clinical Manager", "Practice Manager", "Office Manager",
+            "Healthcare Administrator", "Hospital Administrator",
+            "Social Services Director", "Case Manager",
+            # Training & Development
+            "Training Manager", "Training Director", "Learning and Development Manager",
+            "Organizational Development Manager",
+            # Finance & Accounting
+            "Controller", "Accounting Manager", "Finance Manager",
+            "Accounts Payable Manager", "Accounts Receivable Manager",
+            "Credit Manager", "Collections Manager",
+            # Sales & Business Development
+            "Account Manager", "Sales Manager", "Regional Sales Manager",
+            "Business Development Manager", "Service Manager",
+            "Customer Service Manager", "Call Center Manager",
+            # Agriculture & Trades
+            "Farm Manager", "Ranch Manager", "Ag Operations Manager",
+            "Shop Manager", "Foreman", "Superintendent",
         ],
         "type": "list",
         "description": "Selected job titles to use in lead searches"
@@ -278,6 +434,30 @@ DEFAULT_SETTINGS = {
     "warmup_alert_on_health_drop": {"value": True, "type": "boolean", "description": "Alert when health score drops"},
     "warmup_alert_health_drop_threshold": {"value": 20, "type": "integer", "description": "Health score drop threshold for alerts (%)"},
     "warmup_default_profile": {"value": "Standard", "type": "string", "description": "Default warmup profile name"},
+
+    # Automation Control Center
+    "automation_master_enabled": {"value": True, "type": "boolean", "description": "Master switch — disables ALL scheduled automation when off"},
+    "automation_chain_enrichment": {"value": False, "type": "boolean", "description": "Auto-chain: run contact enrichment after lead sourcing"},
+    "automation_chain_validation": {"value": False, "type": "boolean", "description": "Auto-chain: run email validation after contact enrichment"},
+    "automation_daily_assessment_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Warmup Assessment job"},
+    "automation_peer_warmup_cycle_enabled": {"value": True, "type": "boolean", "description": "Enable Peer Warmup Cycle job"},
+    "automation_auto_reply_cycle_enabled": {"value": True, "type": "boolean", "description": "Enable Auto Reply Cycle job"},
+    "automation_daily_count_reset_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Count Reset job"},
+    "automation_dns_checks_enabled": {"value": True, "type": "boolean", "description": "Enable DNS Health Checks job"},
+    "automation_blacklist_checks_enabled": {"value": True, "type": "boolean", "description": "Enable Blacklist Checks job"},
+    "automation_daily_log_snapshot_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Log Snapshot job"},
+    "automation_auto_recovery_check_enabled": {"value": True, "type": "boolean", "description": "Enable Auto Recovery Check job"},
+    "automation_check_outreach_replies_enabled": {"value": True, "type": "boolean", "description": "Enable Check Outreach Replies job"},
+    "automation_lead_sourcing_run_enabled": {"value": True, "type": "boolean", "description": "Enable Scheduled Lead Sourcing job"},
+    "automation_daily_backup_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Database Backup job"},
+    "automation_backup_cleanup_enabled": {"value": True, "type": "boolean", "description": "Enable Backup Cleanup job"},
+    "automation_campaign_processor_enabled": {"value": True, "type": "boolean", "description": "Enable Campaign Sequence Processor job"},
+    "automation_inbox_sync_enabled": {"value": True, "type": "boolean", "description": "Enable Inbox Sync job"},
+    "automation_lead_scoring_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Lead Scoring job"},
+    "automation_imap_read_cycle_enabled": {"value": True, "type": "boolean", "description": "Enable IMAP Read Emulation job"},
+    "automation_crm_sync_enabled": {"value": True, "type": "boolean", "description": "Enable Nightly CRM Sync job"},
+    "automation_chain_enrollment": {"value": False, "type": "boolean", "description": "Auto-chain: enroll validated contacts into campaigns"},
+    "automation_auto_enrollment_enabled": {"value": True, "type": "boolean", "description": "Enable auto-enrollment scheduler job"},
 
     # Deal Pipeline Automation
     "deal_auto_create_on_interested": {"value": True, "type": "boolean", "description": "Auto-create deal when inbox reply is classified as interested"},
@@ -637,6 +817,10 @@ async def test_provider_connection(
             from app.services.adapters.job_sources.jsearch import JSearchAdapter
             adapter = JSearchAdapter(api_key=api_key)
             result = adapter.test_connection()
+            if isinstance(result, dict):
+                if result.get("ok"):
+                    return {"status": "success", "message": "Connection successful!", "provider": provider}
+                return {"status": "failed", "message": result.get("error", "Connection failed"), "provider": provider}
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your RapidAPI key", "provider": provider}
 
         elif provider == "indeed":
@@ -655,7 +839,10 @@ async def test_provider_connection(
                 return {"status": "error", "message": "TheirStack API key not configured. Get one at https://theirstack.com/", "provider": provider}
             from app.services.adapters.job_sources.theirstack import TheirStackAdapter
             adapter = TheirStackAdapter(api_key=api_key)
-            result = adapter.test_connection()
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "serpapi":

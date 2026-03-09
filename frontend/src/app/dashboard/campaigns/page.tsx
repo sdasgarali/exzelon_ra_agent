@@ -5,7 +5,7 @@ import { campaignsApi, contactsApi, leadsApi, mailboxesApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
-  Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye,
+  Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
 } from 'lucide-react'
 
 type TabView = 'list' | 'detail'
@@ -55,7 +55,7 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [contacts, setContacts] = useState<CampaignContact[]>([])
-  const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics'>('sequence')
+  const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics' | 'rules'>('sequence')
 
   // Create/edit modals
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -72,6 +72,22 @@ export default function CampaignsPage() {
   const [actionMenu, setActionMenu] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [analytics, setAnalytics] = useState<any>(null)
+
+  // Auto-enrollment rules state
+  const [enrollmentRules, setEnrollmentRules] = useState({
+    enabled: false,
+    validation_status: ['Valid'],
+    priority_levels: [] as string[],
+    states: [] as string[],
+    job_title_keywords: [] as string[],
+    sources: [] as string[],
+    min_lead_score: null as number | null,
+    max_per_run: 50,
+    daily_cap: 200,
+  })
+  const [rulesPreviewCount, setRulesPreviewCount] = useState<number | null>(null)
+  const [rulesSaving, setRulesSaving] = useState(false)
+  const [rulesMessage, setRulesMessage] = useState<string | null>(null)
 
   // Enroll state — lead-based
   const [enrollLeads, setEnrollLeads] = useState<any[]>([])
@@ -118,6 +134,29 @@ export default function CampaignsPage() {
       ])
       setSteps(stepsData || [])
       setContacts(contactsData?.items || [])
+      // Load enrollment rules
+      const fullCampaign = await campaignsApi.get(campaign.campaign_id)
+      setSelectedCampaign(fullCampaign)
+      if (fullCampaign.enrollment_rules) {
+        setEnrollmentRules({
+          enabled: fullCampaign.enrollment_rules.enabled || false,
+          validation_status: fullCampaign.enrollment_rules.validation_status || ['Valid'],
+          priority_levels: fullCampaign.enrollment_rules.priority_levels || [],
+          states: fullCampaign.enrollment_rules.states || [],
+          job_title_keywords: fullCampaign.enrollment_rules.job_title_keywords || [],
+          sources: fullCampaign.enrollment_rules.sources || [],
+          min_lead_score: fullCampaign.enrollment_rules.min_lead_score ?? null,
+          max_per_run: fullCampaign.enrollment_rules.max_per_run || 50,
+          daily_cap: fullCampaign.enrollment_rules.daily_cap || 200,
+        })
+      } else {
+        setEnrollmentRules({
+          enabled: false, validation_status: ['Valid'], priority_levels: [], states: [],
+          job_title_keywords: [], sources: [], min_lead_score: null, max_per_run: 50, daily_cap: 200,
+        })
+      }
+      setRulesPreviewCount(null)
+      setRulesMessage(null)
     } catch { /* ignore */ }
   }
 
@@ -302,6 +341,50 @@ export default function CampaignsPage() {
   useEffect(() => {
     mailboxesApi.list({ page: 1, page_size: 100 }).then(d => setMailboxes(d?.items || [])).catch(() => {})
   }, [])
+
+  const handleSaveRules = async () => {
+    if (!selectedCampaign) return
+    setRulesSaving(true)
+    setRulesMessage(null)
+    try {
+      await campaignsApi.update(selectedCampaign.campaign_id, { enrollment_rules: enrollmentRules })
+      setRulesMessage('Rules saved successfully')
+      setTimeout(() => setRulesMessage(null), 3000)
+    } catch { setRulesMessage('Failed to save rules') }
+    setRulesSaving(false)
+  }
+
+  const handlePreviewRules = async () => {
+    if (!selectedCampaign) return
+    setRulesMessage(null)
+    try {
+      const result = await campaignsApi.enrollmentPreview(selectedCampaign.campaign_id, enrollmentRules)
+      setRulesPreviewCount(result.count)
+    } catch { setRulesMessage('Preview failed') }
+  }
+
+  const handleTriggerEnroll = async () => {
+    if (!selectedCampaign) return
+    setRulesSaving(true)
+    setRulesMessage(null)
+    try {
+      const result = await campaignsApi.triggerAutoEnroll(selectedCampaign.campaign_id)
+      setRulesMessage(`Enrolled ${result.enrolled || 0} contacts`)
+      // Refresh contacts
+      const data = await campaignsApi.listContacts(selectedCampaign.campaign_id, { page: 1, page_size: 100 })
+      setContacts(data?.items || [])
+      // Refresh campaign to get updated auto_enrolled_today
+      const updated = await campaignsApi.get(selectedCampaign.campaign_id)
+      setSelectedCampaign(updated)
+    } catch (err: any) {
+      setRulesMessage(err.response?.data?.detail || 'Auto-enrollment failed')
+    }
+    setRulesSaving(false)
+  }
+
+  const toggleArrayItem = (arr: string[], item: string): string[] => {
+    return arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item]
+  }
 
   // List view
   if (view === 'list') {
@@ -502,7 +585,7 @@ export default function CampaignsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        {(['sequence', 'contacts', 'analytics'] as const).map(tab => (
+        {(['sequence', 'contacts', 'analytics', 'rules'] as const).map(tab => (
           <button key={tab} onClick={() => { setDetailTab(tab); if (tab === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id) }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${detailTab === tab ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {tab}
@@ -652,6 +735,167 @@ export default function CampaignsPage() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Rules Tab — Auto-Enrollment */}
+      {detailTab === 'rules' && (
+        <div className="space-y-4">
+          {rulesMessage && (
+            <div className={`text-sm px-4 py-2 rounded-lg ${rulesMessage.includes('fail') || rulesMessage.includes('Failed') ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' : 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'}`}>
+              {rulesMessage}
+            </div>
+          )}
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 space-y-5">
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-gray-900 dark:text-gray-100">Auto-Enrollment</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Automatically enroll matching contacts into this campaign</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enrollmentRules.enabled}
+                onClick={() => setEnrollmentRules(r => ({ ...r, enabled: !r.enabled }))}
+                className={`relative inline-flex w-11 h-6 items-center rounded-full transition-colors ${enrollmentRules.enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <span className={`inline-block w-4 h-4 transform rounded-full bg-white shadow transition-transform ${enrollmentRules.enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            {/* Validation Status */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Validation Status</label>
+              <div className="flex gap-3">
+                {['Valid', 'Catch-all'].map(s => (
+                  <label key={s} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={enrollmentRules.validation_status.includes(s)} onChange={() => setEnrollmentRules(r => ({ ...r, validation_status: toggleArrayItem(r.validation_status, s) }))} />
+                    {s}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Priority Levels */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Priority Levels <span className="text-gray-400 font-normal">(empty = all)</span></label>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { value: 'p1_job_poster', label: 'P1 - Job Poster' },
+                  { value: 'p2_hr_ta_recruiter', label: 'P2 - HR/Recruiter' },
+                  { value: 'p3_hr_manager', label: 'P3 - HR Manager' },
+                  { value: 'p4_ops_leader', label: 'P4 - Ops Leader' },
+                  { value: 'p5_functional_manager', label: 'P5 - Functional Mgr' },
+                ].map(p => (
+                  <label key={p.value} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={enrollmentRules.priority_levels.includes(p.value)} onChange={() => setEnrollmentRules(r => ({ ...r, priority_levels: toggleArrayItem(r.priority_levels, p.value) }))} />
+                    {p.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* States */}
+            <div>
+              <label className="block text-sm font-medium mb-1">States <span className="text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
+              <input
+                value={enrollmentRules.states.join(', ')}
+                onChange={e => setEnrollmentRules(r => ({ ...r, states: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                placeholder="TX, CA, NY"
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+              />
+            </div>
+
+            {/* Job Title Keywords */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Job Title Keywords <span className="text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
+              <input
+                value={enrollmentRules.job_title_keywords.join(', ')}
+                onChange={e => setEnrollmentRules(r => ({ ...r, job_title_keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                placeholder="manager, director, supervisor"
+                className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+              />
+            </div>
+
+            {/* Contact Sources */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Contact Sources <span className="text-gray-400 font-normal">(empty = all)</span></label>
+              <div className="flex flex-wrap gap-3">
+                {['apollo', 'seamless', 'hunter', 'snovio', 'rocketreach', 'pdl', 'proxycurl'].map(s => (
+                  <label key={s} className="flex items-center gap-2 text-sm capitalize">
+                    <input type="checkbox" checked={enrollmentRules.sources.includes(s)} onChange={() => setEnrollmentRules(r => ({ ...r, sources: toggleArrayItem(r.sources, s) }))} />
+                    {s === 'pdl' ? 'PDL' : s === 'snovio' ? 'Snov.io' : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Numeric fields */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Min Lead Score</label>
+                <input
+                  type="number"
+                  value={enrollmentRules.min_lead_score ?? ''}
+                  onChange={e => setEnrollmentRules(r => ({ ...r, min_lead_score: e.target.value ? parseInt(e.target.value) : null }))}
+                  placeholder="0"
+                  min={0} max={100}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Max Per Run</label>
+                <input
+                  type="number"
+                  value={enrollmentRules.max_per_run}
+                  onChange={e => setEnrollmentRules(r => ({ ...r, max_per_run: parseInt(e.target.value) || 50 }))}
+                  min={1}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Daily Cap</label>
+                <input
+                  type="number"
+                  value={enrollmentRules.daily_cap}
+                  onChange={e => setEnrollmentRules(r => ({ ...r, daily_cap: parseInt(e.target.value) || 200 }))}
+                  min={1}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Today's stats */}
+            {selectedCampaign && (
+              <div className="text-sm text-gray-500 bg-gray-50 dark:bg-gray-900/30 rounded-lg px-4 py-2">
+                Today: <span className="font-medium text-gray-900 dark:text-gray-100">{selectedCampaign.auto_enrolled_today || 0}</span> / {enrollmentRules.daily_cap} enrolled
+              </div>
+            )}
+
+            {/* Preview result */}
+            {rulesPreviewCount !== null && (
+              <div className="text-sm bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2">
+                <span className="font-medium">{rulesPreviewCount}</span> contacts match these rules
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button onClick={handlePreviewRules} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2">
+                <Eye className="w-4 h-4" /> Preview
+              </button>
+              <button onClick={handleSaveRules} disabled={rulesSaving} className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 disabled:opacity-50 flex items-center gap-2">
+                <Settings className="w-4 h-4" /> {rulesSaving ? 'Saving...' : 'Save Rules'}
+              </button>
+              {selectedCampaign?.status === 'active' && (
+                <button onClick={handleTriggerEnroll} disabled={rulesSaving} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+                  <Zap className="w-4 h-4" /> {rulesSaving ? 'Running...' : 'Run Now'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
