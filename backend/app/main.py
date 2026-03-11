@@ -577,6 +577,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for cost_entries columns: {e}")
 
+    # Migration: add soft-delete columns to inbox_messages
+    try:
+        from sqlalchemy import text as sa_text_inbox_del, inspect as sa_inspect_inbox_del
+        with engine.connect() as conn:
+            inspector_inbox_del = sa_inspect_inbox_del(engine)
+            if "inbox_messages" in inspector_inbox_del.get_table_names():
+                inbox_cols = [c["name"] for c in inspector_inbox_del.get_columns("inbox_messages")]
+                for col_name, col_def in [
+                    ("is_deleted", "BOOLEAN DEFAULT 0 NOT NULL"),
+                    ("deleted_at", "DATETIME NULL"),
+                ]:
+                    if col_name not in inbox_cols:
+                        conn.execute(sa_text_inbox_del(f"ALTER TABLE inbox_messages ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} column to inbox_messages")
+    except Exception as e:
+        logger.warning(f"Migration check for inbox soft-delete columns: {e}")
+
     # Cleanup: mark orphaned pipeline runs as failed on startup
     # (runs stuck as 'running' from server crashes or restarts)
     try:

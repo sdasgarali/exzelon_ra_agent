@@ -255,6 +255,7 @@ export interface InboxMessage {
   is_read: boolean;
   category: string | null;
   sentiment: string | null;
+  mailbox_id: number | null;
 }
 
 export interface InboxThreadDetail {

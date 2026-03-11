@@ -55,6 +55,10 @@ class InboxMessage(Base):
     category = Column(String(50), nullable=True)  # interested/not_interested/ooo/question/referral/do_not_contact/other
     sentiment = Column(String(20), nullable=True)  # positive/negative/neutral
 
+    # Soft delete
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+
     __table_args__ = (
         Index("idx_inbox_thread", "thread_id"),
         Index("idx_inbox_contact", "contact_id"),

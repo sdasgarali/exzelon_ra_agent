@@ -730,7 +730,7 @@ export const inboxApi = {
     const response = await api.put(`/inbox/threads/${threadId}/category`, { category })
     return response.data
   },
-  reply: async (data: { thread_id: string; body_html: string; body_text?: string }) => {
+  reply: async (data: { thread_id: string; mailbox_id: number; body_html: string; body_text?: string }) => {
     const response = await api.post('/inbox/reply', data)
     return response.data
   },
@@ -744,6 +744,14 @@ export const inboxApi = {
   },
   suggestReply: async (threadId: string) => {
     const response = await api.post(`/inbox/threads/${threadId}/suggest-reply`)
+    return response.data
+  },
+  deleteThread: async (threadId: string) => {
+    const response = await api.delete(`/inbox/threads/${threadId}`)
+    return response.data
+  },
+  bulkDeleteThreads: async (threadIds: string[]) => {
+    const response = await api.post('/inbox/threads/bulk-delete', { thread_ids: threadIds })
     return response.data
   },
 }

@@ -1,7 +1,7 @@
 """Unified Inbox (Unibox) API endpoints."""
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -28,6 +28,10 @@ class CategoryUpdate(BaseModel):
     category: str  # interested/not_interested/ooo/question/referral/do_not_contact/other
 
 
+class BulkDeleteRequest(BaseModel):
+    thread_ids: List[str]
+
+
 # ─── Threads ───────────────────────────────────────────────────────
 
 @router.get("/threads")
@@ -47,7 +51,7 @@ def list_threads(
     thread_query = db.query(
         InboxMessage.thread_id,
         func.max(InboxMessage.received_at).label("latest"),
-    )
+    ).filter(InboxMessage.is_deleted == False)
 
     if category:
         thread_query = thread_query.filter(InboxMessage.category == category)
@@ -165,6 +169,7 @@ def get_thread(
     """Get all messages in a thread."""
     messages = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
+        InboxMessage.is_deleted == False,
     ).order_by(InboxMessage.received_at.asc()).all()
 
     if not messages:
@@ -203,6 +208,7 @@ def get_thread(
                 "is_read": m.is_read,
                 "category": m.category,
                 "sentiment": m.sentiment,
+                "mailbox_id": m.mailbox_id,
             }
             for m in messages
         ],
@@ -237,6 +243,47 @@ def set_thread_category(
     ).update({"category": data.category}, synchronize_session=False)
     db.commit()
     return {"updated": updated, "category": data.category}
+
+
+# ─── Delete ────────────────────────────────────────────────────────
+
+@router.delete("/threads/{thread_id}")
+def delete_thread(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Soft-delete all messages in a thread."""
+    now = datetime.utcnow()
+    updated = db.query(InboxMessage).filter(
+        InboxMessage.thread_id == thread_id,
+        InboxMessage.is_deleted == False,
+    ).update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
+    db.commit()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    return {"deleted": updated, "thread_id": thread_id}
+
+
+@router.post("/threads/bulk-delete")
+def bulk_delete_threads(
+    data: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+):
+    """Soft-delete multiple threads at once."""
+    if not data.thread_ids:
+        raise HTTPException(status_code=400, detail="No thread IDs provided")
+    if len(data.thread_ids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 threads per request")
+
+    now = datetime.utcnow()
+    updated = db.query(InboxMessage).filter(
+        InboxMessage.thread_id.in_(data.thread_ids),
+        InboxMessage.is_deleted == False,
+    ).update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
+    db.commit()
+    return {"deleted": updated, "thread_ids": data.thread_ids}
 
 
 # ─── Reply ─────────────────────────────────────────────────────────
@@ -358,16 +405,19 @@ def inbox_stats(
     user: User = Depends(get_current_active_user),
 ):
     """Get inbox statistics."""
-    total_threads = db.query(func.count(func.distinct(InboxMessage.thread_id))).scalar() or 0
+    total_threads = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
+        InboxMessage.is_deleted == False,
+    ).scalar() or 0
     unread_count = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
         InboxMessage.is_read == False,
+        InboxMessage.is_deleted == False,
     ).scalar() or 0
 
     # Category breakdown
     categories = db.query(
         InboxMessage.category,
         func.count(func.distinct(InboxMessage.thread_id)),
-    ).group_by(InboxMessage.category).all()
+    ).filter(InboxMessage.is_deleted == False).group_by(InboxMessage.category).all()
 
     return {
         "total_threads": total_threads,

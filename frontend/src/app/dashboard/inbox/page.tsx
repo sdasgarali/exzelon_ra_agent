@@ -8,7 +8,7 @@ import {
   Mail, MessageSquare, X, Inbox, ArrowUpRight, ArrowDownLeft,
   Clock, Tag, ThumbsUp, ThumbsDown, Minus, AlertCircle,
   Phone, Building, Briefcase, ExternalLink, Filter, Info,
-  Bot, Zap, Activity,
+  Bot, Zap, Activity, Trash2, CheckSquare, Square, CheckCheck,
 } from 'lucide-react'
 
 // ─── Category & sentiment config ────────────────────────────────────
@@ -78,6 +78,9 @@ export default function InboxPage() {
   const [showAutomationPanel, setShowAutomationPanel] = useState(false)
   const [automationEvents, setAutomationEvents] = useState<AutomationEvent[]>([])
   const [automationLoading, setAutomationLoading] = useState(false)
+  const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: 'single' | 'bulk'; threadId?: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const fetchThreads = useCallback(async () => {
@@ -119,15 +122,29 @@ export default function InboxPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [selectedThread?.messages])
 
+  const [replyError, setReplyError] = useState('')
+
   const handleReply = async () => {
     if (!selectedThreadId || !replyText.trim()) return
+    setReplyError('')
+
+    // Determine mailbox_id from the thread's messages (use the mailbox that sent/received in this thread)
+    const threadMailboxId = selectedThread?.messages?.find(m => m.mailbox_id)?.mailbox_id
+      || threads.find(t => t.thread_id === selectedThreadId)?.mailbox_id
+    if (!threadMailboxId) {
+      setReplyError('No mailbox associated with this thread. Cannot send reply.')
+      return
+    }
+
     setSending(true)
     try {
-      await inboxApi.reply({ thread_id: selectedThreadId, body_html: `<p>${replyText}</p>`, body_text: replyText })
+      await inboxApi.reply({ thread_id: selectedThreadId, mailbox_id: threadMailboxId, body_html: `<p>${replyText}</p>`, body_text: replyText })
       setReplyText('')
       const detail = await inboxApi.getThread(selectedThreadId)
       setSelectedThread(detail)
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      setReplyError(err?.response?.data?.detail || err?.message || 'Failed to send reply')
+    }
     setSending(false)
   }
 
@@ -173,6 +190,54 @@ export default function InboxPage() {
   useEffect(() => {
     if (showAutomationPanel) fetchAutomationEvents()
   }, [showAutomationPanel, fetchAutomationEvents])
+
+  // ─── Multi-select helpers ──────────────────────────────────────
+  const toggleThreadSelect = (threadId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedThreadIds(prev => {
+      const next = new Set(prev)
+      if (next.has(threadId)) next.delete(threadId)
+      else next.add(threadId)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedThreadIds.size === threads.length) {
+      setSelectedThreadIds(new Set())
+    } else {
+      setSelectedThreadIds(new Set(threads.map(t => t.thread_id)))
+    }
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!showDeleteConfirm) return
+    setDeleting(true)
+    try {
+      if (showDeleteConfirm.type === 'single' && showDeleteConfirm.threadId) {
+        await inboxApi.deleteThread(showDeleteConfirm.threadId)
+        if (selectedThreadId === showDeleteConfirm.threadId) {
+          setSelectedThread(null)
+          setSelectedThreadId(null)
+        }
+        selectedThreadIds.delete(showDeleteConfirm.threadId)
+        setSelectedThreadIds(new Set(selectedThreadIds))
+      } else {
+        const ids = Array.from(selectedThreadIds)
+        await inboxApi.bulkDeleteThreads(ids)
+        if (selectedThreadId && ids.includes(selectedThreadId)) {
+          setSelectedThread(null)
+          setSelectedThreadId(null)
+        }
+        setSelectedThreadIds(new Set())
+      }
+      setShowDeleteConfirm(null)
+      await fetchThreads()
+      const s = await inboxApi.stats()
+      setStats(s)
+    } catch { /* ignore */ }
+    setDeleting(false)
+  }
 
   const [showCategoryFilter, setShowCategoryFilter] = useState(false)
   const [showLegend, setShowLegend] = useState(false)
@@ -403,6 +468,35 @@ export default function InboxPage() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search conversations..."
                 className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all" />
             </div>
+            {/* Select All / Bulk Actions */}
+            {threads.length > 0 && (
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={toggleSelectAll} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={selectedThreadIds.size === threads.length ? 'Deselect all' : 'Select all'}>
+                  {selectedThreadIds.size === threads.length && threads.length > 0 ? (
+                    <CheckSquare className="w-3.5 h-3.5 text-indigo-500" />
+                  ) : selectedThreadIds.size > 0 ? (
+                    <CheckCheck className="w-3.5 h-3.5 text-indigo-400" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5" />
+                  )}
+                  {selectedThreadIds.size > 0 ? `${selectedThreadIds.size} selected` : 'Select'}
+                </button>
+                {selectedThreadIds.size > 0 && (
+                  <>
+                    <button onClick={() => setShowDeleteConfirm({ type: 'bulk' })}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-rose-600 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"
+                      title={`Delete ${selectedThreadIds.size} thread(s)`}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                    <button onClick={() => setSelectedThreadIds(new Set())}
+                      className="ml-auto px-2 py-1 rounded-lg text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {loading ? (
@@ -422,12 +516,23 @@ export default function InboxPage() {
               threads.map(t => {
                 const cat = t.category ? categoryConfig[t.category] : null
                 const isSelected = selectedThreadId === t.thread_id
+                const isChecked = selectedThreadIds.has(t.thread_id)
                 const isUnread = t.unread_count > 0
                 return (
                   <button key={t.thread_id} onClick={() => openThread(t.thread_id)}
                     className={`w-full text-left px-3 py-3 border-b border-gray-100 dark:border-gray-800 transition-all
+                      ${isChecked ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}
                       ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20 border-l-2 border-l-indigo-500' : `border-l-2 ${cat ? cat.border : 'border-l-transparent'} hover:bg-white dark:hover:bg-gray-800`}`}>
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2">
+                      {/* Checkbox */}
+                      <div onClick={(e) => toggleThreadSelect(t.thread_id, e)}
+                        className="flex-shrink-0 mt-1 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                        {isChecked ? (
+                          <CheckSquare className="w-4 h-4 text-indigo-500" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-300 dark:text-gray-600" />
+                        )}
+                      </div>
                       {/* Avatar */}
                       <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(t.contact_name || t.from_email)} flex items-center justify-center flex-shrink-0 shadow-sm`}>
                         <span className="text-xs font-bold text-white">{(t.contact_name || t.from_email)?.[0]?.toUpperCase() || '?'}</span>
@@ -527,6 +632,11 @@ export default function InboxPage() {
                     </>
                   )}
                 </div>
+                <button onClick={() => setShowDeleteConfirm({ type: 'single', threadId: selectedThreadId! })}
+                  className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-gray-400 hover:text-rose-500 transition-all"
+                  title="Delete thread">
+                  <Trash2 className="w-4 h-4" />
+                </button>
                 <button onClick={() => setShowContactPanel(!showContactPanel)}
                   className={`p-2 rounded-lg transition-all ${showContactPanel ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400'}`}
                   title="Toggle contact panel">
@@ -602,6 +712,13 @@ export default function InboxPage() {
 
               {/* Reply Composer */}
               <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+                {replyError && (
+                  <div className="mb-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-700 rounded-lg text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {replyError}
+                    <button onClick={() => setReplyError('')} className="ml-auto"><X className="w-3 h-3" /></button>
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <div className="flex-1 relative">
                     <textarea value={replyText} onChange={e => setReplyText(e.target.value)}
@@ -703,6 +820,42 @@ export default function InboxPage() {
           </div>
         )}
       </div>
+
+      {/* ─── Delete Confirmation Modal ──────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !deleting && setShowDeleteConfirm(null)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-sm mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-6 h-6 text-rose-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center">
+                Delete {showDeleteConfirm.type === 'bulk' ? `${selectedThreadIds.size} thread${selectedThreadIds.size > 1 ? 's' : ''}` : 'thread'}?
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
+                {showDeleteConfirm.type === 'bulk'
+                  ? `This will remove ${selectedThreadIds.size} conversation${selectedThreadIds.size > 1 ? 's' : ''} from your inbox.`
+                  : 'This will remove the conversation from your inbox.'}
+              </p>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={() => setShowDeleteConfirm(null)} disabled={deleting}
+                className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleDeleteConfirm} disabled={deleting}
+                className="flex-1 px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-sm font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                {deleting ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Deleting...</>
+                ) : (
+                  <><Trash2 className="w-4 h-4" /> Delete</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
