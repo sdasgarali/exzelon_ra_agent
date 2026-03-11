@@ -21,6 +21,12 @@ module.exports = {
           800: '#075985',
           900: '#0c4a6e',
         },
+        navy: {
+          900: '#0a0e27',
+          800: '#111631',
+          700: '#1a1f3d',
+          600: '#232952',
+        },
       },
       keyframes: {
         slideIn: {
@@ -31,10 +37,20 @@ module.exports = {
           from: { opacity: '1' },
           to: { opacity: '0' },
         },
+        marquee: {
+          '0%': { transform: 'translateX(0%)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { opacity: '0.4' },
+          '50%': { opacity: '0.8' },
+        },
       },
       animation: {
         slideIn: 'slideIn 200ms ease-out',
         fadeOut: 'fadeOut 200ms ease-in',
+        marquee: 'marquee 30s linear infinite',
+        'glow-pulse': 'glow-pulse 3s ease-in-out infinite',
       },
     },
   },

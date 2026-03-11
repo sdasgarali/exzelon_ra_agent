@@ -29,7 +29,7 @@ JOB_REGISTRY = [
     {"id": "auto_recovery_check", "name": "Auto Recovery Check", "group": "Warmup Engine", "schedule": "Daily 06:00 UTC"},
     {"id": "imap_read_cycle", "name": "IMAP Read Emulation", "group": "Warmup Engine", "schedule": "Every 30 minutes"},
     # Lead Pipeline (1 job)
-    {"id": "lead_sourcing_run", "name": "Scheduled Lead Sourcing", "group": "Lead Pipeline", "schedule": "3x daily (6am/12pm/6pm UTC)"},
+    {"id": "lead_sourcing_run", "name": "Scheduled Lead Sourcing", "group": "Lead Pipeline", "schedule": "6x daily (every 4h UTC)"},
     # Campaign & Outreach (3 jobs)
     {"id": "campaign_processor", "name": "Campaign Sequence Processor", "group": "Campaign & Outreach", "schedule": "Every 2 minutes"},
     {"id": "inbox_sync", "name": "Inbox Sync", "group": "Campaign & Outreach", "schedule": "Every 5 min 8am-7pm UTC"},
@@ -38,9 +38,12 @@ JOB_REGISTRY = [
     # Intelligence (2 jobs)
     {"id": "lead_scoring", "name": "Daily Lead Scoring", "group": "Intelligence", "schedule": "Daily 03:00 UTC"},
     {"id": "crm_sync", "name": "Nightly CRM Sync", "group": "Intelligence", "schedule": "Daily 04:00 UTC"},
-    # System (2 jobs)
+    # System (4 jobs)
     {"id": "daily_backup", "name": "Daily Database Backup", "group": "System", "schedule": "Daily 02:00 UTC"},
     {"id": "backup_cleanup", "name": "Backup Cleanup", "group": "System", "schedule": "Daily 02:30 UTC"},
+    {"id": "cost_aggregation", "name": "Daily Cost Aggregation", "group": "System", "schedule": "Daily 23:45 UTC"},
+    # Intelligence (3 jobs)
+    {"id": "cost_analysis", "name": "Monthly Cost Analysis", "group": "Intelligence", "schedule": "1st of month 03:30 UTC"},
 ]
 
 

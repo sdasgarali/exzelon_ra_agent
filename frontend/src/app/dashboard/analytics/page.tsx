@@ -5,7 +5,7 @@ import axios from 'axios'
 import { api } from '@/lib/api'
 import {
   DollarSign, TrendingUp, Target, Award, BarChart3, Users,
-  Plus, Loader2, AlertCircle, Receipt,
+  Plus, Loader2, AlertCircle, Receipt, Trash2, Bot,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -47,8 +47,22 @@ interface CostEntry {
   category: string
   amount: number
   date: string
+  entry_date: string
   notes: string
+  source_adapter: string | null
+  is_automated: boolean
+  api_calls_count: number | null
+  results_count: number | null
   created_at: string
+}
+
+interface CostBySource {
+  source: string
+  total_cost: number
+  total_api_calls: number
+  total_results: number
+  entry_count: number
+  cost_per_lead: number | null
 }
 
 // ---------- Helpers ----------
@@ -107,6 +121,11 @@ export default function AnalyticsPage() {
   const [costForm, setCostForm] = useState({ category: COST_CATEGORIES[0], amount: '', date: '', notes: '' })
   const [costSaving, setCostSaving] = useState(false)
   const [showCostForm, setShowCostForm] = useState(false)
+  const [costDeleting, setCostDeleting] = useState<number | null>(null)
+
+  // Cost by source
+  const [costsBySource, setCostsBySource] = useState<CostBySource[]>([])
+  const [costsBySourceLoading, setCostsBySourceLoading] = useState(true)
 
   // ---------- Data fetching ----------
 
@@ -115,6 +134,7 @@ export default function AnalyticsPage() {
     fetchCampaigns()
     fetchLeaderboard()
     fetchCosts()
+    fetchCostsBySource()
   }, [])
 
   const fetchRevenue = async () => {
@@ -169,6 +189,17 @@ export default function AnalyticsPage() {
     setCostsLoading(false)
   }
 
+  const fetchCostsBySource = async () => {
+    setCostsBySourceLoading(true)
+    try {
+      const { data } = await api.get('/analytics/costs/per-source', { params: { days: 30 } })
+      setCostsBySource(data?.sources || [])
+    } catch {
+      // silently fail — chart is supplementary
+    }
+    setCostsBySourceLoading(false)
+  }
+
   const handleAddCost = async () => {
     if (!costForm.amount || !costForm.date) return
     setCostSaving(true)
@@ -176,7 +207,7 @@ export default function AnalyticsPage() {
       await api.post('/analytics/costs', {
         category: costForm.category,
         amount: parseFloat(costForm.amount),
-        date: costForm.date,
+        entry_date: costForm.date,
         notes: costForm.notes,
       })
       setCostForm({ category: COST_CATEGORIES[0], amount: '', date: '', notes: '' })
@@ -186,6 +217,18 @@ export default function AnalyticsPage() {
       setCostsError(err?.response?.data?.detail || 'Failed to add cost entry')
     }
     setCostSaving(false)
+  }
+
+  const handleDeleteCost = async (costId: number) => {
+    setCostDeleting(costId)
+    try {
+      await api.delete(`/analytics/costs/${costId}`)
+      await fetchCosts()
+      await fetchCostsBySource()
+    } catch (err: any) {
+      setCostsError(err?.response?.data?.detail || 'Failed to delete cost entry')
+    }
+    setCostDeleting(null)
   }
 
   // ---------- Chart data ----------
@@ -366,6 +409,38 @@ export default function AnalyticsPage() {
           </button>
         </div>
 
+        {/* Cost by Source Chart */}
+        {!costsBySourceLoading && costsBySource.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Cost by Source (last 30 days)</h3>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={costsBySource} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
+                <XAxis dataKey="source" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, color: '#fff' }}
+                  formatter={(value: number, name: string) => {
+                    if (name === 'Cost') return [`$${value.toFixed(2)}`, name]
+                    if (name === 'Cost/Lead') return [value != null ? `$${value.toFixed(4)}` : 'N/A', name]
+                    return [value, name]
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="total_cost" name="Cost" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="cost_per_lead" name="Cost/Lead" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-500 dark:text-gray-400">
+              {costsBySource.map(s => (
+                <span key={s.source}>
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{s.source}</span>: {s.total_api_calls} calls, {s.total_results} results
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Add Cost Form */}
         {showCostForm && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
@@ -440,22 +515,44 @@ export default function AnalyticsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
-                    {['Category', 'Amount', 'Date', 'Notes'].map(h => (
+                    {['Category', 'Source', 'Amount', 'Date', 'Notes', ''].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {costs.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No cost entries yet. Click "Add Cost" to start tracking expenses.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No cost entries yet. Click &quot;Add Cost&quot; to start tracking expenses.</td></tr>
                   ) : costs.map(c => (
                     <tr key={c.cost_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{c.category}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">{c.category}</span>
+                          {c.is_automated && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" title="Auto-tracked by pipeline">
+                              <Bot className="w-3 h-3" /> Auto
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300 text-xs">
+                        {c.source_adapter ? (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 font-medium">{c.source_adapter}</span>
+                        ) : '-'}
                       </td>
                       <td className="px-4 py-3 font-semibold text-red-600 dark:text-red-400">${parseFloat(String(c.amount)).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{new Date(c.date).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 text-gray-500 dark:text-gray-400 max-w-[300px] truncate">{c.notes || '-'}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{new Date(c.entry_date || c.date).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-gray-400 max-w-[250px] truncate">{c.notes || '-'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleDeleteCost(c.cost_id)}
+                          disabled={costDeleting === c.cost_id}
+                          className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                          title="Delete cost entry"
+                        >
+                          {costDeleting === c.cost_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

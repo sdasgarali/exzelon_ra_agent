@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
+import { Brain, ArrowRight } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -51,8 +52,17 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="card">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">Exzelon RA</h1>
-            <p className="text-gray-600 mt-2">Cold-Email Automation System</p>
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
+                <Brain className="w-6 h-6 text-white" />
+              </div>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center gap-2">
+              <span className="bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">NeuraMail</span>
+              <ArrowRight className="w-5 h-5 text-gray-400" />
+              <span className="bg-gradient-to-r from-primary-500 to-emerald-500 bg-clip-text text-transparent">NeuraLeads</span>
+            </h1>
+            <p className="text-gray-500 mt-2 text-sm">AI-Powered Cold Email & Lead Generation</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

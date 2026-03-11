@@ -41,26 +41,26 @@ import {
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Leads', href: '/dashboard/leads', icon: FileText },
-  { name: 'Clients', href: '/dashboard/clients', icon: Building },
-  { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
-  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle },
-  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, roles: ['super_admin', 'admin'] as string[] },
-  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, roles: ['super_admin', 'admin'] as string[] },
-  { name: 'User Management', href: '/dashboard/users', icon: UserCog, roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, roles: ['super_admin'] as string[] },
-  { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings, roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-sky-400' },
+  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400' },
+  { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
+  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400' },
+  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400' },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] },
+  { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
 ]
 
 export default function DashboardLayout({
@@ -162,7 +162,7 @@ export default function DashboardLayout({
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               }`}
             >
-              <item.icon className="w-5 h-5" aria-hidden="true" />
+              <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : item.iconColor}`} aria-hidden="true" />
               {item.name}
               {item.name === 'Warmup Engine' && unreadAlerts > 0 && (
                 <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center" aria-label={`${unreadAlerts} unread alerts`}>{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>

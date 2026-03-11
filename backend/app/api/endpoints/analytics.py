@@ -1,10 +1,10 @@
 """Analytics endpoints — team leaderboard, campaign comparison, revenue metrics."""
 from datetime import datetime, date, timedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.db.base import get_db
 from app.api.deps.auth import get_current_user, require_role
@@ -208,8 +208,28 @@ def revenue_analytics(
 class CostEntryCreate(BaseModel):
     category: str
     amount: float
-    entry_date: str  # YYYY-MM-DD
+    entry_date: Optional[str] = None  # YYYY-MM-DD
+    date: Optional[str] = None  # Alias for entry_date (frontend compat)
     notes: Optional[str] = None
+    source_adapter: Optional[str] = None
+
+    @field_validator("entry_date", mode="before")
+    @classmethod
+    def resolve_date(cls, v, info):
+        """Accept entry_date or fall back to 'date' field."""
+        if v:
+            return v
+        # Will be resolved in the endpoint from 'date' field
+        return v
+
+
+class CostEntryUpdate(BaseModel):
+    category: Optional[str] = None
+    amount: Optional[float] = None
+    entry_date: Optional[str] = None
+    date: Optional[str] = None
+    notes: Optional[str] = None
+    source_adapter: Optional[str] = None
 
 
 @router.post("/costs")
@@ -220,12 +240,20 @@ def create_cost_entry(
 ):
     """Record a cost entry for ROI tracking."""
     from app.db.models.cost_tracking import CostEntry
+
+    # Resolve date field: prefer entry_date, fall back to date
+    date_str = body.entry_date or body.date
+    if not date_str:
+        raise HTTPException(status_code=422, detail="entry_date or date is required")
+
     entry = CostEntry(
         category=body.category,
         amount=body.amount,
-        entry_date=datetime.strptime(body.entry_date, "%Y-%m-%d").date(),
+        entry_date=datetime.strptime(date_str, "%Y-%m-%d").date(),
         notes=body.notes,
         user_id=current_user.user_id,
+        source_adapter=body.source_adapter,
+        is_automated=False,
     )
     db.add(entry)
     db.commit()
@@ -236,6 +264,9 @@ def create_cost_entry(
         "category": entry.category,
         "amount": float(entry.amount),
         "entry_date": str(entry.entry_date),
+        "date": str(entry.entry_date),
+        "source_adapter": entry.source_adapter,
+        "is_automated": entry.is_automated,
     }
 
 
@@ -260,7 +291,157 @@ def list_cost_entries(
             "category": e.category,
             "amount": float(e.amount),
             "entry_date": str(e.entry_date),
+            "date": str(e.entry_date),
             "notes": e.notes,
+            "source_adapter": e.source_adapter,
+            "is_automated": e.is_automated or False,
+            "api_calls_count": e.api_calls_count,
+            "results_count": e.results_count,
         }
         for e in entries
     ]
+
+
+@router.put("/costs/{cost_id}")
+def update_cost_entry(
+    cost_id: int,
+    body: CostEntryUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Update a cost entry."""
+    from app.db.models.cost_tracking import CostEntry
+    entry = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Cost entry not found")
+
+    if body.category is not None:
+        entry.category = body.category
+    if body.amount is not None:
+        entry.amount = body.amount
+
+    date_str = body.entry_date or body.date
+    if date_str:
+        entry.entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    if body.notes is not None:
+        entry.notes = body.notes
+    if body.source_adapter is not None:
+        entry.source_adapter = body.source_adapter
+
+    db.commit()
+    db.refresh(entry)
+
+    return {
+        "cost_id": entry.cost_id,
+        "category": entry.category,
+        "amount": float(entry.amount),
+        "entry_date": str(entry.entry_date),
+        "date": str(entry.entry_date),
+        "notes": entry.notes,
+        "source_adapter": entry.source_adapter,
+        "is_automated": entry.is_automated or False,
+    }
+
+
+@router.delete("/costs/{cost_id}")
+def delete_cost_entry(
+    cost_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Soft-delete a cost entry."""
+    from app.db.models.cost_tracking import CostEntry
+    entry = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Cost entry not found")
+
+    entry.is_archived = True
+    db.commit()
+
+    return {"ok": True, "cost_id": cost_id}
+
+
+@router.get("/costs/per-source")
+def costs_per_source(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Cost breakdown grouped by source adapter."""
+    from app.db.models.cost_tracking import CostEntry
+    cutoff = (datetime.utcnow() - timedelta(days=days)).date()
+
+    rows = db.query(
+        CostEntry.source_adapter,
+        func.sum(CostEntry.amount).label("total_cost"),
+        func.sum(CostEntry.api_calls_count).label("total_api_calls"),
+        func.sum(CostEntry.results_count).label("total_results"),
+        func.count(CostEntry.cost_id).label("entry_count"),
+    ).filter(
+        CostEntry.entry_date >= cutoff,
+        CostEntry.is_archived == False,
+    ).group_by(CostEntry.source_adapter).all()
+
+    sources = []
+    for row in rows:
+        total_cost = float(row.total_cost or 0)
+        total_results = int(row.total_results or 0)
+        cost_per_lead = total_cost / total_results if total_results > 0 else 0
+        sources.append({
+            "source": row.source_adapter or "manual",
+            "total_cost": round(total_cost, 2),
+            "total_api_calls": int(row.total_api_calls or 0),
+            "total_results": total_results,
+            "entry_count": row.entry_count,
+            "cost_per_lead": round(cost_per_lead, 4),
+        })
+
+    # Sort by total_cost descending
+    sources.sort(key=lambda x: x["total_cost"], reverse=True)
+
+    return {"period_days": days, "sources": sources}
+
+
+@router.get("/costs/daily-trend")
+def costs_daily_trend(
+    days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Daily cost totals for trend chart."""
+    from app.db.models.cost_tracking import CostEntry
+    cutoff = (datetime.utcnow() - timedelta(days=days)).date()
+
+    rows = db.query(
+        CostEntry.entry_date,
+        func.sum(CostEntry.amount).label("total"),
+        func.sum(CostEntry.results_count).label("results"),
+    ).filter(
+        CostEntry.entry_date >= cutoff,
+        CostEntry.is_archived == False,
+    ).group_by(CostEntry.entry_date).order_by(CostEntry.entry_date).all()
+
+    return {
+        "period_days": days,
+        "trend": [
+            {
+                "date": str(row.entry_date),
+                "total": round(float(row.total or 0), 2),
+                "results": int(row.results or 0),
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.get("/costs/budget-status")
+def budget_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Current month cost utilization per source vs configured budgets."""
+    from app.db.models.cost_tracking import CostEntry
+    from app.services.cost_tracker import get_budget_status as _get_budget_status
+
+    return _get_budget_status(db)

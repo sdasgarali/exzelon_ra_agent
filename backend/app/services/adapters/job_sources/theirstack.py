@@ -5,10 +5,12 @@ Sign up at https://theirstack.com/ to get an API key.
 
 Pricing: Free: 100 requests/month | Paid: from $49/month
 """
+import time
+import random
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter
+from app.services.adapters.base import JobSourceAdapter, RateLimitError
 from app.core.config import settings
 
 
@@ -19,6 +21,11 @@ class TheirStackAdapter(JobSourceAdapter):
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'THEIRSTACK_API_KEY', None)
+        self._api_calls = 0
+
+    @property
+    def api_calls_made(self) -> int:
+        return self._api_calls
 
     def test_connection(self) -> bool:
         """Test connection to TheirStack API."""
@@ -82,6 +89,7 @@ class TheirStackAdapter(JobSourceAdapter):
                 pages_to_fetch = min(10, max(1, limit // 100))
                 for page in range(pages_to_fetch):
                     payload["page"] = page
+                    self._api_calls += 1
                     response = client.post(
                         f"{self.BASE_URL}/jobs/search",
                         headers={
@@ -91,6 +99,15 @@ class TheirStackAdapter(JobSourceAdapter):
                         json=payload,
                         timeout=30,
                     )
+                    if response.status_code == 429:
+                        for retry in range(3):
+                            wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                            print(f"TheirStack 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                            time.sleep(wait)
+                            self._api_calls += 1
+                            response = client.post(f"{self.BASE_URL}/jobs/search", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=payload, timeout=30)
+                            if response.status_code != 429:
+                                break
                     response.raise_for_status()
                     data = response.json()
 

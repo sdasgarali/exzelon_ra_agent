@@ -45,3 +45,26 @@ body {
     @apply block text-sm font-medium text-gray-700 mb-1 dark:text-gray-300;
   }
 }
+
+/* Marketing site styles */
+.marketing-gradient-bg {
+  background: linear-gradient(135deg, #0a0e27 0%, #111631 40%, #1a1f3d 100%);
+}
+
+.marketing-gradient-text {
+  background: linear-gradient(135deg, #38bdf8, #818cf8, #c084fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.marketing-card-glow {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.marketing-card-glow:hover {
+  border-color: rgba(56, 189, 248, 0.3);
+  box-shadow: 0 0 30px rgba(56, 189, 248, 0.1);
+}

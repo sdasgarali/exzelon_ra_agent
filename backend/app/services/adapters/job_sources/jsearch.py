@@ -6,6 +6,8 @@ IMPACT ON LEAD COUNT:
   - Now: ALL job titles searched, multi-page fetching, 30-day date window = 100-500+ leads.
   - Requires a RapidAPI key (free tier: 500 requests/month).
 """
+import time
+import random
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
@@ -39,6 +41,11 @@ class JSearchAdapter(JobSourceAdapter):
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'JSEARCH_API_KEY', None) or getattr(settings, 'RAPIDAPI_KEY', None)
+        self._api_calls = 0
+
+    @property
+    def api_calls_made(self) -> int:
+        return self._api_calls
 
     def test_connection(self) -> dict:
         """Test connection to JSearch API. Returns dict with status and detail."""
@@ -144,6 +151,7 @@ class JSearchAdapter(JobSourceAdapter):
           for query in search_queries:
             try:
                 # IMPACT: num_pages=10 fetches 100 results per call
+                self._api_calls += 1
                 response = client.get(
                     f"{self.BASE_URL}/search",
                     headers={
@@ -159,6 +167,24 @@ class JSearchAdapter(JobSourceAdapter):
                     },
                     timeout=30
                 )
+                if response.status_code == 429:
+                    # Exponential backoff with jitter (max 3 retries)
+                    for retry in range(3):
+                        wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                        logger.warning(f"JSearch 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                        time.sleep(wait)
+                        self._api_calls += 1
+                        response = client.get(
+                            f"{self.BASE_URL}/search",
+                            headers={"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"},
+                            params={"query": query, "page": "1", "num_pages": "10", "date_posted": date_posted, "remote_jobs_only": "false"},
+                            timeout=30,
+                        )
+                        if response.status_code != 429:
+                            break
+                    if response.status_code == 429:
+                        raise RateLimitError(f"JSearch rate limit exceeded after {len(jobs)} jobs", partial_results=jobs)
+
                 response.raise_for_status()
                 data = response.json()
 

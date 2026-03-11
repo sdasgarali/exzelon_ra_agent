@@ -5,10 +5,12 @@ Sign up at https://serpapi.com/ to get an API key.
 
 Pricing: Free: 100 searches/month | Paid: from $50/month
 """
+import time
+import random
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter
+from app.services.adapters.base import JobSourceAdapter, RateLimitError
 from app.core.config import settings
 
 
@@ -19,6 +21,11 @@ class SerpAPIAdapter(JobSourceAdapter):
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'SERPAPI_API_KEY', None)
+        self._api_calls = 0
+
+    @property
+    def api_calls_made(self) -> int:
+        return self._api_calls
 
     def test_connection(self) -> bool:
         """Test connection to SerpAPI using the lightweight account endpoint."""
@@ -91,7 +98,17 @@ class SerpAPIAdapter(JobSourceAdapter):
                             "start": start_offset,
                         }
 
+                        self._api_calls += 1
                         response = client.get(self.BASE_URL, params=params, timeout=30)
+                        if response.status_code == 429:
+                            for retry in range(3):
+                                wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                                print(f"SerpAPI 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                                time.sleep(wait)
+                                self._api_calls += 1
+                                response = client.get(self.BASE_URL, params=params, timeout=30)
+                                if response.status_code != 429:
+                                    break
                         response.raise_for_status()
                         data = response.json()
 

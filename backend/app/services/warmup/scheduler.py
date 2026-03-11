@@ -36,7 +36,7 @@ def init_scheduler():
         _scheduler.add_job(job_daily_backup, CronTrigger(hour=2, minute=0), id="daily_backup", name="Daily Database Backup", replace_existing=True)
         _scheduler.add_job(job_backup_cleanup, CronTrigger(hour=2, minute=30), id="backup_cleanup", name="Backup Cleanup", replace_existing=True)
 
-        _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour="6,12,18", minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
+        _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour="0,4,8,12,16,20", minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
 
         _scheduler.add_job(job_campaign_processor, IntervalTrigger(minutes=2), id="campaign_processor", name="Campaign Sequence Processor", replace_existing=True)
         _scheduler.add_job(job_inbox_sync, CronTrigger(hour="8-19", minute="*/5"), id="inbox_sync", name="Inbox Sync", replace_existing=True)
@@ -45,6 +45,9 @@ def init_scheduler():
         _scheduler.add_job(job_imap_read_cycle, IntervalTrigger(minutes=30), id="imap_read_cycle", name="IMAP Read Emulation", replace_existing=True)
         _scheduler.add_job(job_crm_sync, CronTrigger(hour=4, minute=0), id="crm_sync", name="Nightly CRM Sync", replace_existing=True)
         _scheduler.add_job(job_auto_enrollment, IntervalTrigger(minutes=30), id="auto_enrollment", name="Campaign Auto-Enrollment", replace_existing=True)
+
+        _scheduler.add_job(job_daily_cost_aggregation, CronTrigger(hour=23, minute=45), id="cost_aggregation", name="Daily Cost Aggregation", replace_existing=True)
+        _scheduler.add_job(job_monthly_cost_analysis, CronTrigger(day=1, hour=3, minute=30), id="cost_analysis", name="Monthly Cost Analysis", replace_existing=True)
 
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
@@ -574,6 +577,39 @@ def job_auto_enrollment():
             log_automation_event(db, "auto_enrollment", f"Auto-enrollment failed: {str(e)[:100]}", status="error")
         except Exception:
             pass
+    finally:
+        db.close()
+
+
+def job_daily_cost_aggregation():
+    if not _is_job_enabled("cost_aggregation"):
+        logger.info("Job cost_aggregation skipped (disabled)")
+        return
+    logger.info("Running daily cost aggregation")
+    db = _get_db()
+    try:
+        from app.services.cost_tracker import aggregate_daily_costs
+        result = aggregate_daily_costs(db)
+        logger.info("Daily cost aggregation complete", total_cost=result.get("total_cost", 0))
+    except Exception as e:
+        logger.error("Daily cost aggregation failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_monthly_cost_analysis():
+    if not _is_job_enabled("cost_analysis"):
+        logger.info("Job cost_analysis skipped (disabled)")
+        return
+    logger.info("Running monthly cost analysis")
+    db = _get_db()
+    try:
+        from app.services.cost_tracker import generate_monthly_analysis
+        result = generate_monthly_analysis(db)
+        suggestions = result.get("suggestions", [])
+        logger.info("Monthly cost analysis complete", suggestions=len(suggestions))
+    except Exception as e:
+        logger.error("Monthly cost analysis failed", error=str(e))
     finally:
         db.close()
 

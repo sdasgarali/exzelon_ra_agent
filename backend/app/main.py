@@ -548,6 +548,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for enrollment columns: {e}")
 
+    # Migration: add cost tracking columns to cost_entries
+    try:
+        from sqlalchemy import text as sa_text_cost, inspect as sa_inspect_cost
+        with engine.connect() as conn:
+            inspector_cost = sa_inspect_cost(engine)
+            if "cost_entries" in inspector_cost.get_table_names():
+                cost_cols = [c["name"] for c in inspector_cost.get_columns("cost_entries")]
+                for col_name, col_def in [
+                    ("is_archived", "BOOLEAN DEFAULT 0 NOT NULL"),
+                    ("source_adapter", "VARCHAR(50) NULL"),
+                    ("is_automated", "BOOLEAN DEFAULT 0 NOT NULL"),
+                    ("api_calls_count", "INT NULL"),
+                    ("results_count", "INT NULL"),
+                    ("created_at", "DATETIME NULL"),
+                ]:
+                    if col_name not in cost_cols:
+                        conn.execute(sa_text_cost(f"ALTER TABLE cost_entries ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} column to cost_entries")
+                # Add index on source_adapter if not exists
+                try:
+                    conn.execute(sa_text_cost("CREATE INDEX idx_cost_source_adapter ON cost_entries(source_adapter)"))
+                    conn.commit()
+                    logger.info("Migration: added index idx_cost_source_adapter")
+                except Exception:
+                    pass  # Index already exists
+    except Exception as e:
+        logger.warning(f"Migration check for cost_entries columns: {e}")
+
     # Cleanup: mark orphaned pipeline runs as failed on startup
     # (runs stuck as 'running' from server crashes or restarts)
     try:

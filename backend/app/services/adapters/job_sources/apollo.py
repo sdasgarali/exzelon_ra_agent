@@ -6,6 +6,8 @@ IMPACT ON LEAD COUNT:
   - Now: multi-page fetching (up to 3 pages), wider employee range 1-10000+.
   - Each page returns up to 100 organizations.
 """
+import time
+import random
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
@@ -29,6 +31,11 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key
+        self._api_calls = 0
+
+    @property
+    def api_calls_made(self) -> int:
+        return self._api_calls
 
     def test_connection(self) -> bool:
         """Test connection to Apollo API."""
@@ -130,6 +137,7 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                         "q_organization_keyword_tags": ind_group
                     }
 
+                    self._api_calls += 1
                     response = client.post(
                         f"{self.BASE_URL}/mixed_companies/search",
                         headers={
@@ -140,6 +148,15 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                         json=payload,
                         timeout=30
                     )
+                    if response.status_code == 429:
+                        for retry in range(3):
+                            wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                            logger.warning(f"Apollo 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                            time.sleep(wait)
+                            self._api_calls += 1
+                            response = client.post(f"{self.BASE_URL}/mixed_companies/search", headers={"Content-Type": "application/json", "Cache-Control": "no-cache", "X-Api-Key": self.api_key}, json=payload, timeout=30)
+                            if response.status_code != 429:
+                                break
 
                     if response.status_code == 200:
                         data = response.json()

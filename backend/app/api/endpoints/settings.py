@@ -35,6 +35,12 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'serpapi_api_key': 'job_sources',
     'adzuna_app_id': 'job_sources',
     'adzuna_api_key': 'job_sources',
+    'searchapi_api_key': 'job_sources',
+    'usajobs_api_key': 'job_sources',
+    'usajobs_email': 'job_sources',
+    'jooble_api_key': 'job_sources',
+    'jobdatafeeds_api_key': 'job_sources',
+    'coresignal_api_key': 'job_sources',
     # AI/LLM
     'ai_provider': 'ai_llm',
     'groq_api_key': 'ai_llm',
@@ -116,6 +122,10 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'automation_crm_sync_enabled': 'automation',
     'automation_chain_enrollment': 'automation',
     'automation_auto_enrollment_enabled': 'automation',
+    'automation_cost_aggregation_enabled': 'automation',
+    'automation_cost_analysis_enabled': 'automation',
+    # Cost Tracking Budget
+    'cost_monthly_budget_total': 'business_rules',
 }
 
 # Default settings for seed data
@@ -137,6 +147,12 @@ DEFAULT_SETTINGS = {
     "serpapi_api_key": {"value": "", "type": "string", "description": "SerpAPI key for Google Jobs (Free: 100 req/mo | Paid: from $50/mo)"},
     "adzuna_app_id": {"value": "", "type": "string", "description": "Adzuna App ID (Free: 250 req/mo | Paid: from $99/mo)"},
     "adzuna_api_key": {"value": "", "type": "string", "description": "Adzuna API Key"},
+    "searchapi_api_key": {"value": "", "type": "string", "description": "SearchAPI.io API Key — Google Jobs ($40/mo for 4,000 searches)"},
+    "usajobs_api_key": {"value": "", "type": "string", "description": "USAJOBS.gov API Key — Free federal job listings"},
+    "usajobs_email": {"value": "", "type": "string", "description": "USAJOBS email (required as User-Agent)"},
+    "jooble_api_key": {"value": "", "type": "string", "description": "Jooble API Key — Free 71-country job aggregator"},
+    "jobdatafeeds_api_key": {"value": "", "type": "string", "description": "JobDataFeeds/Techmap API Key — Bulk jobs ($200-400/mo)"},
+    "coresignal_api_key": {"value": "", "type": "string", "description": "Coresignal API Key — Jobs + recruiter contacts ($800-1,500/mo)"},
 
     # New Contact Discovery API Keys
     "hunter_contact_api_key": {"value": "", "type": "string", "description": "Hunter.io API key for contact finder (Free: 25 req/mo | Paid: from $49/mo)"},
@@ -458,6 +474,11 @@ DEFAULT_SETTINGS = {
     "automation_crm_sync_enabled": {"value": True, "type": "boolean", "description": "Enable Nightly CRM Sync job"},
     "automation_chain_enrollment": {"value": False, "type": "boolean", "description": "Auto-chain: enroll validated contacts into campaigns"},
     "automation_auto_enrollment_enabled": {"value": True, "type": "boolean", "description": "Enable auto-enrollment scheduler job"},
+    "automation_cost_aggregation_enabled": {"value": True, "type": "boolean", "description": "Enable daily cost aggregation job (23:45 UTC)"},
+    "automation_cost_analysis_enabled": {"value": True, "type": "boolean", "description": "Enable monthly cost analysis job (1st of month)"},
+
+    # Cost Budget
+    "cost_monthly_budget_total": {"value": 500, "type": "number", "description": "Total monthly budget for API costs (USD)"},
 
     # Deal Pipeline Automation
     "deal_auto_create_on_interested": {"value": True, "type": "boolean", "description": "Auto-create deal when inbox reply is classified as interested"},
@@ -651,6 +672,11 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
     'theirstack': 'job_sources',
     'serpapi': 'job_sources',
     'adzuna': 'job_sources',
+    'searchapi': 'job_sources',
+    'usajobs': 'job_sources',
+    'jooble': 'job_sources',
+    'jobdatafeeds': 'job_sources',
+    'coresignal': 'job_sources',
     'seamless': 'contacts',
     'hunter_contact': 'contacts',
     'snovio': 'contacts',
@@ -863,6 +889,55 @@ async def test_provider_connection(
             adapter = AdzunaAdapter(app_id=app_id, api_key=api_key)
             result = adapter.test_connection()
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your credentials", "provider": provider}
+
+        elif provider == "searchapi":
+            api_key = get_setting_value(db, "searchapi_api_key")
+            if not api_key:
+                return {"status": "error", "message": "SearchAPI.io API key not configured. Get one at https://www.searchapi.io/", "provider": provider}
+            from app.services.adapters.job_sources.searchapi import SearchAPIAdapter
+            adapter = SearchAPIAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "usajobs":
+            api_key = get_setting_value(db, "usajobs_api_key")
+            email = get_setting_value(db, "usajobs_email")
+            if not api_key:
+                return {"status": "error", "message": "USAJOBS API key not configured. Get one free at https://developer.usajobs.gov/", "provider": provider}
+            from app.services.adapters.job_sources.usajobs import USAJobsAdapter
+            adapter = USAJobsAdapter(api_key=api_key, email=email)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key and email", "provider": provider}
+
+        elif provider == "jooble":
+            api_key = get_setting_value(db, "jooble_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Jooble API key not configured. Get one free at https://jooble.org/api/about", "provider": provider}
+            from app.services.adapters.job_sources.jooble import JoobleAdapter
+            adapter = JoobleAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "jobdatafeeds":
+            api_key = get_setting_value(db, "jobdatafeeds_api_key")
+            if not api_key:
+                return {"status": "error", "message": "JobDataFeeds API key not configured. Sign up at https://jobdatafeeds.com/", "provider": provider}
+            from app.services.adapters.job_sources.jobdatafeeds import JobDataFeedsAdapter
+            adapter = JobDataFeedsAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "coresignal":
+            api_key = get_setting_value(db, "coresignal_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Coresignal API key not configured. Get one at https://coresignal.com/", "provider": provider}
+            from app.services.adapters.job_sources.coresignal import CoresignalAdapter
+            adapter = CoresignalAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         # New Contact Discovery Providers
         elif provider == "hunter_contact":

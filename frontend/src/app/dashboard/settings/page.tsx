@@ -34,6 +34,12 @@ interface JobSourceConfig {
   serpapi_api_key: string
   adzuna_app_id: string
   adzuna_api_key: string
+  searchapi_api_key: string
+  usajobs_api_key: string
+  usajobs_email: string
+  jooble_api_key: string
+  jobdatafeeds_api_key: string
+  coresignal_api_key: string
 }
 
 interface AIConfig {
@@ -222,6 +228,12 @@ export default function SettingsPage() {
     serpapi_api_key: '',
     adzuna_app_id: '',
     adzuna_api_key: '',
+    searchapi_api_key: '',
+    usajobs_api_key: '',
+    usajobs_email: '',
+    jooble_api_key: '',
+    jobdatafeeds_api_key: '',
+    coresignal_api_key: '',
   })
 
   // State for adding new job title
@@ -392,6 +404,12 @@ export default function SettingsPage() {
         serpapi_api_key: settingsMap.serpapi_api_key || '',
         adzuna_app_id: settingsMap.adzuna_app_id || '',
         adzuna_api_key: settingsMap.adzuna_api_key || '',
+        searchapi_api_key: settingsMap.searchapi_api_key || '',
+        usajobs_api_key: settingsMap.usajobs_api_key || '',
+        usajobs_email: settingsMap.usajobs_email || '',
+        jooble_api_key: settingsMap.jooble_api_key || '',
+        jobdatafeeds_api_key: settingsMap.jobdatafeeds_api_key || '',
+        coresignal_api_key: settingsMap.coresignal_api_key || '',
       }))
 
       setAIConfig(prev => ({
@@ -502,6 +520,12 @@ export default function SettingsPage() {
           saveSetting('serpapi_api_key', jobSourceConfig.serpapi_api_key),
           saveSetting('adzuna_app_id', jobSourceConfig.adzuna_app_id),
           saveSetting('adzuna_api_key', jobSourceConfig.adzuna_api_key),
+          saveSetting('searchapi_api_key', jobSourceConfig.searchapi_api_key),
+          saveSetting('usajobs_api_key', jobSourceConfig.usajobs_api_key),
+          saveSetting('usajobs_email', jobSourceConfig.usajobs_email),
+          saveSetting('jooble_api_key', jobSourceConfig.jooble_api_key),
+          saveSetting('jobdatafeeds_api_key', jobSourceConfig.jobdatafeeds_api_key),
+          saveSetting('coresignal_api_key', jobSourceConfig.coresignal_api_key),
         ])
       } else if (configType === 'ai') {
         await Promise.all([
@@ -888,6 +912,91 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('searchapi')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'searchapi'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'searchapi') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">SearchAPI.io (Google Jobs)</span>
+                        <span className="text-xs text-gray-500">$40/mo</span>
+                        {jobSourceConfig.searchapi_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('usajobs')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'usajobs'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'usajobs') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">USAJOBS (Federal)</span>
+                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
+                        {jobSourceConfig.usajobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('jooble')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jooble'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jooble') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">Jooble (71 Countries)</span>
+                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
+                        {jobSourceConfig.jooble_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('jobdatafeeds')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jobdatafeeds'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jobdatafeeds') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">JobDataFeeds (Bulk US)</span>
+                        <span className="text-xs text-gray-500">$200-400/mo</span>
+                        {jobSourceConfig.jobdatafeeds_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.lead_sources.includes('coresignal')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
+                        <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
+                        {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={jobSourceConfig.lead_sources.includes('mock')}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -995,6 +1104,103 @@ export default function SettingsPage() {
                       </p>
                       {testResults.adzuna && (
                         <p className={`text-sm mt-1 ${testResults.adzuna.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.adzuna.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SearchAPI Key */}
+                  {jobSourceConfig.lead_sources.includes('searchapi') && (
+                    <div>
+                      <label className="label">SearchAPI.io API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.searchapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, searchapi_api_key: e.target.value })} placeholder="Enter SearchAPI.io key" className="input flex-1" />
+                        <button onClick={() => testConnection('searchapi')} disabled={testing === 'searchapi' || !jobSourceConfig.searchapi_api_key} className="btn-secondary text-sm">
+                          {testing === 'searchapi' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get key at <a href="https://www.searchapi.io/" target="_blank" className="text-blue-600 underline">searchapi.io</a> — Google Jobs data at $40/mo
+                      </p>
+                      {testResults.searchapi && (
+                        <p className={`text-sm mt-1 ${testResults.searchapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.searchapi.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* USAJOBS Credentials */}
+                  {jobSourceConfig.lead_sources.includes('usajobs') && (
+                    <div>
+                      <label className="label">USAJOBS API Key</label>
+                      <input type="password" value={jobSourceConfig.usajobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_api_key: e.target.value })} placeholder="Enter USAJOBS API key" className="input w-full mb-2" />
+                      <label className="label">USAJOBS Email (User-Agent)</label>
+                      <div className="flex gap-2">
+                        <input type="text" value={jobSourceConfig.usajobs_email} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_email: e.target.value })} placeholder="your-email@example.com" className="input flex-1" />
+                        <button onClick={() => testConnection('usajobs')} disabled={testing === 'usajobs' || !jobSourceConfig.usajobs_api_key} className="btn-secondary text-sm">
+                          {testing === 'usajobs' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get free API key at <a href="https://developer.usajobs.gov/" target="_blank" className="text-blue-600 underline">developer.usajobs.gov</a> — US federal jobs, completely free
+                      </p>
+                      {testResults.usajobs && (
+                        <p className={`text-sm mt-1 ${testResults.usajobs.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.usajobs.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Jooble Key */}
+                  {jobSourceConfig.lead_sources.includes('jooble') && (
+                    <div>
+                      <label className="label">Jooble API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.jooble_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jooble_api_key: e.target.value })} placeholder="Enter Jooble API key" className="input flex-1" />
+                        <button onClick={() => testConnection('jooble')} disabled={testing === 'jooble' || !jobSourceConfig.jooble_api_key} className="btn-secondary text-sm">
+                          {testing === 'jooble' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Get free key at <a href="https://jooble.org/api/about" target="_blank" className="text-blue-600 underline">jooble.org/api</a> — 71-country aggregator, free
+                      </p>
+                      {testResults.jooble && (
+                        <p className={`text-sm mt-1 ${testResults.jooble.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jooble.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* JobDataFeeds Key */}
+                  {jobSourceConfig.lead_sources.includes('jobdatafeeds') && (
+                    <div>
+                      <label className="label">JobDataFeeds API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.jobdatafeeds_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jobdatafeeds_api_key: e.target.value })} placeholder="Enter JobDataFeeds API key" className="input flex-1" />
+                        <button onClick={() => testConnection('jobdatafeeds')} disabled={testing === 'jobdatafeeds' || !jobSourceConfig.jobdatafeeds_api_key} className="btn-secondary text-sm">
+                          {testing === 'jobdatafeeds' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Sign up at <a href="https://jobdatafeeds.com/" target="_blank" className="text-blue-600 underline">jobdatafeeds.com</a> — Bulk US jobs ~$1/1,000 jobs ($200-400/mo)
+                      </p>
+                      {testResults.jobdatafeeds && (
+                        <p className={`text-sm mt-1 ${testResults.jobdatafeeds.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jobdatafeeds.message}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Coresignal Key */}
+                  {jobSourceConfig.lead_sources.includes('coresignal') && (
+                    <div>
+                      <label className="label">Coresignal API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.coresignal_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, coresignal_api_key: e.target.value })} placeholder="Enter Coresignal API key" className="input flex-1" />
+                        <button onClick={() => testConnection('coresignal')} disabled={testing === 'coresignal' || !jobSourceConfig.coresignal_api_key} className="btn-secondary text-sm">
+                          {testing === 'coresignal' ? 'Testing...' : 'Test'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Sign up at <a href="https://coresignal.com/" target="_blank" className="text-blue-600 underline">coresignal.com</a> — 399M+ jobs with recruiter contacts ($800-1,500/mo)
+                      </p>
+                      {testResults.coresignal && (
+                        <p className={`text-sm mt-1 ${testResults.coresignal.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.coresignal.message}</p>
                       )}
                     </div>
                   )}

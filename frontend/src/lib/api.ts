@@ -889,12 +889,28 @@ export const analyticsApi = {
     const response = await api.get('/analytics/costs', { params })
     return response.data
   },
-  addCost: async (data: { category: string; amount: number; entry_date: string; notes?: string }) => {
+  addCost: async (data: { category: string; amount: number; entry_date: string; notes?: string; source_adapter?: string }) => {
     const response = await api.post('/analytics/costs', data)
+    return response.data
+  },
+  updateCost: async (id: number, data: Record<string, any>) => {
+    const response = await api.put(`/analytics/costs/${id}`, data)
     return response.data
   },
   deleteCost: async (id: number) => {
     await api.delete(`/analytics/costs/${id}`)
+  },
+  costsBySource: async (params?: Record<string, any>) => {
+    const response = await api.get('/analytics/costs/per-source', { params })
+    return response.data
+  },
+  costsDailyTrend: async (params?: Record<string, any>) => {
+    const response = await api.get('/analytics/costs/daily-trend', { params })
+    return response.data
+  },
+  budgetStatus: async () => {
+    const response = await api.get('/analytics/costs/budget-status')
+    return response.data
   },
 }
 

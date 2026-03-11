@@ -147,6 +147,12 @@ class Settings(BaseSettings):
     # Job Sources Configuration
     JOB_SOURCES: list[str] = ["linkedin", "indeed", "glassdoor", "simplyhired"]
     JSEARCH_API_KEY: str = ""
+    SEARCHAPI_API_KEY: str = ""
+    USAJOBS_API_KEY: str = ""
+    USAJOBS_EMAIL: str = ""
+    JOOBLE_API_KEY: str = ""
+    JOBDATAFEEDS_API_KEY: str = ""
+    CORESIGNAL_API_KEY: str = ""
 
     # Company Size Preference (employees)
     COMPANY_SIZE_PRIORITY_1_MAX: int = 50

@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 43: Implemented Campaign Auto-Enrollment Rules (10 files, all steps complete). New service at services/auto_enrollment.py with rule-based matching. Campaign model has enrollment_rules_json + auto_enrolled_today. Scheduler job runs every 30 min + auto-chain step 4. Frontend has Rules tab in campaigns + 4th pipeline stage in automation page. 391 tests pass, frontend builds clean. Next: commit, deploy to VPS.
+> Session 47: Commercial Marketing Website — Built full marketing website with 4 pages (landing, pricing, features, compare) and 12 reusable components. Dark navy theme with Framer Motion animations, competitor comparison tables (Exzelon vs Instantly/Smartlead/Lemlist), ROI calculator, FAQ accordion, pricing tiers with annual toggle. All pages SSG-compatible with SEO metadata. Build clean. Generated Marketing_Website_Plan.docx. Next: deploy to VPS, add real screenshots, refine copy.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -47,12 +47,35 @@
   - Phase 5: Inbox (8→9) + CRM (7→8) + Warmup (8→9) — CRM auto-forward, deal tasks, spam checker, inbox placement
   - 6 new DB models, 8 new services, 9 new API endpoints, 2 new frontend pages
   - Target: 126/140 (90%) vs Instantly 122/140 (87%)
+- [x] Lead Sourcing Scale-Up Plan document (Lead_Sourcing_Plan.docx) (2026-03-10)
+- [x] Wire 4 new job source adapters into frontend (SearchAPI, USAJobs, Jooble, JobDataFeeds) (2026-03-10)
+- [x] Build Coresignal adapter (jobs + recruiter contacts) + Settings integration (2026-03-10)
+- [x] Update Lead_Sourcing_Plan.docx to reflect completed Tier 1+2 implementation (2026-03-10)
+- [x] Generate Exzelon_RA_Agent_SOP_v1.docx — 27 sections, 3 appendices, 28 Playwright screenshots (2026-03-10)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Configure real email validation provider for production
 - [ ] Run enrichment pipeline on sourced leads
 - [ ] Enable SMTP AUTH in M365 Admin for failing mailboxes (BasicAuthBlocked)
+- [ ] Configure API keys for new adapters (SearchAPI, USAJobs, Jooble, JobDataFeeds, Coresignal)
+- [ ] Deploy lead sourcing scale-up to VPS
 
 ## Completed
+- [x] Session 46: SOP v1 Document + Lead Sourcing Plan Update (2026-03-10)
+  - Updated Lead_Sourcing_Plan.docx: Tier 1 & 2 marked COMPLETE, implementation checklist updated, next steps revised
+  - Generated Exzelon_RA_Agent_SOP_v1.docx (13MB, 27 sections + 3 appendices)
+  - 28 Playwright screenshots: all 20 dashboard pages + 7 settings tabs
+  - New sections: Campaigns, Unified Inbox, CRM Deals, Analytics, ICP Wizard, Automation, Integrations & Webhooks
+  - 10 job source adapters, 8 contact adapters, 7 validation providers documented
+  - TOC field, styled tables, callout boxes, figure captions throughout
+  - Original Exzelon_RA_Agent_SOP.docx preserved untouched
+- [x] Session 45: Lead Sourcing Scale-Up (2026-03-10)
+  - Generated Lead_Sourcing_Plan.docx (10-section strategy document with volume projections)
+  - Fixed frontend TypeScript: added 6 missing fields to JobSourceConfig interface + state init
+  - Built Coresignal adapter (coresignal.py) — jobs + recruiter contacts, pagination, rate limit handling
+  - Wired Coresignal into config.py, lead_sourcing.py, settings.py (TAB_MAP, PROVIDER_MAP, DEFAULT_SETTINGS, test_connection)
+  - Added Coresignal checkbox (purple "Premium" badge) and API key input to Settings page
+  - Total job sources now: 10 (JSearch, Apollo, TheirStack, SerpAPI, Adzuna, SearchAPI, USAJobs, Jooble, JobDataFeeds, Coresignal) + Mock
+  - 391 tests pass, frontend builds clean
 - [x] Session 33: Lead Sourcing Performance Overhaul + Instantly.ai Comparison (2026-03-08)
   - Pagination increases: JSearch 3→10 pages, Apollo 2→5, Adzuna 3→10, SerpAPI added 3-page pagination, TheirStack 10-page cap
   - All adapter limits raised from 500 to 1000

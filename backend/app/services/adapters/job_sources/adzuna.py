@@ -5,10 +5,12 @@ Sign up at https://developer.adzuna.com/ to get app_id and app_key.
 
 Pricing: Free: 250 requests/month | Paid: from $99/month
 """
+import time
+import random
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter
+from app.services.adapters.base import JobSourceAdapter, RateLimitError
 from app.core.config import settings
 
 
@@ -20,6 +22,11 @@ class AdzunaAdapter(JobSourceAdapter):
     def __init__(self, app_id: str = None, api_key: str = None):
         self.app_id = app_id or getattr(settings, 'ADZUNA_APP_ID', None)
         self.api_key = api_key or getattr(settings, 'ADZUNA_API_KEY', None)
+        self._api_calls = 0
+
+    @property
+    def api_calls_made(self) -> int:
+        return self._api_calls
 
     def test_connection(self) -> bool:
         """Test connection to Adzuna API."""
@@ -84,11 +91,21 @@ class AdzunaAdapter(JobSourceAdapter):
                             "sort_by": "date",
                         }
 
+                        self._api_calls += 1
                         response = client.get(
                             f"{self.BASE_URL}/{page}",
                             params=params,
                             timeout=30,
                         )
+                        if response.status_code == 429:
+                            for retry in range(3):
+                                wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                                print(f"Adzuna 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                                time.sleep(wait)
+                                self._api_calls += 1
+                                response = client.get(f"{self.BASE_URL}/{page}", params=params, timeout=30)
+                                if response.status_code != 429:
+                                    break
                         response.raise_for_status()
                         data = response.json()
 

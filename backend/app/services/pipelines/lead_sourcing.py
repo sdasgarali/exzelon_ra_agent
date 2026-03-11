@@ -179,6 +179,47 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
             adapters.append(("adzuna", AdzunaAdapter(app_id=adzuna_app_id, api_key=adzuna_api_key)))
             logger.info("Adzuna adapter configured")
 
+    # SearchAPI adapter
+    if "searchapi" in enabled_sources:
+        from app.services.adapters.job_sources.searchapi import SearchAPIAdapter
+        searchapi_key = get_db_setting(db, "searchapi_api_key")
+        if searchapi_key:
+            adapters.append(("searchapi", SearchAPIAdapter(api_key=searchapi_key)))
+            logger.info("SearchAPI adapter configured")
+
+    # USAJOBS adapter
+    if "usajobs" in enabled_sources:
+        from app.services.adapters.job_sources.usajobs import USAJobsAdapter
+        usajobs_key = get_db_setting(db, "usajobs_api_key")
+        usajobs_email = get_db_setting(db, "usajobs_email")
+        if usajobs_key:
+            adapters.append(("usajobs", USAJobsAdapter(api_key=usajobs_key, email=usajobs_email)))
+            logger.info("USAJOBS adapter configured")
+
+    # Jooble adapter
+    if "jooble" in enabled_sources:
+        from app.services.adapters.job_sources.jooble import JoobleAdapter
+        jooble_key = get_db_setting(db, "jooble_api_key")
+        if jooble_key:
+            adapters.append(("jooble", JoobleAdapter(api_key=jooble_key)))
+            logger.info("Jooble adapter configured")
+
+    # JobDataFeeds adapter
+    if "jobdatafeeds" in enabled_sources:
+        from app.services.adapters.job_sources.jobdatafeeds import JobDataFeedsAdapter
+        jdf_key = get_db_setting(db, "jobdatafeeds_api_key")
+        if jdf_key:
+            adapters.append(("jobdatafeeds", JobDataFeedsAdapter(api_key=jdf_key)))
+            logger.info("JobDataFeeds adapter configured")
+
+    # Coresignal adapter (jobs + recruiter contacts)
+    if "coresignal" in enabled_sources:
+        from app.services.adapters.job_sources.coresignal import CoresignalAdapter
+        cs_key = get_db_setting(db, "coresignal_api_key")
+        if cs_key:
+            adapters.append(("coresignal", CoresignalAdapter(api_key=cs_key)))
+            logger.info("Coresignal adapter configured")
+
     # Mock adapter (for development/testing)
     if "mock" in enabled_sources:
         adapters.append(("mock", MockJobSourceAdapter()))
@@ -577,6 +618,18 @@ def run_lead_sourcing_pipeline(
                     all_jobs.extend(jobs)
 
         logger.info(f"Total jobs fetched from all sources: {len(all_jobs)}")
+
+        # Record cost per source
+        try:
+            from app.services.cost_tracker import record_pipeline_cost
+            for source_name, adapter in adapters:
+                api_calls = getattr(adapter, 'api_calls_made', 0)
+                results = counters["jobs_per_source"].get(source_name, 0)
+                if api_calls > 0 or results > 0:
+                    record_pipeline_cost(db, source_name, api_calls, results, run_id=job_run.run_id)
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record pipeline costs: {e}")
 
         # Deduplicate jobs (both within batch and against DB)
         unique_jobs = deduplicate_jobs(all_jobs, db)
