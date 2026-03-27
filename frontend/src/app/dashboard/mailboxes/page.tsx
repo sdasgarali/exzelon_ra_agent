@@ -768,6 +768,19 @@ export default function MailboxesPage() {
         </div>
       </div>
 
+      {/* OAuth Upgrade Banner */}
+      {mailboxes.some(mb => mb.auth_method === 'password' && mb.connection_status === 'failed') && (
+        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-center gap-3">
+          <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div className="flex-1">
+            <p className="text-sm text-amber-800">
+              <strong>Some mailboxes are using password authentication and failing.</strong> Switch to <strong>OAuth2</strong> for a more reliable connection that won&apos;t break when passwords change.
+              Click any mailbox &rarr; select <em>Microsoft OAuth2</em> &rarr; click <em>Connect with Microsoft 365</em>.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Actions Bar */}
       {someSelected && (
         <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex items-center justify-between">
@@ -973,10 +986,8 @@ export default function MailboxesPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Azure AD Tenant ID (optional)</label>
-                    <input type="text" value={formData.oauth_tenant_id} onChange={(e) => setFormData({ ...formData, oauth_tenant_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="common (multi-tenant)" />
-                    <p className="text-xs text-gray-500 mt-1">Leave blank for &quot;common&quot; (works for most M365 tenants)</p>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-xs text-green-800"><strong>OAuth2 is recommended.</strong> Password changes won&apos;t break your connection. Tokens refresh automatically.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     {editingMailbox.oauth_connected ? (
@@ -992,7 +1003,7 @@ export default function MailboxesPage() {
                           <rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
                           <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
                         </svg>
-                        {oauthConnecting ? 'Redirecting...' : 'Connect with Microsoft'}
+                        {oauthConnecting ? 'Redirecting...' : 'Connect with Microsoft 365'}
                       </button>
                     )}
                   </div>
@@ -1322,8 +1333,15 @@ export default function MailboxesPage() {
                     </details>
                   </div>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-800">Exzelon RA uses Microsoft OAuth2 for secure authentication. You&apos;ll be redirected to Microsoft to sign in &mdash; no passwords are stored on our server.</p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                    <p className="text-sm text-blue-800 font-medium">Why OAuth2?</p>
+                    <ul className="text-sm text-blue-800 space-y-1 ml-4 list-disc">
+                      <li><strong>Password-independent</strong> &mdash; changing your M365 password won&apos;t disconnect your mailbox</li>
+                      <li><strong>More secure</strong> &mdash; no passwords stored, uses auto-refreshing tokens</li>
+                      <li><strong>M365 compliant</strong> &mdash; works even when Microsoft blocks Basic Auth</li>
+                      <li><strong>One-click setup</strong> &mdash; sign in once, stay connected indefinitely</li>
+                    </ul>
+                    <p className="text-xs text-blue-600 mt-1">You&apos;ll be redirected to Microsoft to sign in. No passwords are stored on our server.</p>
                   </div>
 
                   <div className="flex justify-between pt-2">
