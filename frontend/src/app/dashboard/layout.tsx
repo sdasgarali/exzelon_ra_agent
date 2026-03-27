@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
@@ -76,6 +76,19 @@ export default function DashboardLayout({
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [profileOpen])
 
   // Handle mounting to avoid hydration mismatch
   useEffect(() => {
@@ -172,41 +185,67 @@ export default function DashboardLayout({
         })}
       </nav>
 
-      <div className="p-4 border-t border-gray-700">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center" aria-hidden="true">
+      <div ref={profileRef} className="p-4 border-t border-gray-700 relative">
+        {/* Clickable user profile trigger */}
+        <button
+          onClick={() => setProfileOpen(!profileOpen)}
+          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+        >
+          <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
             {user?.email?.[0]?.toUpperCase() || 'U'}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 text-left">
             <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-            <p className="text-xs text-gray-400 capitalize">{user?.role}</p>
+            <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
           </div>
-        </div>
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={toggleTheme}
-            className="flex items-center gap-2 text-gray-400 hover:text-white text-sm"
-            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            {theme === 'light' ? 'Dark mode' : 'Light mode'}
-          </button>
-          <button
-            onClick={() => setHelpOpen(true)}
-            className="ml-auto text-gray-400 hover:text-white"
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (Shift+?)"
-          >
-            <Keyboard className="w-4 h-4" />
-          </button>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 text-gray-400 hover:text-white text-sm"
-        >
-          <LogOut className="w-4 h-4" aria-hidden="true" />
-          Sign out
+          <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
         </button>
+
+        {/* Profile dropdown popover */}
+        {profileOpen && (
+          <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+            {/* User details */}
+            <div className="p-4 border-b border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-lg font-semibold" aria-hidden="true">
+                  {user?.email?.[0]?.toUpperCase() || 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
+                  <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+                  <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
+                    {user?.role?.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="p-2">
+              <button
+                onClick={() => { toggleTheme(); setProfileOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                {theme === 'light' ? 'Dark mode' : 'Light mode'}
+              </button>
+              <button
+                onClick={() => { setHelpOpen(true); setProfileOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+              >
+                <Keyboard className="w-4 h-4" />
+                Keyboard shortcuts
+              </button>
+              <div className="border-t border-gray-700 my-1" />
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign out
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
