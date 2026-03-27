@@ -272,9 +272,11 @@ export default function MailboxesPage() {
         case 'emails_sent_today': aVal = a.emails_sent_today; bVal = b.emails_sent_today; break
         case 'total_emails_sent': aVal = a.total_emails_sent; bVal = b.total_emails_sent; break
         case 'connection_status': {
-          const connOrder: Record<string, number> = { successful: 0, failed: 1 }
-          aVal = connOrder[a.connection_status || ''] ?? 2
-          bVal = connOrder[b.connection_status || ''] ?? 2
+          const connOrder: Record<string, number> = { success: 0, successful: 0, failed: 1 }
+          const aConn = connectionStatus[a.mailbox_id] || a.connection_status || ''
+          const bConn = connectionStatus[b.mailbox_id] || b.connection_status || ''
+          aVal = connOrder[aConn] ?? 2
+          bVal = connOrder[bConn] ?? 2
           break
         }
         case 'created_at': aVal = a.created_at; bVal = b.created_at; break
@@ -286,7 +288,7 @@ export default function MailboxesPage() {
     })
 
     return result
-  }, [mailboxes, searchQuery, connectionFilter, providerFilter, sortKey, sortDir])
+  }, [mailboxes, searchQuery, connectionFilter, providerFilter, sortKey, sortDir, connectionStatus])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
