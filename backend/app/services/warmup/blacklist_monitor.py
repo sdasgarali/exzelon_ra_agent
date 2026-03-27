@@ -29,13 +29,37 @@ def _get_setting(db: Session, key: str, default=None):
     return default
 
 
-def resolve_domain_ip(domain: str) -> str:
+def resolve_mx_ip(domain: str) -> str:
+    """Resolve the mail server IP for a domain via MX records.
+
+    For blacklist checking, the MX IP is what matters — not the website A record.
+    A domain like exzelon.com may have its website on a shared hosting IP (which
+    could be blacklisted for unrelated reasons) while email goes through M365/Google
+    on completely different IPs.
+
+    Falls back to the domain A record only if no MX record exists.
+    """
+    try:
+        import dns.resolver
+        # Try MX record first — this is where email actually routes
+        mx_answers = dns.resolver.resolve(domain, "MX")
+        if mx_answers:
+            mx_host = str(mx_answers[0].exchange).rstrip(".")
+            a_answers = dns.resolver.resolve(mx_host, "A")
+            return str(a_answers[0])
+    except Exception:
+        pass
+    # Fallback to domain A record if MX lookup fails
     try:
         import dns.resolver
         answers = dns.resolver.resolve(domain, "A")
         return str(answers[0])
     except Exception:
         return ""
+
+
+# Keep old name as alias for backward compatibility
+resolve_domain_ip = resolve_mx_ip
 
 
 def check_ip_blacklist(ip: str, provider: str) -> Dict[str, Any]:
@@ -55,7 +79,7 @@ def run_blacklist_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
         return {"error": "Mailbox not found"}
 
     domain = mailbox.email.split("@")[1]
-    ip = resolve_domain_ip(domain)
+    ip = resolve_mx_ip(domain)
 
     providers = _get_setting(db, "warmup_blacklist_providers", DEFAULT_PROVIDERS)
     if isinstance(providers, str):
