@@ -271,7 +271,12 @@ export default function MailboxesPage() {
         case 'warmup_status': aVal = a.warmup_status; bVal = b.warmup_status; break
         case 'emails_sent_today': aVal = a.emails_sent_today; bVal = b.emails_sent_today; break
         case 'total_emails_sent': aVal = a.total_emails_sent; bVal = b.total_emails_sent; break
-        case 'connection_status': aVal = a.connection_status || ''; bVal = b.connection_status || ''; break
+        case 'connection_status': {
+          const connOrder: Record<string, number> = { successful: 0, failed: 1 }
+          aVal = connOrder[a.connection_status || ''] ?? 2
+          bVal = connOrder[b.connection_status || ''] ?? 2
+          break
+        }
         case 'created_at': aVal = a.created_at; bVal = b.created_at; break
         default: aVal = a.email; bVal = b.email
       }
@@ -294,7 +299,7 @@ export default function MailboxesPage() {
 
   const SortIcon = ({ column }: { column: SortKey }) => {
     if (sortKey !== column) return <span className="ml-1 text-gray-300">&#8597;</span>
-    return <span className="ml-1">{sortDir === 'asc' ? '&#9650;' : '&#9660;'}</span>
+    return sortDir === 'asc' ? <span className="ml-1">&#9650;</span> : <span className="ml-1">&#9660;</span>
   }
 
   // Bulk selection helpers
