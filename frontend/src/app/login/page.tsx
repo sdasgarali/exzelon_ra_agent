@@ -1,23 +1,30 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
-import { Brain, ArrowRight } from 'lucide-react'
+import { Brain, ArrowRight, CheckCircle } from 'lucide-react'
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { setAuth } = useAuthStore()
-  const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [verified, setVerified] = useState(false)
 
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    full_name: '',
   })
+
+  useEffect(() => {
+    if (searchParams.get('verified') === 'true') {
+      setVerified(true)
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,21 +32,9 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      if (isLogin) {
-        const response = await authApi.login(formData.email, formData.password)
-        setAuth(response.access_token, response.user)
-        router.push('/dashboard')
-      } else {
-        await authApi.register({
-          email: formData.email,
-          password: formData.password,
-          full_name: formData.full_name,
-        })
-        // After registration, login
-        const response = await authApi.login(formData.email, formData.password)
-        setAuth(response.access_token, response.user)
-        router.push('/dashboard')
-      }
+      const response = await authApi.login(formData.email, formData.password)
+      setAuth(response.access_token, response.user)
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.response?.data?.detail || 'An error occurred')
     } finally {
@@ -65,20 +60,14 @@ export default function LoginPage() {
             <p className="text-gray-500 mt-2 text-sm">AI-Powered Cold Email & Lead Generation</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div>
-                <label className="label">Full Name</label>
-                <input
-                  type="text"
-                  className="input"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="John Doe"
-                />
-              </div>
-            )}
+          {verified && (
+            <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg text-sm mb-4 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              Email verified successfully! You can now sign in.
+            </div>
+          )}
 
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Email</label>
               <input
@@ -104,30 +93,33 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm">
-                {error}
-              </div>
+              <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm">{error}</div>
             )}
 
-            <button
-              type="submit"
-              className="btn-primary w-full"
-              disabled={loading}
-            >
-              {loading ? 'Please wait...' : isLogin ? 'Sign In' : 'Create Account'}
+            <button type="submit" className="btn-primary w-full" disabled={loading}>
+              {loading ? 'Please wait...' : 'Sign In'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-primary-600 hover:text-primary-700 text-sm"
-            >
-              {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-            </button>
+            <Link href="/signup" className="text-primary-600 hover:text-primary-700 text-sm">
+              Don&apos;t have an account? Get Started Free
+            </Link>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }

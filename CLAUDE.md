@@ -62,7 +62,7 @@ docker-compose up api    # Backend only with dependencies
 - **Entry point**: `main.py` -- FastAPI app with lifespan handler that creates DB tables, seeds warmup profiles, starts APScheduler
 - **Config**: `core/config.py` -- Pydantic Settings loaded from `.env`; controls DB type (sqlite/mysql), provider selection, business rules
 - **API routes**: `api/endpoints/` -- all endpoints mounted under `/api/v1` via `api/router.py`
-- **Auth**: JWT tokens (7-day expiry), Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Super admin bypasses all role checks. Dependencies in `api/deps/auth.py`. Single-tenant deployment (no multi-tenancy).
+- **Auth**: JWT tokens (7-day expiry, includes `tenant_id` + `plan`), Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Super admin bypasses all role checks and can impersonate tenants via `X-Tenant-ID` header. Dependencies in `api/deps/auth.py` (`get_current_tenant_id()` extracts tenant context). Multi-tenant: each user belongs to a tenant, email verification required for new signups.
 - **Database**: SQLAlchemy 2.0 ORM, models in `db/models/`, base class in `db/base.py`. Auto-creates tables on startup. MySQL (`exzelon_ra_agent` on localhost:3306) is the active database. SQLite used for testing.
 
 ### Adapter Pattern (`services/adapters/`)
@@ -145,6 +145,8 @@ Domain reputation management subsystem:
 
 ## Key Data Models
 
+- **Tenant** -- multi-tenant organization with TenantPlan enum (starter/professional/enterprise), plan limits (max_users, max_mailboxes, max_contacts, max_campaigns, max_leads), unique slug
+- **User** -- users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), tenant relationship
 - **LeadDetails** -- job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
 - **ContactDetails** -- decision-makers with priority levels (P1 job poster through P5 functional manager)
 - **LeadContactAssociation** -- many-to-many junction table
@@ -185,6 +187,9 @@ Domain reputation management subsystem:
 
 | Prefix | File | Purpose |
 |--------|------|---------|
+| `/auth/signup` | `api/endpoints/auth.py` | Self-service signup (creates tenant + admin user, sends verification email) |
+| `/auth/verify` | `api/endpoints/auth.py` | Email verification via JWT token |
+| `/auth/resend-verification` | `api/endpoints/auth.py` | Resend verification email (200 always, prevents enumeration) |
 | `/analytics` | `api/endpoints/analytics.py` | Team leaderboard, campaign comparison, revenue metrics, cost tracking |
 | `/icp` | `api/endpoints/icp_wizard.py` | ICP generation + profile CRUD |
 | `/leads/ai-search` | `api/endpoints/lead_search.py` | Natural language lead search |

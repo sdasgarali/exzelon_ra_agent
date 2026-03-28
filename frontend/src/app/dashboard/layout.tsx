@@ -143,8 +143,10 @@ export default function DashboardLayout({
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">Exzelon RA</h1>
-            <p className="text-gray-400 text-sm mt-1">Admin Panel</p>
+            <h1 className="text-xl font-bold">NeuraLeads</h1>
+            <p className="text-gray-400 text-sm mt-1 truncate">
+              {user?.tenant?.name || 'Admin Panel'}
+            </p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -283,7 +285,7 @@ export default function DashboardLayout({
           >
             <Menu className="w-6 h-6" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Exzelon RA</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">NeuraLeads</h1>
         </div>
         <main className="p-4 lg:p-8 dark:text-gray-100"><ErrorBoundary>{children}</ErrorBoundary></main>
       </div>

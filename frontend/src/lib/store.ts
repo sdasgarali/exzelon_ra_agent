@@ -1,12 +1,22 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+interface Tenant {
+  tenant_id: number
+  name: string
+  slug: string
+  plan: string
+}
+
 interface User {
   user_id: number
   email: string
   full_name: string | null
   role: 'super_admin' | 'admin' | 'operator' | 'viewer'
   is_active: boolean
+  tenant_id: number | null
+  tenant: Tenant | null
+  is_verified: boolean
 }
 
 interface AuthState {

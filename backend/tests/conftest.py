@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.api.deps.database import get_db
 from app.core.security import get_password_hash, create_access_token
 from app.db.models.user import User, UserRole
+from app.db.models.tenant import Tenant, TenantPlan
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.email_template import EmailTemplate, TemplateStatus
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
@@ -65,15 +66,44 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
+# ---------------------------------------------------------------------------
+# Tenant fixture (shared by all user fixtures)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def test_tenant(db_session):
+    """Create a test tenant for testing."""
+    tenant = Tenant(
+        name="Test Org",
+        slug="test-org",
+        plan=TenantPlan.ENTERPRISE,
+        max_users=999,
+        max_mailboxes=999,
+        max_contacts=999999,
+        max_campaigns=999,
+        max_leads=999999,
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant
+
+
+# ---------------------------------------------------------------------------
+# User fixtures (all with tenant_id and is_verified)
+# ---------------------------------------------------------------------------
+
 @pytest.fixture
 def super_admin_user(db_session):
-    """Create a super admin user for testing."""
+    """Create a super admin user for testing (global, no tenant)."""
     user = User(
         email="superadmin@test.com",
         password_hash=get_password_hash("testpassword"),
         full_name="Super Admin User",
         role=UserRole.SUPER_ADMIN,
         is_active=True,
+        is_verified=True,
+        tenant_id=None,
     )
     db_session.add(user)
     db_session.commit()
@@ -82,7 +112,7 @@ def super_admin_user(db_session):
 
 
 @pytest.fixture
-def admin_user(db_session):
+def admin_user(db_session, test_tenant):
     """Create an admin user for testing."""
     user = User(
         email="admin@test.com",
@@ -90,6 +120,8 @@ def admin_user(db_session):
         full_name="Admin User",
         role=UserRole.ADMIN,
         is_active=True,
+        is_verified=True,
+        tenant_id=test_tenant.tenant_id,
     )
     db_session.add(user)
     db_session.commit()
@@ -98,7 +130,7 @@ def admin_user(db_session):
 
 
 @pytest.fixture
-def operator_user(db_session):
+def operator_user(db_session, test_tenant):
     """Create an operator user for testing."""
     user = User(
         email="operator@test.com",
@@ -106,6 +138,8 @@ def operator_user(db_session):
         full_name="Operator User",
         role=UserRole.OPERATOR,
         is_active=True,
+        is_verified=True,
+        tenant_id=test_tenant.tenant_id,
     )
     db_session.add(user)
     db_session.commit()
@@ -114,7 +148,7 @@ def operator_user(db_session):
 
 
 @pytest.fixture
-def viewer_user(db_session):
+def viewer_user(db_session, test_tenant):
     """Create a viewer user for testing."""
     user = User(
         email="viewer@test.com",
@@ -122,6 +156,8 @@ def viewer_user(db_session):
         full_name="Viewer User",
         role=UserRole.VIEWER,
         is_active=True,
+        is_verified=True,
+        tenant_id=test_tenant.tenant_id,
     )
     db_session.add(user)
     db_session.commit()
@@ -129,12 +165,18 @@ def viewer_user(db_session):
     return user
 
 
+# ---------------------------------------------------------------------------
+# Token fixtures
+# ---------------------------------------------------------------------------
+
 @pytest.fixture
 def super_admin_token(super_admin_user):
     """Create a super admin JWT token."""
     return create_access_token(data={
         "sub": super_admin_user.email,
         "role": super_admin_user.role.value,
+        "tenant_id": None,
+        "plan": None,
     })
 
 
@@ -144,6 +186,8 @@ def admin_token(admin_user):
     return create_access_token(data={
         "sub": admin_user.email,
         "role": admin_user.role.value,
+        "tenant_id": admin_user.tenant_id,
+        "plan": "enterprise",
     })
 
 
@@ -153,6 +197,8 @@ def operator_token(operator_user):
     return create_access_token(data={
         "sub": operator_user.email,
         "role": operator_user.role.value,
+        "tenant_id": operator_user.tenant_id,
+        "plan": "enterprise",
     })
 
 
@@ -162,6 +208,8 @@ def viewer_token(viewer_user):
     return create_access_token(data={
         "sub": viewer_user.email,
         "role": viewer_user.role.value,
+        "tenant_id": viewer_user.tenant_id,
+        "plan": "enterprise",
     })
 
 

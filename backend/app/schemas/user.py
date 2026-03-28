@@ -14,7 +14,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """Schema for creating a user."""
+    """Schema for creating a user (admin-created, within tenant)."""
     password: str
 
 
@@ -27,12 +27,26 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class TenantInfo(BaseModel):
+    """Minimal tenant info in user response."""
+    tenant_id: int
+    name: str
+    slug: str
+    plan: str
+
+    class Config:
+        from_attributes = True
+
+
 class UserResponse(UserBase):
     """Schema for user response."""
     user_id: int
     last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    is_verified: bool = True
+    tenant_id: Optional[int] = None
+    tenant: Optional[TenantInfo] = None
 
     class Config:
         from_attributes = True

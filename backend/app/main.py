@@ -620,6 +620,79 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cleanup check for orphaned runs: {e}")
 
+    # Migration: Multi-tenancy — add tenant_id + verification columns to users
+    try:
+        from sqlalchemy import text as sa_text_mt, inspect as sa_inspect_mt
+        with engine.connect() as conn:
+            inspector_mt = sa_inspect_mt(engine)
+
+            # 1. Ensure tenants table has new plan-limit columns
+            if "tenants" in inspector_mt.get_table_names():
+                tenant_cols = [c["name"] for c in inspector_mt.get_columns("tenants")]
+                for col_name, col_def in [
+                    ("max_users", "INT DEFAULT 3 NOT NULL"),
+                    ("max_leads", "INT DEFAULT 0 NOT NULL"),
+                ]:
+                    if col_name not in tenant_cols:
+                        try:
+                            conn.execute(sa_text_mt(f"ALTER TABLE tenants ADD COLUMN {col_name} {col_def}"))
+                            conn.commit()
+                            logger.info(f"Migration: added {col_name} to tenants")
+                        except Exception:
+                            pass
+
+            # 2. Add tenant_id + verification fields to users if missing
+            user_cols = [c["name"] for c in inspector_mt.get_columns("users")]
+            for col_name, col_def in [
+                ("tenant_id", "INT NULL"),
+                ("is_verified", "BOOLEAN DEFAULT 1 NOT NULL"),
+                ("verification_token", "VARCHAR(512) NULL"),
+                ("verification_sent_at", "DATETIME NULL"),
+            ]:
+                if col_name not in user_cols:
+                    try:
+                        conn.execute(sa_text_mt(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to users")
+                    except Exception:
+                        pass
+
+            # 3. Create Tenant #1 (primary tenant) if not exists
+            try:
+                result = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE tenant_id = 1"))
+                if result.fetchone() is None:
+                    conn.execute(sa_text_mt(
+                        "INSERT INTO tenants (tenant_id, name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
+                        "VALUES (1, 'Exzelon', 'exzelon', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: created primary Tenant #1 (Exzelon)")
+            except Exception as e3:
+                logger.debug(f"Tenant #1 creation (may already exist): {e3}")
+
+            # 4. Assign all existing users to Tenant #1 (except super_admin)
+            try:
+                conn.execute(sa_text_mt(
+                    "UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL AND role != 'super_admin'"
+                ))
+                conn.commit()
+                logger.info("Migration: assigned existing users to Tenant #1")
+            except Exception as e4:
+                logger.debug(f"User tenant assignment: {e4}")
+
+            # 5. Mark all existing users as verified
+            try:
+                conn.execute(sa_text_mt(
+                    "UPDATE users SET is_verified = 1 WHERE is_verified = 0 OR is_verified IS NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: marked existing users as verified")
+            except Exception as e5:
+                logger.debug(f"User verification backfill: {e5}")
+
+    except Exception as e:
+        logger.warning(f"Migration check for multi-tenancy: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

@@ -37,8 +37,8 @@ class TestSuperAdminBypass:
 class TestSuperAdminSelfRegisterBlock:
     """Test that self-registration as super_admin is blocked."""
 
-    def test_cannot_self_register_as_super_admin(self, client):
-        """Self-registration as super_admin is forbidden."""
+    def test_register_requires_auth(self, client):
+        """Registration without auth is rejected (401)."""
         response = client.post(
             "/api/v1/auth/register",
             json={
@@ -48,11 +48,25 @@ class TestSuperAdminSelfRegisterBlock:
                 "role": "super_admin",
             }
         )
-        assert response.status_code == 403
-        assert "super_admin" in response.json()["detail"]
+        assert response.status_code == 401
 
-    def test_can_self_register_as_viewer(self, client):
-        """Self-registration as viewer is allowed."""
+    def test_role_injection_ignored(self, client, auth_headers):
+        """Role from request body is ignored — always viewer."""
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "hacker@test.com",
+                "password": "password123",
+                "full_name": "Hacker",
+                "role": "super_admin",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "viewer"
+
+    def test_can_register_as_viewer(self, client, auth_headers):
+        """Authenticated registration assigns viewer role."""
         response = client.post(
             "/api/v1/auth/register",
             json={
@@ -60,7 +74,8 @@ class TestSuperAdminSelfRegisterBlock:
                 "password": "password123",
                 "full_name": "New Viewer",
                 "role": "viewer",
-            }
+            },
+            headers=auth_headers,
         )
         assert response.status_code == 200
         assert response.json()["role"] == "viewer"

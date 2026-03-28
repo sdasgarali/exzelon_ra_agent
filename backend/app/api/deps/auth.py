@@ -173,3 +173,41 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
         return {tab: settings_perm.get(tab, 'no_access') for tab in tabs}
 
     return {tab: 'no_access' for tab in tabs}
+
+
+def _extract_tenant_id(user: User, x_tenant_id: Optional[int] = None) -> Optional[int]:
+    """Extract tenant_id from user context.
+
+    - Super admin: returns None (all-tenant access) unless X-Tenant-ID header is set.
+    - Regular user: always returns their own tenant_id (ignores header).
+
+    Args:
+        user: The authenticated User.
+        x_tenant_id: Optional tenant ID from X-Tenant-ID header (super admin only).
+
+    Returns:
+        The tenant_id to scope queries to, or None for super admin global access.
+    """
+    if user.role == UserRole.SUPER_ADMIN:
+        return x_tenant_id  # None = global, or specific tenant for impersonation
+    return user.tenant_id
+
+
+async def get_current_tenant_id(
+    current_user: User = Depends(get_current_active_user),
+    x_tenant_id: Optional[int] = Header(None, alias="X-Tenant-ID"),
+) -> Optional[int]:
+    """Dependency: get the tenant_id for scoping queries.
+
+    - Super admin without X-Tenant-ID: returns None (sees all tenants).
+    - Super admin with X-Tenant-ID: returns that tenant_id (impersonation).
+    - Regular user: returns their tenant_id (always).
+    - User without tenant: raises 403.
+    """
+    tid = _extract_tenant_id(current_user, x_tenant_id)
+    if tid is None and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenant assigned to this user",
+        )
+    return tid

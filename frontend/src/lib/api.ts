@@ -82,6 +82,18 @@ export const authApi = {
     const response = await api.get('/auth/me')
     return response.data
   },
+  signup: async (data: { email: string; password: string; full_name: string; company_name: string }) => {
+    const response = await api.post('/auth/signup', data)
+    return response.data
+  },
+  verify: async (token: string) => {
+    const response = await api.get('/auth/verify', { params: { token } })
+    return response.data
+  },
+  resendVerification: async (email: string) => {
+    const response = await api.post('/auth/resend-verification', { email })
+    return response.data
+  },
 }
 
 // Leads API

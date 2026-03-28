@@ -7,8 +7,8 @@ pytestmark = pytest.mark.integration
 class TestAuthEndpoints:
     """Tests for authentication API endpoints."""
 
-    def test_register_user(self, client):
-        """Test user registration."""
+    def test_register_requires_auth(self, client):
+        """Test that /register requires authentication."""
         response = client.post(
             "/api/v1/auth/register",
             json={
@@ -17,13 +17,27 @@ class TestAuthEndpoints:
                 "full_name": "New User"
             }
         )
+        assert response.status_code == 401
+
+    def test_register_user(self, client, auth_headers):
+        """Test user registration (requires auth, always assigns viewer)."""
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@test.com",
+                "password": "password123",
+                "full_name": "New User"
+            },
+            headers=auth_headers,
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["email"] == "newuser@test.com"
         assert data["full_name"] == "New User"
+        assert data["role"] == "viewer"
         assert "user_id" in data
 
-    def test_register_duplicate_email(self, client, admin_user):
+    def test_register_duplicate_email(self, client, admin_user, auth_headers):
         """Test registration with duplicate email fails."""
         response = client.post(
             "/api/v1/auth/register",
@@ -31,7 +45,8 @@ class TestAuthEndpoints:
                 "email": admin_user.email,
                 "password": "password123",
                 "full_name": "Duplicate User"
-            }
+            },
+            headers=auth_headers,
         )
         assert response.status_code == 400
         assert "already registered" in response.json()["detail"]
