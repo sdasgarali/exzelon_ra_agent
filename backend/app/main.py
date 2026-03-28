@@ -672,6 +672,102 @@ async def lifespan(app: FastAPI):
             except Exception as e_ts:
                 logger.debug(f"Tenant settings copy: {e_ts}")
 
+            # 3d. Create Neuraforz tenant if not exists
+            try:
+                result = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'neuraforz'"))
+                if result.fetchone() is None:
+                    conn.execute(sa_text_mt(
+                        "INSERT INTO tenants (name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
+                        "VALUES ('Neuraforz', 'neuraforz', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: created Neuraforz tenant")
+            except Exception as e_nf:
+                logger.debug(f"Neuraforz tenant creation: {e_nf}")
+
+            # 3e. Create admin user for Neuraforz
+            try:
+                result = conn.execute(sa_text_mt("SELECT user_id FROM users WHERE email = 'admin@neuraforz.com'"))
+                if result.fetchone() is None:
+                    nf_tid = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'neuraforz'")).scalar()
+                    if nf_tid:
+                        from app.core.security import get_password_hash as _nf_hash
+                        hashed_nf = _nf_hash("Admin@nz")
+                        conn.execute(sa_text_mt(
+                            "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified, created_at, updated_at, is_archived) "
+                            "VALUES ('admin@neuraforz.com', :pw, 'Neuraforz Admin', 'admin', 1, :tid, 1, NOW(), NOW(), 0)"
+                        ), {"pw": hashed_nf, "tid": nf_tid})
+                        conn.commit()
+                        logger.info("Migration: created admin@neuraforz.com")
+            except Exception as e_nf_admin:
+                logger.debug(f"Neuraforz admin creation: {e_nf_admin}")
+
+            # 3f. Copy global settings to tenant_settings for Neuraforz
+            try:
+                nf_tid2 = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'neuraforz'")).scalar()
+                if nf_tid2:
+                    ts_count_nf = conn.execute(sa_text_mt(
+                        "SELECT COUNT(*) FROM tenant_settings WHERE tenant_id = :tid"
+                    ), {"tid": nf_tid2}).scalar()
+                    if ts_count_nf == 0:
+                        conn.execute(sa_text_mt(
+                            "INSERT INTO tenant_settings (tenant_id, `key`, value_json, updated_by, updated_at, created_at, is_archived) "
+                            "SELECT :tid, s.`key`, s.value_json, 'system-migration', NOW(), NOW(), 0 "
+                            "FROM settings s WHERE s.is_archived = 0"
+                        ), {"tid": nf_tid2})
+                        conn.commit()
+                        logger.info("Migration: copied global settings to tenant_settings for Neuraforz")
+            except Exception as e_nf_ts:
+                logger.debug(f"Neuraforz tenant settings copy: {e_nf_ts}")
+
+            # 3g. Create Medeoan tenant if not exists
+            try:
+                result = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'medeoan'"))
+                if result.fetchone() is None:
+                    conn.execute(sa_text_mt(
+                        "INSERT INTO tenants (name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
+                        "VALUES ('Medeoan', 'medeoan', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: created Medeoan tenant")
+            except Exception as e_md:
+                logger.debug(f"Medeoan tenant creation: {e_md}")
+
+            # 3h. Create admin user for Medeoan
+            try:
+                result = conn.execute(sa_text_mt("SELECT user_id FROM users WHERE email = 'admin@medeoan.com'"))
+                if result.fetchone() is None:
+                    md_tid = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'medeoan'")).scalar()
+                    if md_tid:
+                        from app.core.security import get_password_hash as _md_hash
+                        hashed_md = _md_hash("Admin@mn")
+                        conn.execute(sa_text_mt(
+                            "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified, created_at, updated_at, is_archived) "
+                            "VALUES ('admin@medeoan.com', :pw, 'Medeoan Admin', 'admin', 1, :tid, 1, NOW(), NOW(), 0)"
+                        ), {"pw": hashed_md, "tid": md_tid})
+                        conn.commit()
+                        logger.info("Migration: created admin@medeoan.com")
+            except Exception as e_md_admin:
+                logger.debug(f"Medeoan admin creation: {e_md_admin}")
+
+            # 3i. Copy global settings to tenant_settings for Medeoan
+            try:
+                md_tid2 = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'medeoan'")).scalar()
+                if md_tid2:
+                    ts_count_md = conn.execute(sa_text_mt(
+                        "SELECT COUNT(*) FROM tenant_settings WHERE tenant_id = :tid"
+                    ), {"tid": md_tid2}).scalar()
+                    if ts_count_md == 0:
+                        conn.execute(sa_text_mt(
+                            "INSERT INTO tenant_settings (tenant_id, `key`, value_json, updated_by, updated_at, created_at, is_archived) "
+                            "SELECT :tid, s.`key`, s.value_json, 'system-migration', NOW(), NOW(), 0 "
+                            "FROM settings s WHERE s.is_archived = 0"
+                        ), {"tid": md_tid2})
+                        conn.commit()
+                        logger.info("Migration: copied global settings to tenant_settings for Medeoan")
+            except Exception as e_md_ts:
+                logger.debug(f"Medeoan tenant settings copy: {e_md_ts}")
+
             # 4. Assign all existing users to Tenant #1 (except super_admin)
             try:
                 conn.execute(sa_text_mt(
@@ -742,12 +838,13 @@ async def lifespan(app: FastAPI):
 
             # Drop unique constraint on client_info.client_name (now per-tenant)
             if settings.DB_TYPE == "mysql":
-                try:
-                    conn.execute(sa_text_mt2("ALTER TABLE client_info DROP INDEX client_name"))
-                    conn.commit()
-                    logger.info("Migration: dropped unique constraint on client_info.client_name")
-                except Exception:
-                    pass  # Already dropped or doesn't exist
+                for idx_name in ("client_name", "ix_client_info_client_name"):
+                    try:
+                        conn.execute(sa_text_mt2(f"ALTER TABLE client_info DROP INDEX {idx_name}"))
+                        conn.commit()
+                        logger.info(f"Migration: dropped index {idx_name} on client_info")
+                    except Exception:
+                        pass  # Already dropped or doesn't exist
                 # Add composite unique (tenant_id, client_name)
                 try:
                     conn.execute(sa_text_mt2(
@@ -899,6 +996,26 @@ async def lifespan(app: FastAPI):
             _seed_db.close()
     except Exception as e:
         logger.error("Failed to seed admin user", error=str(e))
+
+    # Seed demo data for Neuraforz and Medeoan tenants (if they have no data yet)
+    try:
+        from app.services.demo_seeder import seed_demo_data
+        from app.db.base import SessionLocal as _DemoSeedSession
+        from sqlalchemy import text as _demo_text
+        _demo_db = _DemoSeedSession()
+        try:
+            for _slug in ("neuraforz", "medeoan"):
+                _tid = _demo_db.execute(_demo_text(
+                    "SELECT tenant_id FROM tenants WHERE slug = :s"
+                ), {"s": _slug}).scalar()
+                if _tid:
+                    _result = seed_demo_data(_tid, _demo_db)
+                    if any(v > 0 for v in _result.values()):
+                        logger.info(f"Demo data seeded for {_slug}", **_result)
+        finally:
+            _demo_db.close()
+    except Exception as e:
+        logger.warning(f"Demo data seeding: {e}")
 
     # Start warmup scheduler — only ONE worker should run it.
     # Use a file lock so that in multi-worker deployments (e.g. 4 uvicorn workers),

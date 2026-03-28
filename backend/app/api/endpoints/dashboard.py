@@ -71,8 +71,8 @@ async def get_kpis(
         func.count(ContactDetails.contact_id)
     ).scalar() or 0
 
-    # Outreach stats (OutreachEvent doesn't have tenant_id yet — Phase 3)
-    outreach_query = db.query(OutreachEvent).filter(
+    # Outreach stats (tenant-scoped)
+    outreach_query = tenant_filter(db.query(OutreachEvent), OutreachEvent, tenant_id).filter(
         OutreachEvent.sent_at >= datetime.combine(from_date, datetime.min.time()),
         OutreachEvent.sent_at <= datetime.combine(to_date, datetime.max.time())
     )
@@ -175,8 +175,8 @@ async def get_outreach_sent(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Tab 3 - Outreach Sent."""
-    # OutreachEvent doesn't have tenant_id yet (Phase 3) — no tenant filter for now
-    query = db.query(OutreachEvent)
+    # Outreach query (tenant-scoped)
+    query = tenant_filter(db.query(OutreachEvent), OutreachEvent, tenant_id)
 
     if from_date:
         query = query.filter(OutreachEvent.sent_at >= datetime.combine(from_date, datetime.min.time()))

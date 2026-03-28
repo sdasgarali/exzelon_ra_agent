@@ -398,7 +398,11 @@ async def create_contact(
     """Create a new contact."""
     check_plan_limit(db, tenant_id, "contacts")
 
-    existing = db.query(ContactDetails).filter(ContactDetails.email == contact_in.email).first()
+    dup_query = tenant_filter(
+        db.query(ContactDetails).filter(ContactDetails.email == contact_in.email),
+        ContactDetails, tenant_id
+    )
+    existing = dup_query.first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

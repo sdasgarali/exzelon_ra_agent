@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 53: Multi-tenant settings architecture — COMPLETE. Implemented two-table copy-on-write settings (tenant_settings table + centralized settings_resolver.py). Replaced 15 duplicate _get_setting() implementations across 20 files (~152 call sites). Updated scheduler with tenant iteration for 13+ jobs. All 466 tests pass (25 new resolver unit tests + 11 new integration tests). Frontend builds clean. No regressions.
+> Session 54: Multi-tenant isolation E2E testing — COMPLETE. Created 2 new tenants (Neuraforz + Medeoan) with enterprise plan, admin users, demo data. Fixed 3 bugs: (1) contact email uniqueness was global not per-tenant, (2-3) dashboard OutreachEvent queries had no tenant filtering. Fixed client_info unique index issue (ix_client_info_client_name was blocking cross-tenant same-name companies). Created comprehensive test script (9 categories, 56 tests) with .docx report generation. ALL 56 TESTS PASS (100%). Report: Multi_Tenant_Isolation_Test_Report.docx
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -59,6 +59,7 @@
 - [~] Configure real email validation provider for production — SKIPPED, user has no keys
 - [~] Run enrichment pipeline on sourced leads — BLOCKED, needs real contact provider API key (mock would pollute data)
 - [x] Multi-tenant settings architecture (two-table copy-on-write, settings_resolver, scheduler tenant iteration) (2026-03-28)
+- [x] Multi-tenant isolation E2E testing — 56/56 tests pass, 3 bugs fixed, .docx report generated (2026-03-28)
 - [ ] Enable IMAP in M365 Admin per-mailbox (for inbox syncing/warmup read)
 - [ ] Connect Gmail mailbox (mirzahabibbeg7@gmail.com) via OAuth2 in browser
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
