@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
-import { warmupApi } from '@/lib/api'
+import { warmupApi, tenantsApi } from '@/lib/api'
+import type { TenantSummary } from '@/types/api'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { OfflineBanner } from '@/components/offline-banner'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
@@ -73,7 +74,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, logout, isAuthenticated, impersonation } = useAuthStore()
+  const { user, logout, isAuthenticated, impersonation, startImpersonation, stopImpersonation } = useAuthStore()
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const [mounted, setMounted] = useState(false)
@@ -81,6 +82,8 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [tenantList, setTenantList] = useState<TenantSummary[]>([])
+  const [tenantLoading, setTenantLoading] = useState(false)
 
   useEffect(() => {
     if (!profileOpen) return
@@ -114,6 +117,17 @@ export default function DashboardLayout({
     }
   }, [mounted])
 
+  // Fetch tenant list for super_admin dropdown
+  useEffect(() => {
+    if (mounted && isAuthenticated() && user?.role === 'super_admin') {
+      setTenantLoading(true)
+      tenantsApi.list({ limit: 100 })
+        .then(data => setTenantList(Array.isArray(data) ? data : data.tenants || []))
+        .catch(() => {})
+        .finally(() => setTenantLoading(false))
+    }
+  }, [mounted, user?.role])
+
   // Close sidebar on route change (mobile)
   useEffect(() => {
     setSidebarOpen(false)
@@ -122,6 +136,23 @@ export default function DashboardLayout({
   const handleLogout = () => {
     logout()
     router.push('/login')
+  }
+
+  const handleTenantSwitch = async (tenantId: string) => {
+    if (!tenantId) {
+      stopImpersonation()
+      window.location.reload()
+      return
+    }
+    const tenant = tenantList.find(t => t.tenant_id === Number(tenantId))
+    if (!tenant) return
+    try {
+      const result = await tenantsApi.impersonate(tenant.tenant_id)
+      startImpersonation(result.tenant_id, result.tenant_name, tenant.plan)
+      window.location.reload()
+    } catch {
+      // silently fail — tenant management page can show errors
+    }
   }
 
   // Show loading state until mounted to avoid hydration mismatch
@@ -145,12 +176,7 @@ export default function DashboardLayout({
     <>
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">NeuraLeads</h1>
-            <p className="text-gray-400 text-sm mt-1 truncate">
-              {impersonation ? `Viewing: ${impersonation.tenantName}` : (user?.tenant?.name || 'Admin Panel')}
-            </p>
-          </div>
+          <h1 className="text-xl font-bold">NeuraLeads</h1>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-gray-400 hover:text-white"
@@ -159,6 +185,25 @@ export default function DashboardLayout({
             <X className="w-5 h-5" />
           </button>
         </div>
+        {user?.role === 'super_admin' ? (
+          <select
+            value={impersonation?.tenantId?.toString() || ''}
+            onChange={(e) => handleTenantSwitch(e.target.value)}
+            disabled={tenantLoading}
+            className="mt-2 w-full bg-gray-800 text-gray-300 text-sm border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 cursor-pointer disabled:opacity-50"
+          >
+            <option value="">All Tenants</option>
+            {tenantList.filter(t => t.is_active).map(t => (
+              <option key={t.tenant_id} value={t.tenant_id.toString()}>
+                {t.name} ({t.plan})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-gray-400 text-sm mt-1 truncate">
+            {user?.tenant?.name || 'Admin Panel'}
+          </p>
+        )}
       </div>
 
       <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation">

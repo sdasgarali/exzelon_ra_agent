@@ -632,6 +632,21 @@ async def lifespan(app: FastAPI):
             except Exception as e3:
                 logger.debug(f"Tenant #1 creation (may already exist): {e3}")
 
+            # 3b. Create admin user for Tenant #1 if not exists
+            try:
+                result = conn.execute(sa_text_mt("SELECT user_id FROM users WHERE email = 'admin@exzelon.com'"))
+                if result.fetchone() is None:
+                    from app.core.security import get_password_hash
+                    hashed = get_password_hash("ExzelonAdmin#2026")
+                    conn.execute(sa_text_mt(
+                        "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified) "
+                        "VALUES ('admin@exzelon.com', :pw, 'Exzelon Admin', 'admin', 1, 1, 1)"
+                    ), {"pw": hashed})
+                    conn.commit()
+                    logger.info("Migration: created admin@exzelon.com for Tenant #1")
+            except Exception as e_admin:
+                logger.debug(f"Exzelon admin creation: {e_admin}")
+
             # 4. Assign all existing users to Tenant #1 (except super_admin)
             try:
                 conn.execute(sa_text_mt(
