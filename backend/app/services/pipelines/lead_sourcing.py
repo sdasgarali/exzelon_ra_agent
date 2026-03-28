@@ -546,6 +546,24 @@ def run_lead_sourcing_pipeline(
     per_sub_source_detail: Dict[str, Dict[str, int]] = {}  # linkedin, indeed, glassdoor, etc.
     api_diagnostics_list: List[Dict[str, Any]] = []
 
+    # Concurrency guard — prevent multiple simultaneous pipeline runs
+    existing_run = db.query(JobRun).filter(
+        JobRun.pipeline_name == "lead_sourcing",
+        JobRun.status == JobStatus.RUNNING,
+    ).first()
+    if existing_run:
+        logger.warning(
+            "Lead sourcing skipped — another run is already in progress",
+            existing_run_id=existing_run.run_id,
+            existing_triggered_by=existing_run.triggered_by,
+        )
+        db.close()
+        return {
+            "skipped": True,
+            "reason": f"Another lead sourcing run (#{existing_run.run_id}) is already in progress",
+            "inserted": 0, "updated": 0, "errors": 0,
+        }
+
     # Create job run record
     job_run = JobRun(
         pipeline_name="lead_sourcing",
@@ -691,6 +709,11 @@ def run_lead_sourcing_pipeline(
                     employer_website=job_data.get("employer_website") or None,
                 )
                 db.add(lead)
+                # Flush immediately to catch IntegrityError per-lead
+                # (e.g. duplicate job_link) before the session is poisoned
+                db.flush()
+
+                # Only increment counters AFTER flush succeeds
                 counters["inserted"] += 1
                 newly_inserted_leads.append(lead)
 
@@ -711,7 +734,11 @@ def run_lead_sourcing_pipeline(
                 )
 
             except Exception as e:
-                logger.error("Error processing job", error=str(e), job=job_data.get("client_name"))
+                # Rollback to reset the session after IntegrityError or any
+                # other DB error — without this, the session stays broken and
+                # ALL subsequent operations fail
+                db.rollback()
+                logger.warning("Error processing job (rolled back)", error=str(e), job=job_data.get("client_name"))
                 counters["errors"] += 1
 
         db.commit()
@@ -763,13 +790,42 @@ def run_lead_sourcing_pipeline(
 
     except Exception as e:
         logger.error("Lead sourcing pipeline failed", error=str(e))
-        job_run.status = JobStatus.FAILED
-        job_run.error_message = str(e)
-        job_run.ended_at = datetime.utcnow()
-        db.commit()
+        # Try to mark the run as FAILED so it doesn't stay as "running" forever.
+        # The session may be broken (e.g. after IntegrityError), so we:
+        #   1. Rollback the broken session first
+        #   2. Attempt the status update
+        #   3. If that still fails, use a fresh session as last resort
+        try:
+            db.rollback()
+            job_run.status = JobStatus.FAILED
+            job_run.error_message = str(e)[:500]
+            job_run.ended_at = datetime.utcnow()
+            db.commit()
+        except Exception as inner_err:
+            logger.error("Failed to mark run as FAILED via original session, trying fresh session", error=str(inner_err))
+            try:
+                db.close()
+            except Exception:
+                pass
+            # Last resort: open a brand new session and do a raw UPDATE
+            try:
+                fresh_db = SessionLocal()
+                fresh_db.query(JobRun).filter(JobRun.run_id == job_run.run_id).update({
+                    "status": JobStatus.FAILED,
+                    "error_message": str(e)[:500],
+                    "ended_at": datetime.utcnow(),
+                })
+                fresh_db.commit()
+                fresh_db.close()
+                logger.info("Marked run as FAILED via fresh session", run_id=job_run.run_id)
+            except Exception as last_err:
+                logger.error("Could not mark run as FAILED even with fresh session", error=str(last_err), run_id=job_run.run_id)
         raise
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 def _extract_domain(url: str) -> str:

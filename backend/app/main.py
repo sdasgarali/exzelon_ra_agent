@@ -709,12 +709,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to seed admin user", error=str(e))
 
-    # Start warmup scheduler
-    try:
-        from app.services.warmup.scheduler import init_scheduler
-        init_scheduler()
-    except Exception as e:
-        logger.error("Failed to start warmup scheduler", error=str(e))
+    # Start warmup scheduler — only ONE worker should run it.
+    # Use a file lock so that in multi-worker deployments (e.g. 4 uvicorn workers),
+    # only the first worker to acquire the lock starts the scheduler.
+    _scheduler_lock_fd = None
+    import sys
+    if sys.platform != "win32":
+        import fcntl
+        try:
+            _lock_path = "/tmp/exzelon-scheduler.lock"
+            _scheduler_lock_fd = open(_lock_path, "w")
+            fcntl.flock(_scheduler_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Lock acquired — this worker owns the scheduler
+            from app.services.warmup.scheduler import init_scheduler
+            init_scheduler()
+            logger.info("Scheduler started (lock acquired)", lock_path=_lock_path)
+        except OSError:
+            # Another worker already holds the lock — skip scheduler
+            if _scheduler_lock_fd:
+                _scheduler_lock_fd.close()
+                _scheduler_lock_fd = None
+            logger.info("Scheduler skipped (another worker owns the lock)")
+        except Exception as e:
+            logger.error("Failed to start warmup scheduler", error=str(e))
+    else:
+        # Windows dev: single worker, always start scheduler
+        try:
+            from app.services.warmup.scheduler import init_scheduler
+            init_scheduler()
+        except Exception as e:
+            logger.error("Failed to start warmup scheduler", error=str(e))
 
     yield
 
@@ -724,6 +748,14 @@ async def lifespan(app: FastAPI):
         shutdown_scheduler()
     except Exception:
         pass
+    # Release scheduler lock if we hold it
+    if _scheduler_lock_fd:
+        try:
+            import fcntl as _fcntl
+            _fcntl.flock(_scheduler_lock_fd, _fcntl.LOCK_UN)
+            _scheduler_lock_fd.close()
+        except Exception:
+            pass
     logger.info("Shutting down application")
 
 
