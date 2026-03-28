@@ -19,14 +19,24 @@ interface User {
   is_verified: boolean
 }
 
+interface Impersonation {
+  tenantId: number
+  tenantName: string
+  tenantPlan: string
+}
+
 interface AuthState {
   token: string | null
   user: User | null
+  impersonation: Impersonation | null
   setAuth: (token: string, user: User) => void
   logout: () => void
   isAuthenticated: () => boolean
   isSuperAdmin: () => boolean
   isAdmin: () => boolean
+  startImpersonation: (tenantId: number, tenantName: string, tenantPlan: string) => void
+  stopImpersonation: () => void
+  isImpersonating: () => boolean
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -34,13 +44,16 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       token: null,
       user: null,
+      impersonation: null,
       setAuth: (token: string, user: User) => set({
         token,
         user,
+        impersonation: null,
       }),
       logout: () => set({
         token: null,
         user: null,
+        impersonation: null,
       }),
       isAuthenticated: () => !!get().token,
       isSuperAdmin: () => {
@@ -51,6 +64,13 @@ export const useAuthStore = create<AuthState>()(
         const role = get().user?.role
         return role === 'admin' || role === 'super_admin'
       },
+      startImpersonation: (tenantId: number, tenantName: string, tenantPlan: string) => set({
+        impersonation: { tenantId, tenantName, tenantPlan },
+      }),
+      stopImpersonation: () => set({
+        impersonation: null,
+      }),
+      isImpersonating: () => !!get().impersonation,
     }),
     {
       name: 'auth-storage',

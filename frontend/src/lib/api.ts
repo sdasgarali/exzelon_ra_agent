@@ -17,11 +17,14 @@ function getRequestKey(config: any): string {
   return `${config.method}:${config.url}:${JSON.stringify(config.params || {})}`
 }
 
-// Add auth token to requests + deduplicate GET requests
+// Add auth token to requests + deduplicate GET requests + inject X-Tenant-ID for impersonation
 api.interceptors.request.use((config) => {
-  const { token } = useAuthStore.getState()
+  const { token, impersonation } = useAuthStore.getState()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (impersonation?.tenantId) {
+    config.headers['X-Tenant-ID'] = String(impersonation.tenantId)
   }
 
   // Only deduplicate GET requests
@@ -1067,6 +1070,30 @@ export const trackingDomainsApi = {
   },
   setDefault: async (id: number) => {
     const response = await api.put(`/tracking-domains/${id}/default`)
+    return response.data
+  },
+}
+
+// Admin Tenants API (Super Admin only)
+export const tenantsApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/admin/tenants', { params })
+    return response.data
+  },
+  get: async (id: number) => {
+    const response = await api.get(`/admin/tenants/${id}`)
+    return response.data
+  },
+  update: async (id: number, data: Record<string, any>) => {
+    const response = await api.put(`/admin/tenants/${id}`, data)
+    return response.data
+  },
+  deactivate: async (id: number) => {
+    const response = await api.delete(`/admin/tenants/${id}`)
+    return response.data
+  },
+  impersonate: async (id: number) => {
+    const response = await api.post(`/admin/tenants/${id}/impersonate`)
     return response.data
   },
 }

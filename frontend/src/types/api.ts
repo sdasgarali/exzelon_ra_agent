@@ -136,7 +136,7 @@ export interface User {
   user_id: number;
   email: string;
   full_name: string;
-  role: "admin" | "operator" | "viewer";
+  role: "super_admin" | "admin" | "operator" | "viewer";
   is_active: boolean;
 }
 
@@ -406,4 +406,41 @@ export interface ApiKeyInfo {
   is_active: boolean;
   last_used_at: string | null;
   created_at: string;
+}
+
+// ─── Tenant Management types ─────────────────────────────────────
+
+export interface TenantSummary {
+  tenant_id: number;
+  name: string;
+  slug: string;
+  plan: string;
+  is_active: boolean;
+  user_count: number;
+  lead_count: number;
+  contact_count: number;
+  mailbox_count: number;
+  campaign_count: number;
+  created_at: string | null;
+}
+
+export interface TenantUser {
+  user_id: number;
+  email: string;
+  full_name: string | null;
+  role: string;
+  is_active: boolean;
+  is_verified: boolean;
+  last_login_at: string | null;
+}
+
+export interface TenantDetail extends TenantSummary {
+  domain: string | null;
+  logo_url: string | null;
+  max_users: number;
+  max_mailboxes: number;
+  max_contacts: number;
+  max_campaigns: number;
+  max_leads: number;
+  users: TenantUser[];
 }

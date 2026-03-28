@@ -7,6 +7,7 @@ import { useAuthStore } from '@/lib/store'
 import { warmupApi } from '@/lib/api'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { OfflineBanner } from '@/components/offline-banner'
+import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { useTheme } from '@/components/theme-provider'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import {
@@ -38,6 +39,7 @@ import {
   TrendingUp,
   Wand2,
   ListChecks,
+  Building2,
 } from 'lucide-react'
 
 const navigation = [
@@ -59,6 +61,7 @@ const navigation = [
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] },
+  { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
 ]
@@ -70,7 +73,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, logout, isAuthenticated } = useAuthStore()
+  const { user, logout, isAuthenticated, impersonation } = useAuthStore()
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const [mounted, setMounted] = useState(false)
@@ -145,7 +148,7 @@ export default function DashboardLayout({
           <div>
             <h1 className="text-xl font-bold">NeuraLeads</h1>
             <p className="text-gray-400 text-sm mt-1 truncate">
-              {user?.tenant?.name || 'Admin Panel'}
+              {impersonation ? `Viewing: ${impersonation.tenantName}` : (user?.tenant?.name || 'Admin Panel')}
             </p>
           </div>
           <button
@@ -276,6 +279,7 @@ export default function DashboardLayout({
 
       {/* Main content */}
       <div className="flex-1 overflow-auto min-w-0">
+        <ImpersonationBanner />
         {/* Mobile header */}
         <div className="lg:hidden flex items-center gap-3 p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
           <button
