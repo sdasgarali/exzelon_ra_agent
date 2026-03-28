@@ -623,6 +623,15 @@ async def lifespan(app: FastAPI):
             try:
                 result = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE tenant_id = 1"))
                 if result.fetchone() is None:
+                    # Drop stale primary_color column if it exists (NOT NULL blocks inserts)
+                    try:
+                        tenant_cols = [c["name"] for c in sa_inspect_mt(engine).get_columns("tenants")]
+                        if "primary_color" in tenant_cols:
+                            conn.execute(sa_text_mt("ALTER TABLE tenants DROP COLUMN primary_color"))
+                            conn.commit()
+                            logger.info("Migration: dropped stale primary_color column from tenants")
+                    except Exception:
+                        pass
                     conn.execute(sa_text_mt(
                         "INSERT INTO tenants (tenant_id, name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
                         "VALUES (1, 'Exzelon', 'exzelon', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
@@ -630,7 +639,7 @@ async def lifespan(app: FastAPI):
                     conn.commit()
                     logger.info("Migration: created primary Tenant #1 (Exzelon)")
             except Exception as e3:
-                logger.debug(f"Tenant #1 creation (may already exist): {e3}")
+                logger.warning(f"Tenant #1 creation FAILED: {e3}")
 
             # 3b. Create admin user for Tenant #1 if not exists
             try:
@@ -646,6 +655,22 @@ async def lifespan(app: FastAPI):
                     logger.info("Migration: created admin@exzelon.com for Tenant #1")
             except Exception as e_admin:
                 logger.debug(f"Exzelon admin creation: {e_admin}")
+
+            # 3c. Copy global settings to tenant_settings for Tenant #1 if empty
+            try:
+                ts_count = conn.execute(sa_text_mt(
+                    "SELECT COUNT(*) FROM tenant_settings WHERE tenant_id = 1"
+                )).scalar()
+                if ts_count == 0:
+                    conn.execute(sa_text_mt(
+                        "INSERT INTO tenant_settings (tenant_id, `key`, value_json, updated_by, updated_at, created_at, is_archived) "
+                        "SELECT 1, s.`key`, s.value_json, 'system-migration', NOW(), NOW(), 0 "
+                        "FROM settings s WHERE s.is_archived = 0"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: copied global settings to tenant_settings for Tenant #1")
+            except Exception as e_ts:
+                logger.debug(f"Tenant settings copy: {e_ts}")
 
             # 4. Assign all existing users to Tenant #1 (except super_admin)
             try:
