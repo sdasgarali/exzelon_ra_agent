@@ -1,5 +1,5 @@
 /**
- * NeuraMail Logo
+ * NeuraLeads Logo
  *
  * Concept: An envelope shape whose flap is formed by 3 neural nodes
  * connected by synapse lines — merging "Neural" (AI/brain) with "Mail" (email).
@@ -28,7 +28,7 @@ export default function Logo({ size = 32, className = '', variant = 'full' }: Lo
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={variant === 'icon' ? className : ''}
-      aria-label="NeuraMail logo"
+      aria-label="NeuraLeads logo"
     >
       <defs>
         <linearGradient id={iconId} x1="0%" y1="0%" x2="100%" y2="100%">

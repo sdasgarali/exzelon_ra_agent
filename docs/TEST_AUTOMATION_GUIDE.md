@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide provides instructions for running the automated test suite for the Exzelon RA Cold-Email Automation System.
+This guide provides instructions for running the automated test suite for the NeuraLeads AI Agent.
 
 ## Prerequisites
 

@@ -1,4 +1,4 @@
-# Exzelon RA Cold-Email Automation System - Testing Plan
+# NeuraLeads AI Agent - Testing Plan
 
 ## Document Information
 - **Version**: 1.0
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-This document outlines the comprehensive testing strategy for the Exzelon RA Cold-Email Automation System. The testing covers all modules including lead sourcing, contact enrichment, email validation, outreach management, and the admin panel.
+This document outlines the comprehensive testing strategy for the NeuraLeads AI Agent. The testing covers all modules including lead sourcing, contact enrichment, email validation, outreach management, and the admin panel.
 
 ## 2. Test Scope
 

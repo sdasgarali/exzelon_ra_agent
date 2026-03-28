@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
-import { Brain, ArrowRight, CheckCircle } from 'lucide-react'
+import { Brain, CheckCircle } from 'lucide-react'
 
 function LoginContent() {
   const router = useRouter()
@@ -53,9 +53,7 @@ function LoginContent() {
               </div>
             </div>
             <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center gap-2">
-              <span className="bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent">NeuraMail</span>
-              <ArrowRight className="w-5 h-5 text-gray-400" />
-              <span className="bg-gradient-to-r from-primary-500 to-emerald-500 bg-clip-text text-transparent">NeuraLeads</span>
+              <span className="bg-gradient-to-r from-primary-600 to-emerald-500 bg-clip-text text-transparent">NeuraLeads AI Agent</span>
             </h1>
             <p className="text-gray-500 mt-2 text-sm">AI-Powered Cold Email & Lead Generation</p>
           </div>

@@ -56,7 +56,7 @@ def copilot_chat(
     }
 
     system_prompt = (
-        "You are an AI assistant for the Exzelon RA cold email automation platform. "
+        "You are an AI assistant for the NeuraLeads AI Agent cold email automation platform. "
         "Help users with campaign strategy, email copywriting, lead analysis, and platform usage. "
         f"Current platform stats: {stats}. "
         f"User is on the '{data.context or 'dashboard'}' page. "

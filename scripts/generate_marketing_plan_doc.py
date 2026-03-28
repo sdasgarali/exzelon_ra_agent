@@ -42,7 +42,7 @@ def main():
     doc = Document()
 
     # Title
-    title = doc.add_heading('Exzelon RA — Commercial Marketing Website Plan', level=0)
+    title = doc.add_heading('NeuraLeads AI — Commercial Marketing Website Plan', level=0)
     for run in title.runs:
         run.font.color.rgb = RGBColor(0x0A, 0x0E, 0x27)
     doc.add_paragraph('Comprehensive plan for the high-conversion, SEO-optimized commercial marketing website.')
@@ -51,7 +51,7 @@ def main():
     # ─── Overview ───
     add_heading(doc, '1. Overview')
     doc.add_paragraph(
-        'Build a high-conversion, SEO-optimized commercial marketing website for Exzelon RA Agent within '
+        'Build a high-conversion, SEO-optimized commercial marketing website for NeuraLeads AI Agent within '
         'the existing Next.js 14 frontend. The site features animated landing pages, pricing tiers, feature '
         'showcases, and competitor comparisons — all designed to beat Instantly.ai, Smartlead, and Lemlist.'
     )
@@ -72,8 +72,8 @@ def main():
     )
     doc.add_paragraph('')
 
-    # ─── Exzelon Advantages ───
-    add_heading(doc, '3. Exzelon Advantages')
+    # ─── NeuraLeads Advantages ───
+    add_heading(doc, '3. NeuraLeads Advantages')
     advantages = [
         'Feature Score: 135/150 (90%) vs Instantly 131/150 (87%) — beats #1 competitor',
         'Self-hosted: Full data ownership, no per-seat fees',
@@ -171,7 +171,7 @@ def main():
         doc.add_paragraph(f, style='List Bullet')
 
     add_heading(doc, '5.4 Comparison Page (/compare)', level=2)
-    doc.add_paragraph('Full feature-by-feature comparison: Exzelon vs Instantly vs Smartlead vs Lemlist.')
+    doc.add_paragraph('Full feature-by-feature comparison: NeuraLeads vs Instantly vs Smartlead vs Lemlist.')
     doc.add_paragraph('8 categories with expandable rows, score badges, and total score summary.')
 
     # ─── SEO Strategy ───

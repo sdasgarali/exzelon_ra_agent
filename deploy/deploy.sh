@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Exzelon RA Agent — Self-Contained Production Deployment Script
+# NeuraLeads AI Agent — Self-Contained Production Deployment Script
 # =============================================================================
 # Target: Ubuntu 24.04 VPS at 187.124.74.175
 # Domain: ra.partnerwithus.tech
@@ -271,7 +271,7 @@ summary() {
 # ---------------------------------------------------------------------------
 main() {
     echo "=============================================="
-    echo " Exzelon RA Agent — Production Deploy"
+    echo " NeuraLeads AI Agent — Production Deploy"
     echo " $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo "=============================================="
 

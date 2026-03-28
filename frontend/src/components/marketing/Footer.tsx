@@ -65,7 +65,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="mt-16 pt-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-slate-600 text-sm">
-            &copy; {new Date().getFullYear()} NeuraMail. All rights reserved.
+            &copy; {new Date().getFullYear()} NeuraLeads. All rights reserved.
           </p>
           <div className="flex items-center gap-6">
             <Link href="/" className="text-slate-600 hover:text-slate-400 transition-colors text-sm">

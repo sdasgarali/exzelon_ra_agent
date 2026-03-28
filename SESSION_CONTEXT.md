@@ -1,7 +1,7 @@
-# Exzelon RA Cold-Email Automation System - Session Context
+# NeuraLeads AI Agent - Session Context
 
 ## Project Overview
-Building a complete Cold-Email Automation System for Exzelon Research Analysts with:
+Building a complete Cold-Email Automation System for NeuraLeads AI with:
 - Lead sourcing from job boards
 - Contact discovery and enrichment
 - Email validation

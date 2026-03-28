@@ -1,5 +1,5 @@
 [Unit]
-Description=Exzelon RA Agent — FastAPI Backend (uvicorn)
+Description=NeuraLeads AI Agent — FastAPI Backend (uvicorn)
 After=network.target mysql.service redis-server.service
 Wants=mysql.service redis-server.service
 

@@ -5,10 +5,10 @@ import ScrollReveal from '@/components/marketing/ScrollReveal'
 
 export const metadata: Metadata = {
   title: 'Compare',
-  description: 'Side-by-side comparison of NeuraMail vs leading cold email platforms. See scores across 8 categories and 50+ features.',
+  description: 'Side-by-side comparison of NeuraLeads vs leading cold email platforms. See scores across 8 categories and 50+ features.',
   openGraph: {
-    title: 'NeuraMail vs Leading Outreach Platforms',
-    description: 'Feature-by-feature comparison. NeuraMail scores 135/150 vs top competitors.',
+    title: 'NeuraLeads vs Leading Outreach Platforms',
+    description: 'Feature-by-feature comparison. NeuraLeads scores 135/150 vs top competitors.',
   },
 }
 
@@ -20,7 +20,7 @@ export default function ComparePage() {
         <div className="max-w-4xl mx-auto text-center">
           <ScrollReveal>
             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
-              NeuraMail vs. The Competition
+              NeuraLeads vs. The Competition
             </h1>
             <p className="text-lg text-slate-400 max-w-2xl mx-auto">
               See how we compare against the top outreach platforms
@@ -40,7 +40,7 @@ export default function ComparePage() {
         <div className="max-w-4xl mx-auto">
           <ScrollReveal>
             <h2 className="text-3xl font-bold text-white text-center mb-12">
-              Why Teams Switch to NeuraMail
+              Why Teams Switch to NeuraLeads
             </h2>
           </ScrollReveal>
 

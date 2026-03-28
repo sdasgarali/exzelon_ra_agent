@@ -1,4 +1,4 @@
-# Exzelon RA Cold-Email Automation System
+# NeuraLeads AI Agent
 # Complete SOP & Internal Working Mechanism Documentation
 # Version 2.0 | Last Updated: February 2026
 
@@ -29,7 +29,7 @@
 
 ### 1.1 Architecture
 
-The Exzelon RA Cold-Email Automation System automates the complete cold outreach pipeline for staffing/recruitment services. It targets non-IT industries (manufacturing, logistics, healthcare, etc.) by discovering job postings, enriching contacts, validating emails, and managing outreach with enterprise-grade mailbox warmup.
+The NeuraLeads AI Agent automates the complete cold outreach pipeline for staffing/recruitment services. It targets non-IT industries (manufacturing, logistics, healthcare, etc.) by discovering job postings, enriching contacts, validating emails, and managing outreach with enterprise-grade mailbox warmup.
 
 **Technology Stack:**
 - **Backend:** FastAPI (Python 3.12+), SQLAlchemy ORM, APScheduler
@@ -987,4 +987,4 @@ frontend/src/
 
 *Document generated on February 12, 2026*
 *System Version: 2.0*
-*Exzelon Research Analyst Cold-Email Automation*
+*NeuraLeads AI Agent*

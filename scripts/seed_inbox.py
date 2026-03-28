@@ -30,13 +30,13 @@ threads = [
         "sentiment": "positive",
         "messages": [
             {"direction": "sent", "subject": "Staffing Solutions for Acme Corp",
-             "body": "Hi Sarah,\n\nI noticed Acme Corp is hiring for several IT positions. We specialize in connecting companies with top-tier talent.\n\nWould you be open to a quick call this week?\n\nBest regards,\nExzelon Team",
+             "body": "Hi Sarah,\n\nI noticed Acme Corp is hiring for several IT positions. We specialize in connecting companies with top-tier talent.\n\nWould you be open to a quick call this week?\n\nBest regards,\nNeuraLeads Team",
              "hours_ago": 48},
             {"direction": "received", "subject": "Re: Staffing Solutions for Acme Corp",
              "body": "Hi there,\n\nThanks for reaching out! We are indeed looking for qualified candidates. I would love to learn more about your services.\n\nCan we schedule a call for Thursday at 2pm EST?\n\nBest,\nSarah Johnson\nHR Director, Acme Corp",
              "hours_ago": 24},
             {"direction": "sent", "subject": "Re: Staffing Solutions for Acme Corp",
-             "body": "Hi Sarah,\n\nThursday at 2pm EST works perfectly. I will send a calendar invite shortly.\n\nLooking forward to speaking with you!\n\nBest,\nExzelon Team",
+             "body": "Hi Sarah,\n\nThursday at 2pm EST works perfectly. I will send a calendar invite shortly.\n\nLooking forward to speaking with you!\n\nBest,\nNeuraLeads Team",
              "hours_ago": 23},
         ],
     },
@@ -49,7 +49,7 @@ threads = [
         "sentiment": "negative",
         "messages": [
             {"direction": "sent", "subject": "Partnership Opportunity - GlobalTech",
-             "body": "Hi Michael,\n\nI wanted to introduce Exzelon RA and how we can help GlobalTech fill your open engineering positions faster.\n\nWould you be interested in learning more?\n\nBest,\nExzelon Team",
+             "body": "Hi Michael,\n\nI wanted to introduce NeuraLeads AI and how we can help GlobalTech fill your open engineering positions faster.\n\nWould you be interested in learning more?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 72},
             {"direction": "received", "subject": "Re: Partnership Opportunity - GlobalTech",
              "body": "Hi,\n\nThanks but we already have an in-house recruiting team and are not looking for external help at this time.\n\nPlease remove me from your mailing list.\n\nRegards,\nMichael Chen\nVP Engineering",
@@ -65,7 +65,7 @@ threads = [
         "sentiment": "neutral",
         "messages": [
             {"direction": "sent", "subject": "Talent Acquisition for BrightPath",
-             "body": "Hi Emily,\n\nI see BrightPath is expanding rapidly. We would love to help you find the right people.\n\nCan we connect this week?\n\nBest,\nExzelon Team",
+             "body": "Hi Emily,\n\nI see BrightPath is expanding rapidly. We would love to help you find the right people.\n\nCan we connect this week?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 30},
             {"direction": "received", "subject": "Out of Office: Re: Talent Acquisition for BrightPath",
              "body": "Thank you for your email. I am currently out of the office until March 15th with limited access to email.\n\nFor urgent matters, please contact my colleague James Wilson at jwilson@brightpath.com.\n\nI will respond to your message upon my return.\n\nBest regards,\nEmily Rodriguez",
@@ -81,7 +81,7 @@ threads = [
         "sentiment": "neutral",
         "messages": [
             {"direction": "sent", "subject": "Recruiting Services - Innovate Inc",
-             "body": "Hi David,\n\nI noticed Innovate Inc has multiple open positions. We can help you fill them with qualified candidates.\n\nWould you like to discuss?\n\nBest,\nExzelon Team",
+             "body": "Hi David,\n\nI noticed Innovate Inc has multiple open positions. We can help you fill them with qualified candidates.\n\nWould you like to discuss?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 60},
             {"direction": "received", "subject": "Re: Recruiting Services - Innovate Inc",
              "body": "Hi,\n\nInteresting timing. We are struggling to find senior developers.\n\nA few questions:\n1. What industries do you specialize in?\n2. What is your typical placement fee?\n3. Do you offer any guarantees on placements?\n\nThanks,\nDavid Park\nCTO, Innovate Inc",
@@ -97,7 +97,7 @@ threads = [
         "sentiment": "positive",
         "messages": [
             {"direction": "sent", "subject": "Staffing Solutions for Nexus Group",
-             "body": "Hi Lisa,\n\nI wanted to reach out about how Exzelon RA can support Nexus Group hiring goals.\n\nBest,\nExzelon Team",
+             "body": "Hi Lisa,\n\nI wanted to reach out about how NeuraLeads AI can support Nexus Group hiring goals.\n\nBest,\nNeuraLeads Team",
              "hours_ago": 96},
             {"direction": "received", "subject": "Re: Staffing Solutions for Nexus Group",
              "body": "Hi,\n\nI appreciate the outreach. I am not the right person for this, but I think you should talk to our Head of HR, Karen Mitchell.\n\nHer email is kmitchell@nexusgroup.co. Please tell her I referred you.\n\nBest,\nLisa Thompson\nOperations Director",
@@ -113,7 +113,7 @@ threads = [
         "sentiment": "negative",
         "messages": [
             {"direction": "sent", "subject": "Open Positions at TechForge",
-             "body": "Hi Robert,\n\nI see TechForge is hiring for backend engineers. We can help!\n\nBest,\nExzelon Team",
+             "body": "Hi Robert,\n\nI see TechForge is hiring for backend engineers. We can help!\n\nBest,\nNeuraLeads Team",
              "hours_ago": 120},
             {"direction": "received", "subject": "Re: Open Positions at TechForge",
              "body": "STOP EMAILING ME. I have asked multiple times to be removed from your list. If I receive another email I will report this as spam.\n\nDo NOT contact me again.",
@@ -129,7 +129,7 @@ threads = [
         "sentiment": "positive",
         "messages": [
             {"direction": "sent", "subject": "Cloud Nine - Talent Solutions",
-             "body": "Hi Amanda,\n\nCloud Nine is growing fast - congrats! We help companies like yours find top engineering talent.\n\nInterested in learning more?\n\nBest,\nExzelon Team",
+             "body": "Hi Amanda,\n\nCloud Nine is growing fast - congrats! We help companies like yours find top engineering talent.\n\nInterested in learning more?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 8},
             {"direction": "received", "subject": "Re: Cloud Nine - Talent Solutions",
              "body": "Hi!\n\nYes, absolutely! We are desperately looking for DevOps engineers and full-stack developers. Our internal recruiting team is overwhelmed.\n\nCan you send me your pricing and a brief about your process?\n\nThanks!\nAmanda Foster\nVP People, Cloud Nine",
@@ -145,7 +145,7 @@ threads = [
         "sentiment": None,
         "messages": [
             {"direction": "sent", "subject": "DataPulse Hiring Needs",
-             "body": "Hi James,\n\nI see DataPulse has open data science roles. We can help connect you with qualified candidates.\n\nWant to chat?\n\nBest,\nExzelon Team",
+             "body": "Hi James,\n\nI see DataPulse has open data science roles. We can help connect you with qualified candidates.\n\nWant to chat?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 4},
         ],
     },
@@ -158,7 +158,7 @@ threads = [
         "sentiment": "positive",
         "messages": [
             {"direction": "sent", "subject": "Recruitment Support for Quantum Leap",
-             "body": "Hi Patricia,\n\nQuantum Leap is making waves in quantum computing. Need help building your team?\n\nBest,\nExzelon Team",
+             "body": "Hi Patricia,\n\nQuantum Leap is making waves in quantum computing. Need help building your team?\n\nBest,\nNeuraLeads Team",
              "hours_ago": 16},
             {"direction": "received", "subject": "Re: Recruitment Support for Quantum Leap",
              "body": "Hello,\n\nThis is interesting. We have been having trouble finding quantum computing specialists.\n\nDo you have access to candidates with quantum computing experience? What is your typical time-to-fill for niche roles?\n\nPatricia Lee\nChief People Officer",
@@ -174,7 +174,7 @@ threads = [
         "sentiment": "neutral",
         "messages": [
             {"direction": "sent", "subject": "Talent Solutions for StartupHub Portfolio",
-             "body": "Hi Kevin,\n\nAs a VC, you likely have portfolio companies that need talent. We can help!\n\nBest,\nExzelon Team",
+             "body": "Hi Kevin,\n\nAs a VC, you likely have portfolio companies that need talent. We can help!\n\nBest,\nNeuraLeads Team",
              "hours_ago": 40},
             {"direction": "received", "subject": "Re: Talent Solutions for StartupHub Portfolio",
              "body": "Hi,\n\nThanks for reaching out. Let me loop in a few of our portfolio company founders who might benefit from this.\n\nI will get back to you next week.\n\nKevin Brown\nPartner, StartupHub VC",

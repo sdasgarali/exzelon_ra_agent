@@ -405,7 +405,7 @@ export default function TemplatesPage() {
                   <div><code>{'{{job_location}}'}</code> — Job location</div>
                   <div><code>{'{{company_name}}'}</code> — Company name</div>
                   <div><code>{'{{signature}}'}</code> — Mailbox email signature</div>
-                  <div><code>{'{{logo_url}}'}</code> — Exzelon logo URL</div>
+                  <div><code>{'{{logo_url}}'}</code> — Company logo URL</div>
                 </div>
               </div>
             </div>

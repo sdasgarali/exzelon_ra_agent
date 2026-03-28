@@ -1,5 +1,5 @@
 """
-Generate SME Q&A Document for Exzelon RA Agent
+Generate SME Q&A Document for NeuraLeads AI Agent
 Creates a professional .docx with detailed answers to 6 key business questions.
 """
 
@@ -99,7 +99,7 @@ def create_document():
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run('Exzelon RA Agent')
+    run = title.add_run('NeuraLeads AI Agent')
     run.font.size = Pt(28)
     run.bold = True
     run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
@@ -121,7 +121,7 @@ def create_document():
 
     meta_items = [
         ('Document Type', 'Subject Matter Expert (SME) Q&A Assessment'),
-        ('System', 'Exzelon RA Agent — Cold Email Outreach Automation Platform'),
+        ('System', 'NeuraLeads AI Agent — Cold Email Outreach Automation Platform'),
         ('Version', '1.0'),
         ('Date', datetime.now().strftime('%B %d, %Y')),
         ('Classification', 'Internal — Stakeholder Reference'),
@@ -912,7 +912,7 @@ def create_document():
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run('Exzelon RA Agent — SME Technical Assessment & Strategic Guidance')
+    run = p.add_run('NeuraLeads AI Agent — SME Technical Assessment & Strategic Guidance')
     run.font.size = Pt(8)
     run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 

@@ -1,4 +1,4 @@
-# Exzelon RA Cold-Email Automation System
+# NeuraLeads AI Agent
 
 A production-ready cold-email automation system for Research Analysts to identify hiring companies, enrich contacts, validate emails, and manage outreach campaigns.
 

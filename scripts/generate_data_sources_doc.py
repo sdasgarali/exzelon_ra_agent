@@ -1,5 +1,5 @@
 """
-Generate New Data Sources Assessment Document for Exzelon RA Agent.
+Generate New Data Sources Assessment Document for NeuraLeads AI Agent.
 Creates a professional .docx with profiles for all 10 new data source adapters.
 """
 
@@ -259,7 +259,7 @@ def create_document():
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run('Exzelon RA Agent')
+    run = title.add_run('NeuraLeads AI Agent')
     run.font.size = Pt(28)
     run.bold = True
     run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
@@ -306,7 +306,7 @@ def create_document():
 
     doc.add_paragraph(
         'This document assesses 10 new external data providers for integration into the '
-        'Exzelon RA Agent platform. These providers expand the platform\'s data coverage across '
+        'NeuraLeads AI Agent platform. These providers expand the platform\'s data coverage across '
         'three categories: job sources (3), contact discovery (5), and company enrichment (2).'
     )
 
@@ -474,7 +474,7 @@ def create_document():
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run('Exzelon RA Agent \u2014 New Data Sources Assessment')
+    run = p.add_run('NeuraLeads AI Agent \u2014 New Data Sources Assessment')
     run.font.size = Pt(8)
     run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 

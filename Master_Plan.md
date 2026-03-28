@@ -1,7 +1,7 @@
-# Master Plan - Exzelon RA Cold-Email Automation System
+# Master Plan - NeuraLeads AI Agent
 
 ## Vision
-Fully automated cold-email outreach system for Exzelon Research Analysts targeting non-IT industries (manufacturing, logistics, healthcare, etc.). The system discovers job postings, enriches contacts, validates emails, and manages outreach campaigns with enterprise-grade mailbox warmup and deliverability management.
+Fully automated cold-email outreach system for NeuraLeads AI targeting non-IT industries (manufacturing, logistics, healthcare, etc.). The system discovers job postings, enriches contacts, validates emails, and manages outreach campaigns with enterprise-grade mailbox warmup and deliverability management.
 
 ---
 

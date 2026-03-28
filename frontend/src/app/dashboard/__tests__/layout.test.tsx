@@ -61,7 +61,7 @@ describe('DashboardLayout', () => {
       render(<DashboardLayout><div>Test Content</div></DashboardLayout>)
     })
     await waitFor(() => {
-      expect(screen.getAllByText('Exzelon RA').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('NeuraLeads').length).toBeGreaterThanOrEqual(1)
     })
   })
 

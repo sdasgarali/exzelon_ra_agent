@@ -144,7 +144,7 @@ export default function ComparisonTable({ compact = false }: { compact?: boolean
       <ScrollReveal>
         <div className="grid grid-cols-4 gap-4 max-w-3xl mx-auto mb-12">
           {[
-            { name: 'NeuraMail', score: totalScores.exzelon, max: categories.length * 10, highlight: true },
+            { name: 'NeuraLeads', score: totalScores.exzelon, max: categories.length * 10, highlight: true },
             { name: 'Flat-Fee Tool', score: totalScores.instantly, max: categories.length * 10 },
             { name: 'Warmup Tool', score: totalScores.smartlead, max: categories.length * 10 },
             { name: 'Per-Seat Tool', score: totalScores.lemlist, max: categories.length * 10 },
@@ -167,7 +167,7 @@ export default function ComparisonTable({ compact = false }: { compact?: boolean
               <thead>
                 <tr className="border-b border-white/5">
                   <th className="text-left px-4 md:px-6 py-4 text-slate-400 text-xs md:text-sm font-medium">Category</th>
-                  <th className="px-4 md:px-6 py-4 text-xs md:text-sm font-semibold text-primary-400 text-center">NeuraMail</th>
+                  <th className="px-4 md:px-6 py-4 text-xs md:text-sm font-semibold text-primary-400 text-center">NeuraLeads</th>
                   <th className="px-4 md:px-6 py-4 text-xs md:text-sm font-medium text-slate-400 text-center">Flat-Fee Tool</th>
                   <th className="px-4 md:px-6 py-4 text-xs md:text-sm font-medium text-slate-400 text-center hidden md:table-cell">Warmup Tool</th>
                   <th className="px-4 md:px-6 py-4 text-xs md:text-sm font-medium text-slate-400 text-center hidden md:table-cell">Per-Seat Tool</th>

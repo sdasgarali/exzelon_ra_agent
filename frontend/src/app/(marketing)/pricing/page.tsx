@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: 'Pricing',
   description: 'Simple, transparent pricing with no per-seat fees. Start at $49/mo for your entire team. Save 70-90% compared to leading outreach platforms.',
   openGraph: {
-    title: 'Pricing — NeuraMail',
+    title: 'Pricing — NeuraLeads',
     description: 'Flat-fee pricing starting at $49/mo. No per-seat charges. 14-day free trial.',
   },
 }
@@ -24,11 +24,11 @@ const pricingFAQ = [
   },
   {
     question: 'What does "self-hosted" mean?',
-    answer: 'With the Enterprise plan, you can deploy NeuraMail on your own servers. This gives you full control over your data, compliance with your security policies, and no dependency on our infrastructure.',
+    answer: 'With the Enterprise plan, you can deploy NeuraLeads on your own servers. This gives you full control over your data, compliance with your security policies, and no dependency on our infrastructure.',
   },
   {
     question: 'Are there per-seat fees?',
-    answer: 'No. Unlike per-seat competitors that charge $49-$69 per user per month, NeuraMail charges a flat monthly fee. Add as many team members as your plan allows at no extra cost.',
+    answer: 'No. Unlike per-seat competitors that charge $49-$69 per user per month, NeuraLeads charges a flat monthly fee. Add as many team members as your plan allows at no extra cost.',
   },
   {
     question: 'What happens if I exceed my daily email limit?',
@@ -40,7 +40,7 @@ const pricingFAQ = [
   },
   {
     question: 'Can I use my own email providers (Gmail, Outlook, etc.)?',
-    answer: 'Absolutely. NeuraMail works with any SMTP-compatible email provider including Gmail, Outlook, and custom domains. Connect as many mailboxes as your plan allows.',
+    answer: 'Absolutely. NeuraLeads works with any SMTP-compatible email provider including Gmail, Outlook, and custom domains. Connect as many mailboxes as your plan allows.',
   },
   {
     question: 'What kind of support do you offer?',

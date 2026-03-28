@@ -12,7 +12,7 @@ export default function ROICalculator() {
   const savings = useMemo(() => {
     // Competitor cost estimate: per-seat tools ~ $79/seat/mo average
     const competitorCost = teamSize * 79 + Math.ceil(emailsPerDay / 500) * 20
-    // NeuraMail cost: flat fee, no per-seat
+    // NeuraLeads cost: flat fee, no per-seat
     const exzelonCost = emailsPerDay <= 500 ? 49 : emailsPerDay <= 2500 ? 99 : 199
     const monthlySaving = Math.max(0, (currentCost || competitorCost) - exzelonCost)
     const yearlySaving = monthlySaving * 12
@@ -30,7 +30,7 @@ export default function ROICalculator() {
               Calculate Your Savings
             </h2>
             <p className="text-slate-400 text-lg">
-              See how much you could save by switching to NeuraMail.
+              See how much you could save by switching to NeuraLeads.
             </p>
           </div>
         </ScrollReveal>
@@ -92,7 +92,7 @@ export default function ROICalculator() {
               <div className="flex flex-col justify-center">
                 <div className="space-y-4">
                   <div className="flex justify-between items-center py-3 border-b border-white/5">
-                    <span className="text-slate-400 text-sm">NeuraMail cost</span>
+                    <span className="text-slate-400 text-sm">NeuraLeads cost</span>
                     <span className="text-white font-semibold text-lg">${savings.exzelonCost}/mo</span>
                   </div>
                   <div className="flex justify-between items-center py-3 border-b border-white/5">

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: 'Features',
   description: 'Explore all features: 10 lead sources, 7 contact providers, multi-step campaigns, AI content generation, unified inbox, CRM deals, warmup engine, and analytics.',
   openGraph: {
-    title: 'Features — NeuraMail',
+    title: 'Features — NeuraLeads',
     description: 'Complete outreach platform features. Lead sourcing, campaigns, inbox, CRM, warmup, analytics.',
   },
 }

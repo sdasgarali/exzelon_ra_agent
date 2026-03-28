@@ -1,6 +1,6 @@
 # Microsoft 365 SMTP Configuration Guide
 
-This guide explains how to configure Microsoft 365 for sending emails via SMTP in the Exzelon RA system.
+This guide explains how to configure Microsoft 365 for sending emails via SMTP in the NeuraLeads system.
 
 ## Table of Contents
 
@@ -250,7 +250,7 @@ If MFA/2FA is enabled on sender accounts, regular passwords won't work for SMTP.
    - Click **Add**
 
 4. **Name and Create**
-   - Enter a name like `SMTP` or `Exzelon RA`
+   - Enter a name like `SMTP` or `NeuraLeads`
    - Click **Next** or **Create**
 
 5. **Copy the Password**
@@ -358,7 +358,7 @@ Conditional Access policies can take **5-15 minutes** to take effect.
 
 ---
 
-## Step 5: Configure in Exzelon RA System
+## Step 5: Configure in NeuraLeads System
 
 ### Settings Page Configuration
 
@@ -551,7 +551,7 @@ Use this checklist to verify your configuration:
 | Recipients per message | 500 |
 | Messages per day | No specific limit |
 
-### Exzelon RA System Limits
+### NeuraLeads System Limits
 
 | Setting | Default Value | Location |
 |---------|---------------|----------|

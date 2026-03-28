@@ -1,4 +1,4 @@
-"""Comprehensive API Test Suite for Exzelon RA Cold-Email Automation System."""
+"""Comprehensive API Test Suite for NeuraLeads AI Cold-Email Automation System."""
 import requests
 import json
 from datetime import datetime
@@ -709,7 +709,7 @@ def test_e2e_workflow():
 
 def main():
     print("\n" + "="*70)
-    print("EXZELON RA COLD-EMAIL AUTOMATION SYSTEM - COMPREHENSIVE TEST SUITE")
+    print("NEURALEADS AI COLD-EMAIL AUTOMATION SYSTEM - COMPREHENSIVE TEST SUITE")
     print("="*70)
     print(f"Test Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Base URL: {BASE_URL}")

@@ -1,4 +1,4 @@
-# Deployment Guide — Exzelon RA Cold-Email Automation
+# Deployment Guide ï¿½ NeuraLeads AI Agent
 
 > **Last updated:** 2026-02-28
 
@@ -255,9 +255,9 @@ docker compose -f docker-compose.prod.yml logs -f
 | `DB_PORT`                     | Yes      | `3306`                            | MySQL port                                     |
 | `DB_NAME`                     | Yes      | `cold_email_ai_agent`            | Database name                                  |
 | `DB_USER`                     | Yes      | `root`                            | Database user                                  |
-| `DB_PASSWORD`                 | Yes      | —                                 | Database password                              |
-| `SECRET_KEY`                  | Yes      | —                                 | JWT signing key (32+ chars)                    |
-| `ENCRYPTION_KEY`              | Yes      | —                                 | Field-level encryption key                     |
+| `DB_PASSWORD`                 | Yes      | ï¿½                                 | Database password                              |
+| `SECRET_KEY`                  | Yes      | ï¿½                                 | JWT signing key (32+ chars)                    |
+| `ENCRYPTION_KEY`              | Yes      | ï¿½                                 | Field-level encryption key                     |
 | `CORS_ORIGINS`                | Yes      | `*`                               | Comma-separated allowed origins                |
 | `CONTACT_PROVIDER`            | No       | `apollo`                          | Contact discovery: `apollo`, `seamless`, `mock`|
 | `EMAIL_VALIDATION_PROVIDER`   | No       | `mock`                            | Email validator: `neverbounce`, `zerobounce`, etc. |
@@ -265,9 +265,9 @@ docker compose -f docker-compose.prod.yml logs -f
 | `DAILY_SEND_LIMIT`            | No       | `30`                              | Max emails per mailbox per day                 |
 | `COOLDOWN_DAYS`               | No       | `10`                              | Days between emails to same contact            |
 | `JOB_SOURCES`                 | No       | `apollo`                          | Comma-separated job sources                    |
-| `JSEARCH_API_KEY`             | No       | —                                 | JSearch API key (if using JSearch source)       |
-| `GROQ_API_KEY`                | No       | —                                 | Groq AI API key for content generation         |
-| `OPENAI_API_KEY`              | No       | —                                 | OpenAI API key (alternative AI provider)       |
+| `JSEARCH_API_KEY`             | No       | ï¿½                                 | JSearch API key (if using JSearch source)       |
+| `GROQ_API_KEY`                | No       | ï¿½                                 | Groq AI API key for content generation         |
+| `OPENAI_API_KEY`              | No       | ï¿½                                 | OpenAI API key (alternative AI provider)       |
 | `NEXT_PUBLIC_API_URL`         | No       | `http://localhost:8000/api/v1`    | Frontend API base URL                          |
 
 ---

@@ -1,1 +1,1 @@
-"""Exzelon RA Cold-Email Automation System."""
+"""NeuraLeads AI Agent — Cold-Email Automation System."""

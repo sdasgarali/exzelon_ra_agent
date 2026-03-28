@@ -1,4 +1,4 @@
-"""Generate Instantly.ai vs Exzelon RA Agent comparison document V3 (.docx).
+"""Generate Instantly.ai vs NeuraLeads AI Agent comparison document V3 (.docx).
 
 V3 update: Reflects all Beat Instantly Phase 5 features, automation control center,
 waterfall enrichment, IMAP read emulation, AI copilot, AI ICP wizard, AI sequence
@@ -108,7 +108,7 @@ def generate():
     for _ in range(4):
         doc.add_paragraph()
 
-    title = doc.add_heading("Instantly.ai vs Exzelon RA Agent", level=0)
+    title = doc.add_heading("Instantly.ai vs NeuraLeads AI Agent", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in title.runs:
         run.font.size = Pt(28)
@@ -122,7 +122,7 @@ def generate():
     doc.add_paragraph()
     meta = doc.add_paragraph()
     meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = meta.add_run("Prepared for: Exzelon AI Operations Team\nMarch 2026")
+    run = meta.add_run("Prepared for: NeuraLeads AI Operations Team\nMarch 2026")
     run.font.size = Pt(12)
     run.font.color.rgb = RGBColor.from_string(GRAY)
 
@@ -164,13 +164,13 @@ def generate():
     doc.add_heading("1. Executive Summary & Overall Scorecard", level=1)
 
     doc.add_paragraph(
-        "This V3 update reflects the complete state of Exzelon RA Agent after all 5 development "
+        "This V3 update reflects the complete state of NeuraLeads AI Agent after all 5 development "
         "phases and the Automation Control Center implementation. Since V2, 7 additional gaps have "
         "been closed: custom tracking domains, spam word checker, AI ICP wizard, AI sequence generator, "
         "AI copilot chat, IMAP read emulation, waterfall contact enrichment, AI NLP lead search, "
         "deal task management, bidirectional CRM sync, team analytics, revenue/ROI analytics, "
         "saved searches/smart lists, health-aware mailbox selection, and automation job controls. "
-        "Exzelon now scores 135/150 (90%) vs Instantly's 131/150 (87%), maintaining a 4-point lead."
+        "NeuraLeads now scores 135/150 (90%) vs Instantly's 131/150 (87%), maintaining a 4-point lead."
     )
 
     doc.add_heading("Overall Score by Category", level=2)
@@ -195,7 +195,7 @@ def generate():
     ]
 
     add_comparison_table(doc,
-        ["Category", "Instantly.ai (/10)", "Exzelon RA (/10)", "Gap", "Priority"],
+        ["Category", "Instantly.ai (/10)", "NeuraLeads AI (/10)", "Gap", "Priority"],
         [
             [cat, f"{i}/10", f"{e}/10",
              f"{i - e} pts behind" if i > e else ("Ahead by {0}".format(e - i) if e > i else "Parity"),
@@ -213,7 +213,7 @@ def generate():
     run.bold = True
     run.font.size = Pt(12)
     run.font.color.rgb = RGBColor.from_string(BLUE)
-    run = p.add_run(f"Exzelon RA {exzelon_total}/{max_total} ({exzelon_total*100//max_total}%)")
+    run = p.add_run(f"NeuraLeads AI {exzelon_total}/{max_total} ({exzelon_total*100//max_total}%)")
     run.bold = True
     run.font.size = Pt(12)
     run.font.color.rgb = RGBColor.from_string(GREEN)
@@ -223,9 +223,9 @@ def generate():
     run = p.add_run("V3 Improvement: ")
     run.bold = True
     p.add_run(
-        f"Exzelon moved from 126/140 (V2) to {exzelon_total}/{max_total} (V3) with "
+        f"NeuraLeads moved from 126/140 (V2) to {exzelon_total}/{max_total} (V3) with "
         "a new Automation & Operations category. 7 former gaps are now closed. "
-        "Exzelon leads in 6 categories, ties in 5, and trails in 3 (Campaign -1, Integrations -1, "
+        "NeuraLeads leads in 6 categories, ties in 5, and trails in 3 (Campaign -1, Integrations -1, "
         "Mailbox -1). Agency/White-Label remains the only CRITICAL gap (-8 points)."
     )
 
@@ -237,7 +237,7 @@ def generate():
     doc.add_heading("2. Platform Overview", level=1)
 
     add_comparison_table(doc,
-        ["Aspect", "Instantly.ai", "Exzelon RA Agent"],
+        ["Aspect", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Type", "SaaS (cloud-hosted)", "Self-hosted (VPS)"],
             ["Target Market", "Sales teams, agencies, marketers", "Recruitment/staffing agencies"],
@@ -263,7 +263,7 @@ def generate():
     doc.add_heading("3. Lead Database & Sourcing", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["B2B Contact Database", "[YES] 450M+ verified contacts", "[NO] No built-in database; sources from job boards via APIs"],
             ["Lead Search Filters", "[YES] 13+ filters (title, industry, location, revenue, tech stack, funding, seniority)", "[PARTIAL] Title, industry, location, salary, state. No revenue/tech stack/funding filters"],
@@ -293,7 +293,7 @@ def generate():
     doc.add_heading("4. Email Warmup & Deliverability", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Warmup Network Size", "[YES] 4.2M+ accounts in private network", "[PARTIAL] Peer-to-peer between owned mailboxes (limited pool)"],
             ["Unlimited Warmup", "[YES] Unlimited warmup on all plans", "[YES] Unlimited warmup for configured mailboxes"],
@@ -325,7 +325,7 @@ def generate():
     doc.add_heading("5. Campaign Management & Outreach", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Multi-Step Sequences", "[YES] Drag-and-drop multi-step email sequences", "[YES] Multi-step sequences with email, wait, and condition steps"],
             ["Subsequences", "[YES] Conditional follow-ups based on open/click/reply", "[YES] Condition branching on opened/clicked/replied/no_action with configurable windows"],
@@ -359,7 +359,7 @@ def generate():
     doc.add_heading("6. AI Features", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["AI Copilot", "[YES] Built-in assistant for campaign strategy, ICP, analytics", "[YES] Conversational AI copilot (POST /copilot/chat) with platform context, campaign strategy help"],
             ["AI Sequence Generator", "[YES] Creates complete multi-step sequences with variables and spintax", "[YES] AI multi-step sequence generation (2-6 steps) with configurable tone + template fallback"],
@@ -386,7 +386,7 @@ def generate():
     doc.add_heading("7. Unified Inbox & Reply Management", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Unified Inbox (Unibox)", "[YES] Centralized master inbox across unlimited accounts", "[YES] Centralized inbox_messages table syncing sent/received across all mailboxes"],
             ["AI Sentiment Analysis", "[YES] GPT-4 powered reply categorization", "[YES] Rule-based + LLM fallback with positive/negative/neutral sentiment + confidence"],
@@ -406,7 +406,7 @@ def generate():
     doc.add_heading("8. CRM & Deal Management", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Visual Pipeline (Kanban)", "[YES] Kanban-style deal pipeline with custom stages", "[YES] Kanban pipeline with 7 default stages (New Lead to Won/Lost), custom stage support"],
             ["Deal Tracking", "[YES] Revenue estimation, deal value, win rates", "[YES] Deal value, probability, win rate, avg deal size, pipeline value, weighted forecast"],
@@ -431,7 +431,7 @@ def generate():
     doc.add_heading("9. Analytics & Reporting", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Campaign Analytics", "[YES] Sent, opens, replies, clicks, bounces per campaign/step/daily", "[YES] Per-campaign and per-step stats: sent, opens, clicks, replies, bounces, unsubscribes"],
             ["Revenue Analytics", "[YES] Opportunities, pipeline value, conversions, ROI, cost per meeting", "[YES] Revenue metrics: total won, avg deal size, pipeline value, win rate, ROI%, cost per lead"],
@@ -455,7 +455,7 @@ def generate():
     doc.add_heading("10. Integrations & API", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["REST API", "[YES] API v2 with Bearer auth, scoped access, interactive docs", "[YES] FastAPI with Bearer + API key auth, Swagger/OpenAPI docs, 50+ endpoints"],
             ["Webhooks", "[YES] Real-time events (7 event types)", "[YES] HMAC-SHA256 signed webhooks with 12 event types and exponential backoff retry"],
@@ -481,7 +481,7 @@ def generate():
     doc.add_heading("11. Mailbox & Sending Infrastructure", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Email Accounts", "[YES] Unlimited on ALL plans", "[YES] Unlimited (self-hosted, no cap)"],
             ["Gmail OAuth", "[YES] One-click connection", "[PARTIAL] Planned, not yet implemented"],
@@ -504,7 +504,7 @@ def generate():
     doc.add_heading("12. Contact Discovery & Enrichment", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Contact Discovery Providers", "[YES] 5+ waterfall providers (proprietary)", "[YES] 8 providers: Apollo, Seamless, Hunter.io, Snov.io, RocketReach, PDL, Proxycurl + Mock"],
             ["Waterfall Enrichment", "[YES] Real-time across multiple providers", "[YES] 7-provider waterfall chain: stops on first positive result with fallback"],
@@ -525,7 +525,7 @@ def generate():
     doc.add_heading("13. Email Validation", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Validation Providers", "[YES] Built-in proprietary", "[YES] 8 providers: NeverBounce, ZeroBounce, Hunter, Clearout, Emailable, MailboxValidator, Reacher, Mock"],
             ["Bulk Validation", "[YES] On CSV import", "[YES] Bulk validation pipeline"],
@@ -543,7 +543,7 @@ def generate():
     doc.add_heading("14. User Management & Permissions", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Role System", "[PARTIAL] Basic workspace roles", "[YES] 4-tier RBAC: Super Admin, Admin, Operator, Viewer"],
             ["Module-Level Permissions", "[NO] Role-based access only", "[YES] Per-module + per-tab permission matrix (15 modules, 6 settings sub-tabs)"],
@@ -563,12 +563,12 @@ def generate():
     doc.add_heading("15. Automation & Operations", level=1)
 
     doc.add_paragraph(
-        "This is a new comparison category in V3, reflecting Exzelon's Automation Control Center "
+        "This is a new comparison category in V3, reflecting NeuraLeads' Automation Control Center "
         "and operational features that Instantly.ai does not expose to end users."
     )
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Automation Control Center", "[NO] Internal, no user visibility", "[YES] Full control center UI: master ON/OFF, per-job toggles, recent activity feed"],
             ["Master Kill Switch", "[NO] Not available", "[YES] Single toggle pauses ALL 17 scheduled jobs instantly"],
@@ -590,7 +590,7 @@ def generate():
     doc.add_heading("16. Agency & Multi-Client Features", level=1)
 
     add_comparison_table(doc,
-        ["Feature", "Instantly.ai", "Exzelon RA Agent"],
+        ["Feature", "Instantly.ai", "NeuraLeads AI Agent"],
         [
             ["Multi-Client Workspaces", "[YES] Separate workspaces per client, data siloed", "[PARTIAL] Tenant model exists (feature-flagged, not functional)"],
             ["White-Label Portal", "[YES] Custom subdomain + logo + branding for client portals", "[NO] Not available"],
@@ -609,7 +609,7 @@ def generate():
     doc.add_heading("17. Pricing Comparison", level=1)
 
     add_comparison_table(doc,
-        ["Tier", "Instantly.ai (Monthly)", "Exzelon RA Agent"],
+        ["Tier", "Instantly.ai (Monthly)", "NeuraLeads AI Agent"],
         [
             ["Outreach Entry", "$47/mo (Growth) - 5K emails, 1K contacts", "$0 software + ~$15-30/mo VPS + API costs"],
             ["Outreach Mid", "$97/mo (Hypergrowth) - 100K emails, 25K contacts", "Same VPS cost, scales with API usage"],
@@ -629,7 +629,7 @@ def generate():
     run.bold = True
     p.add_run(
         "Instantly.ai's full-stack costs $141-652/mo (Outreach + Leads + CRM, no premium warmup). "
-        "Exzelon RA at $15-200/mo delivers 90% feature parity at 70-90% lower cost. "
+        "NeuraLeads AI at $15-200/mo delivers 90% feature parity at 70-90% lower cost. "
         "The savings fund custom development and API costs."
     )
 
@@ -691,7 +691,7 @@ def generate():
     doc.add_heading("19. Improvement Roadmap", level=1)
 
     doc.add_paragraph(
-        "Phases 1-5 from the original roadmap are now complete, bringing Exzelon from "
+        "Phases 1-5 from the original roadmap are now complete, bringing NeuraLeads from "
         "54% (V0) to 90% (V3) parity. Only 5 gaps remain across 2 optional phases."
     )
 
@@ -771,7 +771,7 @@ def generate():
     doc.add_paragraph()
 
     # Unique Strengths
-    doc.add_heading("Exzelon RA Agent's Unique Strengths (vs Instantly.ai)", level=2)
+    doc.add_heading("NeuraLeads AI Agent's Unique Strengths (vs Instantly.ai)", level=2)
     strengths = [
         "Recruitment-specific pipeline: Job board sourcing -> Contact discovery -> Validation -> Outreach (Instantly is sales-focused)",
         "8 contact discovery providers with waterfall enrichment vs Instantly's single proprietary database",
@@ -814,7 +814,7 @@ def generate():
     add_comparison_table(doc,
         ["Category / Feature", "V2 Status", "V3 Status", "Change"],
         [
-            ["New Category: Automation & Operations", "N/A", "Instantly 7/10, Exzelon 10/10", "NEW -- Exzelon leads by 3 pts"],
+            ["New Category: Automation & Operations", "N/A", "Instantly 7/10, NeuraLeads 10/10", "NEW -- NeuraLeads leads by 3 pts"],
             ["Email Warmup: Read Emulation", "Not implemented", "IMAP read emulation (every 30 min)", "Gap closed"],
             ["Email Warmup: Custom Tracking Domain", "Not available", "CNAME-verified with defaults", "Gap closed"],
             ["Email Warmup: Spam Checker", "Not available", "100+ triggers, 0-100 score, A-F grade", "Gap closed"],
@@ -838,7 +838,7 @@ def generate():
             ["Lead Sourcing: Auto-Chain", "Manual pipeline", "Sourcing -> Enrichment -> Validation auto", "NEW feature"],
             ["Mailbox: Health-Aware Selection", "Round-robin", "4-factor weighted scoring", "Upgraded"],
             ["Remaining Gaps", "10 gaps", "5 gaps", "5 gaps closed"],
-            ["Overall Exzelon Score", "116/140 (82%)", "135/150 (90%)", "+9 pts, new category"],
+            ["Overall NeuraLeads Score", "116/140 (82%)", "135/150 (90%)", "+9 pts, new category"],
         ],
         col_widths=[5.5, 4, 5, 3.5]
     )

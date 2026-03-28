@@ -1,4 +1,4 @@
-"""Capture screenshots of all Exzelon RA Agent dashboard pages using Playwright.
+"""Capture screenshots of all NeuraLeads AI Agent dashboard pages using Playwright.
 
 Usage:
     python scripts/capture_sop_screenshots.py [--base-url URL] [--email EMAIL] [--password PASSWORD]

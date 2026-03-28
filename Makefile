@@ -1,4 +1,4 @@
-# Exzelon RA — Development Commands
+# NeuraLeads AI — Development Commands
 .PHONY: help dev backend frontend test lint migrate clean
 
 help: ## Show this help

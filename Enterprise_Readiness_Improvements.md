@@ -1,6 +1,6 @@
 # Enterprise Readiness Improvements
 
-**Exzelon RA Agent — Comprehensive Audit & Remediation Guide**
+**NeuraLeads AI Agent — Comprehensive Audit & Remediation Guide**
 
 | Field | Value |
 |-------|-------|
@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-The Exzelon RA Agent is a working cold-email automation platform with solid foundations: a well-structured FastAPI backend with adapter patterns, a functional Next.js 14 dashboard, JWT-based RBAC with 4 roles, structured logging, database backups, and a CI pipeline. However, significant gaps exist across security, observability, testing, scalability, and compliance that must be addressed before the system can be considered enterprise-ready.
+The NeuraLeads AI Agent is a working cold-email automation platform with solid foundations: a well-structured FastAPI backend with adapter patterns, a functional Next.js 14 dashboard, JWT-based RBAC with 4 roles, structured logging, database backups, and a CI pipeline. However, significant gaps exist across security, observability, testing, scalability, and compliance that must be addressed before the system can be considered enterprise-ready.
 
 ### Readiness Scores
 

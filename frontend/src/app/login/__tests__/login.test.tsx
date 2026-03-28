@@ -46,7 +46,7 @@ describe('LoginPage', () => {
 
   test('renders app title', () => {
     render(<LoginPage />)
-    expect(screen.getByText('Exzelon RA')).toBeInTheDocument()
+    expect(screen.getByText('NeuraLeads')).toBeInTheDocument()
   })
 
   test('has required attribute on email field', () => {

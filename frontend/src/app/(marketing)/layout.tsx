@@ -4,7 +4,7 @@ import Footer from '@/components/marketing/Footer'
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'NeuraMail',
+  name: 'NeuraLeads',
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'Web',
   description: 'AI-powered sales outreach automation platform with lead sourcing, email campaigns, CRM deals, and analytics.',

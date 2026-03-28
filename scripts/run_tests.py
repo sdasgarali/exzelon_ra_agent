@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Automated Test Runner for Exzelon RA Cold-Email Automation System.
+Automated Test Runner for NeuraLeads AI Cold-Email Automation System.
 
 This script runs all tests and generates a comprehensive test report.
 
@@ -129,7 +129,7 @@ def generate_test_summary(results):
 
     summary = f"""
 ================================================================================
-                    EXZELON RA TEST EXECUTION SUMMARY
+                    NEURALEADS AI TEST EXECUTION SUMMARY
 ================================================================================
 
 Execution Time: {timestamp}
@@ -167,7 +167,7 @@ Test Reports Location: {REPORTS_DIR}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run Exzelon RA tests")
+    parser = argparse.ArgumentParser(description="Run NeuraLeads AI tests")
     parser.add_argument("--unit", action="store_true", help="Run unit tests only")
     parser.add_argument("--integration", action="store_true", help="Run integration tests only")
     parser.add_argument("--e2e", action="store_true", help="Run e2e tests only")
@@ -185,7 +185,7 @@ def main():
     results = {}
 
     print("\n" + "="*60)
-    print("       EXZELON RA AUTOMATED TEST SUITE")
+    print("       NEURALEADS AI AUTOMATED TEST SUITE")
     print("="*60)
     print(f"\nStart Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Report Generation: {'Enabled' if args.report else 'Disabled'}")

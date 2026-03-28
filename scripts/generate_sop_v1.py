@@ -1,4 +1,4 @@
-"""Generate Exzelon RA Agent SOP v1 document (.docx) with embedded screenshots.
+"""Generate NeuraLeads AI Agent SOP v1 document (.docx) with embedded screenshots.
 
 Run from project root:
     python scripts/generate_sop_v1.py
@@ -205,7 +205,7 @@ def add_toc(doc):
 def add_title_page(doc):
     for _ in range(3):
         doc.add_paragraph()
-    title = doc.add_heading("Exzelon RA Agent", level=0)
+    title = doc.add_heading("NeuraLeads AI Agent", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in title.runs:
         run.font.color.rgb = COLOR_PRIMARY
@@ -265,7 +265,7 @@ def section_01_overview(doc):
     add_heading(doc, "1. System Overview & Login")
 
     doc.add_paragraph(
-        "The Exzelon Research Analyst (RA) Agent is an enterprise-grade automated cold-email "
+        "The NeuraLeads AI Research Analyst (RA) Agent is an enterprise-grade automated cold-email "
         "outreach platform that replaces manual spreadsheets, mail merge, and multi-tool workflows "
         "with a single web-based system. It automates the entire lifecycle: job research, contact "
         "discovery, email validation, multi-step campaigns, reply management, and CRM deal tracking."
@@ -924,7 +924,7 @@ def section_15_templates(doc):
         'Subject: U.S. Staffing Services -- Introduction\n\n'
         'Body:\n'
         'Hi {{contact_first_name}},\n\n'
-        'This is {{sender_first_name}} from Exzelon. I noticed you\'re hiring for a '
+        'This is {{sender_first_name}} from NeuraLeads. I noticed you\'re hiring for a '
         '{{job_title}} role in {{job_location}}.\n\n'
         'We specialize in connecting employers with pre-vetted, local professionals across '
         'the U.S. -- and we operate on a risk-free recruitment model. You can review resumes '
@@ -1597,7 +1597,7 @@ def generate():
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = footer.add_run(
         "--- End of Document ---\n"
-        "Exzelon RA Agent | Standard Operating Procedure v1.1 | March 2026 | CONFIDENTIAL\n"
+        "NeuraLeads AI Agent | Standard Operating Procedure v1.1 | March 2026 | CONFIDENTIAL\n"
         "System URL: https://ra.partnerwithus.tech"
     )
     run.font.size = Pt(8)

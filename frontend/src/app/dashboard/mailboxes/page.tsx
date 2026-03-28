@@ -957,7 +957,7 @@ export default function MailboxesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian from Exzelon" />
+                <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian from NeuraLeads" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
@@ -1072,15 +1072,15 @@ export default function MailboxesPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                    <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@exzelon.com" />
+                    <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
-                    <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Exzelon Inc." />
+                    <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
-                    <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://exzelon.com" />
+                    <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
@@ -1227,7 +1227,7 @@ export default function MailboxesPage() {
                       <div className="mt-2 ml-8 text-sm text-gray-600 space-y-1">
                         <p>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">myaccount.google.com/apppasswords</a></p>
                         <p>If you don&apos;t see this page, 2-Step Verification may not be enabled</p>
-                        <p>Enter a name (e.g., &quot;Exzelon RA&quot;) and click <strong>Create</strong></p>
+                        <p>Enter a name (e.g., &quot;NeuraLeads&quot;) and click <strong>Create</strong></p>
                         <p>Copy the 16-character password (shown once &mdash; save it)</p>
                       </div>
                     </div>
@@ -1248,7 +1248,7 @@ export default function MailboxesPage() {
                   </div>
 
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-800">App Passwords let Exzelon RA send and receive emails on your behalf without sharing your main Google password. Your credentials are encrypted and stored securely.</p>
+                    <p className="text-sm text-blue-800">App Passwords let NeuraLeads AI Agent send and receive emails on your behalf without sharing your main Google password. Your credentials are encrypted and stored securely.</p>
                   </div>
 
                   <div className="flex justify-between pt-2">
@@ -1608,15 +1608,15 @@ export default function MailboxesPage() {
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                          <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@exzelon.com" />
+                          <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
-                          <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Exzelon Inc." />
+                          <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
-                          <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://exzelon.com" />
+                          <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
                         </div>
                         <div className="col-span-2">
                           <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>

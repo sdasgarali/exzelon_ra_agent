@@ -168,7 +168,7 @@ def add_title_page(doc):
     for _ in range(4):
         doc.add_paragraph()
 
-    title = doc.add_heading("Exzelon RA Agent", level=0)
+    title = doc.add_heading("NeuraLeads AI Agent", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in title.runs:
         run.font.color.rgb = COLOR_PRIMARY
@@ -213,7 +213,7 @@ def add_executive_summary(doc):
     add_heading(doc, "1. Executive Summary")
 
     doc.add_paragraph(
-        "This document presents the completed implementation of the Exzelon RA Agent's "
+        "This document presents the completed implementation of the NeuraLeads AI Agent's "
         "lead sourcing scale-up. The pipeline has been expanded from 5 adapters to 10 fully "
         "integrated, production-ready adapters — all configurable from the Settings page "
         "without code changes. The system now supports 15,000-40,000 leads per day using "
@@ -880,7 +880,7 @@ def generate():
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = footer.add_run(
         "--- End of Document ---\n"
-        "Exzelon RA Agent | Lead Sourcing Scale-Up Plan | March 2026 | CONFIDENTIAL"
+        "NeuraLeads AI Agent | Lead Sourcing Scale-Up Plan | March 2026 | CONFIDENTIAL"
     )
     run.font.size = Pt(8)
     run.font.color.rgb = RGBColor(0x9C, 0xA3, 0xAF)

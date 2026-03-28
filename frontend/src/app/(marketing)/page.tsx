@@ -9,10 +9,10 @@ import CTABanner from '@/components/marketing/CTABanner'
 import ScrollReveal from '@/components/marketing/ScrollReveal'
 
 export const metadata: Metadata = {
-  title: 'NeuraMail — AI-Powered Sales Outreach Platform',
+  title: 'NeuraLeads — AI-Powered Sales Outreach Platform',
   description: 'AI-powered outreach automation with 10 lead sources, 7 contact providers, and 4 AI engines. Full pipeline from lead sourcing to closed deals at 70% less cost than competitors.',
   openGraph: {
-    title: 'NeuraMail — AI-Powered Sales Outreach Platform',
+    title: 'NeuraLeads — AI-Powered Sales Outreach Platform',
     description: 'Full-pipeline outreach automation. 10 lead sources. 7 contact providers. 4 AI engines. 70% less cost.',
   },
 }
@@ -48,7 +48,7 @@ function LogoBar() {
 /* ── Testimonial cards ── */
 const testimonials = [
   {
-    quote: 'We replaced two separate outreach tools with NeuraMail. The self-hosted option alone saves us thousands per year, and the lead sourcing pipeline is unmatched.',
+    quote: 'We replaced two separate outreach tools with NeuraLeads. The self-hosted option alone saves us thousands per year, and the lead sourcing pipeline is unmatched.',
     name: 'Sarah Chen',
     title: 'VP of Sales, TechCorp',
     rating: 5,
@@ -112,7 +112,7 @@ function ComparisonSnapshot() {
         <ScrollReveal>
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              How NeuraMail Stacks Up
+              How NeuraLeads Stacks Up
             </h2>
             <p className="text-slate-400 text-lg">
               Side-by-side with the top outreach platforms.

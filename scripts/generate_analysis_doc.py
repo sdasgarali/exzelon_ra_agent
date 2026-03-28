@@ -52,8 +52,8 @@ def generate():
     title = doc.add_heading("Lead Sourcing Performance Analysis", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    doc.add_paragraph("Exzelon RA Agent - Performance Overhaul Report")
-    doc.add_paragraph("Prepared for: Exzelon AI Operations Team")
+    doc.add_paragraph("NeuraLeads AI Agent - Performance Overhaul Report")
+    doc.add_paragraph("Prepared for: NeuraLeads AI Operations Team")
     doc.add_paragraph("")
 
     # --- Executive Summary ---
