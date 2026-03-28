@@ -1,7 +1,7 @@
 """Job runs model for pipeline execution history."""
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, Index, ForeignKey
 from app.db.base import Base
 
 
@@ -20,6 +20,7 @@ class JobRun(Base):
     __tablename__ = "job_runs"
 
     run_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     pipeline_name = Column(String(100), nullable=False)  # lead_sourcing, contact_enrichment, email_validation, outreach
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     ended_at = Column(DateTime, nullable=True)
@@ -37,6 +38,7 @@ class JobRun(Base):
         Index('idx_job_pipeline', 'pipeline_name'),
         Index('idx_job_status', 'status'),
         Index('idx_job_started_at', 'started_at'),
+        Index('idx_job_tenant', 'tenant_id'),
     )
 
     def __repr__(self) -> str:

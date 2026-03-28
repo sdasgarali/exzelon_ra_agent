@@ -300,7 +300,7 @@ def fetch_from_source(
         return (source_name, [], error_msg, diagnostics)
 
 
-def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
+def deduplicate_jobs(jobs: List[Dict[str, Any]], db, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Deduplicate jobs using a 3-layer strategy for maximum accuracy.
 
     Layer 1: external_job_id (JSearch job_id) — 100% accurate for same posting
@@ -403,18 +403,20 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
         # DB Layer 1: Check external_job_id
         ext_id = job.get("external_job_id") or ""
         if ext_id:
-            existing = db.query(LeadDetails).filter(
-                LeadDetails.external_job_id == ext_id
-            ).first()
+            q = db.query(LeadDetails).filter(LeadDetails.external_job_id == ext_id)
+            if tenant_id is not None:
+                q = q.filter(LeadDetails.tenant_id == tenant_id)
+            existing = q.first()
             if existing:
                 continue
 
         # DB Layer 2: Check job_link (only for real posting URLs)
         job_link = job.get("job_link") or ""
         if job_link and "/company/" not in job_link and "#job-" not in job_link:
-            existing = db.query(LeadDetails).filter(
-                LeadDetails.job_link == job_link
-            ).first()
+            q = db.query(LeadDetails).filter(LeadDetails.job_link == job_link)
+            if tenant_id is not None:
+                q = q.filter(LeadDetails.tenant_id == tenant_id)
+            existing = q.first()
             if existing:
                 continue
 
@@ -423,10 +425,13 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
         company_normalized = normalize_company_name(company_name)
         title_normalized = normalize_job_title(job.get("job_title") or "")
         dedup_cutoff = datetime.utcnow() - timedelta(days=30)
-        existing_leads = db.query(LeadDetails).filter(
+        q = db.query(LeadDetails).filter(
             LeadDetails.state == (job.get("state") or ""),
             LeadDetails.created_at >= dedup_cutoff
-        ).all()
+        )
+        if tenant_id is not None:
+            q = q.filter(LeadDetails.tenant_id == tenant_id)
+        existing_leads = q.all()
 
         found_match = False
         for existing_lead in existing_leads:
@@ -515,6 +520,7 @@ def _auto_enrich_new_leads(db, leads) -> int:
 def run_lead_sourcing_pipeline(
     sources: List[str],
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the lead sourcing pipeline with multi-source support.
@@ -566,6 +572,7 @@ def run_lead_sourcing_pipeline(
 
     # Create job run record
     job_run = JobRun(
+        tenant_id=tenant_id or 1,
         pipeline_name="lead_sourcing",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -650,7 +657,7 @@ def run_lead_sourcing_pipeline(
             logger.warning(f"Failed to record pipeline costs: {e}")
 
         # Deduplicate jobs (both within batch and against DB)
-        unique_jobs = deduplicate_jobs(all_jobs, db)
+        unique_jobs = deduplicate_jobs(all_jobs, db, tenant_id=tenant_id)
         skipped_count = len(all_jobs) - len(unique_jobs)
         counters["skipped"] = skipped_count
 
@@ -688,6 +695,7 @@ def run_lead_sourcing_pipeline(
             try:
                 # Create new lead
                 lead = LeadDetails(
+                    tenant_id=tenant_id or 1,
                     client_name=job_data["client_name"],
                     job_title=job_data["job_title"],
                     state=job_data.get("state"),
@@ -731,6 +739,7 @@ def run_lead_sourcing_pipeline(
                     db, job_data["client_name"],
                     employer_website=job_data.get("employer_website"),
                     employer_linkedin_url=job_data.get("employer_linkedin_url"),
+                    tenant_id=tenant_id,
                 )
 
             except Exception as e:
@@ -843,16 +852,22 @@ def _extract_domain(url: str) -> str:
         return ""
 
 
-def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None):
+def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None):
     """Create or update client_info record with normalized matching."""
     try:
-        # Try exact match first
-        client = db.query(ClientInfo).filter(ClientInfo.client_name == client_name).first()
+        # Try exact match first (scoped to tenant)
+        q = db.query(ClientInfo).filter(ClientInfo.client_name == client_name)
+        if tenant_id is not None:
+            q = q.filter(ClientInfo.tenant_id == tenant_id)
+        client = q.first()
 
         # If not found, try normalized match
         if not client:
             normalized = normalize_company_name(client_name)
-            all_clients = db.query(ClientInfo).all()
+            cq = db.query(ClientInfo)
+            if tenant_id is not None:
+                cq = cq.filter(ClientInfo.tenant_id == tenant_id)
+            all_clients = cq.all()
             for c in all_clients:
                 if normalize_company_name(c.client_name) == normalized:
                     client = c
@@ -860,6 +875,7 @@ def upsert_client(db, client_name: str, employer_website: str = None, employer_l
 
         if not client:
             client = ClientInfo(
+                tenant_id=tenant_id or 1,
                 client_name=client_name,
                 status=ClientStatus.ACTIVE,
                 start_date=date.today(),
@@ -973,6 +989,7 @@ def export_leads_to_xlsx(db, filepath: Optional[str] = None):
 def import_leads_from_file(
     filepath: str,
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Import leads from XLSX file."""
     db = SessionLocal()
@@ -1008,6 +1025,7 @@ def import_leads_from_file(
                     continue
 
                 lead = LeadDetails(
+                    tenant_id=tenant_id or 1,
                     client_name=client_name,
                     job_title=job_title,
                     state=str(row.get("State", row.get("state", ""))) if pd.notna(row.get("State", row.get("state"))) else None,
@@ -1017,7 +1035,7 @@ def import_leads_from_file(
                 db.add(lead)
                 counters["inserted"] += 1
 
-                upsert_client(db, client_name)
+                upsert_client(db, client_name, tenant_id=tenant_id)
 
             except Exception as e:
                 logger.error("Error importing row", error=str(e))

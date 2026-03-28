@@ -65,6 +65,7 @@ def auto_forward_to_crm(inbox_message: InboxMessage, db: Session) -> Optional[st
 
         # Log automation event
         event = AutomationEvent(
+            tenant_id=getattr(contact, 'tenant_id', None) or 1,
             event_type="crm_auto_forward",
             description=f"Auto-forwarded interested reply from {contact.email} to {crm_type}",
             details_json=f'{{"contact_id": {contact.contact_id}, "crm": "{crm_type}", "category": "interested"}}',
@@ -81,6 +82,7 @@ def auto_forward_to_crm(inbox_message: InboxMessage, db: Session) -> Optional[st
                      contact_id=contact.contact_id, crm=crm_type, error=str(e))
         # Log failure as automation event
         event = AutomationEvent(
+            tenant_id=getattr(contact, 'tenant_id', None) or 1,
             event_type="crm_auto_forward",
             description=f"Failed to forward reply from {contact.email} to {crm_type}: {str(e)[:200]}",
             status="error",

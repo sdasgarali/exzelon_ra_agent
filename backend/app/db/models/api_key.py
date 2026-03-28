@@ -13,6 +13,7 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
 
     key_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     key_hash = Column(String(64), nullable=False, unique=True)  # SHA-256 hex
     key_prefix = Column(String(8), nullable=False)  # first 8 chars for display
@@ -26,6 +27,7 @@ class ApiKey(Base):
         Index("idx_apikey_hash", "key_hash"),
         Index("idx_apikey_user", "user_id"),
         Index("idx_apikey_active", "is_active"),
+        Index("idx_apikey_tenant", "tenant_id"),
     )
 
     def __repr__(self) -> str:

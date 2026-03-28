@@ -1,5 +1,5 @@
 """Saved search / smart list model for lead filtering."""
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, Index
 from app.db.base import Base
 
 
@@ -8,6 +8,7 @@ class SavedSearch(Base):
     __tablename__ = "saved_searches"
 
     search_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(String(500), nullable=True)
     filters_json = Column(Text, nullable=False)  # JSON: {state, industry, job_title, salary_min, ...}

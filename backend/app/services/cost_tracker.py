@@ -108,6 +108,7 @@ def record_pipeline_cost(
         estimated_cost = estimate_run_cost(source, api_calls, results, db)
 
         entry = CostEntry(
+            tenant_id=1,
             category="lead_sourcing",
             amount=estimated_cost,
             entry_date=date.today(),
@@ -192,16 +193,17 @@ def get_daily_trend(db: Session, days: int = 30) -> List[dict]:
     ]
 
 
-def get_budget_status(db: Session) -> dict:
+def get_budget_status(db: Session, tenant_id: Optional[int] = None) -> dict:
     """Current month cost utilization per source vs configured budgets."""
     from app.db.models.cost_tracking import CostEntry
+    from app.db.query_helpers import tenant_filter
 
     # Get first day of current month
     today = date.today()
     month_start = today.replace(day=1)
 
     # Get monthly costs per source
-    rows = db.query(
+    budget_query = db.query(
         CostEntry.source_adapter,
         func.sum(CostEntry.amount).label("spent"),
         func.sum(CostEntry.api_calls_count).label("api_calls"),
@@ -209,7 +211,9 @@ def get_budget_status(db: Session) -> dict:
     ).filter(
         CostEntry.entry_date >= month_start,
         CostEntry.is_archived == False,
-    ).group_by(CostEntry.source_adapter).all()
+    )
+    budget_query = tenant_filter(budget_query, CostEntry, tenant_id)
+    rows = budget_query.group_by(CostEntry.source_adapter).all()
 
     pricing = _get_pricing(db)
 

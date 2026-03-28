@@ -69,9 +69,10 @@ class TestPipelineEndpoints:
 class TestCancelEndpoint:
     """Tests for POST /api/v1/pipelines/jobs/{run_id}/cancel."""
 
-    def test_cancel_running_job(self, client, auth_headers, db_session):
+    def test_cancel_running_job(self, client, auth_headers, db_session, test_tenant):
         """Admin can cancel a running job."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.RUNNING,
             triggered_by="admin@test.com",
@@ -107,9 +108,10 @@ class TestCancelEndpoint:
         )
         assert response.status_code == 404
 
-    def test_viewer_cannot_cancel(self, client, viewer_headers, db_session):
+    def test_viewer_cannot_cancel(self, client, viewer_headers, db_session, test_tenant):
         """Viewer role cannot cancel jobs (403)."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.RUNNING,
             triggered_by="admin@test.com",
@@ -127,9 +129,10 @@ class TestCancelEndpoint:
 class TestRunSummaryEndpoint:
     """Tests for GET /api/v1/pipelines/runs/{run_id}/summary."""
 
-    def test_get_summary_completed_run(self, client, auth_headers, db_session):
+    def test_get_summary_completed_run(self, client, auth_headers, db_session, test_tenant):
         """Completed run returns valid enhanced summary structure."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json='{"inserted": 10, "updated": 2, "skipped": 1, "errors": 0}',
@@ -164,9 +167,10 @@ class TestRunSummaryEndpoint:
         assert isinstance(data["source_breakdown"], list)
         assert isinstance(data["api_diagnostics"], list)
 
-    def test_summary_cached_on_second_call(self, client, auth_headers, db_session):
+    def test_summary_cached_on_second_call(self, client, auth_headers, db_session, test_tenant):
         """Second call returns same cached summary (same generated_at)."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="email_validation",
             status=JobStatus.COMPLETED,
             counters_json='{"validated": 10, "valid": 8, "invalid": 2, "errors": 0}',
@@ -183,9 +187,10 @@ class TestRunSummaryEndpoint:
         assert resp2.status_code == 200
         assert resp1.json()["generated_at"] == resp2.json()["generated_at"]
 
-    def test_summary_regenerate_param(self, client, auth_headers, db_session):
+    def test_summary_regenerate_param(self, client, auth_headers, db_session, test_tenant):
         """?regenerate=true forces fresh generation even when cached."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json='{"inserted": 5, "updated": 0, "skipped": 0, "errors": 0}',
@@ -210,7 +215,7 @@ class TestRunSummaryEndpoint:
         # generated_at should differ (regenerated)
         assert gen1 != gen2
 
-    def test_summary_old_format_auto_regenerates(self, client, auth_headers, db_session):
+    def test_summary_old_format_auto_regenerates(self, client, auth_headers, db_session, test_tenant):
         """Old-format cached summary (missing source_breakdown) is auto-regenerated."""
         old_summary = json.dumps({
             "success_score": 80,
@@ -221,6 +226,7 @@ class TestRunSummaryEndpoint:
             "ai_generated": False,
         })
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json='{"inserted": 10, "updated": 0, "skipped": 0, "errors": 0}',
@@ -245,9 +251,10 @@ class TestRunSummaryEndpoint:
         # generated_at should be different from old cached
         assert data["generated_at"] != "2026-01-01T00:00:00Z"
 
-    def test_summary_running_run_returns_400(self, client, auth_headers, db_session):
+    def test_summary_running_run_returns_400(self, client, auth_headers, db_session, test_tenant):
         """In-progress runs return 400."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="contact_enrichment",
             status=JobStatus.RUNNING,
             triggered_by="admin@test.com",
@@ -274,9 +281,10 @@ class TestRunSummaryEndpoint:
         response = client.get("/api/v1/pipelines/runs/1/summary")
         assert response.status_code == 401
 
-    def test_summary_failed_run(self, client, auth_headers, db_session):
+    def test_summary_failed_run(self, client, auth_headers, db_session, test_tenant):
         """Failed runs get score 0 and include error info."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="outreach",
             status=JobStatus.FAILED,
             counters_json='{"sent": 0, "total": 10, "errors": 10}',

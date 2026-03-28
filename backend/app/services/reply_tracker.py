@@ -192,6 +192,7 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
 
                         if not existing:
                             suppression = SuppressionList(
+                                tenant_id=getattr(contact, 'tenant_id', None) or 1,
                                 email=contact.email.lower(),
                                 reason="unsubscribe_reply",
                             )
@@ -203,6 +204,7 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
 
                         # Audit log
                         db.add(AuditLog(
+                            tenant_id=getattr(contact, 'tenant_id', None) or 1,
                             entity_type="contact",
                             entity_id=contact.contact_id,
                             action="unsubscribe",

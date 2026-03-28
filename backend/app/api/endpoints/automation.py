@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.automation_event import AutomationEvent
 from app.db.models.settings import Settings
@@ -56,10 +57,12 @@ def list_events(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List recent automation events (paginated, filterable)."""
     since = datetime.utcnow() - timedelta(hours=hours)
     query = db.query(AutomationEvent).filter(AutomationEvent.created_at >= since)
+    query = tenant_filter(query, AutomationEvent, tenant_id)
 
     if event_type:
         query = query.filter(AutomationEvent.event_type == event_type)
@@ -95,16 +98,19 @@ def list_events(
 def events_summary(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Last 24h summary — counts by event type and status."""
     since = datetime.utcnow() - timedelta(hours=24)
-    rows = db.query(
+    summary_query = db.query(
         AutomationEvent.event_type,
         AutomationEvent.status,
         func.count(AutomationEvent.event_id),
     ).filter(
         AutomationEvent.created_at >= since,
-    ).group_by(
+    )
+    summary_query = tenant_filter(summary_query, AutomationEvent, tenant_id)
+    rows = summary_query.group_by(
         AutomationEvent.event_type,
         AutomationEvent.status,
     ).all()
@@ -121,9 +127,11 @@ def events_summary(
             errors += count
 
     # Latest event
-    latest = db.query(AutomationEvent).filter(
+    latest_query = db.query(AutomationEvent).filter(
         AutomationEvent.created_at >= since,
-    ).order_by(desc(AutomationEvent.created_at)).first()
+    )
+    latest_query = tenant_filter(latest_query, AutomationEvent, tenant_id)
+    latest = latest_query.order_by(desc(AutomationEvent.created_at)).first()
 
     return {
         "period_hours": 24,
@@ -169,6 +177,7 @@ def _upsert_bool_setting(db: Session, key: str, value: bool, updated_by: str):
 def get_controls(
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Return master toggle, chain toggles, and all 17 jobs with enabled state."""
     from app.services.warmup.scheduler import get_scheduler_status
@@ -208,6 +217,7 @@ def update_controls(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update master toggle, chain toggles, and/or per-job enabled states."""
     from app.services.automation_logger import log_automation_event

@@ -1,7 +1,7 @@
 """Contact enrichment pipeline service."""
 import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import structlog
 
 from app.db.base import SessionLocal
@@ -213,6 +213,7 @@ def run_contact_enrichment_pipeline(
     triggered_by: str = "system",
     lead_ids: list | None = None,
     run_id: int | None = None,
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the contact enrichment pipeline.
@@ -244,11 +245,11 @@ def run_contact_enrichment_pipeline(
             job_run.started_at = datetime.utcnow()
             db.commit()
         else:
-            job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+            job_run = JobRun(tenant_id=tenant_id or 1, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
             db.add(job_run)
             db.commit()
     else:
-        job_run = JobRun(pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+        job_run = JobRun(tenant_id=tenant_id or 1, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
         db.add(job_run)
         db.commit()
 
@@ -262,17 +263,23 @@ def run_contact_enrichment_pipeline(
         max_contacts_per_job = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
         if lead_ids:
-            leads = db.query(LeadDetails).filter(
+            q = db.query(LeadDetails).filter(
                 LeadDetails.lead_id.in_(lead_ids),
                 ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
                 LeadDetails.is_archived == False
-            ).all()
+            )
+            if tenant_id is not None:
+                q = q.filter(LeadDetails.tenant_id == tenant_id)
+            leads = q.all()
         else:
-            leads = db.query(LeadDetails).filter(
+            q = db.query(LeadDetails).filter(
                 LeadDetails.first_name.is_(None),
                 LeadDetails.lead_status == LeadStatus.NEW,
                 LeadDetails.is_archived == False
-            ).limit(100).all()
+            )
+            if tenant_id is not None:
+                q = q.filter(LeadDetails.tenant_id == tenant_id)
+            leads = q.limit(100).all()
 
         logger.info(f"Found {len(leads)} leads to enrich")
         batch_lead_ids = {l.lead_id for l in leads}
@@ -389,6 +396,7 @@ def run_contact_enrichment_pipeline(
                         val_status = "pending"
 
                     contact = ContactDetails(
+                        tenant_id=tenant_id or lead.tenant_id or 1,
                         lead_id=lead.lead_id,
                         client_name=lead.client_name,
                         first_name=contact_data["first_name"],

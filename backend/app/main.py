@@ -170,6 +170,7 @@ def _seed_default_email_template():
         )
 
         template = EmailTemplate(
+            tenant_id=1,
             name="Exzelon Default Outreach",
             subject=default_subject,
             body_html=default_body_html,
@@ -207,6 +208,7 @@ def _seed_deal_stages():
         ]
         for s in stages:
             db.add(DealStage(
+                tenant_id=1,
                 name=s["name"],
                 stage_order=s["stage_order"],
                 color=s["color"],
@@ -693,6 +695,121 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for multi-tenancy: {e}")
 
+    # Migration: Phase 2 multi-tenancy — add tenant_id to core data tables
+    try:
+        from sqlalchemy import text as sa_text_mt2, inspect as sa_inspect_mt2
+        with engine.connect() as conn:
+            inspector_mt2 = sa_inspect_mt2(engine)
+            # Tables that need tenant_id
+            mt2_tables = ["lead_details", "contact_details", "client_info", "sender_mailboxes"]
+            for tbl in mt2_tables:
+                if tbl not in inspector_mt2.get_table_names():
+                    continue
+                cols = [c["name"] for c in inspector_mt2.get_columns(tbl)]
+                if "tenant_id" not in cols:
+                    try:
+                        conn.execute(sa_text_mt2(f"ALTER TABLE {tbl} ADD COLUMN tenant_id INT NULL"))
+                        conn.commit()
+                        logger.info(f"Migration: added tenant_id column to {tbl}")
+                    except Exception as e_add:
+                        logger.debug(f"tenant_id add to {tbl} (may already exist): {e_add}")
+
+                    # Backfill: set all existing rows to Tenant #1
+                    try:
+                        conn.execute(sa_text_mt2(f"UPDATE {tbl} SET tenant_id = 1 WHERE tenant_id IS NULL"))
+                        conn.commit()
+                        logger.info(f"Migration: backfilled tenant_id=1 for {tbl}")
+                    except Exception as e_bf:
+                        logger.debug(f"tenant_id backfill for {tbl}: {e_bf}")
+
+                    # Make NOT NULL (MySQL only — SQLite doesn't support MODIFY)
+                    if settings.DB_TYPE == "mysql":
+                        try:
+                            conn.execute(sa_text_mt2(f"ALTER TABLE {tbl} MODIFY COLUMN tenant_id INT NOT NULL"))
+                            conn.commit()
+                            logger.info(f"Migration: made tenant_id NOT NULL on {tbl}")
+                        except Exception as e_nn:
+                            logger.debug(f"tenant_id NOT NULL for {tbl}: {e_nn}")
+
+                    # Add index
+                    idx_name = f"idx_{tbl}_tenant"
+                    try:
+                        conn.execute(sa_text_mt2(f"CREATE INDEX {idx_name} ON {tbl}(tenant_id)"))
+                        conn.commit()
+                        logger.info(f"Migration: added index {idx_name}")
+                    except Exception:
+                        pass  # Index already exists
+
+            # Drop unique constraint on client_info.client_name (now per-tenant)
+            if settings.DB_TYPE == "mysql":
+                try:
+                    conn.execute(sa_text_mt2("ALTER TABLE client_info DROP INDEX client_name"))
+                    conn.commit()
+                    logger.info("Migration: dropped unique constraint on client_info.client_name")
+                except Exception:
+                    pass  # Already dropped or doesn't exist
+                # Add composite unique (tenant_id, client_name)
+                try:
+                    conn.execute(sa_text_mt2(
+                        "CREATE UNIQUE INDEX idx_client_tenant_name ON client_info(tenant_id, client_name)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added composite unique index on client_info(tenant_id, client_name)")
+                except Exception:
+                    pass
+
+    except Exception as e:
+        logger.warning(f"Migration check for Phase 2 multi-tenancy: {e}")
+
+    # Migration: Phase 3 multi-tenancy — add tenant_id to campaign/communication tables
+    try:
+        from sqlalchemy import text as sa_text_mt3, inspect as sa_inspect_mt3
+        with engine.connect() as conn:
+            inspector_mt3 = sa_inspect_mt3(engine)
+            phase3_tables = ["campaigns", "outreach_events", "inbox_messages", "email_templates"]
+            for tbl in phase3_tables:
+                if tbl not in inspector_mt3.get_table_names():
+                    continue
+                cols = [c["name"] for c in inspector_mt3.get_columns(tbl)]
+                if "tenant_id" not in cols:
+                    logger.info(f"Migration: adding tenant_id to {tbl}")
+                    conn.execute(sa_text_mt3(f"ALTER TABLE {tbl} ADD COLUMN tenant_id INT NULL"))
+                    conn.execute(sa_text_mt3(f"UPDATE {tbl} SET tenant_id = 1 WHERE tenant_id IS NULL"))
+                    try:
+                        conn.execute(sa_text_mt3(f"ALTER TABLE {tbl} MODIFY COLUMN tenant_id INT NOT NULL"))
+                    except Exception:
+                        pass  # SQLite doesn't support MODIFY
+                    try:
+                        conn.execute(sa_text_mt3(f"CREATE INDEX idx_{tbl}_tenant ON {tbl}(tenant_id)"))
+                    except Exception:
+                        pass  # Index may already exist
+                    conn.commit()
+                    logger.info(f"Migration: tenant_id added to {tbl}")
+    except Exception as e:
+        logger.warning(f"Migration check for Phase 3 multi-tenancy: {e}")
+
+    # Migration: Phase 4 multi-tenancy — add tenant_id to remaining tables
+    try:
+        from sqlalchemy import text as sa_text_mt4, inspect as sa_inspect_mt4
+        with engine.connect() as conn:
+            phase4_tables = [
+                "deal_stages", "deals", "webhooks", "api_keys",
+                "saved_searches", "icp_profiles", "crm_sync_logs",
+                "cost_entries", "tracking_domains", "suppression_list",
+                "automation_events", "audit_logs", "job_runs",
+            ]
+            for tbl in phase4_tables:
+                cols = [c["name"] for c in sa_inspect_mt4(engine).get_columns(tbl)]
+                if "tenant_id" not in cols:
+                    conn.execute(sa_text_mt4(f"ALTER TABLE {tbl} ADD COLUMN tenant_id INT NULL"))
+                    conn.execute(sa_text_mt4(f"UPDATE {tbl} SET tenant_id = 1 WHERE tenant_id IS NULL"))
+                    conn.execute(sa_text_mt4(f"ALTER TABLE {tbl} MODIFY COLUMN tenant_id INT NOT NULL"))
+                    conn.execute(sa_text_mt4(f"CREATE INDEX idx_{tbl}_tenant ON {tbl}(tenant_id)"))
+                    conn.commit()
+                    logger.info(f"Migration: tenant_id added to {tbl}")
+    except Exception as e:
+        logger.warning(f"Migration check for Phase 4 multi-tenancy: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()
@@ -887,7 +1004,7 @@ async def unsubscribe(tracking_id: str, token: str = ""):
                 SuppressionList.email == contact.email.lower()
             ).first()
             if not existing_sup:
-                db.add(SuppressionList(email=contact.email.lower(), reason="unsubscribe_link"))
+                db.add(SuppressionList(tenant_id=getattr(contact, 'tenant_id', None) or 1, email=contact.email.lower(), reason="unsubscribe_link"))
 
             # Update contact status
             contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
@@ -895,6 +1012,7 @@ async def unsubscribe(tracking_id: str, token: str = ""):
 
             # Audit log
             db.add(AuditLog(
+                tenant_id=getattr(contact, 'tenant_id', None) or 1,
                 entity_type="contact",
                 entity_id=contact.contact_id,
                 action="unsubscribe",

@@ -9,6 +9,7 @@ import structlog
 from app.core.config import settings
 from app.core.security import create_verification_token, decode_verification_token
 from app.db.models.user import User
+from app.db.models.tenant import Tenant
 
 logger = structlog.get_logger()
 
@@ -123,4 +124,16 @@ def verify_user_email(token: str, db: Session) -> bool:
     db.commit()
 
     logger.info("User email verified", user_id=user_id, email=user.email)
+
+    # Seed demo data for starter plan tenants
+    if user.tenant_id:
+        try:
+            from app.services.demo_seeder import seed_demo_data
+            from app.db.models.tenant import TenantPlan
+            tenant = db.query(Tenant).filter(Tenant.tenant_id == user.tenant_id).first()
+            if tenant and tenant.plan == TenantPlan.STARTER:
+                seed_demo_data(user.tenant_id, db)
+        except Exception as e:
+            logger.warning("Failed to seed demo data on verify", error=str(e))
+
     return True

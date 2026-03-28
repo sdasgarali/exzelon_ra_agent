@@ -10,9 +10,10 @@ class TestLeadsEndpoints:
     """Tests for leads API endpoints."""
 
     @pytest.fixture
-    def sample_lead(self, db_session):
+    def sample_lead(self, db_session, test_tenant):
         """Create a sample lead for testing."""
         lead = LeadDetails(
+            tenant_id=test_tenant.tenant_id,
             client_name="Test Company",
             job_title="Test Position",
             state="CA",
@@ -37,11 +38,12 @@ class TestLeadsEndpoints:
         assert "total" in data
         assert len(data["items"]) >= 1
 
-    def test_list_leads_pagination(self, client, auth_headers, db_session):
+    def test_list_leads_pagination(self, client, auth_headers, db_session, test_tenant):
         """Test leads pagination."""
         # Create multiple leads
         for i in range(15):
             lead = LeadDetails(
+                tenant_id=test_tenant.tenant_id,
                 client_name=f"Company {i}",
                 job_title=f"Position {i}",
                 state="CA",
@@ -133,11 +135,12 @@ class TestLeadsEndpoints:
         lead_ids = [item["lead_id"] for item in items]
         assert sample_lead.lead_id not in lead_ids
 
-    def test_filter_leads_by_status(self, client, auth_headers, db_session):
+    def test_filter_leads_by_status(self, client, auth_headers, db_session, test_tenant):
         """Test filtering leads by status."""
         # Create leads with different statuses
         for lead_status in [LeadStatus.NEW, LeadStatus.ENRICHED, LeadStatus.VALIDATED]:
             lead = LeadDetails(
+                tenant_id=test_tenant.tenant_id,
                 client_name=f"Company {lead_status.value}",
                 job_title="Position",
                 lead_status=lead_status,

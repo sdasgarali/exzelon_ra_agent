@@ -13,10 +13,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role
+from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.tracking_domain import TrackingDomain
 from app.core.config import settings
+from app.db.query_helpers import tenant_filter
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ def create_tracking_domain(
     data: CreateTrackingDomain,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new custom tracking domain (admin+ only).
 
@@ -102,9 +104,11 @@ def create_tracking_domain(
     domain_name = data.domain_name.strip().lower()
 
     # Check for duplicate (including archived, since domain_name has a unique constraint)
-    existing = db.query(TrackingDomain).filter(
+    dup_query = db.query(TrackingDomain).filter(
         TrackingDomain.domain_name == domain_name
-    ).first()
+    )
+    dup_query = tenant_filter(dup_query, TrackingDomain, tenant_id)
+    existing = dup_query.first()
 
     if existing and not existing.is_archived:
         raise HTTPException(status_code=409, detail="Tracking domain already exists")
@@ -125,6 +129,7 @@ def create_tracking_domain(
         cname_target=_derive_cname_target(),
         is_verified=False,
         is_default=False,
+        tenant_id=tenant_id or 1,
     )
     db.add(tracking_domain)
     db.commit()
@@ -138,14 +143,12 @@ def create_tracking_domain(
 def list_tracking_domains(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all non-archived tracking domains (operator+ role)."""
-    domains = (
-        db.query(TrackingDomain)
-        .filter(TrackingDomain.is_archived == False)
-        .order_by(TrackingDomain.domain_id)
-        .all()
-    )
+    q = db.query(TrackingDomain).filter(TrackingDomain.is_archived == False)
+    q = tenant_filter(q, TrackingDomain, tenant_id)
+    domains = q.order_by(TrackingDomain.domain_id).all()
     return [_domain_to_dict(td) for td in domains]
 
 
@@ -154,16 +157,19 @@ def verify_tracking_domain(
     domain_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Verify that the domain's DNS CNAME record points to the expected target.
 
     Uses dnspython to perform the DNS lookup. If dnspython is not installed,
     the domain is marked as verified with a warning.
     """
-    td = db.query(TrackingDomain).filter(
+    q = db.query(TrackingDomain).filter(
         TrackingDomain.domain_id == domain_id,
         TrackingDomain.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, TrackingDomain, tenant_id)
+    td = q.first()
     if not td:
         raise HTTPException(status_code=404, detail="Tracking domain not found")
 
@@ -281,15 +287,18 @@ def delete_tracking_domain(
     domain_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete a tracking domain by setting is_archived=True (admin+ only).
 
     If the domain was the default, the default flag is cleared.
     """
-    td = db.query(TrackingDomain).filter(
+    q = db.query(TrackingDomain).filter(
         TrackingDomain.domain_id == domain_id,
         TrackingDomain.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, TrackingDomain, tenant_id)
+    td = q.first()
     if not td:
         raise HTTPException(status_code=404, detail="Tracking domain not found")
 
@@ -307,16 +316,19 @@ def set_default_tracking_domain(
     domain_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Set a tracking domain as the default (admin+ only).
 
     Unsets any previously default domain. Only non-archived, verified domains
     can be set as default.
     """
-    td = db.query(TrackingDomain).filter(
+    q = db.query(TrackingDomain).filter(
         TrackingDomain.domain_id == domain_id,
         TrackingDomain.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, TrackingDomain, tenant_id)
+    td = q.first()
     if not td:
         raise HTTPException(status_code=404, detail="Tracking domain not found")
 
@@ -326,11 +338,13 @@ def set_default_tracking_domain(
             detail="Cannot set an unverified domain as default. Verify the DNS CNAME record first.",
         )
 
-    # Unset all other defaults
-    db.query(TrackingDomain).filter(
+    # Unset all other defaults (scoped to tenant)
+    unset_query = db.query(TrackingDomain).filter(
         TrackingDomain.is_default == True,
         TrackingDomain.domain_id != domain_id,
-    ).update({"is_default": False}, synchronize_session="fetch")
+    )
+    unset_query = tenant_filter(unset_query, TrackingDomain, tenant_id)
+    unset_query.update({"is_default": False}, synchronize_session="fetch")
 
     td.is_default = True
     db.commit()

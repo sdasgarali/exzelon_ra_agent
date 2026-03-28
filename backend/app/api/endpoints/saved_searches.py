@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.saved_search import SavedSearch
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/saved-searches", tags=["Saved Searches"])
 
@@ -32,6 +33,7 @@ def create_saved_search(
     body: CreateSavedSearch,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Save current lead filters as a named search."""
     # Validate JSON
@@ -46,6 +48,7 @@ def create_saved_search(
         filters_json=body.filters_json,
         is_shared=body.is_shared,
         user_id=current_user.user_id,
+        tenant_id=tenant_id or 1,
     )
     db.add(search)
     db.commit()
@@ -65,12 +68,15 @@ def create_saved_search(
 def list_saved_searches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List current user's saved searches + shared ones."""
-    searches = db.query(SavedSearch).filter(
+    q = db.query(SavedSearch).filter(
         SavedSearch.is_archived == False,
         ((SavedSearch.user_id == current_user.user_id) | (SavedSearch.is_shared == True)),
-    ).order_by(SavedSearch.created_at.desc()).all()
+    )
+    q = tenant_filter(q, SavedSearch, tenant_id)
+    searches = q.order_by(SavedSearch.created_at.desc()).all()
 
     return [
         {
@@ -94,12 +100,15 @@ def execute_saved_search(
     offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Execute a saved search and return matching leads."""
-    search = db.query(SavedSearch).filter(
+    search_query = db.query(SavedSearch).filter(
         SavedSearch.search_id == search_id,
         SavedSearch.is_archived == False,
-    ).first()
+    )
+    search_query = tenant_filter(search_query, SavedSearch, tenant_id)
+    search = search_query.first()
     if not search:
         raise HTTPException(status_code=404, detail="Saved search not found")
 
@@ -123,6 +132,7 @@ def execute_saved_search(
     from datetime import datetime, timedelta
 
     q = db.query(LeadDetails).filter(LeadDetails.is_archived == False)
+    q = tenant_filter(q, LeadDetails, tenant_id)
 
     if filters.get("state"):
         q = q.filter(func.upper(LeadDetails.state) == filters["state"].upper())
@@ -177,13 +187,16 @@ def update_saved_search(
     body: UpdateSavedSearch,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update a saved search."""
-    search = db.query(SavedSearch).filter(
+    q = db.query(SavedSearch).filter(
         SavedSearch.search_id == search_id,
         SavedSearch.user_id == current_user.user_id,
         SavedSearch.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, SavedSearch, tenant_id)
+    search = q.first()
     if not search:
         raise HTTPException(status_code=404, detail="Saved search not found or not owned by you")
 
@@ -209,13 +222,16 @@ def delete_saved_search(
     search_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Delete a saved search (soft delete)."""
-    search = db.query(SavedSearch).filter(
+    q = db.query(SavedSearch).filter(
         SavedSearch.search_id == search_id,
         SavedSearch.user_id == current_user.user_id,
         SavedSearch.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, SavedSearch, tenant_id)
+    search = q.first()
     if not search:
         raise HTTPException(status_code=404, detail="Saved search not found or not owned by you")
 

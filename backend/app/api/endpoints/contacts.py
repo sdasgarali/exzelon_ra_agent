@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.contact import ContactDetails, PriorityLevel
 from app.db.models.lead_contact import LeadContactAssociation
-from app.db.query_helpers import active_query
+from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.schemas.pipeline import BulkContactIdsRequest
 
@@ -48,10 +49,12 @@ async def list_contacts(
     sort_by: Optional[str] = Query(None, description="Column to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List contacts with filtering."""
     query = active_query(db, ContactDetails, show_archived=show_archived)
+    query = tenant_filter(query, ContactDetails, tenant_id)
 
     if lead_id:
         junction_cids = [row[0] for row in db.query(LeadContactAssociation).with_entities(
@@ -145,19 +148,22 @@ async def list_contacts(
 @router.get("/stats", tags=["Contacts"])
 async def get_contact_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get contact statistics summary."""
-    total = db.query(ContactDetails).with_entities(
+    base_query = tenant_filter(db.query(ContactDetails), ContactDetails, tenant_id)
+
+    total = base_query.with_entities(
         func.count(ContactDetails.contact_id)
     ).scalar()
 
-    by_priority = db.query(ContactDetails).with_entities(
+    by_priority = base_query.with_entities(
         ContactDetails.priority_level,
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.priority_level).all()
 
-    by_validation = db.query(ContactDetails).with_entities(
+    by_validation = base_query.with_entities(
         ContactDetails.validation_status,
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
@@ -165,7 +171,7 @@ async def get_contact_stats(
     with_lead = db.query(LeadContactAssociation).with_entities(
         func.count(func.distinct(LeadContactAssociation.contact_id))
     ).scalar() or 0
-    legacy_linked = db.query(ContactDetails).with_entities(
+    legacy_linked = base_query.with_entities(
         func.count(ContactDetails.contact_id)
     ).filter(
         ContactDetails.lead_id.isnot(None)
@@ -185,7 +191,8 @@ async def get_contact_stats(
 async def get_contacts_for_lead(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get all contacts linked to a specific lead."""
     junction_cids = [row[0] for row in db.query(LeadContactAssociation).with_entities(
@@ -195,14 +202,16 @@ async def get_contacts_for_lead(
     ).all()]
 
     if junction_cids:
-        contacts = db.query(ContactDetails).filter(
+        query = db.query(ContactDetails).filter(
             (ContactDetails.lead_id == lead_id) |
             (ContactDetails.contact_id.in_(junction_cids))
-        ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
+        )
     else:
-        contacts = db.query(ContactDetails).filter(
+        query = db.query(ContactDetails).filter(
             ContactDetails.lead_id == lead_id
-        ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
+        )
+    query = tenant_filter(query, ContactDetails, tenant_id)
+    contacts = query.order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
 
     return {
         "lead_id": lead_id,
@@ -215,16 +224,19 @@ async def get_contacts_for_lead(
 async def bulk_delete_contacts(
     request: BulkContactIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive multiple contacts by IDs (soft delete). Admin only."""
     contact_ids = request.contact_ids
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
-    contacts = db.query(ContactDetails).filter(
+    query = db.query(ContactDetails).filter(
         ContactDetails.contact_id.in_(contact_ids)
-    ).all()
+    )
+    query = tenant_filter(query, ContactDetails, tenant_id)
+    contacts = query.all()
 
     if not contacts:
         raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
@@ -234,9 +246,11 @@ async def bulk_delete_contacts(
 
     try:
         # Soft delete: archive contacts instead of hard deleting
-        archived_count = db.query(ContactDetails).filter(
+        archive_query = db.query(ContactDetails).filter(
             ContactDetails.contact_id.in_(found_ids)
-        ).update({ContactDetails.is_archived: True}, synchronize_session=False)
+        )
+        archive_query = tenant_filter(archive_query, ContactDetails, tenant_id)
+        archived_count = archive_query.update({ContactDetails.is_archived: True}, synchronize_session=False)
 
         db.commit()
     except Exception as e:
@@ -253,13 +267,16 @@ async def bulk_delete_contacts(
 @router.get("/duplicates", tags=["Contacts"])
 async def find_duplicate_contacts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Find contacts with duplicate email addresses."""
     from sqlalchemy import func as sa_func
 
     # Find emails that appear more than once
-    dupes = active_query(db, ContactDetails, show_archived=False).with_entities(
+    base_query = active_query(db, ContactDetails, show_archived=False)
+    base_query = tenant_filter(base_query, ContactDetails, tenant_id)
+    dupes = base_query.with_entities(
         ContactDetails.email,
         sa_func.count(ContactDetails.contact_id).label("count")
     ).filter(
@@ -270,7 +287,9 @@ async def find_duplicate_contacts(
 
     results = []
     for email, count in dupes:
-        contacts = active_query(db, ContactDetails, show_archived=False).filter(
+        detail_query = active_query(db, ContactDetails, show_archived=False)
+        detail_query = tenant_filter(detail_query, ContactDetails, tenant_id)
+        contacts = detail_query.filter(
             ContactDetails.email == email,
         ).order_by(ContactDetails.created_at).all()
         results.append({
@@ -286,7 +305,8 @@ async def find_duplicate_contacts(
 async def merge_contacts(
     request: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Merge duplicate contacts. Keep primary, archive others and transfer associations."""
     primary_id = request.get("primary_contact_id")
@@ -298,7 +318,10 @@ async def merge_contacts(
     if primary_id in merge_ids:
         raise HTTPException(status_code=400, detail="primary_contact_id cannot be in merge_contact_ids")
 
-    primary = db.query(ContactDetails).filter(ContactDetails.contact_id == primary_id).first()
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id == primary_id)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+    primary = query.first()
     if not primary:
         raise HTTPException(status_code=404, detail="Primary contact not found")
 
@@ -306,7 +329,10 @@ async def merge_contacts(
     associations_transferred = 0
 
     for cid in merge_ids:
-        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == cid).first()
+        merge_query = db.query(ContactDetails).filter(ContactDetails.contact_id == cid)
+        if tenant_id is not None:
+            merge_query = merge_query.filter(ContactDetails.tenant_id == tenant_id)
+        contact = merge_query.first()
         if not contact:
             continue
 
@@ -346,10 +372,14 @@ async def merge_contacts(
 async def get_contact(
     contact_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get contact by ID."""
-    contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+    contact = query.first()
     if not contact:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -362,9 +392,12 @@ async def get_contact(
 async def create_contact(
     contact_in: ContactCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new contact."""
+    check_plan_limit(db, tenant_id, "contacts")
+
     existing = db.query(ContactDetails).filter(ContactDetails.email == contact_in.email).first()
     if existing:
         raise HTTPException(
@@ -375,6 +408,7 @@ async def create_contact(
     lead_ids = contact_in.lead_ids
     contact_data = contact_in.model_dump(exclude={"lead_ids"})
     contact = ContactDetails(**contact_data)
+    contact.tenant_id = tenant_id or 1
     db.add(contact)
     db.flush()
 
@@ -393,10 +427,14 @@ async def update_contact(
     contact_id: int,
     contact_in: ContactUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update contact."""
-    contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+    contact = query.first()
     if not contact:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -416,10 +454,14 @@ async def update_contact(
 async def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive contact (soft delete)."""
-    contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+    contact = query.first()
     if not contact:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

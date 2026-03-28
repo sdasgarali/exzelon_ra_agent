@@ -1,5 +1,5 @@
 """Sender mailbox model for managing email sending accounts."""
-from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text, ForeignKey, Index
 from sqlalchemy.sql import func
 import enum
 
@@ -31,6 +31,9 @@ class SenderMailbox(Base):
     __tablename__ = "sender_mailboxes"
 
     mailbox_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+
+    # Multi-tenancy
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
 
     # Email account details
     email = Column(String(255), unique=True, nullable=False, index=True)

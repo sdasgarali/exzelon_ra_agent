@@ -16,6 +16,7 @@ def log_automation_event(
     details: Optional[Any] = None,
     source: str = "scheduler",
     status: str = "success",
+    tenant_id: Optional[int] = None,
 ) -> None:
     """Log an automation event to the database.
 
@@ -30,6 +31,7 @@ def log_automation_event(
     """
     try:
         event = AutomationEvent(
+            tenant_id=tenant_id or 1,
             event_type=event_type,
             source=source,
             title=title,

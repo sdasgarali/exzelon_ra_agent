@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role
+from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.crm_sync_log import CRMSyncLog
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/crm-sync", tags=["CRM Sync"])
 
@@ -21,6 +22,7 @@ def trigger_crm_sync(
     body: SyncRequest = SyncRequest(),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger manual CRM sync."""
     from app.services.crm_sync_engine import run_crm_sync, sync_contacts_from_crm, sync_deals_to_crm
@@ -46,11 +48,14 @@ def sync_history(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get CRM sync history."""
-    logs = db.query(CRMSyncLog).filter(
+    query = db.query(CRMSyncLog).filter(
         CRMSyncLog.is_archived == False,
-    ).order_by(CRMSyncLog.started_at.desc()).limit(limit).all()
+    )
+    query = tenant_filter(query, CRMSyncLog, tenant_id)
+    logs = query.order_by(CRMSyncLog.started_at.desc()).limit(limit).all()
 
     return [
         {

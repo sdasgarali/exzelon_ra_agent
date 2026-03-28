@@ -7,7 +7,8 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role
+from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.campaign import Campaign, CampaignContact, CampaignContactStatus
@@ -22,36 +23,45 @@ def team_leaderboard(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-user performance metrics for the team leaderboard."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    users = db.query(User).filter(User.is_active == True, User.is_archived == False).all()
+    user_query = db.query(User).filter(User.is_active == True, User.is_archived == False)
+    user_query = tenant_filter(user_query, User, tenant_id)
+    users = user_query.all()
     leaderboard = []
 
     for user in users:
         # Emails sent (outreach events linked to campaigns)
-        emails_sent = db.query(func.count(OutreachEvent.event_id)).filter(
+        sent_query = db.query(func.count(OutreachEvent.event_id)).filter(
             OutreachEvent.status == OutreachStatus.SENT,
             OutreachEvent.sent_at >= cutoff,
-        ).scalar() or 0
+        )
+        sent_query = tenant_filter(sent_query, OutreachEvent, tenant_id)
+        emails_sent = sent_query.scalar() or 0
 
         # Deals won
-        deals_won = db.query(func.count(Deal.deal_id)).join(
+        won_query = db.query(func.count(Deal.deal_id)).join(
             DealStage, Deal.stage_id == DealStage.stage_id
         ).filter(
             DealStage.is_won == True,
             Deal.is_archived == False,
             Deal.updated_at >= cutoff,
-        ).scalar() or 0
+        )
+        won_query = tenant_filter(won_query, Deal, tenant_id)
+        deals_won = won_query.scalar() or 0
 
-        total_won_value = db.query(func.sum(Deal.value)).join(
+        val_query = db.query(func.sum(Deal.value)).join(
             DealStage, Deal.stage_id == DealStage.stage_id
         ).filter(
             DealStage.is_won == True,
             Deal.is_archived == False,
             Deal.updated_at >= cutoff,
-        ).scalar() or 0
+        )
+        val_query = tenant_filter(val_query, Deal, tenant_id)
+        total_won_value = val_query.scalar() or 0
 
         leaderboard.append({
             "user_id": user.user_id,
@@ -72,11 +82,14 @@ def team_leaderboard(
 def campaign_comparison(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-campaign metrics for comparison."""
-    campaigns = db.query(Campaign).filter(
+    camp_query = db.query(Campaign).filter(
         Campaign.is_archived == False,
-    ).order_by(Campaign.created_at.desc()).limit(20).all()
+    )
+    camp_query = tenant_filter(camp_query, Campaign, tenant_id)
+    campaigns = camp_query.order_by(Campaign.created_at.desc()).limit(20).all()
 
     comparisons = []
     for campaign in campaigns:
@@ -125,6 +138,7 @@ def revenue_analytics(
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Revenue metrics: total won value, avg deal size, pipeline value, cost per lead, ROI."""
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -132,17 +146,21 @@ def revenue_analytics(
     # Won deals
     won_stage_ids = [s.stage_id for s in db.query(DealStage).filter(DealStage.is_won == True).all()]
 
-    total_won_value = db.query(func.sum(Deal.value)).filter(
+    won_val_query = db.query(func.sum(Deal.value)).filter(
         Deal.stage_id.in_(won_stage_ids),
         Deal.is_archived == False,
         Deal.updated_at >= cutoff,
-    ).scalar() or 0
+    )
+    won_val_query = tenant_filter(won_val_query, Deal, tenant_id)
+    total_won_value = won_val_query.scalar() or 0
 
-    deals_won_count = db.query(func.count(Deal.deal_id)).filter(
+    won_count_query = db.query(func.count(Deal.deal_id)).filter(
         Deal.stage_id.in_(won_stage_ids),
         Deal.is_archived == False,
         Deal.updated_at >= cutoff,
-    ).scalar() or 0
+    )
+    won_count_query = tenant_filter(won_count_query, Deal, tenant_id)
+    deals_won_count = won_count_query.scalar() or 0
 
     avg_deal_size = float(total_won_value) / deals_won_count if deals_won_count > 0 else 0
 
@@ -150,42 +168,52 @@ def revenue_analytics(
     lost_stage_ids = [s.stage_id for s in db.query(DealStage).filter(DealStage.is_lost == True).all()]
     excluded_ids = set(won_stage_ids + lost_stage_ids)
 
-    pipeline_value = db.query(func.sum(Deal.value)).filter(
+    pipeline_query = db.query(func.sum(Deal.value)).filter(
         ~Deal.stage_id.in_(excluded_ids) if excluded_ids else True,
         Deal.is_archived == False,
-    ).scalar() or 0
+    )
+    pipeline_query = tenant_filter(pipeline_query, Deal, tenant_id)
+    pipeline_value = pipeline_query.scalar() or 0
 
     # Total deals
-    total_deals = db.query(func.count(Deal.deal_id)).filter(
+    total_deals_query = db.query(func.count(Deal.deal_id)).filter(
         Deal.is_archived == False,
         Deal.created_at >= cutoff,
-    ).scalar() or 0
+    )
+    total_deals_query = tenant_filter(total_deals_query, Deal, tenant_id)
+    total_deals = total_deals_query.scalar() or 0
 
     # Win rate
-    total_closed = deals_won_count + db.query(func.count(Deal.deal_id)).filter(
+    lost_count_query = db.query(func.count(Deal.deal_id)).filter(
         Deal.stage_id.in_(lost_stage_ids),
         Deal.is_archived == False,
         Deal.updated_at >= cutoff,
-    ).scalar()
+    )
+    lost_count_query = tenant_filter(lost_count_query, Deal, tenant_id)
+    total_closed = deals_won_count + lost_count_query.scalar()
     win_rate = (deals_won_count / total_closed * 100) if total_closed > 0 else 0
 
     # Cost tracking
     total_costs = 0
     try:
         from app.db.models.cost_tracking import CostEntry
-        total_costs = db.query(func.sum(CostEntry.amount)).filter(
+        cost_query = db.query(func.sum(CostEntry.amount)).filter(
             CostEntry.entry_date >= cutoff.date(),
             CostEntry.is_archived == False,
-        ).scalar() or 0
+        )
+        cost_query = tenant_filter(cost_query, CostEntry, tenant_id)
+        total_costs = cost_query.scalar() or 0
     except Exception:
         pass
 
     # Leads generated in period
     from app.db.models.lead import LeadDetails
-    leads_generated = db.query(func.count(LeadDetails.lead_id)).filter(
+    leads_query = db.query(func.count(LeadDetails.lead_id)).filter(
         LeadDetails.created_at >= cutoff,
         LeadDetails.is_archived == False,
-    ).scalar() or 0
+    )
+    leads_query = tenant_filter(leads_query, LeadDetails, tenant_id)
+    leads_generated = leads_query.scalar() or 0
 
     cost_per_lead = float(total_costs) / leads_generated if leads_generated > 0 else 0
     roi = ((float(total_won_value) - float(total_costs)) / float(total_costs) * 100) if float(total_costs) > 0 else 0
@@ -237,6 +265,7 @@ def create_cost_entry(
     body: CostEntryCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Record a cost entry for ROI tracking."""
     from app.db.models.cost_tracking import CostEntry
@@ -254,6 +283,7 @@ def create_cost_entry(
         user_id=current_user.user_id,
         source_adapter=body.source_adapter,
         is_automated=False,
+        tenant_id=tenant_id or 1,
     )
     db.add(entry)
     db.commit()
@@ -275,15 +305,18 @@ def list_cost_entries(
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List cost entries."""
     from app.db.models.cost_tracking import CostEntry
     cutoff = (datetime.utcnow() - timedelta(days=days)).date()
 
-    entries = db.query(CostEntry).filter(
+    cost_query = db.query(CostEntry).filter(
         CostEntry.entry_date >= cutoff,
         CostEntry.is_archived == False,
-    ).order_by(CostEntry.entry_date.desc()).all()
+    )
+    cost_query = tenant_filter(cost_query, CostEntry, tenant_id)
+    entries = cost_query.order_by(CostEntry.entry_date.desc()).all()
 
     return [
         {
@@ -308,10 +341,13 @@ def update_cost_entry(
     body: CostEntryUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update a cost entry."""
     from app.db.models.cost_tracking import CostEntry
-    entry = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False).first()
+    entry_query = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False)
+    entry_query = tenant_filter(entry_query, CostEntry, tenant_id)
+    entry = entry_query.first()
     if not entry:
         raise HTTPException(status_code=404, detail="Cost entry not found")
 
@@ -349,10 +385,13 @@ def delete_cost_entry(
     cost_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete a cost entry."""
     from app.db.models.cost_tracking import CostEntry
-    entry = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False).first()
+    entry_query = db.query(CostEntry).filter(CostEntry.cost_id == cost_id, CostEntry.is_archived == False)
+    entry_query = tenant_filter(entry_query, CostEntry, tenant_id)
+    entry = entry_query.first()
     if not entry:
         raise HTTPException(status_code=404, detail="Cost entry not found")
 
@@ -367,12 +406,13 @@ def costs_per_source(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Cost breakdown grouped by source adapter."""
     from app.db.models.cost_tracking import CostEntry
     cutoff = (datetime.utcnow() - timedelta(days=days)).date()
 
-    rows = db.query(
+    source_query = db.query(
         CostEntry.source_adapter,
         func.sum(CostEntry.amount).label("total_cost"),
         func.sum(CostEntry.api_calls_count).label("total_api_calls"),
@@ -381,7 +421,9 @@ def costs_per_source(
     ).filter(
         CostEntry.entry_date >= cutoff,
         CostEntry.is_archived == False,
-    ).group_by(CostEntry.source_adapter).all()
+    )
+    source_query = tenant_filter(source_query, CostEntry, tenant_id)
+    rows = source_query.group_by(CostEntry.source_adapter).all()
 
     sources = []
     for row in rows:
@@ -408,19 +450,22 @@ def costs_daily_trend(
     days: int = Query(30, ge=1, le=90),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Daily cost totals for trend chart."""
     from app.db.models.cost_tracking import CostEntry
     cutoff = (datetime.utcnow() - timedelta(days=days)).date()
 
-    rows = db.query(
+    trend_query = db.query(
         CostEntry.entry_date,
         func.sum(CostEntry.amount).label("total"),
         func.sum(CostEntry.results_count).label("results"),
     ).filter(
         CostEntry.entry_date >= cutoff,
         CostEntry.is_archived == False,
-    ).group_by(CostEntry.entry_date).order_by(CostEntry.entry_date).all()
+    )
+    trend_query = tenant_filter(trend_query, CostEntry, tenant_id)
+    rows = trend_query.group_by(CostEntry.entry_date).order_by(CostEntry.entry_date).all()
 
     return {
         "period_days": days,
@@ -439,9 +484,10 @@ def costs_daily_trend(
 def budget_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Current month cost utilization per source vs configured budgets."""
     from app.db.models.cost_tracking import CostEntry
     from app.services.cost_tracker import get_budget_status as _get_budget_status
 
-    return _get_budget_status(db)
+    return _get_budget_status(db, tenant_id=tenant_id)

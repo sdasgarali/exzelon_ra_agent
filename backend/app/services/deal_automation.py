@@ -119,7 +119,12 @@ def auto_create_deal_from_interested_reply(
         if client:
             client_id = client.client_id
 
+    # Derive tenant_id from contact
+    _contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
+    _deal_tenant_id = getattr(_contact, 'tenant_id', None) or 1 if _contact else 1
+
     deal = Deal(
+        tenant_id=_deal_tenant_id,
         name=deal_name,
         stage_id=stage.stage_id,
         contact_id=contact_id,
@@ -325,7 +330,7 @@ def update_deal_probability_from_score(contact_id: int, db: Session) -> int:
 
 # ─── 5. Detect stale deals ─────────────────────────────────────────
 
-def detect_stale_deals(db: Session, days_threshold: Optional[int] = None) -> List[Dict[str, Any]]:
+def detect_stale_deals(db: Session, days_threshold: Optional[int] = None, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Find deals with no recent activity.
 
     Returns list of stale deals with deal info + days since last activity.
@@ -337,15 +342,20 @@ def detect_stale_deals(db: Session, days_threshold: Optional[int] = None) -> Lis
     cutoff = datetime.utcnow() - timedelta(days=days_threshold)
 
     # Get Won/Lost stage IDs to exclude
-    terminal_stages = db.query(DealStage.stage_id).filter(
+    terminal_query = db.query(DealStage.stage_id).filter(
         (DealStage.is_won == True) | (DealStage.is_lost == True)
-    ).all()
+    )
+    if tenant_id is not None:
+        terminal_query = terminal_query.filter(DealStage.tenant_id == tenant_id)
+    terminal_stages = terminal_query.all()
     terminal_ids = [s[0] for s in terminal_stages]
 
     # Get all active deals not in terminal stages
     deals_query = db.query(Deal).filter(
         Deal.is_archived == False,
     )
+    if tenant_id is not None:
+        deals_query = deals_query.filter(Deal.tenant_id == tenant_id)
     if terminal_ids:
         deals_query = deals_query.filter(~Deal.stage_id.in_(terminal_ids))
 
@@ -376,17 +386,22 @@ def detect_stale_deals(db: Session, days_threshold: Optional[int] = None) -> Lis
 
 # ─── 6. Weighted pipeline forecast ─────────────────────────────────
 
-def calculate_pipeline_forecast(db: Session) -> Dict[str, Any]:
+def calculate_pipeline_forecast(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
     """Calculate weighted pipeline value: sum of (value * probability / 100).
 
     Excludes Won/Lost deals.
     """
-    terminal_stages = db.query(DealStage.stage_id).filter(
+    terminal_query = db.query(DealStage.stage_id).filter(
         (DealStage.is_won == True) | (DealStage.is_lost == True)
-    ).all()
+    )
+    if tenant_id is not None:
+        terminal_query = terminal_query.filter(DealStage.tenant_id == tenant_id)
+    terminal_stages = terminal_query.all()
     terminal_ids = [s[0] for s in terminal_stages]
 
     deals_query = db.query(Deal).filter(Deal.is_archived == False)
+    if tenant_id is not None:
+        deals_query = deals_query.filter(Deal.tenant_id == tenant_id)
     if terminal_ids:
         deals_query = deals_query.filter(~Deal.stage_id.in_(terminal_ids))
 

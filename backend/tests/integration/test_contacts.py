@@ -9,9 +9,10 @@ class TestContactsEndpoints:
     """Tests for contacts API endpoints."""
 
     @pytest.fixture
-    def sample_contact(self, db_session):
+    def sample_contact(self, db_session, test_tenant):
         """Create a sample contact for testing."""
         contact = ContactDetails(
+            tenant_id=test_tenant.tenant_id,
             client_name="Test Company",
             first_name="John",
             last_name="Doe",
@@ -115,9 +116,10 @@ class TestContactsEndpoints:
         data = response.json()
         assert len(data["items"]) >= 1
 
-    def test_filter_contacts_by_validation_status(self, client, auth_headers, db_session):
+    def test_filter_contacts_by_validation_status(self, client, auth_headers, db_session, test_tenant):
         """Test filtering contacts by validation status."""
         contact = ContactDetails(
+            tenant_id=test_tenant.tenant_id,
             client_name="Validated Company",
             first_name="Valid",
             last_name="Contact",

@@ -1,6 +1,6 @@
 """Cost tracking model for revenue analytics."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, Text, Boolean
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, Text, Boolean, ForeignKey, Index
 from app.db.base import Base
 
 
@@ -9,6 +9,7 @@ class CostEntry(Base):
     __tablename__ = "cost_entries"
 
     cost_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     category = Column(String(50), nullable=False, index=True)  # lead_sourcing, contact_discovery, validation, sending
     amount = Column(Numeric(10, 2), nullable=False)
     entry_date = Column(Date, nullable=False, index=True)

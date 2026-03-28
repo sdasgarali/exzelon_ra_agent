@@ -241,6 +241,7 @@ def _execute_email_step(
 
     # Create outreach event
     event = OutreachEvent(
+        tenant_id=campaign.tenant_id,
         contact_id=cc.contact_id,
         lead_id=cc.lead_id,
         sender_mailbox_id=mailbox.mailbox_id,

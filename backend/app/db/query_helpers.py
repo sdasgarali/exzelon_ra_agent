@@ -1,5 +1,22 @@
 """Database query helper utilities."""
+from typing import Optional
 from sqlalchemy.orm import Session, Query
+
+
+def tenant_filter(query: Query, model, tenant_id: Optional[int]) -> Query:
+    """Apply tenant filtering to a query.
+
+    Args:
+        query: SQLAlchemy query to filter
+        model: SQLAlchemy model class (must have tenant_id column)
+        tenant_id: Tenant ID to filter by. None = super admin (no filter).
+
+    Returns:
+        Filtered query object
+    """
+    if tenant_id is not None:
+        query = query.filter(model.tenant_id == tenant_id)
+    return query
 
 
 def active_query(db: Session, model, show_archived: bool = False) -> Query:

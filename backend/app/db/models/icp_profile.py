@@ -1,5 +1,5 @@
 """Ideal Customer Profile (ICP) model for AI-driven targeting."""
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Index
 from app.db.base import Base
 
 
@@ -8,6 +8,7 @@ class ICPProfile(Base):
     __tablename__ = "icp_profiles"
 
     icp_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     industries_json = Column(Text, nullable=True)  # JSON array of industries

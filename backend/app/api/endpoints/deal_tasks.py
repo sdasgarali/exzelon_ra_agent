@@ -6,9 +6,11 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.deal_task import DealTask, TaskStatus, TaskPriority
+from app.db.models.deal import Deal
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="", tags=["Deal Tasks"])
 
@@ -36,10 +38,12 @@ def create_deal_task(
     body: CreateTaskRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a task for a deal."""
-    from app.db.models.deal import Deal
-    deal = db.query(Deal).filter(Deal.deal_id == deal_id, Deal.is_archived == False).first()
+    query = db.query(Deal).filter(Deal.deal_id == deal_id, Deal.is_archived == False)
+    query = tenant_filter(query, Deal, tenant_id)
+    deal = query.first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
 
@@ -73,8 +77,15 @@ def list_deal_tasks(
     deal_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List tasks for a specific deal."""
+    # Verify deal belongs to tenant
+    deal_query = db.query(Deal).filter(Deal.deal_id == deal_id, Deal.is_archived == False)
+    deal_query = tenant_filter(deal_query, Deal, tenant_id)
+    if not deal_query.first():
+        raise HTTPException(status_code=404, detail="Deal not found")
+
     tasks = db.query(DealTask).filter(
         DealTask.deal_id == deal_id,
         DealTask.is_archived == False,
@@ -89,6 +100,7 @@ def update_task(
     body: UpdateTaskRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update a deal task."""
     task = db.query(DealTask).filter(
@@ -97,6 +109,12 @@ def update_task(
     ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Verify parent deal belongs to tenant
+    if tenant_id is not None:
+        deal = db.query(Deal).filter(Deal.deal_id == task.deal_id, Deal.tenant_id == tenant_id).first()
+        if not deal:
+            raise HTTPException(status_code=404, detail="Task not found")
 
     if body.title is not None:
         task.title = body.title
@@ -125,6 +143,7 @@ def complete_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Mark a task as completed."""
     task = db.query(DealTask).filter(
@@ -133,6 +152,12 @@ def complete_task(
     ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Verify parent deal belongs to tenant
+    if tenant_id is not None:
+        deal = db.query(Deal).filter(Deal.deal_id == task.deal_id, Deal.tenant_id == tenant_id).first()
+        if not deal:
+            raise HTTPException(status_code=404, detail="Task not found")
 
     task.status = TaskStatus.COMPLETED
     task.completed_at = datetime.utcnow()
@@ -145,6 +170,7 @@ def delete_task(
     task_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Delete a deal task (soft delete)."""
     task = db.query(DealTask).filter(
@@ -153,6 +179,12 @@ def delete_task(
     ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Verify parent deal belongs to tenant
+    if tenant_id is not None:
+        deal = db.query(Deal).filter(Deal.deal_id == task.deal_id, Deal.tenant_id == tenant_id).first()
+        if not deal:
+            raise HTTPException(status_code=404, detail="Task not found")
 
     task.is_archived = True
     db.commit()
@@ -164,12 +196,17 @@ def my_tasks(
     status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get current user's tasks across all deals."""
-    q = db.query(DealTask).filter(
+    q = db.query(DealTask).join(Deal, DealTask.deal_id == Deal.deal_id).filter(
         DealTask.assigned_to == current_user.user_id,
         DealTask.is_archived == False,
     )
+
+    # Filter by tenant via parent Deal
+    if tenant_id is not None:
+        q = q.filter(Deal.tenant_id == tenant_id)
 
     if status and status in [e.value for e in TaskStatus]:
         q = q.filter(DealTask.status == TaskStatus(status))

@@ -1,6 +1,6 @@
 """Automation event model — tracks what the system does behind the scenes."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index
 from app.db.base import Base
 
 
@@ -10,6 +10,7 @@ class AutomationEvent(Base):
     __tablename__ = "automation_events"
 
     event_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     event_type = Column(String(50), nullable=False, index=True)  # scheduler_run, ai_classify, ai_suggest, campaign_send, reply_detected, inbox_sync
     source = Column(String(50), nullable=False, default="scheduler")  # scheduler, user, api
     title = Column(String(255), nullable=False)  # human-readable: "Campaign processor ran"

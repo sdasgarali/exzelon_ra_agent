@@ -199,6 +199,18 @@ Domain reputation management subsystem:
 | `/deals/{id}/tasks` | `api/endpoints/deal_tasks.py` | Deal task CRUD + my-tasks |
 | `/spam-check` | `api/endpoints/spam_check.py` | Email spam score checking |
 | `/tracking-domains` | `api/endpoints/tracking_domains.py` | Custom tracking domain CRUD + verify |
+| `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate) |
+
+### Multi-Tenancy Architecture
+
+- **All 38 data models** have `tenant_id` column (NOT NULL, FK to `tenants.tenant_id`, indexed)
+- **All 28 endpoint files** use `get_current_tenant_id` dependency + `tenant_filter` query helper
+- **Super admin** (`tenant_id=None`) sees all tenants' data; regular users see only their tenant
+- **Super admin impersonation**: `X-Tenant-ID` header or `/admin/tenants/{id}/impersonate` endpoint
+- **Plan limits**: `check_plan_limit()` in `api/deps/plan_limits.py` — enforced at CREATE endpoints
+- **Demo seeder**: `services/demo_seeder.py` — seeds sample data for new starter-plan tenants on email verify
+- **Tenant cleanup**: Scheduler job at 3 AM UTC — deactivates empty tenants, deletes unverified users >72h old
+- **Ad-hoc migrations**: Phase 2-4 migration blocks in `main.py` lifespan (ALTER TABLE + backfill + NOT NULL + INDEX)
 
 ## Business Rules (configured in `core/config.py`)
 

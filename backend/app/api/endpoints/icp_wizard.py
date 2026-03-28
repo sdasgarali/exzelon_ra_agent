@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.icp_profile import ICPProfile
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/icp", tags=["ICP Wizard"])
 
@@ -32,6 +33,7 @@ class SaveICPRequest(BaseModel):
 def generate_icp(
     body: GenerateICPRequest,
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI-generate an Ideal Customer Profile from business description."""
     from app.services.ai_icp_wizard import generate_icp as gen_icp
@@ -48,6 +50,7 @@ def save_icp_profile(
     body: SaveICPRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Save an ICP profile."""
     profile = ICPProfile(
@@ -58,6 +61,7 @@ def save_icp_profile(
         states_json=json.dumps(body.states),
         company_sizes_json=json.dumps(body.company_sizes),
         user_id=current_user.user_id,
+        tenant_id=tenant_id or 1,
     )
     db.add(profile)
     db.commit()
@@ -77,11 +81,14 @@ def save_icp_profile(
 def list_icp_profiles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all ICP profiles."""
-    profiles = db.query(ICPProfile).filter(
+    q = db.query(ICPProfile).filter(
         ICPProfile.is_archived == False,
-    ).order_by(ICPProfile.created_at.desc()).all()
+    )
+    q = tenant_filter(q, ICPProfile, tenant_id)
+    profiles = q.order_by(ICPProfile.created_at.desc()).all()
 
     result = []
     for p in profiles:
@@ -104,12 +111,15 @@ def delete_icp_profile(
     icp_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Delete an ICP profile."""
-    profile = db.query(ICPProfile).filter(
+    q = db.query(ICPProfile).filter(
         ICPProfile.icp_id == icp_id,
         ICPProfile.is_archived == False,
-    ).first()
+    )
+    q = tenant_filter(q, ICPProfile, tenant_id)
+    profile = q.first()
     if not profile:
         raise HTTPException(status_code=404, detail="ICP profile not found")
 

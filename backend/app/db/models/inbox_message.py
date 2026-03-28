@@ -20,6 +20,7 @@ class InboxMessage(Base):
     __tablename__ = "inbox_messages"
 
     message_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
 
     # Thread grouping
     thread_id = Column(String(100), nullable=False, index=True)
@@ -60,6 +61,7 @@ class InboxMessage(Base):
     deleted_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
+        Index("idx_inbox_tenant", "tenant_id"),
         Index("idx_inbox_thread", "thread_id"),
         Index("idx_inbox_contact", "contact_id"),
         Index("idx_inbox_mailbox", "mailbox_id"),

@@ -60,7 +60,12 @@ def sync_inbox(db: Session) -> Dict[str, Any]:
                 subject=event.subject,
             )
 
+            # Derive tenant_id from contact or mailbox
+            _tenant_id = (contact.tenant_id if contact and hasattr(contact, 'tenant_id') else None) or \
+                         (mailbox.tenant_id if mailbox and hasattr(mailbox, 'tenant_id') else None) or 1
+
             msg = InboxMessage(
+                tenant_id=_tenant_id,
                 thread_id=thread_id,
                 contact_id=event.contact_id,
                 mailbox_id=event.sender_mailbox_id,
@@ -117,7 +122,12 @@ def sync_inbox(db: Session) -> Dict[str, Any]:
                 subject=event.subject,
             )
 
+            # Derive tenant_id from contact or mailbox
+            _reply_tenant_id = (contact.tenant_id if contact and hasattr(contact, 'tenant_id') else None) or \
+                               (mailbox.tenant_id if mailbox and hasattr(mailbox, 'tenant_id') else None) or 1
+
             reply_msg = InboxMessage(
+                tenant_id=_reply_tenant_id,
                 thread_id=thread_id,
                 contact_id=event.contact_id,
                 mailbox_id=event.sender_mailbox_id,

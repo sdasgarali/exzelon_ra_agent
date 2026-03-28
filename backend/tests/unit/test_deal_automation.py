@@ -22,16 +22,16 @@ from app.services.deal_automation import (
 # ─── Fixtures ─────────────────────────────────────────────────────
 
 
-def _seed_stages(db):
+def _seed_stages(db, tenant_id=1):
     """Seed the 7 default deal stages."""
     stages = [
-        DealStage(name="New Lead", stage_order=1, color="#3b82f6"),
-        DealStage(name="Contacted", stage_order=2, color="#8b5cf6"),
-        DealStage(name="Qualified", stage_order=3, color="#06b6d4"),
-        DealStage(name="Proposal", stage_order=4, color="#f59e0b"),
-        DealStage(name="Negotiation", stage_order=5, color="#ef4444"),
-        DealStage(name="Won", stage_order=6, color="#22c55e", is_won=True),
-        DealStage(name="Lost", stage_order=7, color="#6b7280", is_lost=True),
+        DealStage(tenant_id=tenant_id, name="New Lead", stage_order=1, color="#3b82f6"),
+        DealStage(tenant_id=tenant_id, name="Contacted", stage_order=2, color="#8b5cf6"),
+        DealStage(tenant_id=tenant_id, name="Qualified", stage_order=3, color="#06b6d4"),
+        DealStage(tenant_id=tenant_id, name="Proposal", stage_order=4, color="#f59e0b"),
+        DealStage(tenant_id=tenant_id, name="Negotiation", stage_order=5, color="#ef4444"),
+        DealStage(tenant_id=tenant_id, name="Won", stage_order=6, color="#22c55e", is_won=True),
+        DealStage(tenant_id=tenant_id, name="Lost", stage_order=7, color="#6b7280", is_lost=True),
     ]
     for s in stages:
         db.add(s)
@@ -39,10 +39,11 @@ def _seed_stages(db):
     return {s.name: s for s in stages}
 
 
-def _create_contact(db, first_name="Jane", last_name="Doe", email="jane@example.com",
+def _create_contact(db, tenant_id, first_name="Jane", last_name="Doe", email="jane@example.com",
                      client_name="Acme Inc", lead_score=None):
     """Create a test contact."""
     c = ContactDetails(
+        tenant_id=tenant_id,
         first_name=first_name,
         last_name=last_name,
         email=email,
@@ -55,9 +56,9 @@ def _create_contact(db, first_name="Jane", last_name="Doe", email="jane@example.
     return c
 
 
-def _create_client(db, name="Acme Inc"):
+def _create_client(db, tenant_id, name="Acme Inc"):
     """Create a test client."""
-    cl = ClientInfo(client_name=name)
+    cl = ClientInfo(tenant_id=tenant_id, client_name=name)
     db.add(cl)
     db.flush()
     return cl
@@ -143,10 +144,10 @@ class TestBuildActivityDescription:
 
 @pytest.mark.unit
 class TestAutoCreateDeal:
-    def test_creates_deal_for_new_contact(self, db_session):
-        stages = _seed_stages(db_session)
-        client = _create_client(db_session, "Acme Inc")
-        contact = _create_contact(db_session, client_name="Acme Inc")
+    def test_creates_deal_for_new_contact(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        client = _create_client(db_session, test_tenant.tenant_id, "Acme Inc")
+        contact = _create_contact(db_session, test_tenant.tenant_id, client_name="Acme Inc")
         db_session.commit()
 
         result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
@@ -161,10 +162,10 @@ class TestAutoCreateDeal:
         assert deal.stage_id == stages["New Lead"].stage_id
         assert deal.client_id == client.client_id
 
-    def test_skips_if_deal_exists(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Existing", stage_id=stages["New Lead"].stage_id,
+    def test_skips_if_deal_exists(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Existing", stage_id=stages["New Lead"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         db_session.commit()
@@ -172,24 +173,24 @@ class TestAutoCreateDeal:
         result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
         assert result["action"] == "existing"
 
-    def test_returns_none_when_disabled(self, db_session):
-        _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_returns_none_when_disabled(self, db_session, test_tenant):
+        _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
         _set_setting(db_session, "deal_auto_create_on_interested", "false")
         db_session.commit()
 
         result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
         assert result is None
 
-    def test_returns_none_for_missing_contact(self, db_session):
-        _seed_stages(db_session)
+    def test_returns_none_for_missing_contact(self, db_session, test_tenant):
+        _seed_stages(db_session, test_tenant.tenant_id)
         db_session.commit()
         result = auto_create_deal_from_interested_reply(99999, db_session)
         assert result is None
 
-    def test_returns_none_when_no_new_lead_stage(self, db_session):
+    def test_returns_none_when_no_new_lead_stage(self, db_session, test_tenant):
         # Don't seed any stages
-        contact = _create_contact(db_session)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
         db_session.commit()
         result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
         assert result is None
@@ -200,10 +201,10 @@ class TestAutoCreateDeal:
 
 @pytest.mark.unit
 class TestAutoLogEmailActivity:
-    def test_logs_activity_on_open_deal(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test Deal", stage_id=stages["Contacted"].stage_id,
+    def test_logs_activity_on_open_deal(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test Deal", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         db_session.commit()
@@ -220,10 +221,10 @@ class TestAutoLogEmailActivity:
         assert activity.activity_type == "email_sent"
         assert "Hi there" in activity.description
 
-    def test_skips_won_lost_deals(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Won Deal", stage_id=stages["Won"].stage_id,
+    def test_skips_won_lost_deals(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Won Deal", stage_id=stages["Won"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=100)
         db_session.add(deal)
         db_session.commit()
@@ -231,18 +232,18 @@ class TestAutoLogEmailActivity:
         count = auto_log_email_activity(contact.contact_id, "email_sent", db_session)
         assert count == 0
 
-    def test_returns_zero_when_no_deals(self, db_session):
-        _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_returns_zero_when_no_deals(self, db_session, test_tenant):
+        _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
         db_session.commit()
 
         count = auto_log_email_activity(contact.contact_id, "email_sent", db_session)
         assert count == 0
 
-    def test_disabled_by_setting(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["Contacted"].stage_id,
+    def test_disabled_by_setting(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         _set_setting(db_session, "deal_auto_log_activities", "false")
@@ -257,10 +258,10 @@ class TestAutoLogEmailActivity:
 
 @pytest.mark.unit
 class TestAutoAdvanceStage:
-    def test_advance_new_lead_to_contacted_on_email_sent(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["New Lead"].stage_id,
+    def test_advance_new_lead_to_contacted_on_email_sent(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["New Lead"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         db_session.commit()
@@ -270,10 +271,10 @@ class TestAutoAdvanceStage:
         assert result["from"] == "New Lead"
         assert result["to"] == "Contacted"
 
-    def test_advance_contacted_to_qualified_on_reply(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["Contacted"].stage_id,
+    def test_advance_contacted_to_qualified_on_reply(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         db_session.commit()
@@ -283,10 +284,10 @@ class TestAutoAdvanceStage:
         assert result["from"] == "Contacted"
         assert result["to"] == "Qualified"
 
-    def test_no_advance_from_proposal(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["Proposal"].stage_id,
+    def test_no_advance_from_proposal(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Proposal"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=50)
         db_session.add(deal)
         db_session.commit()
@@ -294,10 +295,10 @@ class TestAutoAdvanceStage:
         result = auto_advance_stage(deal.deal_id, "email_sent", db_session)
         assert result is None
 
-    def test_no_advance_won_deal(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["Won"].stage_id,
+    def test_no_advance_won_deal(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Won"].stage_id,
                     contact_id=contact.contact_id, value=1000, probability=100)
         db_session.add(deal)
         db_session.commit()
@@ -305,10 +306,10 @@ class TestAutoAdvanceStage:
         result = auto_advance_stage(deal.deal_id, "reply_received", db_session)
         assert result is None
 
-    def test_disabled_by_setting(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
-        deal = Deal(name="Test", stage_id=stages["New Lead"].stage_id,
+    def test_disabled_by_setting(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["New Lead"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20)
         db_session.add(deal)
         _set_setting(db_session, "deal_auto_advance_stages", "false")
@@ -317,8 +318,8 @@ class TestAutoAdvanceStage:
         result = auto_advance_stage(deal.deal_id, "email_sent", db_session)
         assert result is None
 
-    def test_nonexistent_deal(self, db_session):
-        _seed_stages(db_session)
+    def test_nonexistent_deal(self, db_session, test_tenant):
+        _seed_stages(db_session, test_tenant.tenant_id)
         db_session.commit()
         result = auto_advance_stage(99999, "email_sent", db_session)
         assert result is None
@@ -329,10 +330,10 @@ class TestAutoAdvanceStage:
 
 @pytest.mark.unit
 class TestUpdateDealProbability:
-    def test_updates_probability(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session, lead_score=75)
-        deal = Deal(name="Test", stage_id=stages["Contacted"].stage_id,
+    def test_updates_probability(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id, lead_score=75)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=20,
                     probability_manual=False)
         db_session.add(deal)
@@ -343,10 +344,10 @@ class TestUpdateDealProbability:
         db_session.flush()
         assert deal.probability == 60  # score 75 → 60%
 
-    def test_skips_manual_probability(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session, lead_score=90)
-        deal = Deal(name="Test", stage_id=stages["Contacted"].stage_id,
+    def test_skips_manual_probability(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id, lead_score=90)
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Test", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=0, probability=50,
                     probability_manual=True)
         db_session.add(deal)
@@ -357,13 +358,13 @@ class TestUpdateDealProbability:
         db_session.refresh(deal)
         assert deal.probability == 50  # unchanged
 
-    def test_returns_zero_when_disabled(self, db_session):
+    def test_returns_zero_when_disabled(self, db_session, test_tenant):
         _set_setting(db_session, "deal_score_to_probability", "false")
         db_session.commit()
         count = update_deal_probability_from_score(1, db_session)
         assert count == 0
 
-    def test_returns_zero_for_missing_contact(self, db_session):
+    def test_returns_zero_for_missing_contact(self, db_session, test_tenant):
         db_session.commit()
         count = update_deal_probability_from_score(99999, db_session)
         assert count == 0
@@ -374,12 +375,12 @@ class TestUpdateDealProbability:
 
 @pytest.mark.unit
 class TestDetectStaleDeals:
-    def test_finds_stale_deals(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_finds_stale_deals(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
 
         # Create a deal with old created_at
-        deal = Deal(name="Old Deal", stage_id=stages["Contacted"].stage_id,
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Old Deal", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=5000, probability=30)
         db_session.add(deal)
         db_session.flush()
@@ -392,11 +393,11 @@ class TestDetectStaleDeals:
         assert stale[0]["deal_id"] == deal.deal_id
         assert stale[0]["days_idle"] >= 19
 
-    def test_excludes_won_lost(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_excludes_won_lost(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
 
-        deal = Deal(name="Won Deal", stage_id=stages["Won"].stage_id,
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Won Deal", stage_id=stages["Won"].stage_id,
                     contact_id=contact.contact_id, value=5000, probability=100)
         db_session.add(deal)
         db_session.flush()
@@ -406,11 +407,11 @@ class TestDetectStaleDeals:
         stale = detect_stale_deals(db_session, days_threshold=7)
         assert len(stale) == 0
 
-    def test_fresh_deal_not_stale(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_fresh_deal_not_stale(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
 
-        deal = Deal(name="Fresh Deal", stage_id=stages["Contacted"].stage_id,
+        deal = Deal(tenant_id=test_tenant.tenant_id, name="Fresh Deal", stage_id=stages["Contacted"].stage_id,
                     contact_id=contact.contact_id, value=1000, probability=30)
         db_session.add(deal)
         db_session.commit()
@@ -424,15 +425,15 @@ class TestDetectStaleDeals:
 
 @pytest.mark.unit
 class TestCalculatePipelineForecast:
-    def test_weighted_value(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_weighted_value(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
 
         # Deal: $10,000 at 50% → weighted = $5,000
-        db_session.add(Deal(name="A", stage_id=stages["Contacted"].stage_id,
+        db_session.add(Deal(tenant_id=test_tenant.tenant_id, name="A", stage_id=stages["Contacted"].stage_id,
                             contact_id=contact.contact_id, value=10000, probability=50))
         # Deal: $20,000 at 25% → weighted = $5,000
-        db_session.add(Deal(name="B", stage_id=stages["Proposal"].stage_id,
+        db_session.add(Deal(tenant_id=test_tenant.tenant_id, name="B", stage_id=stages["Proposal"].stage_id,
                             contact_id=contact.contact_id, value=20000, probability=25))
         db_session.commit()
 
@@ -441,13 +442,13 @@ class TestCalculatePipelineForecast:
         assert forecast["total_pipeline_value"] == 30000.0
         assert forecast["active_deals"] == 2
 
-    def test_excludes_won_lost(self, db_session):
-        stages = _seed_stages(db_session)
-        contact = _create_contact(db_session)
+    def test_excludes_won_lost(self, db_session, test_tenant):
+        stages = _seed_stages(db_session, test_tenant.tenant_id)
+        contact = _create_contact(db_session, test_tenant.tenant_id)
 
-        db_session.add(Deal(name="Active", stage_id=stages["Contacted"].stage_id,
+        db_session.add(Deal(tenant_id=test_tenant.tenant_id, name="Active", stage_id=stages["Contacted"].stage_id,
                             contact_id=contact.contact_id, value=5000, probability=40))
-        db_session.add(Deal(name="Won", stage_id=stages["Won"].stage_id,
+        db_session.add(Deal(tenant_id=test_tenant.tenant_id, name="Won", stage_id=stages["Won"].stage_id,
                             contact_id=contact.contact_id, value=10000, probability=100))
         db_session.commit()
 
@@ -455,8 +456,8 @@ class TestCalculatePipelineForecast:
         assert forecast["active_deals"] == 1
         assert forecast["total_pipeline_value"] == 5000.0
 
-    def test_empty_pipeline(self, db_session):
-        _seed_stages(db_session)
+    def test_empty_pipeline(self, db_session, test_tenant):
+        _seed_stages(db_session, test_tenant.tenant_id)
         db_session.commit()
 
         forecast = calculate_pipeline_forecast(db_session)

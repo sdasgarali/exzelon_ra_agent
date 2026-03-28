@@ -242,9 +242,10 @@ def viewer_headers(viewer_token):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def sample_lead(db_session):
+def sample_lead(db_session, test_tenant):
     """Create a sample lead for testing."""
     lead = LeadDetails(
+        tenant_id=test_tenant.tenant_id,
         client_name="Fixture Corp",
         job_title="Software Engineer",
         state="TX",
@@ -262,9 +263,10 @@ def sample_lead(db_session):
 
 
 @pytest.fixture
-def sample_template(db_session):
+def sample_template(db_session, test_tenant):
     """Create a sample email template for testing."""
     template = EmailTemplate(
+        tenant_id=test_tenant.tenant_id,
         name="Test Template",
         subject="Hello {{contact_first_name}}",
         body_html="<p>Hi {{contact_first_name}},</p>",
@@ -279,9 +281,10 @@ def sample_template(db_session):
 
 
 @pytest.fixture
-def sample_mailbox(db_session):
+def sample_mailbox(db_session, test_tenant):
     """Create a sample sender mailbox for testing."""
     mailbox = SenderMailbox(
+        tenant_id=test_tenant.tenant_id,
         email="test@example.com",
         display_name="Test Sender",
         password="fake-password",
@@ -319,9 +322,10 @@ def sample_warmup_profile(db_session):
 
 
 @pytest.fixture
-def sample_job_run(db_session):
+def sample_job_run(db_session, test_tenant):
     """Create a sample job run for testing."""
     run = JobRun(
+        tenant_id=test_tenant.tenant_id,
         pipeline_name="lead_sourcing",
         status=JobStatus.COMPLETED,
         triggered_by="admin@test.com",

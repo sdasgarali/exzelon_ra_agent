@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field
 from typing import List
 from sqlalchemy.orm import Session
 
-from app.db.base import get_db
-from app.api.deps.auth import require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.webhook import Webhook, WebhookDelivery
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -55,8 +55,11 @@ def _webhook_to_dict(w: Webhook) -> dict:
 def list_webhooks(
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    webhooks = db.query(Webhook).filter(Webhook.is_archived == False).all()
+    query = db.query(Webhook).filter(Webhook.is_archived == False)
+    query = tenant_filter(query, Webhook, tenant_id)
+    webhooks = query.all()
     return [_webhook_to_dict(w) for w in webhooks]
 
 
@@ -65,6 +68,7 @@ def create_webhook(
     data: WebhookCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     for event in data.events:
         if event not in VALID_EVENTS:
@@ -78,6 +82,7 @@ def create_webhook(
         events_json=json.dumps(data.events),
         is_active=data.is_active,
         created_by=user.user_id,
+        tenant_id=tenant_id or 1,
     )
     db.add(webhook)
     db.commit()
@@ -92,8 +97,11 @@ def get_webhook(
     webhook_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    webhook = db.query(Webhook).filter(Webhook.webhook_id == webhook_id).first()
+    query = db.query(Webhook).filter(Webhook.webhook_id == webhook_id)
+    query = tenant_filter(query, Webhook, tenant_id)
+    webhook = query.first()
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
     return _webhook_to_dict(webhook)
@@ -105,8 +113,11 @@ def update_webhook(
     data: WebhookUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    webhook = db.query(Webhook).filter(Webhook.webhook_id == webhook_id).first()
+    query = db.query(Webhook).filter(Webhook.webhook_id == webhook_id)
+    query = tenant_filter(query, Webhook, tenant_id)
+    webhook = query.first()
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
 
@@ -134,8 +145,11 @@ def delete_webhook(
     webhook_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    webhook = db.query(Webhook).filter(Webhook.webhook_id == webhook_id).first()
+    query = db.query(Webhook).filter(Webhook.webhook_id == webhook_id)
+    query = tenant_filter(query, Webhook, tenant_id)
+    webhook = query.first()
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
     webhook.is_archived = True
@@ -151,7 +165,14 @@ def list_deliveries(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    # Verify tenant access to the parent webhook
+    wh_query = db.query(Webhook).filter(Webhook.webhook_id == webhook_id)
+    wh_query = tenant_filter(wh_query, Webhook, tenant_id)
+    if not wh_query.first():
+        raise HTTPException(status_code=404, detail="Webhook not found")
+
     query = db.query(WebhookDelivery).filter(
         WebhookDelivery.webhook_id == webhook_id
     )
@@ -188,9 +209,16 @@ def list_all_deliveries(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List webhook deliveries with optional status filter."""
     query = db.query(WebhookDelivery)
+
+    # Filter deliveries through parent Webhook tenant_id
+    if tenant_id is not None:
+        query = query.join(Webhook, WebhookDelivery.webhook_id == Webhook.webhook_id).filter(
+            Webhook.tenant_id == tenant_id
+        )
 
     if webhook_id:
         query = query.filter(WebhookDelivery.webhook_id == webhook_id)
@@ -230,6 +258,7 @@ def retry_delivery(
     delivery_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually retry a failed webhook delivery."""
     delivery = db.query(WebhookDelivery).filter(
@@ -238,7 +267,9 @@ def retry_delivery(
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
 
-    webhook = db.query(Webhook).filter(Webhook.webhook_id == delivery.webhook_id).first()
+    wh_query = db.query(Webhook).filter(Webhook.webhook_id == delivery.webhook_id)
+    wh_query = tenant_filter(wh_query, Webhook, tenant_id)
+    webhook = wh_query.first()
     if not webhook:
         raise HTTPException(status_code=404, detail="Parent webhook not found")
 

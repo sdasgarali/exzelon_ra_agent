@@ -19,6 +19,7 @@ def sync_contacts_from_crm(crm_type: str, db: Session) -> Dict[str, Any]:
     Returns: {synced: int, skipped: int, errors: int}
     """
     log = CRMSyncLog(
+        tenant_id=1,
         crm_type=crm_type,
         direction="pull",
         entity_type="contacts",
@@ -94,6 +95,7 @@ def sync_deals_to_crm(crm_type: str, db: Session) -> Dict[str, Any]:
     Returns: {synced: int, skipped: int, errors: int}
     """
     log = CRMSyncLog(
+        tenant_id=1,
         crm_type=crm_type,
         direction="push",
         entity_type="deals",

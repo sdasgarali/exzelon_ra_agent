@@ -1,5 +1,5 @@
 """Custom tracking domain model for email tracking."""
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Index
 from app.db.base import Base
 
 
@@ -13,6 +13,7 @@ class TrackingDomain(Base):
     __tablename__ = "tracking_domains"
 
     domain_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     domain_name = Column(String(255), unique=True, nullable=False, index=True)
     is_verified = Column(Boolean, default=False, nullable=False)
     cname_target = Column(String(255), nullable=True)  # The CNAME record value to point to

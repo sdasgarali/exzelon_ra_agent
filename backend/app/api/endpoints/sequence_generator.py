@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 
 router = APIRouter(prefix="/sequence-generator", tags=["Sequence Generator"])
@@ -20,6 +20,7 @@ class GenerateSequenceRequest(BaseModel):
 def generate_sequence(
     body: GenerateSequenceRequest,
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI-generate a multi-step email campaign sequence."""
     from app.services.ai_sequence_generator import generate_sequence as gen_seq

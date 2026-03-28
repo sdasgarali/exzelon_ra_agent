@@ -30,6 +30,7 @@ def _audit_backup(db: Session, action: str, changed_by: str, filename: str,
                   outcome: str, details: str = ""):
     """Write an audit log entry for a backup operation."""
     db.add(AuditLog(
+        tenant_id=1,
         entity_type="backup",
         entity_id=0,
         action=action,

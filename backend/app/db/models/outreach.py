@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey, Index, Boolean
 from app.db.base import Base
 
 
@@ -29,6 +29,7 @@ class OutreachEvent(Base):
     __tablename__ = "outreach_events"
 
     event_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     contact_id = Column(Integer, ForeignKey('contact_details.contact_id'), nullable=False)
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id'), nullable=True)
     sender_mailbox_id = Column(Integer, ForeignKey('sender_mailboxes.mailbox_id'), nullable=True)
@@ -59,6 +60,7 @@ class OutreachEvent(Base):
     variant_index = Column(Integer, nullable=True)
 
     __table_args__ = (
+        Index('idx_outreach_tenant', 'tenant_id'),
         Index('idx_outreach_contact', 'contact_id'),
         Index('idx_outreach_lead', 'lead_id'),
         Index('idx_outreach_status', 'status'),

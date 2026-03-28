@@ -40,6 +40,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     campaign_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(
@@ -75,6 +76,7 @@ class Campaign(Base):
     created_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
 
     __table_args__ = (
+        Index("idx_campaign_tenant", "tenant_id"),
         Index("idx_campaign_status", "status"),
         Index("idx_campaign_created_by", "created_by"),
     )

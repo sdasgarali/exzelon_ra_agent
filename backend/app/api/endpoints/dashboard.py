@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
-from app.api.deps import get_db, get_current_active_user
+from app.api.deps import get_db, get_current_active_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.client import ClientInfo, ClientCategory
@@ -16,6 +16,7 @@ from app.db.models.email_validation import EmailValidationResult, ValidationStat
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -28,11 +29,12 @@ async def get_kpis(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get main KPIs for dashboard."""
-    # Check cache (60s TTL)
-    cache_key = f"{from_date}:{to_date}"
+    # Check cache (60s TTL, scoped by tenant)
+    cache_key = f"{tenant_id}:{from_date}:{to_date}"
     now = time.time()
     if _kpi_cache["key"] == cache_key and _kpi_cache["expires"] > now and _kpi_cache["data"]:
         return _kpi_cache["data"]
@@ -44,18 +46,19 @@ async def get_kpis(
         from_date = to_date - timedelta(days=30)
 
     # Total companies identified
-    total_companies = db.query(LeadDetails).filter(
+    lead_q = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
+    total_companies = lead_q.filter(
         LeadDetails.posting_date >= from_date,
         LeadDetails.posting_date <= to_date
     ).with_entities(func.count(func.distinct(LeadDetails.client_name))).scalar() or 0
 
     # Total leads
-    total_leads = db.query(LeadDetails).filter(
+    total_leads = lead_q.filter(
         LeadDetails.posting_date >= from_date,
         LeadDetails.posting_date <= to_date
     ).with_entities(func.count(LeadDetails.lead_id)).scalar() or 0
 
-    # Total valid emails
+    # Total valid emails (EmailValidationResult doesn't have tenant_id — skip filtering for now)
     total_valid = db.query(EmailValidationResult).filter(
         EmailValidationResult.status == ValidationStatus.VALID,
         EmailValidationResult.validated_at >= datetime.combine(from_date, datetime.min.time()),
@@ -63,11 +66,12 @@ async def get_kpis(
     ).with_entities(func.count(EmailValidationResult.validation_id)).scalar() or 0
 
     # Total contacts
-    total_contacts = db.query(ContactDetails).with_entities(
+    contact_q = tenant_filter(db.query(ContactDetails), ContactDetails, tenant_id)
+    total_contacts = contact_q.with_entities(
         func.count(ContactDetails.contact_id)
     ).scalar() or 0
 
-    # Outreach stats
+    # Outreach stats (OutreachEvent doesn't have tenant_id yet — Phase 3)
     outreach_query = db.query(OutreachEvent).filter(
         OutreachEvent.sent_at >= datetime.combine(from_date, datetime.min.time()),
         OutreachEvent.sent_at <= datetime.combine(to_date, datetime.max.time())
@@ -106,10 +110,11 @@ async def get_leads_sourced(
     to_date: Optional[date] = None,
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Tab 1 - Leads Sourced."""
-    query = db.query(LeadDetails)
+    query = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -136,10 +141,11 @@ async def get_leads_sourced(
 async def get_contacts_identified(
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Tab 2 - Contacts Identified."""
-    contacts = db.query(ContactDetails).order_by(
+    contacts = tenant_filter(db.query(ContactDetails), ContactDetails, tenant_id).order_by(
         ContactDetails.created_at.desc()
     ).limit(limit).all()
 
@@ -165,9 +171,11 @@ async def get_outreach_sent(
     search: Optional[str] = None,
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Tab 3 - Outreach Sent."""
+    # OutreachEvent doesn't have tenant_id yet (Phase 3) — no tenant filter for now
     query = db.query(OutreachEvent)
 
     if from_date:
@@ -221,16 +229,18 @@ async def get_outreach_sent(
 @router.get("/client-categories")
 async def get_client_categories(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Tab 4 - Client Category Tracking."""
-    by_category = db.query(ClientInfo).with_entities(
+    client_q = tenant_filter(db.query(ClientInfo), ClientInfo, tenant_id)
+    by_category = client_q.with_entities(
         ClientInfo.client_category,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.client_category).all()
 
     # Also get client list by category
-    clients = db.query(ClientInfo).order_by(ClientInfo.client_name).all()
+    clients = tenant_filter(db.query(ClientInfo), ClientInfo, tenant_id).order_by(ClientInfo.client_name).all()
 
     return {
         "summary": {cat.value: count for cat, count in by_category if cat},
@@ -250,14 +260,15 @@ async def get_client_categories(
 async def get_trends(
     days: int = Query(30, ge=7, le=365),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get trend data for charts."""
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
 
     # Daily leads count
-    daily_leads = db.query(LeadDetails).with_entities(
+    daily_leads = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id).with_entities(
         func.date(LeadDetails.created_at).label('date'),
         func.count(LeadDetails.lead_id).label('count')
     ).filter(
@@ -281,29 +292,32 @@ async def get_trends(
 @router.get("/stats")
 async def get_dashboard_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Consolidated dashboard statistics (all-time, no date filter)."""
-    # Leads
-    total_leads = db.query(LeadDetails).with_entities(
+    # Leads (tenant-scoped)
+    lead_q = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
+    total_leads = lead_q.with_entities(
         func.count(LeadDetails.lead_id)
     ).scalar() or 0
-    by_status = db.query(LeadDetails).with_entities(
+    by_status = lead_q.with_entities(
         LeadDetails.lead_status, func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.lead_status).all()
-    by_source = db.query(LeadDetails).with_entities(
+    by_source = lead_q.with_entities(
         LeadDetails.source, func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.source).all()
 
-    # Contacts
-    total_contacts = db.query(ContactDetails).with_entities(
+    # Contacts (tenant-scoped)
+    contact_q = tenant_filter(db.query(ContactDetails), ContactDetails, tenant_id)
+    total_contacts = contact_q.with_entities(
         func.count(ContactDetails.contact_id)
     ).scalar() or 0
-    by_validation = db.query(ContactDetails).with_entities(
+    by_validation = contact_q.with_entities(
         ContactDetails.validation_status, func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
-    # Outreach
+    # Outreach (no tenant_id yet — Phase 3)
     total_sent = db.query(OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.SENT
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
@@ -319,26 +333,27 @@ async def get_dashboard_stats(
     reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
     bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
 
-    # Mailboxes
-    total_mailboxes = db.query(SenderMailbox).with_entities(
+    # Mailboxes (tenant-scoped)
+    mb_q = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id)
+    total_mailboxes = mb_q.with_entities(
         func.count(SenderMailbox.mailbox_id)
     ).scalar() or 0
-    active_mailboxes = db.query(SenderMailbox).filter(
+    active_mailboxes = mb_q.filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status == WarmupStatus.ACTIVE
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
-    ready_to_send = db.query(SenderMailbox).filter(
+    ready_to_send = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status.in_([WarmupStatus.ACTIVE, WarmupStatus.COLD_READY])
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
-    warming_up_mailboxes = db.query(SenderMailbox).filter(
+    warming_up_mailboxes = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).filter(
         SenderMailbox.warmup_status == WarmupStatus.WARMING_UP
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
-    by_warmup_status = db.query(SenderMailbox).with_entities(
+    by_warmup_status = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).with_entities(
         SenderMailbox.warmup_status, func.count(SenderMailbox.mailbox_id)
     ).group_by(SenderMailbox.warmup_status).all()
 
-    # Templates
+    # Templates (no tenant_id yet — Phase 3)
     total_templates = db.query(EmailTemplate).with_entities(
         func.count(EmailTemplate.template_id)
     ).scalar() or 0

@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus, EmailProvider
+from app.db.query_helpers import tenant_filter
 from app.core.encryption import encrypt_field, decrypt_field, is_encrypted
 
 logger = structlog.get_logger()
@@ -38,7 +40,8 @@ async def oauth_initiate(
     mailbox_id: Optional[int] = Query(None, description="Existing mailbox ID to connect OAuth"),
     email: Optional[str] = Query(None, description="Email address for new mailbox OAuth"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Initiate Microsoft OAuth2 authorization flow.
 
@@ -53,13 +56,16 @@ async def oauth_initiate(
 
     # Determine email and tenant
     target_email = email
-    tenant_id = None
+    oauth_tenant_id = None
     if mailbox_id:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+        if tenant_id is not None:
+            query = query.filter(SenderMailbox.tenant_id == tenant_id)
+        mailbox = query.first()
         if not mailbox:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
         target_email = mailbox.email
-        tenant_id = mailbox.oauth_tenant_id
+        oauth_tenant_id = mailbox.oauth_tenant_id
 
     if not target_email:
         raise HTTPException(
@@ -75,7 +81,7 @@ async def oauth_initiate(
     from app.services.oauth_helper import get_oauth_authorization_url
     auth_url = get_oauth_authorization_url(
         email=target_email,
-        tenant_id=tenant_id,
+        tenant_id=oauth_tenant_id,
         state=state,
     )
 
@@ -86,7 +92,8 @@ async def oauth_initiate(
 async def oauth_callback(
     request_body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Handle OAuth2 callback — exchange authorization code for tokens.
 
@@ -112,12 +119,18 @@ async def oauth_callback(
 
     # Find or validate the mailbox
     if mailbox_id:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+        query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+        if tenant_id is not None:
+            query = query.filter(SenderMailbox.tenant_id == tenant_id)
+        mailbox = query.first()
         if not mailbox:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
     else:
         # For new mailbox flow — find by email
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.email == target_email).first()
+        query = db.query(SenderMailbox).filter(SenderMailbox.email == target_email)
+        if tenant_id is not None:
+            query = query.filter(SenderMailbox.tenant_id == tenant_id)
+        mailbox = query.first()
         if not mailbox:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -197,10 +210,12 @@ async def list_mailboxes(
     provider: Optional[str] = Query(None, description="Filter by provider"),
     show_archived: bool = Query(False, description="Include archived mailboxes"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all sender mailboxes."""
     query = db.query(SenderMailbox)
+    query = tenant_filter(query, SenderMailbox, tenant_id)
 
     if show_archived:
         query = query.filter(SenderMailbox.is_archived == True)
@@ -241,10 +256,11 @@ async def list_mailboxes(
 @router.get("/stats", response_model=SenderMailboxStatsResponse)
 async def get_mailbox_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get mailbox statistics."""
-    mailboxes = db.query(SenderMailbox).all()
+    mailboxes = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).all()
 
     total = len(mailboxes)
     active = sum(1 for m in mailboxes if m.is_active)
@@ -281,10 +297,14 @@ async def get_mailbox_stats(
 async def get_mailbox(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get a specific mailbox by ID."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -297,9 +317,12 @@ async def get_mailbox(
 async def create_mailbox(
     mailbox_in: SenderMailboxCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new sender mailbox (Admin only)."""
+    check_plan_limit(db, tenant_id, "mailboxes")
+
     # Check if email already exists
     existing = db.query(SenderMailbox).filter(SenderMailbox.email == mailbox_in.email).first()
     if existing:
@@ -334,6 +357,7 @@ async def create_mailbox(
         is_active=mailbox_in.is_active,
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
+        tenant_id=tenant_id or 1,
     )
 
     db.add(mailbox)
@@ -359,10 +383,14 @@ async def update_mailbox(
     mailbox_id: int,
     mailbox_in: SenderMailboxUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update a sender mailbox (Admin only)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -392,10 +420,14 @@ async def update_mailbox(
 async def delete_mailbox(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive a sender mailbox (soft delete, Admin only)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -487,10 +519,14 @@ def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str = 
 async def test_mailbox_connection(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Test connection for an existing mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -576,11 +612,12 @@ async def test_mailbox_connection(
 async def test_new_mailbox_connection(
     request: TestMailboxConnectionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Test connection for new mailbox credentials (before saving)."""
     if request.mailbox_id:
-        return await test_mailbox_connection(request.mailbox_id, db, current_user)
+        return await test_mailbox_connection(request.mailbox_id, db, current_user, tenant_id)
 
     if not request.email or not request.password:
         raise HTTPException(
@@ -619,10 +656,14 @@ async def update_mailbox_status(
     mailbox_id: int,
     new_status: WarmupStatusEnum,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update warmup status of a mailbox (Admin only)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
     if not mailbox:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -653,11 +694,13 @@ async def update_mailbox_status(
 @router.post("/reset-daily-counts")
 async def reset_daily_counts(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Reset daily email counts for all mailboxes (Admin only).
     This should be called by a scheduled job at midnight."""
-    count = db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0})
+    query = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id)
+    count = query.update({SenderMailbox.emails_sent_today: 0})
     db.commit()
 
     return {"message": f"Reset daily counts for {count} mailboxes"}
@@ -667,10 +710,12 @@ async def reset_daily_counts(
 async def get_available_mailboxes_for_sending(
     count: int = Query(1, ge=1, le=10, description="Number of mailboxes needed"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get available mailboxes for sending (cold-ready with remaining quota)."""
-    mailboxes = db.query(SenderMailbox).filter(
+    query = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id)
+    mailboxes = query.filter(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit

@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.api_key import ApiKey
 from app.db.models.webhook import Webhook
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -38,6 +38,7 @@ def create_api_key(
     data: ApiKeyCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new API key. The full key is returned only once."""
     raw_key = f"exz_{secrets.token_hex(32)}"
@@ -51,6 +52,7 @@ def create_api_key(
         scopes_json=json.dumps(data.scopes),
         user_id=user.user_id,
         is_active=True,
+        tenant_id=tenant_id or 1,
     )
     db.add(api_key)
     db.commit()
@@ -70,11 +72,14 @@ def create_api_key(
 def list_api_keys(
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    keys = db.query(ApiKey).filter(
+    query = db.query(ApiKey).filter(
         ApiKey.is_active == True,
         ApiKey.is_archived == False,
-    ).all()
+    )
+    query = tenant_filter(query, ApiKey, tenant_id)
+    keys = query.all()
     return [
         {
             "key_id": k.key_id,
@@ -94,8 +99,11 @@ def revoke_api_key(
     key_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    key = db.query(ApiKey).filter(ApiKey.key_id == key_id).first()
+    query = db.query(ApiKey).filter(ApiKey.key_id == key_id)
+    query = tenant_filter(query, ApiKey, tenant_id)
+    key = query.first()
     if not key:
         raise HTTPException(status_code=404, detail="API key not found")
     key.is_active = False
@@ -118,6 +126,7 @@ def zapier_subscribe(
     data: ZapierSubscribe,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """REST hook subscription from Zapier."""
     webhook = Webhook(
@@ -126,6 +135,7 @@ def zapier_subscribe(
         events_json=json.dumps([data.event]),
         is_active=True,
         created_by=user.user_id,
+        tenant_id=tenant_id or 1,
     )
     db.add(webhook)
     db.commit()
@@ -138,9 +148,12 @@ def zapier_unsubscribe(
     hook_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Unsubscribe a Zapier hook."""
-    webhook = db.query(Webhook).filter(Webhook.webhook_id == hook_id).first()
+    query = db.query(Webhook).filter(Webhook.webhook_id == hook_id)
+    query = tenant_filter(query, Webhook, tenant_id)
+    webhook = query.first()
     if webhook:
         webhook.is_active = False
         webhook.is_archived = True

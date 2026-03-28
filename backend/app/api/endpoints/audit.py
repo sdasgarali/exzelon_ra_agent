@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.audit_log import AuditLog
 
@@ -20,10 +21,12 @@ async def list_audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List audit logs with optional filters. Admin only."""
     query = db.query(AuditLog)
+    query = tenant_filter(query, AuditLog, tenant_id)
 
     if entity_type:
         query = query.filter(AuditLog.entity_type == entity_type)
@@ -63,13 +66,16 @@ async def list_audit_logs(
 async def get_lead_audit_trail(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get audit trail for a specific lead."""
-    logs = db.query(AuditLog).filter(
+    query = db.query(AuditLog).filter(
         AuditLog.entity_type == "lead",
         AuditLog.entity_id == lead_id
-    ).order_by(desc(AuditLog.created_at)).all()
+    )
+    query = tenant_filter(query, AuditLog, tenant_id)
+    logs = query.order_by(desc(AuditLog.created_at)).all()
 
     return [
         {

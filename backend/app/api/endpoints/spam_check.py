@@ -1,8 +1,9 @@
 """Spam check endpoint — score email content for spam triggers."""
+from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 
 router = APIRouter(prefix="/spam-check", tags=["Spam Check"])
@@ -17,6 +18,7 @@ class SpamCheckRequest(BaseModel):
 def check_spam(
     body: SpamCheckRequest,
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Check email content for spam trigger words and patterns.
 

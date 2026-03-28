@@ -264,6 +264,7 @@ def run_warmup_assessment(
     job = None
     try:
         job = JobRun(
+            tenant_id=1,
             pipeline_name="warmup_assessment",
             started_at=datetime.utcnow(),
             status=JobStatus.RUNNING,

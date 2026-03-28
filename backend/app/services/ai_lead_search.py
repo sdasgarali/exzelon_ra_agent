@@ -133,7 +133,8 @@ def parse_natural_query(query: str) -> Dict[str, Any]:
     return filters
 
 
-def execute_ai_search(query: str, db: Session, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+def execute_ai_search(query: str, db: Session, limit: int = 50, offset: int = 0,
+                       tenant_id: Optional[int] = None) -> Dict[str, Any]:
     """Parse a natural language query and execute it against the leads database.
 
     Returns: {filters: dict, results: list[dict], total: int, query: str}
@@ -143,6 +144,10 @@ def execute_ai_search(query: str, db: Session, limit: int = 50, offset: int = 0)
     filters = parse_natural_query(query)
 
     q = db.query(LeadDetails).filter(LeadDetails.is_archived == False)
+
+    # Apply tenant filtering
+    if tenant_id is not None:
+        q = q.filter(LeadDetails.tenant_id == tenant_id)
 
     if "state" in filters:
         q = q.filter(func.upper(LeadDetails.state) == filters["state"])

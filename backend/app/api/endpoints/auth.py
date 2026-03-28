@@ -8,6 +8,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.api.deps import get_db, get_current_active_user
+from app.api.deps.plan_limits import check_plan_limit
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
 from app.db.models.user import User, UserRole
@@ -170,6 +171,8 @@ async def register(
     # Only admins can create users
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    check_plan_limit(db, current_user.tenant_id, "users")
 
     # Check if email exists
     existing_user = db.query(User).filter(User.email == user_in.email).first()

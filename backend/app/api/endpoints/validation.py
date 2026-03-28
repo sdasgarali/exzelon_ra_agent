@@ -4,10 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user
+from app.api.deps import get_db, get_current_active_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.contact import ContactDetails
+from app.db.query_helpers import tenant_filter
 from app.schemas.validation import ValidationResult, ValidationBulkRequest
 
 router = APIRouter(prefix="/validation", tags=["Email Validation"])
@@ -20,7 +21,8 @@ async def list_validation_results(
     status_filter: Optional[ValidationStatus] = Query(None, alias="status"),
     provider: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """List email validation results."""
     query = db.query(EmailValidationResult)
@@ -38,7 +40,8 @@ async def list_validation_results(
 async def get_validation_result(
     email: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Get validation result for a specific email."""
     result = db.query(EmailValidationResult).filter(
@@ -59,7 +62,8 @@ async def validate_bulk(
     request: ValidationBulkRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Run bulk email validation (async)."""
     from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -82,13 +86,16 @@ async def validate_bulk(
 async def validate_pending_contacts(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Validate all contacts without validation status."""
     # Get unvalidated contact emails
-    contacts = db.query(ContactDetails).filter(
+    query = db.query(ContactDetails).filter(
         ContactDetails.validation_status.is_(None)
-    ).all()
+    )
+    query = tenant_filter(query, ContactDetails, tenant_id)
+    contacts = query.all()
 
     if not contacts:
         return {"message": "No pending contacts to validate", "count": 0}
@@ -113,7 +120,8 @@ async def validate_pending_contacts(
 @router.get("/stats/summary")
 async def get_validation_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Get validation statistics summary."""
     base = db.query(EmailValidationResult)

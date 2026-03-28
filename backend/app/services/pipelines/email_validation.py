@@ -47,6 +47,7 @@ def run_email_validation_pipeline(
     emails: Optional[List[str]] = None,
     provider: Optional[str] = None,
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the email validation pipeline.
@@ -68,6 +69,7 @@ def run_email_validation_pipeline(
 
     # Create job run record
     job_run = JobRun(
+        tenant_id=tenant_id or 1,
         pipeline_name="email_validation",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -83,10 +85,13 @@ def run_email_validation_pipeline(
         # Get emails to validate
         if emails is None:
             # Get unvalidated contact emails
-            contacts = db.query(ContactDetails).filter(
+            q = db.query(ContactDetails).filter(
                 ContactDetails.validation_status.is_(None),
                 ContactDetails.is_archived == False
-            ).limit(500).all()
+            )
+            if tenant_id is not None:
+                q = q.filter(ContactDetails.tenant_id == tenant_id)
+            contacts = q.limit(500).all()
             emails = [c.email for c in contacts]
 
         if not emails:

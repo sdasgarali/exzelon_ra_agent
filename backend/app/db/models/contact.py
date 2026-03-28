@@ -30,6 +30,10 @@ class ContactDetails(Base):
     __tablename__ = "contact_details"
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Multi-tenancy
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+
     # Direct link to the lead this contact was discovered for
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='CASCADE'), nullable=True, index=True)
 
@@ -78,6 +82,7 @@ class ContactDetails(Base):
         Index('idx_contact_client', 'client_name'),
         Index('idx_contact_email', 'email'),
         Index('idx_contact_priority', 'priority_level'),
+        Index('idx_contact_tenant', 'tenant_id'),
     )
 
     def __repr__(self) -> str:

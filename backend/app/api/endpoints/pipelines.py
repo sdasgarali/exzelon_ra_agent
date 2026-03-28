@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 
 from datetime import timezone
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.job_run import JobRun, JobStatus
+from app.db.query_helpers import tenant_filter
 from app.schemas.pipeline import LeadIdsRequest, ContactIdsRequest
 
 
@@ -99,10 +100,12 @@ async def list_job_runs(
     pipeline_name: Optional[str] = None,
     status_filter: Optional[JobStatus] = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List pipeline job runs."""
     query = db.query(JobRun)
+    query = tenant_filter(query, JobRun, tenant_id)
 
     if pipeline_name:
         query = query.filter(JobRun.pipeline_name == pipeline_name)
@@ -158,10 +161,13 @@ async def list_job_runs(
 async def get_job_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get job run details."""
-    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    query = db.query(JobRun).filter(JobRun.run_id == run_id)
+    query = tenant_filter(query, JobRun, tenant_id)
+    run = query.first()
     if not run:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -217,14 +223,17 @@ async def get_run_summary(
     run_id: int,
     regenerate: bool = Query(False, description="Force re-generation of summary report"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get or generate an AI-powered summary report for a completed pipeline run.
 
     Pass ?regenerate=true to force fresh generation (ignores cache).
     Old-format cached summaries (missing source_breakdown) are auto-regenerated.
     """
-    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    query = db.query(JobRun).filter(JobRun.run_id == run_id)
+    query = tenant_filter(query, JobRun, tenant_id)
+    run = query.first()
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job run not found")
 
@@ -260,10 +269,13 @@ async def get_run_summary(
 async def cancel_job_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Request cancellation of a running pipeline job."""
-    run = db.query(JobRun).filter(JobRun.run_id == run_id).first()
+    query = db.query(JobRun).filter(JobRun.run_id == run_id)
+    query = tenant_filter(query, JobRun, tenant_id)
+    run = query.first()
     if not run:
         raise HTTPException(status_code=404, detail="Job run not found")
     if run.status != JobStatus.RUNNING:
@@ -278,7 +290,8 @@ async def run_lead_sourcing(
     background_tasks: BackgroundTasks,
     sources: List[str] = Query(default=["linkedin", "indeed"]),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run lead sourcing pipeline."""
     from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
@@ -287,6 +300,7 @@ async def run_lead_sourcing(
         run_lead_sourcing_pipeline,
         sources=sources,
         triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -299,7 +313,8 @@ async def run_lead_sourcing(
 async def upload_leads_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Upload leads from XLSX file."""
     if not file.filename.endswith(('.xlsx', '.xls')):
@@ -321,7 +336,7 @@ async def upload_leads_file(
         f.write(content)
 
     # Import leads
-    result = import_leads_from_file(file_path, triggered_by=current_user.email)
+    result = import_leads_from_file(file_path, triggered_by=current_user.email, tenant_id=tenant_id)
 
     return result
 
@@ -331,7 +346,8 @@ async def run_contact_enrichment(
     background_tasks: BackgroundTasks,
     request: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
@@ -342,6 +358,7 @@ async def run_contact_enrichment(
         run_contact_enrichment_pipeline,
         triggered_by=current_user.email,
         lead_ids=lead_ids,
+        tenant_id=tenant_id,
     )
 
     msg = "Contact enrichment started" + (f" for {len(lead_ids)} selected leads" if lead_ids else "")
@@ -355,7 +372,8 @@ async def run_contact_enrichment(
 async def run_email_validation(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation pipeline."""
     from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -365,6 +383,7 @@ async def run_email_validation(
         emails=None,  # Will validate all unvalidated contacts
         provider=None,
         triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -380,7 +399,8 @@ async def run_email_validation_selected(
     request: ContactIdsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation for selected contact IDs."""
     from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -390,9 +410,12 @@ async def run_email_validation_selected(
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
-    contacts = db.query(ContactDetails).filter(
+    q = db.query(ContactDetails).filter(
         ContactDetails.contact_id.in_(contact_ids)
-    ).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(ContactDetails.tenant_id == tenant_id)
+    contacts = q.all()
     emails = [c.email for c in contacts if c.email]
 
     if not emails:
@@ -419,7 +442,8 @@ async def run_outreach(
     dry_run: bool = Query(True),
     request: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
     lead_ids = request.lead_ids if request else None
@@ -427,7 +451,7 @@ async def run_outreach(
     if lead_ids:
         from app.services.pipelines.outreach import run_outreach_for_lead
         for lid in lead_ids:
-            background_tasks.add_task(run_outreach_for_lead, lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
+            background_tasks.add_task(run_outreach_for_lead, lead_id=lid, dry_run=dry_run, triggered_by=current_user.email, tenant_id=tenant_id)
         return {
             "message": f"Outreach started for {len(lead_ids)} selected leads (dry_run={dry_run})",
             "status": "processing"
@@ -438,6 +462,7 @@ async def run_outreach(
         background_tasks.add_task(
             run_outreach_mailmerge_pipeline,
             triggered_by=current_user.email,
+            tenant_id=tenant_id,
         )
     else:
         from app.services.pipelines.outreach import run_outreach_send_pipeline
@@ -446,6 +471,7 @@ async def run_outreach(
             dry_run=dry_run,
             limit=30,
             triggered_by=current_user.email,
+            tenant_id=tenant_id,
         )
 
     return {

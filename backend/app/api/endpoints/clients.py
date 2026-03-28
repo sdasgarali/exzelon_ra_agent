@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc
 from pydantic import BaseModel
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
 from app.db.models.settings import Settings as SettingsModel
-from app.db.query_helpers import active_query
+from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 from app.services.company_enrichment import enrich_client, bulk_enrich_clients
 
@@ -51,7 +51,7 @@ def _get_setting(db: Session, key: str, default=None):
     return default
 
 
-def compute_client_category(db: Session, client_name: str) -> ClientCategory:
+def compute_client_category(db: Session, client_name: str, tenant_id: Optional[int] = None) -> ClientCategory:
     """Compute client category based on posting frequency.
 
     Thresholds are read from the settings table:
@@ -65,10 +65,12 @@ def compute_client_category(db: Session, client_name: str) -> ClientCategory:
 
     cutoff = date.today() - timedelta(days=window_days)
 
-    unique_dates = db.query(LeadDetails).filter(
+    lead_query = db.query(LeadDetails).filter(
         LeadDetails.client_name == client_name,
         LeadDetails.posting_date >= cutoff
-    ).with_entities(func.count(func.distinct(LeadDetails.posting_date))).scalar() or 0
+    )
+    lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
+    unique_dates = lead_query.with_entities(func.count(func.distinct(LeadDetails.posting_date))).scalar() or 0
 
     if unique_dates > regular_threshold:
         return ClientCategory.REGULAR
@@ -92,10 +94,12 @@ async def list_clients(
     sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
     show_archived: bool = Query(False, description="Include archived clients"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List clients with filtering and sorting."""
     query = active_query(db, ClientInfo, show_archived=show_archived)
+    query = tenant_filter(query, ClientInfo, tenant_id)
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -137,19 +141,23 @@ async def list_clients(
 @router.get("/stats", tags=["Clients"])
 async def get_client_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get client statistics summary."""
-    total = db.query(ClientInfo).with_entities(
+    total_query = tenant_filter(db.query(ClientInfo), ClientInfo, tenant_id)
+    total = total_query.with_entities(
         func.count(ClientInfo.client_id)
     ).scalar() or 0
 
-    by_status = db.query(ClientInfo).with_entities(
+    status_query = tenant_filter(db.query(ClientInfo), ClientInfo, tenant_id)
+    by_status = status_query.with_entities(
         ClientInfo.status,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.status).all()
 
-    by_category = db.query(ClientInfo).with_entities(
+    category_query = tenant_filter(db.query(ClientInfo), ClientInfo, tenant_id)
+    by_category = category_query.with_entities(
         ClientInfo.client_category,
         func.count(ClientInfo.client_id)
     ).group_by(ClientInfo.client_category).all()
@@ -168,10 +176,12 @@ async def export_clients_csv(
     search: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived clients"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Export clients to CSV file."""
     query = active_query(db, ClientInfo, show_archived=show_archived)
+    query = tenant_filter(query, ClientInfo, tenant_id)
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -231,20 +241,24 @@ async def export_clients_csv(
 @router.get("/filter-options")
 async def get_client_filter_options(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get distinct values for client filter dropdowns."""
-    industries = [r[0] for r in db.query(ClientInfo.industry).filter(
+    ind_query = tenant_filter(db.query(ClientInfo.industry).filter(
         ClientInfo.industry.isnot(None), ClientInfo.industry != ""
-    ).distinct().order_by(ClientInfo.industry).all()]
+    ), ClientInfo, tenant_id)
+    industries = [r[0] for r in ind_query.distinct().order_by(ClientInfo.industry).all()]
 
-    sizes = [r[0] for r in db.query(ClientInfo.company_size).filter(
+    size_query = tenant_filter(db.query(ClientInfo.company_size).filter(
         ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
-    ).distinct().order_by(ClientInfo.company_size).all()]
+    ), ClientInfo, tenant_id)
+    sizes = [r[0] for r in size_query.distinct().order_by(ClientInfo.company_size).all()]
 
-    states = [r[0] for r in db.query(ClientInfo.location_state).filter(
+    state_query = tenant_filter(db.query(ClientInfo.location_state).filter(
         ClientInfo.location_state.isnot(None), ClientInfo.location_state != ""
-    ).distinct().order_by(ClientInfo.location_state).all()]
+    ), ClientInfo, tenant_id)
+    states = [r[0] for r in state_query.distinct().order_by(ClientInfo.location_state).all()]
 
     return {
         "industries": industries,
@@ -257,16 +271,19 @@ async def get_client_filter_options(
 async def bulk_delete_clients(
     request: BulkClientIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive multiple clients by IDs (soft delete). Admin/Operator only."""
     client_ids = request.client_ids
     if not client_ids:
         raise HTTPException(status_code=400, detail="No client IDs provided")
 
-    clients = db.query(ClientInfo).filter(
+    query = db.query(ClientInfo).filter(
         ClientInfo.client_id.in_(client_ids)
-    ).all()
+    )
+    query = tenant_filter(query, ClientInfo, tenant_id)
+    clients = query.all()
 
     if not clients:
         raise HTTPException(status_code=404, detail="No clients found with provided IDs")
@@ -274,9 +291,11 @@ async def bulk_delete_clients(
     found_ids = [c.client_id for c in clients]
 
     try:
-        archived_count = db.query(ClientInfo).filter(
+        archive_query = db.query(ClientInfo).filter(
             ClientInfo.client_id.in_(found_ids)
-        ).update({ClientInfo.is_archived: True}, synchronize_session=False)
+        )
+        archive_query = tenant_filter(archive_query, ClientInfo, tenant_id)
+        archived_count = archive_query.update({ClientInfo.is_archived: True}, synchronize_session=False)
 
         db.commit()
     except Exception as e:
@@ -294,7 +313,8 @@ async def bulk_delete_clients(
 async def bulk_enrich(
     request: BulkClientIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Enrich multiple clients with data aggregated from leads."""
     client_ids = request.client_ids
@@ -303,7 +323,15 @@ async def bulk_enrich(
     if len(client_ids) > 500:
         raise HTTPException(status_code=400, detail="Maximum 500 clients per batch")
 
-    result = bulk_enrich_clients(db, client_ids)
+    # Filter client IDs to only those belonging to this tenant
+    query = db.query(ClientInfo.client_id).filter(ClientInfo.client_id.in_(client_ids))
+    query = tenant_filter(query, ClientInfo, tenant_id)
+    valid_ids = [r[0] for r in query.all()]
+
+    if not valid_ids:
+        raise HTTPException(status_code=404, detail="No clients found with provided IDs")
+
+    result = bulk_enrich_clients(db, valid_ids)
     return result
 
 
@@ -311,10 +339,14 @@ async def bulk_enrich(
 async def enrich_single_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Enrich a single client with data aggregated from leads."""
-    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    query = db.query(ClientInfo).filter(ClientInfo.client_id == client_id)
+    if tenant_id is not None:
+        query = query.filter(ClientInfo.tenant_id == tenant_id)
+    client = query.first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -327,10 +359,14 @@ async def enrich_single_client(
 async def get_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get client by ID."""
-    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    query = db.query(ClientInfo).filter(ClientInfo.client_id == client_id)
+    if tenant_id is not None:
+        query = query.filter(ClientInfo.tenant_id == tenant_id)
+    client = query.first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -343,10 +379,14 @@ async def get_client(
 async def create_client(
     client_in: ClientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new client."""
-    existing = db.query(ClientInfo).filter(ClientInfo.client_name == client_in.client_name).first()
+    dup_query = db.query(ClientInfo).filter(ClientInfo.client_name == client_in.client_name)
+    if tenant_id is not None:
+        dup_query = dup_query.filter(ClientInfo.tenant_id == tenant_id)
+    existing = dup_query.first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -354,7 +394,8 @@ async def create_client(
         )
 
     client = ClientInfo(**client_in.model_dump())
-    client.client_category = compute_client_category(db, client_in.client_name)
+    client.tenant_id = tenant_id or 1
+    client.client_category = compute_client_category(db, client_in.client_name, tenant_id=tenant_id)
     db.add(client)
     db.commit()
     db.refresh(client)
@@ -367,10 +408,14 @@ async def update_client(
     client_id: int,
     client_in: ClientUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update client."""
-    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    query = db.query(ClientInfo).filter(ClientInfo.client_id == client_id)
+    if tenant_id is not None:
+        query = query.filter(ClientInfo.tenant_id == tenant_id)
+    client = query.first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -391,10 +436,14 @@ async def update_client(
 async def delete_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive client (soft delete)."""
-    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    query = db.query(ClientInfo).filter(ClientInfo.client_id == client_id)
+    if tenant_id is not None:
+        query = query.filter(ClientInfo.tenant_id == tenant_id)
+    client = query.first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -414,17 +463,21 @@ async def delete_client(
 async def refresh_client_category(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Refresh client category based on current posting data."""
-    client = db.query(ClientInfo).filter(ClientInfo.client_id == client_id).first()
+    query = db.query(ClientInfo).filter(ClientInfo.client_id == client_id)
+    if tenant_id is not None:
+        query = query.filter(ClientInfo.tenant_id == tenant_id)
+    client = query.first()
     if not client:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Client not found"
         )
 
-    client.client_category = compute_client_category(db, client.client_name)
+    client.client_category = compute_client_category(db, client.client_name, tenant_id=tenant_id)
     db.commit()
     db.refresh(client)
 

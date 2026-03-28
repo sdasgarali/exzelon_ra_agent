@@ -4,9 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.query_helpers import tenant_filter
 from app.schemas.email_template import (
     EmailTemplateCreate,
     EmailTemplateUpdate,
@@ -22,9 +23,11 @@ async def list_templates(
     show_archived: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all email templates."""
     query = db.query(EmailTemplate)
+    query = tenant_filter(query, EmailTemplate, tenant_id)
     if show_archived:
         query = query.filter(EmailTemplate.is_archived == True)
     else:
@@ -42,11 +45,12 @@ async def list_templates(
 async def get_active_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get the currently active email template."""
-    template = db.query(EmailTemplate).filter(
-        EmailTemplate.status == TemplateStatus.ACTIVE
-    ).first()
+    query = db.query(EmailTemplate)
+    query = tenant_filter(query, EmailTemplate, tenant_id)
+    template = query.filter(EmailTemplate.status == TemplateStatus.ACTIVE).first()
     if not template:
         return None
     return EmailTemplateResponse.model_validate(template)
@@ -57,12 +61,19 @@ async def get_template(
     template_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get a single email template by ID."""
     template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Template not found",
@@ -75,15 +86,19 @@ async def create_template(
     template_in: EmailTemplateCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new email template."""
-    # If creating as active, deactivate all others
+    # If creating as active, deactivate all others in the same tenant
     if template_in.status == TemplateStatus.ACTIVE:
-        db.query(EmailTemplate).filter(
+        query = db.query(EmailTemplate).filter(
             EmailTemplate.status == TemplateStatus.ACTIVE
-        ).update({"status": TemplateStatus.INACTIVE})
+        )
+        query = tenant_filter(query, EmailTemplate, tenant_id)
+        query.update({"status": TemplateStatus.INACTIVE})
 
     template = EmailTemplate(**template_in.model_dump())
+    template.tenant_id = tenant_id or 1
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -96,6 +111,7 @@ async def update_template(
     template_in: EmailTemplateUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update an email template."""
     template = db.query(EmailTemplate).filter(
@@ -107,14 +123,23 @@ async def update_template(
             detail="Template not found",
         )
 
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
     update_data = template_in.model_dump(exclude_unset=True)
 
-    # If setting to active, deactivate all others
+    # If setting to active, deactivate all others in the same tenant
     if update_data.get("status") == TemplateStatus.ACTIVE:
-        db.query(EmailTemplate).filter(
+        query = db.query(EmailTemplate).filter(
             EmailTemplate.status == TemplateStatus.ACTIVE,
             EmailTemplate.template_id != template_id,
-        ).update({"status": TemplateStatus.INACTIVE})
+        )
+        query = tenant_filter(query, EmailTemplate, tenant_id)
+        query.update({"status": TemplateStatus.INACTIVE})
 
     for field, value in update_data.items():
         setattr(template, field, value)
@@ -129,6 +154,7 @@ async def delete_template(
     template_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive an email template (soft delete). Cannot archive the default template."""
     template = db.query(EmailTemplate).filter(
@@ -139,6 +165,14 @@ async def delete_template(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Template not found",
         )
+
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
     if template.is_default:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,6 +189,7 @@ async def activate_template(
     template_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Activate a template (deactivates all others)."""
     template = db.query(EmailTemplate).filter(
@@ -166,10 +201,19 @@ async def activate_template(
             detail="Template not found",
         )
 
-    # Deactivate all others
-    db.query(EmailTemplate).filter(
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    # Deactivate all others in the same tenant
+    query = db.query(EmailTemplate).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE
-    ).update({"status": TemplateStatus.INACTIVE})
+    )
+    query = tenant_filter(query, EmailTemplate, tenant_id)
+    query.update({"status": TemplateStatus.INACTIVE})
 
     template.status = TemplateStatus.ACTIVE
     db.commit()
@@ -182,12 +226,20 @@ async def preview_template(
     template_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview a template with sample data."""
     template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Template not found",
@@ -228,12 +280,20 @@ async def duplicate_template(
     template_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Duplicate an email template."""
     template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
     if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Template not found",
@@ -247,6 +307,7 @@ async def duplicate_template(
         status=TemplateStatus.INACTIVE,
         is_default=False,
         description=template.description,
+        tenant_id=tenant_id or 1,
     )
     db.add(new_template)
     db.commit()

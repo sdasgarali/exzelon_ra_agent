@@ -13,6 +13,7 @@ class DealStage(Base):
     __tablename__ = "deal_stages"
 
     stage_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     stage_order = Column(Integer, nullable=False)
     color = Column(String(7), default="#6b7280", nullable=False)  # hex color
@@ -21,6 +22,7 @@ class DealStage(Base):
 
     __table_args__ = (
         Index("idx_stage_order", "stage_order"),
+        Index("idx_stage_tenant", "tenant_id"),
     )
 
     def __repr__(self) -> str:
@@ -33,6 +35,7 @@ class Deal(Base):
     __tablename__ = "deals"
 
     deal_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     stage_id = Column(Integer, ForeignKey("deal_stages.stage_id"), nullable=False)
 
@@ -65,6 +68,7 @@ class Deal(Base):
         Index("idx_deal_stage", "stage_id"),
         Index("idx_deal_contact", "contact_id"),
         Index("idx_deal_client", "client_id"),
+        Index("idx_deal_tenant", "tenant_id"),
     )
 
     def __repr__(self) -> str:

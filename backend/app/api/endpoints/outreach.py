@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.sender_mailbox import SenderMailbox
 from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse, OutreachThreadResponse
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/outreach", tags=["Outreach"])
 
@@ -25,10 +26,12 @@ async def list_outreach_events(
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """List outreach events."""
     query = db.query(OutreachEvent)
+    query = tenant_filter(query, OutreachEvent, tenant_id)
 
     if status_filter:
         query = query.filter(OutreachEvent.status == status_filter)
@@ -47,11 +50,17 @@ async def list_outreach_events(
 async def get_outreach_event(
     event_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Get outreach event by ID."""
     event = db.query(OutreachEvent).filter(OutreachEvent.event_id == event_id).first()
     if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Outreach event not found"
+        )
+    if tenant_id is not None and event.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Outreach event not found"
@@ -63,11 +72,17 @@ async def get_outreach_event(
 async def get_outreach_thread(
     event_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Get full thread/conversation view for an outreach event."""
     event = db.query(OutreachEvent).filter(OutreachEvent.event_id == event_id).first()
     if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Outreach event not found"
+        )
+    if tenant_id is not None and event.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Outreach event not found"
@@ -115,10 +130,12 @@ async def get_outreach_thread(
 async def create_outreach_event(
     event_in: OutreachEventCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Create an outreach event."""
     event = OutreachEvent(**event_in.model_dump())
+    event.tenant_id = tenant_id or 1
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -130,16 +147,17 @@ async def create_outreach_event(
 async def bulk_delete_outreach_events(
     request: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Delete multiple outreach events by IDs. Admin/Operator only."""
     event_ids = request.get("event_ids", [])
     if not event_ids:
         raise HTTPException(status_code=400, detail="No event IDs provided")
 
-    deleted_count = db.query(OutreachEvent).filter(
-        OutreachEvent.event_id.in_(event_ids)
-    ).delete(synchronize_session=False)
+    query = db.query(OutreachEvent).filter(OutreachEvent.event_id.in_(event_ids))
+    query = tenant_filter(query, OutreachEvent, tenant_id)
+    deleted_count = query.delete(synchronize_session=False)
 
     db.commit()
 
@@ -153,11 +171,17 @@ async def bulk_delete_outreach_events(
 async def delete_outreach_event(
     event_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Delete a single outreach event. Admin/Operator only."""
     event = db.query(OutreachEvent).filter(OutreachEvent.event_id == event_id).first()
     if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Outreach event not found"
+        )
+    if tenant_id is not None and event.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Outreach event not found"
@@ -170,7 +194,8 @@ async def delete_outreach_event(
 async def run_mailmerge_export(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Generate mail merge export package."""
     from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
@@ -192,7 +217,8 @@ async def send_emails(
     dry_run: bool = Query(True, description="If true, validate but don't send"),
     limit: int = Query(30, description="Max emails to send"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Send emails programmatically (respects daily limits and cooldown)."""
     from app.services.pipelines.outreach import run_outreach_send_pipeline
@@ -214,7 +240,8 @@ async def send_emails(
 async def check_replies(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Manually trigger reply checking for all mailboxes."""
     from app.services.reply_tracker import check_all_mailbox_replies
@@ -238,14 +265,17 @@ async def check_replies(
 @router.get("/stats/summary")
 async def get_outreach_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
     """Get outreach statistics summary."""
-    total = db.query(OutreachEvent).with_entities(
-        func.count(OutreachEvent.event_id)
-    ).scalar()
+    query = db.query(OutreachEvent)
+    query = tenant_filter(query, OutreachEvent, tenant_id)
+    total = query.with_entities(func.count(OutreachEvent.event_id)).scalar()
 
-    by_status = db.query(OutreachEvent).with_entities(
+    query = db.query(OutreachEvent)
+    query = tenant_filter(query, OutreachEvent, tenant_id)
+    by_status = query.with_entities(
         OutreachEvent.status,
         func.count(OutreachEvent.event_id)
     ).group_by(OutreachEvent.status).all()

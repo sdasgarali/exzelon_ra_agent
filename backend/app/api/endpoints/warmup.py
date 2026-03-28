@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import json
 import io
 
-from app.api.deps import get_db, require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_email import WarmupEmail
@@ -99,18 +99,17 @@ def _build_mailbox_warmup_status(mb: SenderMailbox, config: dict) -> MailboxWarm
 async def get_warmup_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get all mailbox warmup statuses + aggregate stats.
 
     Returns all mailboxes with their warmup status and enterprise metrics.
     """
     config = load_warmup_config(db)
-    mailboxes = (
-        db.query(SenderMailbox)
-        .filter(SenderMailbox.connection_status == "successful")
-        .order_by(SenderMailbox.email)
-        .all()
-    )
+    q = db.query(SenderMailbox).filter(SenderMailbox.connection_status == "successful")
+    if tenant_id is not None:
+        q = q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailboxes = q.order_by(SenderMailbox.email).all()
 
     statuses = [_build_mailbox_warmup_status(mb, config) for mb in mailboxes]
 
@@ -298,12 +297,16 @@ async def get_warmup_schedule(
 async def get_health_scores(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get health scores for all mailboxes."""
     config = load_warmup_config(db)
-    mailboxes = db.query(SenderMailbox).filter(
+    q = db.query(SenderMailbox).filter(
         SenderMailbox.connection_status == "successful"
-    ).order_by(SenderMailbox.email).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailboxes = q.order_by(SenderMailbox.email).all()
 
     scores: List[MailboxHealthScore] = []
     for mb in mailboxes:
@@ -488,6 +491,7 @@ async def run_dns_check(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run DNS health check for one or all mailboxes."""
     if mailbox_id is not None:
@@ -498,10 +502,13 @@ async def run_dns_check(
         return {"message": "DNS check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
-    mailboxes = db.query(SenderMailbox).filter(
+    q = db.query(SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
-    ).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailboxes = q.all()
     results = []
     for mb in mailboxes:
         try:
@@ -553,6 +560,7 @@ async def run_blacklist_check_endpoint(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run blacklist check for one or all mailboxes."""
     if mailbox_id is not None:
@@ -563,10 +571,13 @@ async def run_blacklist_check_endpoint(
         return {"message": "Blacklist check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
-    mailboxes = db.query(SenderMailbox).filter(
+    q = db.query(SenderMailbox).filter(
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
-    ).all()
+    )
+    if tenant_id is not None:
+        q = q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailboxes = q.all()
     results = []
     for mb in mailboxes:
         try:

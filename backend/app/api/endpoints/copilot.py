@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user
+from app.api.deps.auth import get_current_active_user, get_current_tenant_id
 from app.db.models.user import User
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
@@ -25,6 +25,7 @@ def copilot_chat(
     data: CopilotRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI copilot conversational endpoint."""
     from app.db.models.campaign import Campaign, CampaignStatus
@@ -32,14 +33,26 @@ def copilot_chat(
     from app.db.models.lead import LeadDetails
     from app.db.models.outreach import OutreachEvent, OutreachStatus
     from app.db.models.sender_mailbox import SenderMailbox
+    from app.db.query_helpers import tenant_filter
 
-    # Build system context with platform data
+    # Build system context with platform data (tenant-scoped)
+    leads_q = db.query(LeadDetails)
+    leads_q = tenant_filter(leads_q, LeadDetails, tenant_id)
+    contacts_q = db.query(ContactDetails)
+    contacts_q = tenant_filter(contacts_q, ContactDetails, tenant_id)
+    campaigns_q = db.query(Campaign).filter(Campaign.status == CampaignStatus.ACTIVE)
+    campaigns_q = tenant_filter(campaigns_q, Campaign, tenant_id)
+    sent_q = db.query(OutreachEvent).filter(OutreachEvent.status == OutreachStatus.SENT)
+    sent_q = tenant_filter(sent_q, OutreachEvent, tenant_id)
+    mailboxes_q = db.query(SenderMailbox).filter(SenderMailbox.is_active == True)
+    mailboxes_q = tenant_filter(mailboxes_q, SenderMailbox, tenant_id)
+
     stats = {
-        "total_leads": db.query(LeadDetails).count(),
-        "total_contacts": db.query(ContactDetails).count(),
-        "active_campaigns": db.query(Campaign).filter(Campaign.status == CampaignStatus.ACTIVE).count(),
-        "total_sent": db.query(OutreachEvent).filter(OutreachEvent.status == OutreachStatus.SENT).count(),
-        "active_mailboxes": db.query(SenderMailbox).filter(SenderMailbox.is_active == True).count(),
+        "total_leads": leads_q.count(),
+        "total_contacts": contacts_q.count(),
+        "active_campaigns": campaigns_q.count(),
+        "total_sent": sent_q.count(),
+        "active_mailboxes": mailboxes_q.count(),
     }
 
     system_prompt = (

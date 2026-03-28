@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.deal import Deal, DealStage, DealActivity
 from app.db.models.contact import ContactDetails
 from app.db.models.client import ClientInfo
+from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/deals", tags=["deals"])
 
@@ -108,10 +109,13 @@ def _deal_to_dict(d: Deal, db: Session = None) -> dict:
 def list_stages(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    stages = db.query(DealStage).filter(
+    query = db.query(DealStage).filter(
         DealStage.is_archived == False
-    ).order_by(DealStage.stage_order).all()
+    )
+    query = tenant_filter(query, DealStage, tenant_id)
+    stages = query.order_by(DealStage.stage_order).all()
     return [
         {
             "stage_id": s.stage_id,
@@ -130,8 +134,10 @@ def create_stage(
     data: StageCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     stage = DealStage(
+        tenant_id=tenant_id or 1,
         name=data.name,
         stage_order=data.stage_order,
         color=data.color,
@@ -150,10 +156,13 @@ def update_stage(
     data: StageUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     stage = db.query(DealStage).filter(DealStage.stage_id == stage_id).first()
     if not stage:
         raise HTTPException(status_code=404, detail="Stage not found")
+    if tenant_id is not None and stage.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(stage, field, value)
     db.commit()
@@ -169,8 +178,10 @@ def list_deals(
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     query = db.query(Deal).filter(Deal.is_archived == False)
+    query = tenant_filter(query, Deal, tenant_id)
     if stage_id:
         query = query.filter(Deal.stage_id == stage_id)
     total = query.count()
@@ -189,18 +200,23 @@ def list_deals(
 def pipeline_view(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get deals grouped by stage for Kanban board."""
-    stages = db.query(DealStage).filter(
+    stage_query = db.query(DealStage).filter(
         DealStage.is_archived == False
-    ).order_by(DealStage.stage_order).all()
+    )
+    stage_query = tenant_filter(stage_query, DealStage, tenant_id)
+    stages = stage_query.order_by(DealStage.stage_order).all()
 
     result = []
     for stage in stages:
-        deals = db.query(Deal).filter(
+        deal_query = db.query(Deal).filter(
             Deal.stage_id == stage.stage_id,
             Deal.is_archived == False,
-        ).order_by(Deal.created_at.desc()).all()
+        )
+        deal_query = tenant_filter(deal_query, Deal, tenant_id)
+        deals = deal_query.order_by(Deal.created_at.desc()).all()
 
         result.append({
             "stage_id": stage.stage_id,
@@ -221,31 +237,56 @@ def pipeline_view(
 def deal_stats(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Pipeline summary statistics."""
-    total_deals = db.query(Deal).filter(Deal.is_archived == False).count()
-    total_value = db.query(func.sum(Deal.value)).filter(
-        Deal.is_archived == False
-    ).scalar() or 0
+    deal_base = db.query(Deal).filter(Deal.is_archived == False)
+    deal_base = tenant_filter(deal_base, Deal, tenant_id)
+    total_deals = deal_base.count()
 
-    won_stages = db.query(DealStage.stage_id).filter(DealStage.is_won == True).all()
+    value_query = db.query(func.sum(Deal.value)).filter(Deal.is_archived == False)
+    value_query = tenant_filter(value_query, Deal, tenant_id)
+    total_value = value_query.scalar() or 0
+
+    won_stage_query = db.query(DealStage.stage_id).filter(DealStage.is_won == True)
+    won_stage_query = tenant_filter(won_stage_query, DealStage, tenant_id)
+    won_stages = won_stage_query.all()
     won_ids = [s[0] for s in won_stages]
-    lost_stages = db.query(DealStage.stage_id).filter(DealStage.is_lost == True).all()
+
+    lost_stage_query = db.query(DealStage.stage_id).filter(DealStage.is_lost == True)
+    lost_stage_query = tenant_filter(lost_stage_query, DealStage, tenant_id)
+    lost_stages = lost_stage_query.all()
     lost_ids = [s[0] for s in lost_stages]
 
-    won_count = db.query(Deal).filter(
-        Deal.stage_id.in_(won_ids), Deal.is_archived == False
-    ).count() if won_ids else 0
-    lost_count = db.query(Deal).filter(
-        Deal.stage_id.in_(lost_ids), Deal.is_archived == False
-    ).count() if lost_ids else 0
+    if won_ids:
+        won_query = db.query(Deal).filter(
+            Deal.stage_id.in_(won_ids), Deal.is_archived == False
+        )
+        won_query = tenant_filter(won_query, Deal, tenant_id)
+        won_count = won_query.count()
+    else:
+        won_count = 0
+
+    if lost_ids:
+        lost_query = db.query(Deal).filter(
+            Deal.stage_id.in_(lost_ids), Deal.is_archived == False
+        )
+        lost_query = tenant_filter(lost_query, Deal, tenant_id)
+        lost_count = lost_query.count()
+    else:
+        lost_count = 0
 
     closed = won_count + lost_count
     win_rate = round(won_count / closed * 100, 1) if closed > 0 else 0
 
-    won_value = db.query(func.sum(Deal.value)).filter(
-        Deal.stage_id.in_(won_ids), Deal.is_archived == False
-    ).scalar() or 0
+    if won_ids:
+        won_val_query = db.query(func.sum(Deal.value)).filter(
+            Deal.stage_id.in_(won_ids), Deal.is_archived == False
+        )
+        won_val_query = tenant_filter(won_val_query, Deal, tenant_id)
+        won_value = won_val_query.scalar() or 0
+    else:
+        won_value = 0
 
     avg_deal = round(float(won_value) / won_count, 2) if won_count > 0 else 0
 
@@ -265,9 +306,11 @@ def create_deal(
     data: DealCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     from datetime import date as date_type
     deal = Deal(
+        tenant_id=tenant_id or 1,
         name=data.name,
         stage_id=data.stage_id,
         contact_id=data.contact_id,
@@ -315,10 +358,13 @@ def get_deal(
     deal_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
+    if tenant_id is not None and deal.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     result = _deal_to_dict(deal, db)
 
@@ -347,10 +393,13 @@ def update_deal(
     data: DealUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
+    if tenant_id is not None and deal.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     old_stage = deal.stage_id
 
@@ -415,10 +464,13 @@ def archive_deal(
     deal_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
+    if tenant_id is not None and deal.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     deal.is_archived = True
     db.commit()
     return {"message": "Deal archived"}
@@ -431,20 +483,22 @@ def stale_deals(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get deals with no activity in the last N days."""
     from app.services.deal_automation import detect_stale_deals
-    return detect_stale_deals(db, days_threshold=days)
+    return detect_stale_deals(db, days_threshold=days, tenant_id=tenant_id)
 
 
 @router.get("/forecast")
 def pipeline_forecast(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Weighted pipeline forecast: sum of (value * probability / 100)."""
     from app.services.deal_automation import calculate_pipeline_forecast
-    return calculate_pipeline_forecast(db)
+    return calculate_pipeline_forecast(db, tenant_id=tenant_id)
 
 
 # ─── Contact/Client Search (for deal creation pickers) ────────────
@@ -454,9 +508,11 @@ def search_contacts_for_deal(
     q: str = Query("", min_length=0, max_length=200),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Search contacts for the deal creation picker."""
     query = db.query(ContactDetails).filter(ContactDetails.is_archived == False)
+    query = tenant_filter(query, ContactDetails, tenant_id)
     if q:
         search = f"%{q}%"
         query = query.filter(
@@ -483,9 +539,11 @@ def search_clients_for_deal(
     q: str = Query("", min_length=0, max_length=200),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Search clients/companies for the deal creation picker."""
     query = db.query(ClientInfo).filter(ClientInfo.is_archived == False)
+    query = tenant_filter(query, ClientInfo, tenant_id)
     if q:
         search = f"%{q}%"
         query = query.filter(ClientInfo.name.ilike(search))
@@ -504,10 +562,13 @@ def add_activity(
     data: ActivityCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
+    if tenant_id is not None and deal.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     activity = DealActivity(
         deal_id=deal_id,

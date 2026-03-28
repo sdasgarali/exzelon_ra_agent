@@ -11,9 +11,10 @@ pytestmark = pytest.mark.unit
 class TestCheckCancel:
     """Tests for check_cancel() helper function."""
 
-    def test_returns_true_when_cancel_requested(self, db_session):
+    def test_returns_true_when_cancel_requested(self, db_session, test_tenant):
         """When is_cancel_requested == 1, sets CANCELLED and returns True."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.RUNNING,
             triggered_by="admin@test.com",
@@ -29,9 +30,10 @@ class TestCheckCancel:
         assert run.status == JobStatus.CANCELLED
         assert run.ended_at is not None
 
-    def test_returns_false_when_not_requested(self, db_session):
+    def test_returns_false_when_not_requested(self, db_session, test_tenant):
         """When is_cancel_requested == 0, returns False without changes."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.RUNNING,
             triggered_by="admin@test.com",

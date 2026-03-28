@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.plan_limits import check_plan_limit
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.campaign import (
     Campaign, SequenceStep, CampaignContact,
@@ -176,8 +178,10 @@ def list_campaigns(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     query = db.query(Campaign).filter(Campaign.is_archived == False)
+    query = tenant_filter(query, Campaign, tenant_id)
     if status:
         query = query.filter(Campaign.status == status)
     total = query.count()
@@ -198,7 +202,10 @@ def create_campaign(
     data: CampaignCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    check_plan_limit(db, tenant_id, "campaigns")
+
     campaign = Campaign(
         name=data.name,
         description=data.description,
@@ -211,6 +218,7 @@ def create_campaign(
         daily_limit=data.daily_limit,
         enrollment_rules_json=json.dumps(data.enrollment_rules.model_dump()) if data.enrollment_rules else None,
         created_by=user.user_id,
+        tenant_id=tenant_id or 1,
     )
     db.add(campaign)
     db.commit()
@@ -223,9 +231,12 @@ def get_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return _campaign_to_dict(campaign, include_steps=True, db=db)
 
@@ -236,9 +247,12 @@ def update_campaign(
     data: CampaignUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     if data.name is not None:
@@ -270,9 +284,12 @@ def archive_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign.status = CampaignStatus.ARCHIVED
     campaign.is_archived = True
@@ -287,9 +304,12 @@ def activate_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     # Validate: must have at least one email step
@@ -338,9 +358,12 @@ def pause_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign.status = CampaignStatus.PAUSED
     db.commit()
@@ -362,9 +385,12 @@ def resume_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     campaign.status = CampaignStatus.ACTIVE
     db.commit()
@@ -378,7 +404,14 @@ def list_steps(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     steps = db.query(SequenceStep).filter(
         SequenceStep.campaign_id == campaign_id
     ).order_by(SequenceStep.step_order).all()
@@ -391,9 +424,12 @@ def add_step(
     data: StepCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     # Determine step order
@@ -435,7 +471,14 @@ def update_step(
     data: StepUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     step = db.query(SequenceStep).filter(
         SequenceStep.step_id == step_id,
         SequenceStep.campaign_id == campaign_id,
@@ -457,7 +500,14 @@ def delete_step(
     step_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     step = db.query(SequenceStep).filter(
         SequenceStep.step_id == step_id,
         SequenceStep.campaign_id == campaign_id,
@@ -486,7 +536,14 @@ def reorder_steps(
     data: StepReorder,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     for new_order, step_id in enumerate(data.step_ids, start=1):
         step = db.query(SequenceStep).filter(
             SequenceStep.step_id == step_id,
@@ -506,7 +563,14 @@ def enroll_contacts(
     data: ContactEnroll,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     from app.services.campaign_engine import enroll_contacts as _enroll
     result = _enroll(campaign_id, data.contact_ids, db)
     if "error" in result:
@@ -520,7 +584,14 @@ def remove_contacts(
     data: ContactRemove,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     deleted = db.query(CampaignContact).filter(
         CampaignContact.campaign_id == campaign_id,
         CampaignContact.contact_id.in_(data.contact_ids),
@@ -537,7 +608,14 @@ def list_campaign_contacts(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     query = db.query(CampaignContact).filter(
         CampaignContact.campaign_id == campaign_id
     )
@@ -587,11 +665,15 @@ def enrollment_preview(
     data: EnrollmentPreviewRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview how many contacts match the given enrollment rules."""
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
     from app.services.auto_enrollment import preview_enrollment_matches
     count = preview_enrollment_matches(campaign_id, data.rules.model_dump(), db)
     return {"count": count}
@@ -602,10 +684,13 @@ def trigger_auto_enroll(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger auto-enrollment for one campaign."""
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if campaign.status != CampaignStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Campaign must be active for auto-enrollment")
@@ -621,9 +706,12 @@ def campaign_analytics(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     from app.db.models.outreach import OutreachEvent, OutreachStatus
@@ -710,9 +798,12 @@ def duplicate_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     original = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not original:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and original.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     clone = Campaign(
@@ -727,6 +818,7 @@ def duplicate_campaign(
         daily_limit=original.daily_limit,
         enrollment_rules_json=original.enrollment_rules_json,
         created_by=user.user_id,
+        tenant_id=original.tenant_id,
     )
     db.add(clone)
     db.flush()

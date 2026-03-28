@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user
+from app.api.deps.auth import get_current_user, get_current_tenant_id
 from app.db.models.user import User
 
 router = APIRouter(prefix="/leads", tags=["Lead Search"])
@@ -22,6 +22,7 @@ def ai_search_leads(
     body: AISearchRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Search leads using natural language queries.
 
@@ -36,4 +37,5 @@ def ai_search_leads(
         db=db,
         limit=body.limit,
         offset=body.offset,
+        tenant_id=tenant_id,
     )

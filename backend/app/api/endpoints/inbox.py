@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox
+from app.db.models.campaign import Campaign
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
@@ -45,6 +47,7 @@ def list_threads(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List inbox threads, sorted by latest message."""
     # Get distinct thread_ids with filters, then fetch latest message per thread
@@ -52,6 +55,7 @@ def list_threads(
         InboxMessage.thread_id,
         func.max(InboxMessage.received_at).label("latest"),
     ).filter(InboxMessage.is_deleted == False)
+    thread_query = tenant_filter(thread_query, InboxMessage, tenant_id)
 
     if category:
         thread_query = thread_query.filter(InboxMessage.category == category)
@@ -77,62 +81,78 @@ def list_threads(
     # For each thread, get the latest message + thread metadata
     result = []
     for thread_id, latest_at in threads:
-        latest_msg = db.query(InboxMessage).filter(
+        latest_msg_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == thread_id,
-        ).order_by(InboxMessage.received_at.desc()).first()
+        )
+        latest_msg_query = tenant_filter(latest_msg_query, InboxMessage, tenant_id)
+        latest_msg = latest_msg_query.order_by(InboxMessage.received_at.desc()).first()
 
         if not latest_msg:
             continue
 
-        msg_count = db.query(InboxMessage).filter(
+        msg_count_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == thread_id
-        ).count()
+        )
+        msg_count_query = tenant_filter(msg_count_query, InboxMessage, tenant_id)
+        msg_count = msg_count_query.count()
 
-        unread_count = db.query(InboxMessage).filter(
+        unread_count_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == thread_id,
             InboxMessage.is_read == False,
-        ).count()
+        )
+        unread_count_query = tenant_filter(unread_count_query, InboxMessage, tenant_id)
+        unread_count = unread_count_query.count()
 
         # Get contact info — try DB contact first, then infer from received messages
         contact_name = latest_msg.from_email
         if latest_msg.contact_id:
-            contact = db.query(ContactDetails).filter(
+            contact_query = db.query(ContactDetails).filter(
                 ContactDetails.contact_id == latest_msg.contact_id
-            ).first()
+            )
+            contact_query = tenant_filter(contact_query, ContactDetails, tenant_id)
+            contact = contact_query.first()
             if contact:
                 contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or latest_msg.from_email
         else:
             # For threads without contact_id, use the external email as contact identifier
             # Find the first received message to get the external sender's email
-            received_msg = db.query(InboxMessage).filter(
+            received_msg_query = db.query(InboxMessage).filter(
                 InboxMessage.thread_id == thread_id,
                 InboxMessage.direction == MessageDirection.RECEIVED,
-            ).first()
+            )
+            received_msg_query = tenant_filter(received_msg_query, InboxMessage, tenant_id)
+            received_msg = received_msg_query.first()
             if received_msg:
                 contact_name = received_msg.from_email
             else:
                 # Sent-only thread — use the recipient
-                sent_msg = db.query(InboxMessage).filter(
+                sent_msg_query = db.query(InboxMessage).filter(
                     InboxMessage.thread_id == thread_id,
                     InboxMessage.direction == MessageDirection.SENT,
-                ).first()
+                )
+                sent_msg_query = tenant_filter(sent_msg_query, InboxMessage, tenant_id)
+                sent_msg = sent_msg_query.first()
                 if sent_msg:
                     contact_name = sent_msg.to_email
 
         # Get category/sentiment/snippet from latest RECEIVED message (not sent)
-        latest_received = db.query(InboxMessage).filter(
+        latest_received_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == thread_id,
             InboxMessage.direction == MessageDirection.RECEIVED,
-        ).order_by(InboxMessage.received_at.desc()).first()
+        )
+        latest_received_query = tenant_filter(latest_received_query, InboxMessage, tenant_id)
+        latest_received = latest_received_query.order_by(InboxMessage.received_at.desc()).first()
 
         thread_category = latest_received.category if latest_received else None
         thread_sentiment = latest_received.sentiment if latest_received else None
         snippet = (latest_received.body_text or "")[:120] if latest_received else ""
 
         # Use the first message's subject for the thread subject
-        first_msg = db.query(InboxMessage).filter(
+        first_msg_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == thread_id,
-        ).order_by(InboxMessage.received_at.asc()).first()
+        )
+        first_msg_query = tenant_filter(first_msg_query, InboxMessage, tenant_id)
+        first_msg = first_msg_query.order_by(InboxMessage.received_at.asc()).first()
 
         result.append({
             "thread_id": thread_id,
@@ -165,12 +185,15 @@ def get_thread(
     thread_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get all messages in a thread."""
-    messages = db.query(InboxMessage).filter(
+    messages_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
         InboxMessage.is_deleted == False,
-    ).order_by(InboxMessage.received_at.asc()).all()
+    )
+    messages_query = tenant_filter(messages_query, InboxMessage, tenant_id)
+    messages = messages_query.order_by(InboxMessage.received_at.asc()).all()
 
     if not messages:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -179,9 +202,11 @@ def get_thread(
     contact_info = None
     contact_id = messages[0].contact_id
     if contact_id:
-        contact = db.query(ContactDetails).filter(
+        contact_query = db.query(ContactDetails).filter(
             ContactDetails.contact_id == contact_id
-        ).first()
+        )
+        contact_query = tenant_filter(contact_query, ContactDetails, tenant_id)
+        contact = contact_query.first()
         if contact:
             contact_info = {
                 "contact_id": contact.contact_id,
@@ -220,12 +245,15 @@ def mark_thread_read(
     thread_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Mark all messages in a thread as read."""
-    updated = db.query(InboxMessage).filter(
+    update_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
         InboxMessage.is_read == False,
-    ).update({"is_read": True}, synchronize_session=False)
+    )
+    update_query = tenant_filter(update_query, InboxMessage, tenant_id)
+    updated = update_query.update({"is_read": True}, synchronize_session=False)
     db.commit()
     return {"marked_read": updated}
 
@@ -236,11 +264,14 @@ def set_thread_category(
     data: CategoryUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Set category label for all messages in a thread."""
-    updated = db.query(InboxMessage).filter(
+    update_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
-    ).update({"category": data.category}, synchronize_session=False)
+    )
+    update_query = tenant_filter(update_query, InboxMessage, tenant_id)
+    updated = update_query.update({"category": data.category}, synchronize_session=False)
     db.commit()
     return {"updated": updated, "category": data.category}
 
@@ -252,13 +283,16 @@ def delete_thread(
     thread_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete all messages in a thread."""
     now = datetime.utcnow()
-    updated = db.query(InboxMessage).filter(
+    update_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
         InboxMessage.is_deleted == False,
-    ).update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
+    )
+    update_query = tenant_filter(update_query, InboxMessage, tenant_id)
+    updated = update_query.update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
     db.commit()
     if not updated:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -270,6 +304,7 @@ def bulk_delete_threads(
     data: BulkDeleteRequest,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete multiple threads at once."""
     if not data.thread_ids:
@@ -278,10 +313,12 @@ def bulk_delete_threads(
         raise HTTPException(status_code=400, detail="Maximum 100 threads per request")
 
     now = datetime.utcnow()
-    updated = db.query(InboxMessage).filter(
+    update_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id.in_(data.thread_ids),
         InboxMessage.is_deleted == False,
-    ).update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
+    )
+    update_query = tenant_filter(update_query, InboxMessage, tenant_id)
+    updated = update_query.update({"is_deleted": True, "deleted_at": now}, synchronize_session=False)
     db.commit()
     return {"deleted": updated, "thread_ids": data.thread_ids}
 
@@ -293,19 +330,24 @@ def send_reply(
     data: ReplyCompose,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send a reply in a thread."""
     # Get thread context
-    last_received = db.query(InboxMessage).filter(
+    last_received_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == data.thread_id,
         InboxMessage.direction == MessageDirection.RECEIVED,
-    ).order_by(InboxMessage.received_at.desc()).first()
+    )
+    last_received_query = tenant_filter(last_received_query, InboxMessage, tenant_id)
+    last_received = last_received_query.order_by(InboxMessage.received_at.desc()).first()
 
     if not last_received:
         # Maybe replying to a sent-only thread
-        last_msg = db.query(InboxMessage).filter(
+        last_msg_query = db.query(InboxMessage).filter(
             InboxMessage.thread_id == data.thread_id,
-        ).order_by(InboxMessage.received_at.desc()).first()
+        )
+        last_msg_query = tenant_filter(last_msg_query, InboxMessage, tenant_id)
+        last_msg = last_msg_query.order_by(InboxMessage.received_at.desc()).first()
         if not last_msg:
             raise HTTPException(status_code=404, detail="Thread not found")
         to_email = last_msg.to_email if last_msg.direction == MessageDirection.SENT else last_msg.from_email
@@ -318,9 +360,11 @@ def send_reply(
         subject = f"Re: {subject}"
 
     # Get mailbox
-    mailbox = db.query(SenderMailbox).filter(
+    mailbox_query = db.query(SenderMailbox).filter(
         SenderMailbox.mailbox_id == data.mailbox_id
-    ).first()
+    )
+    mailbox_query = tenant_filter(mailbox_query, SenderMailbox, tenant_id)
+    mailbox = mailbox_query.first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
 
@@ -353,6 +397,7 @@ def send_reply(
         in_reply_to=last_received.raw_message_id if last_received else None,
         received_at=datetime.utcnow(),
         is_read=True,
+        tenant_id=tenant_id or 1,
     )
     db.add(sent_msg)
     db.commit()
@@ -367,13 +412,14 @@ def suggest_reply(
     thread_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Generate an AI-suggested reply for a thread."""
-    from app.db.models.campaign import Campaign
-
-    messages = db.query(InboxMessage).filter(
+    messages_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == thread_id,
-    ).order_by(InboxMessage.received_at.asc()).all()
+    )
+    messages_query = tenant_filter(messages_query, InboxMessage, tenant_id)
+    messages = messages_query.order_by(InboxMessage.received_at.asc()).all()
 
     if not messages:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -383,13 +429,17 @@ def suggest_reply(
     campaign = None
     for msg in messages:
         if msg.contact_id and not contact:
-            contact = db.query(ContactDetails).filter(
+            contact_query = db.query(ContactDetails).filter(
                 ContactDetails.contact_id == msg.contact_id
-            ).first()
+            )
+            contact_query = tenant_filter(contact_query, ContactDetails, tenant_id)
+            contact = contact_query.first()
         if msg.campaign_id and not campaign:
-            campaign = db.query(Campaign).filter(
+            campaign_query = db.query(Campaign).filter(
                 Campaign.campaign_id == msg.campaign_id
-            ).first()
+            )
+            campaign_query = tenant_filter(campaign_query, Campaign, tenant_id)
+            campaign = campaign_query.first()
         if contact and campaign:
             break
 
@@ -403,21 +453,29 @@ def suggest_reply(
 def inbox_stats(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get inbox statistics."""
-    total_threads = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
+    total_threads_query = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
         InboxMessage.is_deleted == False,
-    ).scalar() or 0
-    unread_count = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
+    )
+    total_threads_query = tenant_filter(total_threads_query, InboxMessage, tenant_id)
+    total_threads = total_threads_query.scalar() or 0
+
+    unread_count_query = db.query(func.count(func.distinct(InboxMessage.thread_id))).filter(
         InboxMessage.is_read == False,
         InboxMessage.is_deleted == False,
-    ).scalar() or 0
+    )
+    unread_count_query = tenant_filter(unread_count_query, InboxMessage, tenant_id)
+    unread_count = unread_count_query.scalar() or 0
 
     # Category breakdown
-    categories = db.query(
+    categories_query = db.query(
         InboxMessage.category,
         func.count(func.distinct(InboxMessage.thread_id)),
-    ).filter(InboxMessage.is_deleted == False).group_by(InboxMessage.category).all()
+    ).filter(InboxMessage.is_deleted == False)
+    categories_query = tenant_filter(categories_query, InboxMessage, tenant_id)
+    categories = categories_query.group_by(InboxMessage.category).all()
 
     return {
         "total_threads": total_threads,
@@ -432,8 +490,9 @@ def inbox_stats(
 def trigger_sync(
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger manual inbox sync."""
     from app.services.inbox_syncer import sync_inbox
-    result = sync_inbox(db)
+    result = sync_inbox(db, tenant_id=tenant_id)
     return {"message": "Sync completed", "result": result}

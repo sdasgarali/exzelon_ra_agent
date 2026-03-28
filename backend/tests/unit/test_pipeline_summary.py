@@ -90,8 +90,9 @@ class TestCalculateSuccessScore:
 class TestBuildRunMetadata:
     """Tests for _build_run_metadata."""
 
-    def test_basic_metadata(self, db_session):
+    def test_basic_metadata(self, db_session, test_tenant):
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             triggered_by="admin@test.com",
@@ -107,8 +108,9 @@ class TestBuildRunMetadata:
         assert meta["status"] == "completed"
         assert meta["triggered_by"] == "admin@test.com"
 
-    def test_duration_calculation(self, db_session):
+    def test_duration_calculation(self, db_session, test_tenant):
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="contact_enrichment",
             status=JobStatus.COMPLETED,
             triggered_by="test@test.com",
@@ -122,8 +124,9 @@ class TestBuildRunMetadata:
         meta = _build_run_metadata(run)
         assert meta["duration_seconds"] == 330.0
 
-    def test_no_timestamps(self, db_session):
+    def test_no_timestamps(self, db_session, test_tenant):
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.RUNNING,
             triggered_by="test@test.com",
@@ -316,9 +319,10 @@ class TestFallbackSummary:
 class TestGeneratePipelineSummary:
     """Tests for the full summary generation with AI fallback."""
 
-    def test_fallback_summary_no_ai(self, db_session):
+    def test_fallback_summary_no_ai(self, db_session, test_tenant):
         """When no AI adapter is configured, returns valid fallback dict with enhanced fields."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json='{"inserted": 10, "updated": 2, "skipped": 1, "errors": 0}',
@@ -345,9 +349,10 @@ class TestGeneratePipelineSummary:
         assert result["run_metadata"]["pipeline_name"] == "lead_sourcing"
         assert result["run_metadata"]["pipeline_label"] == "Lead Sourcing"
 
-    def test_summary_with_ai_adapter(self, db_session):
+    def test_summary_with_ai_adapter(self, db_session, test_tenant):
         """When AI adapter is available, uses it for narrative."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="contact_enrichment",
             status=JobStatus.COMPLETED,
             counters_json='{"contacts_found": 8, "skipped": 2, "errors": 0}',
@@ -374,9 +379,10 @@ class TestGeneratePipelineSummary:
         assert "api_diagnostics" in result
         mock_adapter._call_api.assert_called_once()
 
-    def test_ai_failure_falls_back(self, db_session):
+    def test_ai_failure_falls_back(self, db_session, test_tenant):
         """When AI adapter throws, falls back to template."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json='{"inserted": 5, "updated": 0, "skipped": 0, "errors": 0}',
@@ -398,9 +404,10 @@ class TestGeneratePipelineSummary:
         assert isinstance(result["source_breakdown"], list)
         assert isinstance(result["api_diagnostics"], list)
 
-    def test_failed_run_score_zero(self, db_session):
+    def test_failed_run_score_zero(self, db_session, test_tenant):
         """Failed runs always get score 0."""
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="outreach",
             status=JobStatus.FAILED,
             counters_json='{"sent": 5, "total": 10, "errors": 5}',
@@ -417,7 +424,7 @@ class TestGeneratePipelineSummary:
         assert result["success_score"] == 0
         assert "run_metadata" in result
 
-    def test_enriched_counters_produce_source_breakdown(self, db_session):
+    def test_enriched_counters_produce_source_breakdown(self, db_session, test_tenant):
         """Enriched lead_sourcing counters produce detailed source breakdown."""
         counters = json.dumps({
             "inserted": 25, "updated": 0, "skipped": 5, "errors": 1,
@@ -433,6 +440,7 @@ class TestGeneratePipelineSummary:
             ],
         })
         run = JobRun(
+            tenant_id=test_tenant.tenant_id,
             pipeline_name="lead_sourcing",
             status=JobStatus.COMPLETED,
             counters_json=counters,

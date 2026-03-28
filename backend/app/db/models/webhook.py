@@ -13,6 +13,7 @@ class Webhook(Base):
     __tablename__ = "webhooks"
 
     webhook_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     url = Column(String(1000), nullable=False)
     secret = Column(String(255), nullable=True)  # HMAC signing secret
@@ -25,6 +26,7 @@ class Webhook(Base):
 
     __table_args__ = (
         Index("idx_webhook_active", "is_active"),
+        Index("idx_webhook_tenant", "tenant_id"),
     )
 
     def __repr__(self) -> str:

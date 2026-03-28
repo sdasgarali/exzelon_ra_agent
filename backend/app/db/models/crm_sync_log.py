@@ -1,5 +1,5 @@
 """CRM sync log model for tracking bidirectional sync operations."""
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.sql import func
 from app.db.base import Base
 
@@ -9,6 +9,7 @@ class CRMSyncLog(Base):
     __tablename__ = "crm_sync_logs"
 
     sync_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
     crm_type = Column(String(50), nullable=False)  # hubspot, salesforce
     direction = Column(String(10), nullable=False)  # pull, push
     entity_type = Column(String(50), nullable=False)  # contacts, deals

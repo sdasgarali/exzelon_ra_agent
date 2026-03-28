@@ -8,7 +8,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.plan_limits import check_plan_limit
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
@@ -27,9 +29,11 @@ router = APIRouter(prefix="/leads", tags=["Leads"])
 
 
 def _audit(db: Session, entity_type: str, entity_id: int, action: str,
-           changed_fields: dict | None = None, changed_by: str | None = None, notes: str | None = None):
+           changed_fields: dict | None = None, changed_by: str | None = None, notes: str | None = None,
+           tenant_id: int = 1):
     """Write an audit log entry."""
     log = AuditLog(
+        tenant_id=tenant_id,
         entity_type=entity_type,
         entity_id=entity_id,
         action=action,
@@ -71,13 +75,15 @@ async def list_leads(
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
     show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List leads with filtering, sorting, and pagination."""
     if limit:
         page_size = limit
 
     query = db.query(LeadDetails)
+    query = tenant_filter(query, LeadDetails, tenant_id)
 
     if show_archived:
         query = query.filter(LeadDetails.is_archived == True)
@@ -220,10 +226,12 @@ async def list_leads(
 async def get_lead_stats(
     show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get lead statistics summary."""
     stats_base = db.query(LeadDetails)
+    stats_base = tenant_filter(stats_base, LeadDetails, tenant_id)
     if show_archived:
         stats_base = stats_base.filter(LeadDetails.is_archived == True)
     else:
@@ -255,9 +263,11 @@ async def list_leads_with_contact_counts(
     page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List active leads with their linked contact counts (for campaign enrollment)."""
     query = db.query(LeadDetails).filter(LeadDetails.is_archived == False)
+    query = tenant_filter(query, LeadDetails, tenant_id)
 
     if search:
         q = f"%{search}%"
@@ -330,10 +340,12 @@ async def export_leads_csv(
     search: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived leads"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Export leads to CSV file."""
     query = db.query(LeadDetails)
+    query = tenant_filter(query, LeadDetails, tenant_id)
 
     if show_archived:
         query = query.filter(LeadDetails.is_archived == True)
@@ -411,16 +423,21 @@ async def export_leads_csv(
 @router.get("/filter-options")
 async def get_lead_filter_options(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get distinct values for lead filter dropdowns (industry/company_size from client_info)."""
-    industries = [r[0] for r in db.query(ClientInfo.industry).filter(
+    industry_query = db.query(ClientInfo.industry).filter(
         ClientInfo.industry.isnot(None), ClientInfo.industry != ""
-    ).distinct().order_by(ClientInfo.industry).all()]
+    )
+    industry_query = tenant_filter(industry_query, ClientInfo, tenant_id)
+    industries = [r[0] for r in industry_query.distinct().order_by(ClientInfo.industry).all()]
 
-    sizes = [r[0] for r in db.query(ClientInfo.company_size).filter(
+    size_query = db.query(ClientInfo.company_size).filter(
         ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
-    ).distinct().order_by(ClientInfo.company_size).all()]
+    )
+    size_query = tenant_filter(size_query, ClientInfo, tenant_id)
+    sizes = [r[0] for r in size_query.distinct().order_by(ClientInfo.company_size).all()]
 
     return {
         "industries": industries,
@@ -432,7 +449,8 @@ async def get_lead_filter_options(
 async def preview_csv_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview CSV import: show first 10 rows, total count, and duplicate count."""
     if not file.filename.endswith('.csv'):
@@ -446,12 +464,14 @@ async def preview_csv_import(
     total_rows = len(rows)
 
     # Check for duplicates
+    dup_query = db.query(LeadDetails).with_entities(
+        LeadDetails.job_link
+    ).filter(
+        LeadDetails.job_link.isnot(None)
+    )
+    dup_query = tenant_filter(dup_query, LeadDetails, tenant_id)
     existing_links = {
-        link for (link,) in db.query(LeadDetails).with_entities(
-            LeadDetails.job_link
-        ).filter(
-            LeadDetails.job_link.isnot(None)
-        ).all()
+        link for (link,) in dup_query.all()
     }
 
     duplicate_count = 0
@@ -492,7 +512,8 @@ async def import_leads_csv(
     file: UploadFile = File(...),
     skip_duplicates: bool = Query(True, description="Skip leads with duplicate job_link"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Import leads from CSV file."""
     if not file.filename.endswith('.csv'):
@@ -512,12 +533,14 @@ async def import_leads_csv(
     # Pre-load existing job_links to avoid N+1 queries
     existing_links = set()
     if skip_duplicates:
+        import_dup_query = db.query(LeadDetails).with_entities(
+            LeadDetails.job_link
+        ).filter(
+            LeadDetails.job_link.isnot(None)
+        )
+        import_dup_query = tenant_filter(import_dup_query, LeadDetails, tenant_id)
         existing_links = {
-            link for (link,) in db.query(LeadDetails).with_entities(
-                LeadDetails.job_link
-            ).filter(
-                LeadDetails.job_link.isnot(None)
-            ).all()
+            link for (link,) in import_dup_query.all()
         }
 
     for row_num, row in enumerate(reader, start=2):
@@ -614,6 +637,7 @@ async def import_leads_csv(
                 salary_max=salary_max,
                 contact_email=(row_lower.get('contact email') or row_lower.get('email') or "").strip() or None,
             )
+            lead.tenant_id = tenant_id or 1  # fallback for super admin without X-Tenant-ID
             db.add(lead)
             imported += 1
 
@@ -636,16 +660,19 @@ async def import_leads_csv(
 async def bulk_delete_leads(
     request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive multiple leads by IDs (soft delete). Admin only."""
     lead_ids = request.lead_ids
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
-    leads = db.query(LeadDetails).filter(
+    bulk_del_query = db.query(LeadDetails).filter(
         LeadDetails.lead_id.in_(lead_ids)
-    ).all()
+    )
+    bulk_del_query = tenant_filter(bulk_del_query, LeadDetails, tenant_id)
+    leads = bulk_del_query.all()
 
     if not leads:
         raise HTTPException(status_code=404, detail="No leads found with provided IDs")
@@ -685,7 +712,8 @@ async def bulk_delete_leads(
 async def bulk_unarchive_leads(
     request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Restore archived leads (unarchive)."""
     lead_ids = request.lead_ids
@@ -693,10 +721,12 @@ async def bulk_unarchive_leads(
         raise HTTPException(status_code=400, detail='No lead IDs provided')
 
     try:
-        restored_count = db.query(LeadDetails).filter(
+        unarchive_query = db.query(LeadDetails).filter(
             LeadDetails.lead_id.in_(lead_ids),
             LeadDetails.is_archived == True
-        ).update({LeadDetails.is_archived: False}, synchronize_session=False)
+        )
+        unarchive_query = tenant_filter(unarchive_query, LeadDetails, tenant_id)
+        restored_count = unarchive_query.update({LeadDetails.is_archived: False}, synchronize_session=False)
 
         db.commit()
     except Exception as e:
@@ -718,7 +748,8 @@ async def bulk_unarchive_leads(
 async def bulk_update_status(
     request: BulkLeadStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update status of multiple leads at once. Admin/Operator only."""
     lead_ids = request.lead_ids
@@ -737,7 +768,9 @@ async def bulk_update_status(
         raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {valid}")
 
     # Validate transitions per lead and audit
-    leads = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids)).all()
+    status_query = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids))
+    status_query = tenant_filter(status_query, LeadDetails, tenant_id)
+    leads = status_query.all()
     updated = 0
     rejected = []
     for lead in leads:
@@ -772,7 +805,8 @@ async def bulk_update_status(
 async def preview_bulk_enrichment(
     request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview enrichment plan: show leads, existing contacts, reusable contacts, API needs."""
     lead_ids = request.lead_ids
@@ -792,7 +826,10 @@ async def preview_bulk_enrichment(
     }
 
     for lid in lead_ids:
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        enrich_lead_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lid)
+        if tenant_id is not None:
+            enrich_lead_q = enrich_lead_q.filter(LeadDetails.tenant_id == tenant_id)
+        lead = enrich_lead_q.first()
         if not lead:
             previews.append({"lead_id": lid, "error": "Lead not found", "status": "skip", "skip_reason": "Not found"})
             summary["will_skip"] += 1
@@ -902,7 +939,8 @@ async def bulk_enrich_leads(
     request: BulkEnrichRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR]))
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger contact enrichment for selected leads (runs in background)."""
     lead_ids = request.lead_ids
@@ -916,6 +954,7 @@ async def bulk_enrich_leads(
 
     # Pre-create job run so we can return run_id immediately
     job_run = JobRun(
+        tenant_id=tenant_id or 1,
         pipeline_name="contact_enrichment",
         status=JobStatus.PENDING,
         triggered_by=current_user.email,
@@ -930,6 +969,7 @@ async def bulk_enrich_leads(
         triggered_by=current_user.email,
         lead_ids=lead_ids,
         run_id=created_run_id,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -944,7 +984,8 @@ async def bulk_enrich_leads(
 async def preview_bulk_outreach(
     request: BulkLeadIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview outreach plan: show leads, contacts, eligibility, and sender assignments."""
     lead_ids = request.lead_ids
@@ -972,7 +1013,10 @@ async def preview_bulk_outreach(
     mailbox_idx = 0
 
     for lid in lead_ids:
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lid).first()
+        outreach_lead_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lid)
+        if tenant_id is not None:
+            outreach_lead_q = outreach_lead_q.filter(LeadDetails.tenant_id == tenant_id)
+        lead = outreach_lead_q.first()
         if not lead:
             assignments.append({"lead_id": lid, "error": "Lead not found", "contacts": [], "sender": None})
             continue
@@ -1033,7 +1077,8 @@ async def preview_bulk_outreach(
 async def bulk_outreach_leads(
     request: BulkOutreachRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger outreach for contacts of multiple leads."""
     lead_ids = request.lead_ids
@@ -1053,6 +1098,16 @@ async def bulk_outreach_leads(
 
     for lid in lead_ids:
         try:
+            # Verify tenant ownership
+            if tenant_id is not None:
+                owner_check = db.query(LeadDetails).filter(
+                    LeadDetails.lead_id == lid,
+                    LeadDetails.tenant_id == tenant_id
+                ).first()
+                if not owner_check:
+                    results.append({"lead_id": lid, "error": "Lead not found", "sent": 0, "skipped": 0, "errors": 1})
+                    total_errors += 1
+                    continue
             result = _run(lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
             sent = result.get("sent", 0)
             skipped = result.get("skipped", 0)
@@ -1082,10 +1137,14 @@ async def bulk_outreach_leads(
 async def get_lead_detail(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get detailed lead info including contacts and outreach events."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    detail_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        detail_q = detail_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = detail_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1169,10 +1228,14 @@ async def manage_lead_contacts(
     lead_id: int,
     request: ManageContactsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Add or remove contact associations for a lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    manage_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        manage_q = manage_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = manage_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1220,10 +1283,14 @@ async def run_outreach_for_lead(
     lead_id: int,
     dry_run: bool = Query(True),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger outreach for contacts of a specific lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    outreach_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        outreach_q = outreach_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = outreach_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1240,10 +1307,14 @@ async def run_outreach_for_lead(
 async def get_lead(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get lead by ID."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    get_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        get_q = get_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = get_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1256,11 +1327,16 @@ async def get_lead(
 async def create_lead(
     lead_in: LeadCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new lead."""
+    check_plan_limit(db, tenant_id, "leads")
+
     if lead_in.job_link:
-        existing = db.query(LeadDetails).filter(LeadDetails.job_link == lead_in.job_link).first()
+        dup_check_q = db.query(LeadDetails).filter(LeadDetails.job_link == lead_in.job_link)
+        dup_check_q = tenant_filter(dup_check_q, LeadDetails, tenant_id)
+        existing = dup_check_q.first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1268,6 +1344,7 @@ async def create_lead(
             )
 
     lead = LeadDetails(**lead_in.model_dump())
+    lead.tenant_id = tenant_id or 1  # fallback for super admin without X-Tenant-ID
     db.add(lead)
     db.commit()
     db.refresh(lead)
@@ -1280,10 +1357,14 @@ async def update_lead(
     lead_id: int,
     lead_in: LeadUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update lead."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    update_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        update_q = update_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = update_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1327,10 +1408,14 @@ async def update_lead(
 async def delete_lead(
     lead_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive lead (soft delete)."""
-    lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+    delete_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        delete_q = delete_q.filter(LeadDetails.tenant_id == tenant_id)
+    lead = delete_q.first()
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

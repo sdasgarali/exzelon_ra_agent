@@ -54,6 +54,7 @@ def duplicate_template(db: Session, template_id: int) -> EmailTemplate | None:
         return None
 
     new_template = EmailTemplate(
+        tenant_id=template.tenant_id,
         name=f"{template.name} (Copy)",
         subject=template.subject,
         body_html=template.body_html,

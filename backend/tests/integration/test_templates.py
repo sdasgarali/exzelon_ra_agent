@@ -72,13 +72,15 @@ class TestTemplateEndpoints:
         )
         assert response.status_code == 204
 
-    def test_only_one_active(self, client, auth_headers, db_session):
+    def test_only_one_active(self, client, auth_headers, db_session, test_tenant):
         """Test that activating one template deactivates others."""
         t1 = EmailTemplate(
+            tenant_id=test_tenant.tenant_id,
             name="T1", subject="S1", body_html="<p>1</p>",
             status=TemplateStatus.ACTIVE, is_default=False,
         )
         t2 = EmailTemplate(
+            tenant_id=test_tenant.tenant_id,
             name="T2", subject="S2", body_html="<p>2</p>",
             status=TemplateStatus.INACTIVE, is_default=False,
         )

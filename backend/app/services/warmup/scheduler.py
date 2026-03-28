@@ -49,6 +49,8 @@ def init_scheduler():
         _scheduler.add_job(job_daily_cost_aggregation, CronTrigger(hour=23, minute=45), id="cost_aggregation", name="Daily Cost Aggregation", replace_existing=True)
         _scheduler.add_job(job_monthly_cost_analysis, CronTrigger(day=1, hour=3, minute=30), id="cost_analysis", name="Monthly Cost Analysis", replace_existing=True)
 
+        _scheduler.add_job(job_cleanup_stale_tenants, CronTrigger(hour=3, minute=0), id="cleanup_stale_tenants", name="Cleanup Stale Tenants", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -610,6 +612,60 @@ def job_monthly_cost_analysis():
         logger.info("Monthly cost analysis complete", suggestions=len(suggestions))
     except Exception as e:
         logger.error("Monthly cost analysis failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_cleanup_stale_tenants():
+    """Delete unverified users and empty tenants older than 72 hours. Runs daily at 3 AM UTC."""
+    if not _is_job_enabled("cleanup_stale_tenants"):
+        logger.info("Job cleanup_stale_tenants skipped (disabled)")
+        return
+    logger.info("Running stale tenant cleanup")
+    from app.db.session import SessionLocal
+    from app.db.models.user import User
+    from app.db.models.tenant import Tenant
+    from datetime import datetime, timedelta
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=72)
+
+        # Delete unverified users older than 72 hours
+        stale_users = db.query(User).filter(
+            User.is_verified == False,
+            User.created_at < cutoff,
+        ).all()
+
+        deleted_users = 0
+        for user in stale_users:
+            db.delete(user)
+            deleted_users += 1
+
+        # Find and deactivate empty tenants (no active users) older than 72 hours
+        # Skip Tenant #1 (system tenant)
+        from sqlalchemy import func
+        tenants_with_users = db.query(User.tenant_id).filter(User.is_active == True).distinct().subquery()
+        empty_tenants = db.query(Tenant).filter(
+            Tenant.tenant_id != 1,
+            Tenant.is_active == True,
+            ~Tenant.tenant_id.in_(db.query(tenants_with_users)),
+        ).all()
+
+        deactivated_tenants = 0
+        for tenant in empty_tenants:
+            tenant.is_active = False
+            deactivated_tenants += 1
+
+        db.commit()
+
+        if deleted_users or deactivated_tenants:
+            logger.info("Tenant cleanup complete",
+                       deleted_users=deleted_users,
+                       deactivated_tenants=deactivated_tenants)
+    except Exception as e:
+        logger.error("Tenant cleanup failed", error=str(e))
+        db.rollback()
     finally:
         db.close()
 

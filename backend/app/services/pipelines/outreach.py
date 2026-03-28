@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import pandas as pd
 import structlog
 
@@ -234,6 +234,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 
 def run_outreach_mailmerge_pipeline(
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate mail merge export package.
@@ -247,6 +248,7 @@ def run_outreach_mailmerge_pipeline(
 
     # Create job run record
     job_run = JobRun(
+        tenant_id=tenant_id or 1,
         pipeline_name="outreach_mailmerge",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -349,6 +351,7 @@ COMPLIANCE NOTES:
                 db.commit()
 
             event = OutreachEvent(
+                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.MAILMERGE,
                 status=OutreachStatus.SENT,
@@ -391,6 +394,7 @@ def run_outreach_send_pipeline(
     dry_run: bool = True,
     limit: int = 30,
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Send emails programmatically with rate limiting.
@@ -402,6 +406,7 @@ def run_outreach_send_pipeline(
 
     # Create job run record
     job_run = JobRun(
+        tenant_id=tenant_id or 1,
         pipeline_name="outreach_send",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -486,6 +491,7 @@ def run_outreach_send_pipeline(
 
             # Pre-create event to get tracking_id for unsub link
             event = OutreachEvent(
+                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.SMTP,
                 status=OutreachStatus.SKIPPED,
@@ -625,6 +631,7 @@ def run_outreach_for_lead(
     lead_id: int,
     dry_run: bool = True,
     triggered_by: str = "system",
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Send outreach emails to contacts of a specific lead only.
@@ -693,6 +700,7 @@ def run_outreach_for_lead(
 
             # Pre-create event to get tracking_id for unsub link
             event = OutreachEvent(
+                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
                 contact_id=contact.contact_id,
                 lead_id=lead_id,
                 channel=OutreachChannel.SMTP,
