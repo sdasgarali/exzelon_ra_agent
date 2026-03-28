@@ -12,7 +12,7 @@ from app.db.models.automation_event import AutomationEvent
 logger = structlog.get_logger()
 
 
-def auto_forward_to_crm(inbox_message: InboxMessage, db: Session) -> Optional[str]:
+def auto_forward_to_crm(inbox_message: InboxMessage, db: Session, tenant_id: Optional[int] = None) -> Optional[str]:
     """Forward an interested reply to CRM.
 
     Called by inbox_syncer after AI classifies a reply as 'interested'.
@@ -25,13 +25,13 @@ def auto_forward_to_crm(inbox_message: InboxMessage, db: Session) -> Optional[st
     Returns:
         CRM type used ("hubspot"/"salesforce") or None if no CRM configured.
     """
-    from app.core.config import get_setting
+    from app.core.settings_resolver import get_tenant_setting
 
     if not inbox_message or inbox_message.category != "interested":
         return None
 
     # Check if auto-forward is enabled
-    auto_forward_enabled = get_setting(db, "crm_auto_forward_interested", False)
+    auto_forward_enabled = get_tenant_setting(db, "crm_auto_forward_interested", tenant_id=tenant_id, default=False)
     if not auto_forward_enabled:
         return None
 
@@ -45,8 +45,8 @@ def auto_forward_to_crm(inbox_message: InboxMessage, db: Session) -> Optional[st
         return None
 
     # Determine which CRM to use
-    hubspot_key = get_setting(db, "hubspot_api_key", "")
-    salesforce_id = get_setting(db, "salesforce_client_id", "")
+    hubspot_key = get_tenant_setting(db, "hubspot_api_key", tenant_id=tenant_id, default="")
+    salesforce_id = get_tenant_setting(db, "salesforce_client_id", tenant_id=tenant_id, default="")
 
     crm_type = None
     if hubspot_key:

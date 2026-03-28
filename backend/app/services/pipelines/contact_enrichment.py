@@ -11,6 +11,7 @@ from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.client import ClientInfo
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
+from app.core.settings_resolver import get_tenant_setting
 from app.services.adapters.contact_discovery.mock import MockContactDiscoveryAdapter
 from app.services.adapters.contact_discovery.apollo import ApolloAdapter, ApolloCreditsExhaustedError
 from app.services.adapters.contact_discovery.seamless import SeamlessAdapter
@@ -19,23 +20,8 @@ from app.services.pipelines.cancel_helper import check_cancel
 logger = structlog.get_logger()
 
 
-def _get_db_setting(db, key, default=None):
-    """Read a setting value from the DB settings table."""
-    import json as _json
-    from app.db.models.settings import Settings
-    try:
-        setting = db.query(Settings).filter(Settings.key == key).first()
-        if setting and setting.value_json:
-            val = _json.loads(setting.value_json)
-            return val
-    except Exception as e:
-        logger.warning(f"Error reading setting {key}: {e}")
-    return default
-
-
-def get_contact_discovery_adapters(db=None):
+def get_contact_discovery_adapters(db=None, tenant_id=None):
     """Get all configured contact discovery adapters with DB-stored API keys."""
-    import json as _json
     from app.services.adapters.contact_discovery.hunter_contact import HunterContactAdapter
     from app.services.adapters.contact_discovery.snovio import SnovioAdapter
     from app.services.adapters.contact_discovery.rocketreach import RocketReachAdapter
@@ -46,15 +32,15 @@ def get_contact_discovery_adapters(db=None):
 
     providers = [settings.CONTACT_PROVIDER]
     if db:
-        db_providers = _get_db_setting(db, "contact_providers")
+        db_providers = get_tenant_setting(db, "contact_providers", tenant_id=tenant_id)
         if db_providers and isinstance(db_providers, list) and len(db_providers) > 0:
             providers = db_providers
 
     apollo_key = settings.APOLLO_API_KEY
     seamless_key = settings.SEAMLESS_API_KEY
     if db:
-        db_apollo_key = _get_db_setting(db, "apollo_api_key", "")
-        db_seamless_key = _get_db_setting(db, "seamless_api_key", "")
+        db_apollo_key = get_tenant_setting(db, "apollo_api_key", tenant_id=tenant_id, default="")
+        db_seamless_key = get_tenant_setting(db, "seamless_api_key", tenant_id=tenant_id, default="")
         if db_apollo_key:
             apollo_key = db_apollo_key
         if db_seamless_key:
@@ -74,36 +60,36 @@ def get_contact_discovery_adapters(db=None):
             adapters.append(("seamless", SeamlessAdapter(api_key=seamless_key)))
             logger.info("Seamless adapter configured", has_key=bool(seamless_key))
         elif p == "hunter_contact":
-            key = _get_db_setting(db, "hunter_contact_api_key", "") if db else ""
+            key = get_tenant_setting(db, "hunter_contact_api_key", tenant_id=tenant_id, default="") if db else ""
             if not key:
                 logger.error("Hunter.io selected but no API key configured in Settings")
                 continue
             adapters.append(("hunter_contact", HunterContactAdapter(api_key=key)))
             logger.info("Hunter.io contact adapter configured")
         elif p == "snovio":
-            client_id = _get_db_setting(db, "snovio_client_id", "") if db else ""
-            client_secret = _get_db_setting(db, "snovio_client_secret", "") if db else ""
+            client_id = get_tenant_setting(db, "snovio_client_id", tenant_id=tenant_id, default="") if db else ""
+            client_secret = get_tenant_setting(db, "snovio_client_secret", tenant_id=tenant_id, default="") if db else ""
             if not client_id or not client_secret:
                 logger.error("Snov.io selected but credentials not configured in Settings")
                 continue
             adapters.append(("snovio", SnovioAdapter(client_id=client_id, client_secret=client_secret)))
             logger.info("Snov.io adapter configured")
         elif p == "rocketreach":
-            key = _get_db_setting(db, "rocketreach_api_key", "") if db else ""
+            key = get_tenant_setting(db, "rocketreach_api_key", tenant_id=tenant_id, default="") if db else ""
             if not key:
                 logger.error("RocketReach selected but no API key configured in Settings")
                 continue
             adapters.append(("rocketreach", RocketReachAdapter(api_key=key)))
             logger.info("RocketReach adapter configured")
         elif p == "pdl":
-            key = _get_db_setting(db, "pdl_api_key", "") if db else ""
+            key = get_tenant_setting(db, "pdl_api_key", tenant_id=tenant_id, default="") if db else ""
             if not key:
                 logger.error("PDL selected but no API key configured in Settings")
                 continue
             adapters.append(("pdl", PDLAdapter(api_key=key)))
             logger.info("People Data Labs adapter configured")
         elif p == "proxycurl":
-            key = _get_db_setting(db, "proxycurl_api_key", "") if db else ""
+            key = get_tenant_setting(db, "proxycurl_api_key", tenant_id=tenant_id, default="") if db else ""
             if not key:
                 logger.error("Proxycurl selected but no API key configured in Settings")
                 continue
@@ -256,7 +242,7 @@ def run_contact_enrichment_pipeline(
     try:
         logger.info("Starting contact enrichment pipeline")
 
-        adapters = get_contact_discovery_adapters(db)
+        adapters = get_contact_discovery_adapters(db, tenant_id=tenant_id)
         if not adapters:
             raise RuntimeError("No contact discovery adapters configured. Add API keys in Settings page.")
 

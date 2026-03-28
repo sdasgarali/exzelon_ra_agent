@@ -14,6 +14,7 @@ from app.db.models.client import ClientInfo, ClientCategory, ClientStatus
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.models.settings import Settings
 from app.core.config import settings
+from app.core.settings_resolver import get_tenant_setting
 from app.services.adapters.base import RateLimitError
 from app.services.adapters.job_sources.mock import MockJobSourceAdapter
 from app.services.pipelines.cancel_helper import check_cancel
@@ -113,20 +114,7 @@ def normalize_job_title(title: str) -> str:
     return normalized
 
 
-def get_db_setting(db, key: str, default=None):
-    """Get a setting value from database, falling back to config."""
-    try:
-        setting = db.query(Settings).filter(Settings.key == key).first()
-        if setting and setting.value_json:
-            value = json.loads(setting.value_json)
-            if value:  # Only return if not empty
-                return value
-    except Exception as e:
-        logger.warning(f"Error reading setting {key} from DB: {e}")
-    return default
-
-
-def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
+def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tuple[str, Any]]:
     """Get all configured job source adapters.
 
     Returns list of (source_name, adapter) tuples.
@@ -140,41 +128,41 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     adapters = []
 
     # Get enabled sources from settings
-    enabled_sources = get_db_setting(db, "lead_sources", ["jsearch"])
+    enabled_sources = get_tenant_setting(db, "lead_sources", tenant_id=tenant_id, default=["jsearch"])
     logger.info(f"Enabled lead sources: {enabled_sources}")
 
     # JSearch adapter
     if "jsearch" in enabled_sources:
-        jsearch_api_key = get_db_setting(db, "jsearch_api_key") or settings.JSEARCH_API_KEY
+        jsearch_api_key = get_tenant_setting(db, "jsearch_api_key", tenant_id=tenant_id) or settings.JSEARCH_API_KEY
         if jsearch_api_key:
             adapters.append(("jsearch", JSearchAdapter(api_key=jsearch_api_key)))
             logger.info("JSearch adapter configured")
 
     # Apollo adapter
     if "apollo" in enabled_sources:
-        apollo_api_key = get_db_setting(db, "apollo_api_key")
+        apollo_api_key = get_tenant_setting(db, "apollo_api_key", tenant_id=tenant_id)
         if apollo_api_key:
             adapters.append(("apollo", ApolloJobSourceAdapter(api_key=apollo_api_key)))
             logger.info("Apollo adapter configured")
 
     # TheirStack adapter
     if "theirstack" in enabled_sources:
-        theirstack_key = get_db_setting(db, "theirstack_api_key")
+        theirstack_key = get_tenant_setting(db, "theirstack_api_key", tenant_id=tenant_id)
         if theirstack_key:
             adapters.append(("theirstack", TheirStackAdapter(api_key=theirstack_key)))
             logger.info("TheirStack adapter configured")
 
     # SerpAPI adapter
     if "serpapi" in enabled_sources:
-        serpapi_key = get_db_setting(db, "serpapi_api_key")
+        serpapi_key = get_tenant_setting(db, "serpapi_api_key", tenant_id=tenant_id)
         if serpapi_key:
             adapters.append(("serpapi", SerpAPIAdapter(api_key=serpapi_key)))
             logger.info("SerpAPI adapter configured")
 
     # Adzuna adapter
     if "adzuna" in enabled_sources:
-        adzuna_app_id = get_db_setting(db, "adzuna_app_id")
-        adzuna_api_key = get_db_setting(db, "adzuna_api_key")
+        adzuna_app_id = get_tenant_setting(db, "adzuna_app_id", tenant_id=tenant_id)
+        adzuna_api_key = get_tenant_setting(db, "adzuna_api_key", tenant_id=tenant_id)
         if adzuna_app_id and adzuna_api_key:
             adapters.append(("adzuna", AdzunaAdapter(app_id=adzuna_app_id, api_key=adzuna_api_key)))
             logger.info("Adzuna adapter configured")
@@ -182,7 +170,7 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     # SearchAPI adapter
     if "searchapi" in enabled_sources:
         from app.services.adapters.job_sources.searchapi import SearchAPIAdapter
-        searchapi_key = get_db_setting(db, "searchapi_api_key")
+        searchapi_key = get_tenant_setting(db, "searchapi_api_key", tenant_id=tenant_id)
         if searchapi_key:
             adapters.append(("searchapi", SearchAPIAdapter(api_key=searchapi_key)))
             logger.info("SearchAPI adapter configured")
@@ -190,8 +178,8 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     # USAJOBS adapter
     if "usajobs" in enabled_sources:
         from app.services.adapters.job_sources.usajobs import USAJobsAdapter
-        usajobs_key = get_db_setting(db, "usajobs_api_key")
-        usajobs_email = get_db_setting(db, "usajobs_email")
+        usajobs_key = get_tenant_setting(db, "usajobs_api_key", tenant_id=tenant_id)
+        usajobs_email = get_tenant_setting(db, "usajobs_email", tenant_id=tenant_id)
         if usajobs_key:
             adapters.append(("usajobs", USAJobsAdapter(api_key=usajobs_key, email=usajobs_email)))
             logger.info("USAJOBS adapter configured")
@@ -199,7 +187,7 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     # Jooble adapter
     if "jooble" in enabled_sources:
         from app.services.adapters.job_sources.jooble import JoobleAdapter
-        jooble_key = get_db_setting(db, "jooble_api_key")
+        jooble_key = get_tenant_setting(db, "jooble_api_key", tenant_id=tenant_id)
         if jooble_key:
             adapters.append(("jooble", JoobleAdapter(api_key=jooble_key)))
             logger.info("Jooble adapter configured")
@@ -207,7 +195,7 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     # JobDataFeeds adapter
     if "jobdatafeeds" in enabled_sources:
         from app.services.adapters.job_sources.jobdatafeeds import JobDataFeedsAdapter
-        jdf_key = get_db_setting(db, "jobdatafeeds_api_key")
+        jdf_key = get_tenant_setting(db, "jobdatafeeds_api_key", tenant_id=tenant_id)
         if jdf_key:
             adapters.append(("jobdatafeeds", JobDataFeedsAdapter(api_key=jdf_key)))
             logger.info("JobDataFeeds adapter configured")
@@ -215,7 +203,7 @@ def get_all_job_source_adapters(db) -> List[Tuple[str, Any]]:
     # Coresignal adapter (jobs + recruiter contacts)
     if "coresignal" in enabled_sources:
         from app.services.adapters.job_sources.coresignal import CoresignalAdapter
-        cs_key = get_db_setting(db, "coresignal_api_key")
+        cs_key = get_tenant_setting(db, "coresignal_api_key", tenant_id=tenant_id)
         if cs_key:
             adapters.append(("coresignal", CoresignalAdapter(api_key=cs_key)))
             logger.info("Coresignal adapter configured")
@@ -584,16 +572,16 @@ def run_lead_sourcing_pipeline(
         logger.info("Starting multi-source lead sourcing pipeline", requested_sources=sources)
 
         # Load settings from database or fall back to config
-        target_industries = get_db_setting(db, "target_industries", settings.TARGET_INDUSTRIES)
-        exclude_it_keywords = get_db_setting(db, "exclude_it_keywords", settings.EXCLUDE_IT_KEYWORDS)
-        exclude_staffing_keywords = get_db_setting(db, "exclude_staffing_keywords", settings.EXCLUDE_STAFFING_KEYWORDS)
-        target_job_titles = get_db_setting(db, "target_job_titles", settings.TARGET_JOB_TITLES)
+        target_industries = get_tenant_setting(db, "target_industries", tenant_id=tenant_id, default=settings.TARGET_INDUSTRIES)
+        exclude_it_keywords = get_tenant_setting(db, "exclude_it_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_IT_KEYWORDS)
+        exclude_staffing_keywords = get_tenant_setting(db, "exclude_staffing_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_STAFFING_KEYWORDS)
+        target_job_titles = get_tenant_setting(db, "target_job_titles", tenant_id=tenant_id, default=settings.TARGET_JOB_TITLES)
         exclude_keywords = exclude_it_keywords + exclude_staffing_keywords
 
         logger.info(f"Pipeline config: {len(target_industries)} industries, {len(exclude_keywords)} exclusions, {len(target_job_titles)} job titles")
 
         # Get all configured adapters
-        adapters = get_all_job_source_adapters(db)
+        adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
         logger.info(f"Using {len(adapters)} job source adapters")
 
         all_jobs = []

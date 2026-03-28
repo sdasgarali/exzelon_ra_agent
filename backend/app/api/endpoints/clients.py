@@ -1,7 +1,6 @@
 """Client management endpoints."""
 import csv
 import io
-import json
 from typing import List, Optional, Literal
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -15,10 +14,10 @@ from app.db.models.user import User, UserRole
 from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
-from app.db.models.settings import Settings as SettingsModel
 from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 from app.services.company_enrichment import enrich_client, bulk_enrich_clients
+from app.core.settings_resolver import get_tenant_setting
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -40,17 +39,6 @@ class BulkClientIdsRequest(BaseModel):
     client_ids: List[int]
 
 
-def _get_setting(db: Session, key: str, default=None):
-    """Read a single setting from the DB; return default if missing."""
-    row = db.query(SettingsModel).filter(SettingsModel.key == key).first()
-    if row and row.value_json:
-        try:
-            return json.loads(row.value_json)
-        except Exception:
-            return row.value_json
-    return default
-
-
 def compute_client_category(db: Session, client_name: str, tenant_id: Optional[int] = None) -> ClientCategory:
     """Compute client category based on posting frequency.
 
@@ -59,9 +47,9 @@ def compute_client_category(db: Session, client_name: str, tenant_id: Optional[i
       - category_regular_threshold  (default 3)  — unique posting dates > this → Regular
       - category_occasional_threshold (default 0) — unique posting dates > this → Occasional
     """
-    window_days = int(_get_setting(db, "category_window_days", 90))
-    regular_threshold = int(_get_setting(db, "category_regular_threshold", 3))
-    occasional_threshold = int(_get_setting(db, "category_occasional_threshold", 0))
+    window_days = int(get_tenant_setting(db, "category_window_days", tenant_id=tenant_id, default=90))
+    regular_threshold = int(get_tenant_setting(db, "category_regular_threshold", tenant_id=tenant_id, default=3))
+    occasional_threshold = int(get_tenant_setting(db, "category_occasional_threshold", tenant_id=tenant_id, default=0))
 
     cutoff = date.today() - timedelta(days=window_days)
 
@@ -331,7 +319,7 @@ async def bulk_enrich(
     if not valid_ids:
         raise HTTPException(status_code=404, detail="No clients found with provided IDs")
 
-    result = bulk_enrich_clients(db, valid_ids)
+    result = bulk_enrich_clients(db, valid_ids, tenant_id=tenant_id)
     return result
 
 
@@ -350,7 +338,7 @@ async def enrich_single_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    result = enrich_client(db, client)
+    result = enrich_client(db, client, tenant_id=tenant_id)
     db.commit()
     return result
 

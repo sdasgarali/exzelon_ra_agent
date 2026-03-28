@@ -1,7 +1,7 @@
 """Bidirectional CRM sync engine — pull contacts from CRM, push deals to CRM."""
 import json
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import structlog
 
 from sqlalchemy.orm import Session
@@ -141,15 +141,15 @@ def sync_deals_to_crm(crm_type: str, db: Session) -> Dict[str, Any]:
     return result
 
 
-def run_crm_sync(db: Session) -> Dict[str, Any]:
+def run_crm_sync(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
     """Run full bidirectional CRM sync. Called by scheduler."""
-    from app.core.config import get_setting
+    from app.core.settings_resolver import get_tenant_setting
 
     results = {}
 
     # Check which CRMs are configured
-    hubspot_key = get_setting(db, "hubspot_api_key", "")
-    salesforce_id = get_setting(db, "salesforce_client_id", "")
+    hubspot_key = get_tenant_setting(db, "hubspot_api_key", tenant_id=tenant_id, default="")
+    salesforce_id = get_tenant_setting(db, "salesforce_client_id", tenant_id=tenant_id, default="")
 
     if hubspot_key:
         logger.info("Running HubSpot sync")

@@ -6,23 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
-from app.db.models.settings import Settings
+from app.core.settings_resolver import get_tenant_setting
 
 
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
-
-
-def check_recovery_eligibility(mailbox: SenderMailbox, db: Session) -> bool:
+def check_recovery_eligibility(mailbox: SenderMailbox, db: Session, tenant_id=None) -> bool:
     if mailbox.warmup_status not in [WarmupStatus.PAUSED, WarmupStatus.BLACKLISTED]:
         return False
-    wait_days = int(_get_setting(db, "warmup_recovery_wait_days", 3))
+    wait_days = int(get_tenant_setting(db, "warmup_recovery_wait_days", tenant_id=tenant_id, default=3))
     if not mailbox.updated_at:
         return False
     days_paused = (datetime.utcnow() - mailbox.updated_at).days
@@ -53,11 +43,11 @@ def start_recovery(mailbox_id: int, db: Session) -> Dict[str, Any]:
     return {"mailbox_id": mailbox_id, "status": "recovering", "daily_limit": 2}
 
 
-def advance_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
+def advance_recovery(mailbox: SenderMailbox, db: Session, tenant_id=None) -> Dict[str, Any]:
     if mailbox.warmup_status != WarmupStatus.RECOVERING:
         return {"skipped": True}
 
-    ramp_factor = float(_get_setting(db, "warmup_recovery_ramp_factor", 1.5))
+    ramp_factor = float(get_tenant_setting(db, "warmup_recovery_ramp_factor", tenant_id=tenant_id, default=1.5))
     new_limit = max(2, int(mailbox.daily_send_limit * ramp_factor))
     mailbox.daily_send_limit = min(new_limit, 35)
     mailbox.warmup_days_completed += 1
@@ -86,21 +76,21 @@ def complete_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
     return {"mailbox_id": mailbox.mailbox_id, "status": "warming_up", "recovery_complete": True}
 
 
-def run_auto_recovery_check(db: Session) -> Dict[str, Any]:
-    enabled = _get_setting(db, "warmup_auto_recovery_enabled", True)
+def run_auto_recovery_check(db: Session, tenant_id=None) -> Dict[str, Any]:
+    enabled = get_tenant_setting(db, "warmup_auto_recovery_enabled", tenant_id=tenant_id, default=True)
     if not enabled:
         return {"skipped": True, "reason": "Auto-recovery disabled"}
 
     recovering = db.query(SenderMailbox).filter(SenderMailbox.warmup_status == WarmupStatus.RECOVERING).all()
     for mb in recovering:
-        advance_recovery(mb, db)
+        advance_recovery(mb, db, tenant_id=tenant_id)
 
     paused = db.query(SenderMailbox).filter(
         SenderMailbox.warmup_status.in_([WarmupStatus.PAUSED, WarmupStatus.BLACKLISTED])
     ).all()
     auto_started = 0
     for mb in paused:
-        if check_recovery_eligibility(mb, db):
+        if check_recovery_eligibility(mb, db, tenant_id=tenant_id):
             start_recovery(mb.mailbox_id, db)
             auto_started += 1
 

@@ -6,18 +6,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.warmup_email import WarmupEmail
-from app.db.models.settings import Settings
 from app.core.config import settings as app_settings
-
-
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
+from app.core.settings_resolver import get_tenant_setting
 
 
 def generate_tracking_pixel_url(tracking_id: str, base_url: str = None) -> str:
@@ -32,10 +22,10 @@ def generate_tracked_link(tracking_id: str, original_url: str, base_url: str = N
     return f"{base}/t/{tracking_id}/l?url={encoded}"
 
 
-def inject_tracking(html_body: str, tracking_id: str, db: Session = None) -> str:
+def inject_tracking(html_body: str, tracking_id: str, db: Session = None, tenant_id=None) -> str:
     base_url = app_settings.EFFECTIVE_BASE_URL
     if db:
-        base_url = _get_setting(db, "warmup_tracking_base_url", base_url)
+        base_url = get_tenant_setting(db, "warmup_tracking_base_url", tenant_id=tenant_id, default=base_url)
 
     pixel_url = generate_tracking_pixel_url(tracking_id, base_url)
     pixel_tag = f'<img src="{pixel_url}" width="1" height="1" style="display:none" alt="" />'

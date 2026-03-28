@@ -3,7 +3,7 @@ import random
 import json
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
-from app.db.models.settings import Settings
+from app.core.settings_resolver import get_tenant_setting
 
 
 CONTENT_CATEGORIES = [
@@ -34,21 +34,11 @@ BODY_TEMPLATES = {
 }
 
 
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
-
-
-def get_ai_adapter(db: Session):
+def get_ai_adapter(db: Session, tenant_id=None):
     """Load configured AI provider from settings."""
-    provider = _get_setting(db, "warmup_ai_provider", "groq")
+    provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
     api_key_map = {"groq": "groq_api_key", "openai": "openai_api_key", "anthropic": "anthropic_api_key", "gemini": "gemini_api_key"}
-    api_key = _get_setting(db, api_key_map.get(provider, "groq_api_key"), "")
+    api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
     if not api_key:
         return None
     try:
@@ -82,14 +72,14 @@ def generate_warmup_body(sender_name: str, receiver_name: str, category: str = N
     return body.format(sender_name=sender_name, receiver_name=receiver_name)
 
 
-def generate_ai_warmup_content(db: Session, sender_name: str, receiver_name: str, category: str = None) -> Optional[Dict[str, Any]]:
+def generate_ai_warmup_content(db: Session, sender_name: str, receiver_name: str, category: str = None, tenant_id=None) -> Optional[Dict[str, Any]]:
     """Generate AI-powered warmup email content."""
-    adapter = get_ai_adapter(db)
+    adapter = get_ai_adapter(db, tenant_id=tenant_id)
     if not adapter:
         return None
     cat = category or random.choice(CONTENT_CATEGORIES)
-    temperature = float(_get_setting(db, "warmup_ai_temperature", 0.8))
-    max_length = int(_get_setting(db, "warmup_content_max_length", 200))
+    temperature = float(get_tenant_setting(db, "warmup_ai_temperature", tenant_id=tenant_id, default=0.8))
+    max_length = int(get_tenant_setting(db, "warmup_content_max_length", tenant_id=tenant_id, default=200))
     try:
         messages = [
             {"role": "system", "content": f"You are writing a casual internal business email. Keep it under {max_length} words. Category: {cat}"},
@@ -104,16 +94,16 @@ def generate_ai_warmup_content(db: Session, sender_name: str, receiver_name: str
         return None
 
 
-def generate_warmup_reply(original_subject: str, original_body: str, sender_name: str, db: Session = None) -> Dict[str, str]:
+def generate_warmup_reply(original_subject: str, original_body: str, sender_name: str, db: Session = None, tenant_id=None) -> Dict[str, str]:
     """Generate a reply to a warmup email, using AI when available."""
     subject = "Re: " + original_subject if not original_subject.startswith("Re:") else original_subject
 
     # Try AI-generated reply first
     if db:
-        adapter = get_ai_adapter(db)
+        adapter = get_ai_adapter(db, tenant_id=tenant_id)
         if adapter:
             try:
-                temperature = float(_get_setting(db, "warmup_ai_temperature", 0.8))
+                temperature = float(get_tenant_setting(db, "warmup_ai_temperature", tenant_id=tenant_id, default=0.8))
                 messages = [
                     {"role": "system", "content": "You are writing a brief, casual reply to an internal business email. Keep it under 60 words. Be natural and conversational."},
                     {"role": "user", "content": f"Write a short reply from {sender_name} to this email:\n\nSubject: {original_subject}\n{original_body[:300]}\n\nJust the reply body, no subject line."}

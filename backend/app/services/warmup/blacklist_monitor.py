@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.blacklist_check_result import BlacklistCheckResult
-from app.db.models.settings import Settings
+from app.core.settings_resolver import get_tenant_setting
 
 
 DEFAULT_PROVIDERS = [
@@ -17,16 +17,6 @@ DEFAULT_PROVIDERS = [
     "cbl.abuseat.org",
     "dnsbl-1.uceprotect.net",
 ]
-
-
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
 
 
 def resolve_mx_ip(domain: str) -> str:
@@ -73,7 +63,7 @@ def check_ip_blacklist(ip: str, provider: str) -> Dict[str, Any]:
         return {"provider": provider, "listed": False, "details": "Not listed"}
 
 
-def run_blacklist_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
+def run_blacklist_check(mailbox_id: int, db: Session, tenant_id=None) -> Dict[str, Any]:
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
@@ -81,7 +71,7 @@ def run_blacklist_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
     domain = mailbox.email.split("@")[1]
     ip = resolve_mx_ip(domain)
 
-    providers = _get_setting(db, "warmup_blacklist_providers", DEFAULT_PROVIDERS)
+    providers = get_tenant_setting(db, "warmup_blacklist_providers", tenant_id=tenant_id, default=DEFAULT_PROVIDERS)
     if isinstance(providers, str):
         providers = [p.strip() for p in providers.split(",")]
 
@@ -113,7 +103,7 @@ def run_blacklist_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
     db.commit()
     db.refresh(bl_result)
 
-    auto_pause = _get_setting(db, "warmup_auto_pause_on_blacklist", True)
+    auto_pause = get_tenant_setting(db, "warmup_auto_pause_on_blacklist", tenant_id=tenant_id, default=True)
     if not is_clean and auto_pause:
         if mailbox.warmup_status not in [WarmupStatus.PAUSED, WarmupStatus.BLACKLISTED]:
             mailbox.warmup_status = WarmupStatus.BLACKLISTED

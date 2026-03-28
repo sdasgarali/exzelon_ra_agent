@@ -111,14 +111,9 @@ def get_user_settings_tab_access(db: Session, user: User, tab_key: str) -> str:
     if user.role == UserRole.SUPER_ADMIN:
         return 'full'
 
-    from app.db.models.settings import Settings
-    role_perms_setting = db.query(Settings).filter(Settings.key == 'role_permissions').first()
-    if not role_perms_setting or not role_perms_setting.value_json:
-        return 'no_access'
-
-    try:
-        role_perms = json.loads(role_perms_setting.value_json)
-    except (json.JSONDecodeError, TypeError):
+    from app.core.settings_resolver import get_tenant_setting
+    role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
+    if not role_perms or not isinstance(role_perms, dict):
         return 'no_access'
 
     role_name = user.role.value  # e.g. 'admin', 'operator', 'viewer'
@@ -149,14 +144,9 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
     if user.role == UserRole.SUPER_ADMIN:
         return {tab: 'full' for tab in tabs}
 
-    from app.db.models.settings import Settings
-    role_perms_setting = db.query(Settings).filter(Settings.key == 'role_permissions').first()
-    if not role_perms_setting or not role_perms_setting.value_json:
-        return {tab: 'no_access' for tab in tabs}
-
-    try:
-        role_perms = json.loads(role_perms_setting.value_json)
-    except (json.JSONDecodeError, TypeError):
+    from app.core.settings_resolver import get_tenant_setting
+    role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
+    if not role_perms or not isinstance(role_perms, dict):
         return {tab: 'no_access' for tab in tabs}
 
     role_name = user.role.value

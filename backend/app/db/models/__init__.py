@@ -32,6 +32,7 @@ from app.db.models.cost_tracking import CostEntry
 from app.db.models.icp_profile import ICPProfile
 from app.db.models.deal_task import DealTask, TaskStatus, TaskPriority
 from app.db.models.crm_sync_log import CRMSyncLog
+from app.db.models.tenant_settings import TenantSettings
 
 __all__ = [
     "User",
@@ -85,4 +86,5 @@ __all__ = [
     "TaskStatus",
     "TaskPriority",
     "CRMSyncLog",
+    "TenantSettings",
 ]

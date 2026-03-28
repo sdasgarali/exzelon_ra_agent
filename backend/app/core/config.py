@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Core
     APP_ENV: Literal["development", "staging", "production"] = "development"
-    APP_NAME: str = "Exzelon RA Cold-Email Automation"
+    APP_NAME: str = "NeuraLeads AI Agent"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = True
     SECRET_KEY: str = ""
@@ -283,29 +283,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
-
-def get_setting(db, key: str, default=None):
-    """Get a setting value from the settings table.
-
-    Args:
-        db: Database session
-        key: Setting key to look up
-        default: Default value if not found
-
-    Returns:
-        Parsed JSON value or raw string from the settings table
-    """
-    import json
-    from app.db.models.settings import Settings as SettingsModel
-
-    setting = db.query(SettingsModel).filter(
-        SettingsModel.key == key,
-    ).first()
-    if setting and setting.value_json is not None:
-        try:
-            return json.loads(setting.value_json)
-        except (json.JSONDecodeError, TypeError):
-            return setting.value_json
-
-    return default

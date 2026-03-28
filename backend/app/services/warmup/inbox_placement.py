@@ -8,17 +8,7 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox
-from app.db.models.settings import Settings
-
-
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
+from app.core.settings_resolver import get_tenant_setting
 
 
 def send_seed_email(mailbox: SenderMailbox, seed_email: str, subject: str = None) -> Dict[str, Any]:
@@ -48,12 +38,12 @@ def send_seed_email(mailbox: SenderMailbox, seed_email: str, subject: str = None
         return {"success": False, "error": str(e)}
 
 
-def run_placement_test(mailbox_id: int, db: Session) -> Dict[str, Any]:
+def run_placement_test(mailbox_id: int, db: Session, tenant_id=None) -> Dict[str, Any]:
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
 
-    seed_emails = _get_setting(db, "warmup_seed_emails_json", [])
+    seed_emails = get_tenant_setting(db, "warmup_seed_emails_json", tenant_id=tenant_id, default=[])
     if isinstance(seed_emails, str):
         try:
             seed_emails = json.loads(seed_emails)

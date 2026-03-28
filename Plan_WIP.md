@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 50: Multi-Tenancy Phases 2-6 ALL COMPLETE. Phase 2: 4 core models + endpoints. Phase 3: Campaign & communication isolation. Phase 4: 13 remaining models + all 27 endpoint files (228 get_current_tenant_id, 175 tenant_filter usages). Phase 5: plan_limits.py checker, demo_seeder.py, starter plan enforcement on CREATE endpoints. Phase 6: admin_tenants.py (list/get/update/deactivate/impersonate), tenant cleanup scheduler job. 430 tests pass. All data tables have tenant_id. All endpoints tenant-filtered. Full multi-tenancy retrofit complete.
+> Session 53: Multi-tenant settings architecture — COMPLETE. Implemented two-table copy-on-write settings (tenant_settings table + centralized settings_resolver.py). Replaced 15 duplicate _get_setting() implementations across 20 files (~152 call sites). Updated scheduler with tenant iteration for 13+ jobs. All 466 tests pass (25 new resolver unit tests + 11 new integration tests). Frontend builds clean. No regressions.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -53,13 +53,33 @@
 - [x] Update Lead_Sourcing_Plan.docx to reflect completed Tier 1+2 implementation (2026-03-10)
 - [x] Generate Exzelon_RA_Agent_SOP_v1.docx — 27 sections, 3 appendices, 28 Playwright screenshots (2026-03-10)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
-- [ ] Configure real email validation provider for production
-- [ ] Run enrichment pipeline on sourced leads
-- [ ] Enable SMTP AUTH in M365 Admin for failing mailboxes (BasicAuthBlocked)
-- [ ] Configure API keys for new adapters (SearchAPI, USAJobs, Jooble, JobDataFeeds, Coresignal)
-- [ ] Deploy lead sourcing scale-up to VPS
+- [x] Deploy lead sourcing scale-up to VPS — already deployed (3da329c) (2026-03-28)
+- [x] Test M365 SMTP AUTH — SMTP works on all 5 exzelon.com mailboxes, IMAP still blocked (2026-03-28)
+- [~] Configure API keys for new adapters (SearchAPI, USAJobs, Jooble, JobDataFeeds, Coresignal) — SKIPPED, user has no keys
+- [~] Configure real email validation provider for production — SKIPPED, user has no keys
+- [~] Run enrichment pipeline on sourced leads — BLOCKED, needs real contact provider API key (mock would pollute data)
+- [x] Multi-tenant settings architecture (two-table copy-on-write, settings_resolver, scheduler tenant iteration) (2026-03-28)
+- [ ] Enable IMAP in M365 Admin per-mailbox (for inbox syncing/warmup read)
+- [ ] Connect Gmail mailbox (mirzahabibbeg7@gmail.com) via OAuth2 in browser
+- [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 53: Multi-Tenant Settings Architecture (2026-03-28)
+  - Phase 1: Created TenantSettings model + centralized settings_resolver.py (4-layer resolution)
+  - Phase 2: Updated settings.py API endpoints (tenant-aware GET/PUT, new tenant-overrides + delete-override endpoints)
+  - Phase 3: Replaced 15 duplicate _get_setting() functions across 20 files (~152 call sites → get_tenant_setting)
+  - Phase 4: Added tenant iteration to 13+ scheduler jobs (lead sourcing, warmup, CRM sync, etc.)
+  - Phase 5: 25 unit tests + 11 integration tests (all pass), 466 total tests pass, 37.33% coverage
+  - Fixed route ordering bug: GET /tenant-overrides before GET /{key} to prevent path parameter match
+  - New files: tenant_settings.py, settings_resolver.py, test_settings_resolver.py, test_tenant_settings_api.py
+  - Modified ~25 files total
+- [x] Session 52: Operational Tasks Review (2026-03-28)
+  - Verified VPS at latest commit (3da329c), all services healthy, all adapter files present
+  - Tested 6 mailbox connections: 5/5 exzelon.com SMTP working (M365 SMTP AUTH confirmed fixed)
+  - IMAP still blocked on all 5 (separate M365 admin setting per-mailbox)
+  - Gmail mailbox (ID 16) needs OAuth2 browser flow — shows "OAuth2 not connected"
+  - Cannot run enrichment: CONTACT_PROVIDER=mock, no real API keys, would generate fake contacts
+  - Current production state: 2,513 leads (2,030 new), 508 contacts, 6 mailboxes
 - [x] Session 46: SOP v1 Document + Lead Sourcing Plan Update (2026-03-10)
   - Updated Lead_Sourcing_Plan.docx: Tier 1 & 2 marked COMPLETE, implementation checklist updated, next steps revised
   - Generated Exzelon_RA_Agent_SOP_v1.docx (13MB, 27 sections + 3 appendices)

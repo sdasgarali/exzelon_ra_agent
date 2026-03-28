@@ -76,22 +76,13 @@ def _get_db():
 
 
 def _is_job_enabled(job_id: str) -> bool:
-    """Check master + individual toggle from settings table."""
+    """Check master + individual automation toggle (global, not per-tenant)."""
     db = _get_db()
     try:
-        from app.db.models.settings import Settings
-        # Check master toggle
-        master_row = db.query(Settings).filter(Settings.key == "automation_master_enabled").first()
-        if master_row and master_row.value_json:
-            master = json.loads(master_row.value_json)
-            if not master:
-                return False
-        # Check individual toggle
-        key = f"automation_{job_id}_enabled"
-        row = db.query(Settings).filter(Settings.key == key).first()
-        if row and row.value_json:
-            return bool(json.loads(row.value_json))
-        return True  # default enabled if no setting exists
+        from app.core.settings_resolver import get_tenant_setting_bool
+        if not get_tenant_setting_bool(db, "automation_master_enabled", default=True):
+            return False
+        return get_tenant_setting_bool(db, f"automation_{job_id}_enabled", default=True)
     except Exception as e:
         logger.warning("Failed to check job toggle, defaulting to enabled", job_id=job_id, error=str(e))
         return True
@@ -99,16 +90,18 @@ def _is_job_enabled(job_id: str) -> bool:
         db.close()
 
 
-def _get_setting_bool(db, key: str, default: bool = False) -> bool:
-    """Read a boolean setting from DB."""
-    from app.db.models.settings import Settings
-    row = db.query(Settings).filter(Settings.key == key).first()
-    if row and row.value_json:
-        try:
-            return bool(json.loads(row.value_json))
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return default
+def _get_active_tenant_ids():
+    """Return list of active tenant IDs for per-tenant job iteration."""
+    db = _get_db()
+    try:
+        from app.db.models.tenant import Tenant
+        rows = db.query(Tenant.tenant_id).filter(Tenant.is_active == True).all()
+        return [r[0] for r in rows]
+    except Exception as e:
+        logger.warning("Failed to get active tenants, falling back to [1]", error=str(e))
+        return [1]
+    finally:
+        db.close()
 
 
 # ─── Job functions ───────────────────────────────────────────────────────────
@@ -135,15 +128,16 @@ def job_peer_warmup_cycle():
         logger.info("Job peer_warmup_cycle skipped (disabled)")
         return
     logger.info("Running peer warmup cycle")
-    db = _get_db()
-    try:
-        from app.services.warmup.peer_warmup import run_peer_warmup_cycle
-        result = run_peer_warmup_cycle(db)
-        logger.info("Peer warmup cycle complete", result=result)
-    except Exception as e:
-        logger.error("Peer warmup cycle failed", error=str(e))
-    finally:
-        db.close()
+    for tid in _get_active_tenant_ids():
+        db = _get_db()
+        try:
+            from app.services.warmup.peer_warmup import run_peer_warmup_cycle
+            result = run_peer_warmup_cycle(db, tenant_id=tid)
+            logger.info("Peer warmup cycle complete", tenant_id=tid, result=result)
+        except Exception as e:
+            logger.error("Peer warmup cycle failed", tenant_id=tid, error=str(e))
+        finally:
+            db.close()
 
 
 def job_auto_reply_cycle():
@@ -151,15 +145,16 @@ def job_auto_reply_cycle():
         logger.info("Job auto_reply_cycle skipped (disabled)")
         return
     logger.info("Running auto-reply cycle")
-    db = _get_db()
-    try:
-        from app.services.warmup.peer_warmup import run_auto_reply_cycle
-        result = run_auto_reply_cycle(db)
-        logger.info("Auto-reply cycle complete", result=result)
-    except Exception as e:
-        logger.error("Auto-reply cycle failed", error=str(e))
-    finally:
-        db.close()
+    for tid in _get_active_tenant_ids():
+        db = _get_db()
+        try:
+            from app.services.warmup.peer_warmup import run_auto_reply_cycle
+            result = run_auto_reply_cycle(db, tenant_id=tid)
+            logger.info("Auto-reply cycle complete", tenant_id=tid, result=result)
+        except Exception as e:
+            logger.error("Auto-reply cycle failed", tenant_id=tid, error=str(e))
+        finally:
+            db.close()
 
 
 def job_daily_count_reset():
@@ -199,7 +194,7 @@ def job_dns_checks():
         ).all()
         for mb in mailboxes:
             try:
-                run_dns_health_check(mb.mailbox_id, db)
+                run_dns_health_check(mb.mailbox_id, db, tenant_id=mb.tenant_id)
             except Exception as e:
                 logger.error("DNS check failed", mailbox=mb.email, error=str(e))
     except Exception as e:
@@ -223,7 +218,7 @@ def job_blacklist_checks():
         ).all()
         for mb in mailboxes:
             try:
-                run_blacklist_check(mb.mailbox_id, db)
+                run_blacklist_check(mb.mailbox_id, db, tenant_id=mb.tenant_id)
             except Exception as e:
                 logger.error("Blacklist check failed", mailbox=mb.email, error=str(e))
     except Exception as e:
@@ -243,13 +238,18 @@ def job_daily_log_snapshot():
         from app.db.models.warmup_daily_log import WarmupDailyLog
         from app.services.pipelines.warmup_engine import calculate_health_score, load_warmup_config, get_warmup_phase
 
-        config = load_warmup_config(db)
         today = date.today()
         mailboxes = db.query(SenderMailbox).filter(SenderMailbox.is_active == True).all()
+        # Cache warmup config per tenant to avoid repeated DB queries
+        _config_cache = {}
         for mb in mailboxes:
             existing = db.query(WarmupDailyLog).filter(WarmupDailyLog.mailbox_id == mb.mailbox_id, WarmupDailyLog.log_date == today).first()
             if existing:
                 continue
+            tid = mb.tenant_id
+            if tid not in _config_cache:
+                _config_cache[tid] = load_warmup_config(db, tenant_id=tid)
+            config = _config_cache[tid]
             health = calculate_health_score(mb, config)
             total_sent = mb.total_emails_sent or 0
             bounce_rate = (mb.bounce_count / total_sent * 100) if total_sent > 0 else 0
@@ -280,15 +280,16 @@ def job_auto_recovery_check():
         logger.info("Job auto_recovery_check skipped (disabled)")
         return
     logger.info("Running auto-recovery check")
-    db = _get_db()
-    try:
-        from app.services.warmup.auto_recovery import run_auto_recovery_check
-        result = run_auto_recovery_check(db)
-        logger.info("Auto-recovery check complete", result=result)
-    except Exception as e:
-        logger.error("Auto-recovery check failed", error=str(e))
-    finally:
-        db.close()
+    for tid in _get_active_tenant_ids():
+        db = _get_db()
+        try:
+            from app.services.warmup.auto_recovery import run_auto_recovery_check
+            result = run_auto_recovery_check(db, tenant_id=tid)
+            logger.info("Auto-recovery check complete", tenant_id=tid, result=result)
+        except Exception as e:
+            logger.error("Auto-recovery check failed", tenant_id=tid, error=str(e))
+        finally:
+            db.close()
 
 
 def job_check_outreach_replies():
@@ -321,46 +322,49 @@ def job_lead_sourcing_run():
         logger.info("Job lead_sourcing_run skipped (disabled)")
         return
     logger.info("Running scheduled lead sourcing pipeline")
-    db = _get_db()
-    try:
-        from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
-        result = run_lead_sourcing_pipeline(sources=["auto"], triggered_by="scheduler")
-        logger.info("Scheduled lead sourcing complete",
-                    inserted=result.get("inserted", 0),
-                    skipped=result.get("skipped", 0),
-                    sources=result.get("sources_used", []))
-        from app.services.automation_logger import log_automation_event
-        inserted = result.get("inserted", 0)
-        log_automation_event(db, "lead_sourcing", f"Lead sourcing: {inserted} leads found", details=result)
-
-        # Auto-chain: sourcing → enrichment → validation
-        _run_auto_chain(db, inserted)
-    except Exception as e:
-        logger.error("Scheduled lead sourcing failed", error=str(e))
+    for tid in _get_active_tenant_ids():
+        db = _get_db()
         try:
+            from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
+            result = run_lead_sourcing_pipeline(sources=["auto"], triggered_by="scheduler", tenant_id=tid)
+            logger.info("Scheduled lead sourcing complete",
+                        tenant_id=tid,
+                        inserted=result.get("inserted", 0),
+                        skipped=result.get("skipped", 0),
+                        sources=result.get("sources_used", []))
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "lead_sourcing", f"Lead sourcing failed: {str(e)[:100]}", status="error")
-        except Exception:
-            pass
-    finally:
-        db.close()
+            inserted = result.get("inserted", 0)
+            log_automation_event(db, "lead_sourcing", f"Lead sourcing: {inserted} leads found", details=result)
+
+            # Auto-chain: sourcing → enrichment → validation
+            _run_auto_chain(db, inserted, tenant_id=tid)
+        except Exception as e:
+            logger.error("Scheduled lead sourcing failed", tenant_id=tid, error=str(e))
+            try:
+                from app.services.automation_logger import log_automation_event
+                log_automation_event(db, "lead_sourcing", f"Lead sourcing failed: {str(e)[:100]}", status="error")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
 
-def _run_auto_chain(db, leads_inserted: int):
+def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
     """Auto-chain: lead sourcing → contact enrichment → email validation."""
     from app.services.automation_logger import log_automation_event
+    from app.core.settings_resolver import get_tenant_setting_bool
 
     if leads_inserted <= 0:
         return
 
     # Chain step 1: enrichment
-    if not _get_setting_bool(db, "automation_chain_enrichment", False):
+    if not get_tenant_setting_bool(db, "automation_chain_enrichment", tenant_id=tenant_id, default=False):
         return
 
-    logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted)
+    logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted, tenant_id=tenant_id)
     try:
         from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
-        enrich_result = run_contact_enrichment_pipeline(triggered_by="auto_chain")
+        enrich_result = run_contact_enrichment_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
         contacts_found = enrich_result.get("contacts_found", 0) if isinstance(enrich_result, dict) else 0
         logger.info("Auto-chain: enrichment complete", contacts_found=contacts_found)
         log_automation_event(
@@ -380,13 +384,13 @@ def _run_auto_chain(db, leads_inserted: int):
     # Chain step 2: validation
     if contacts_found <= 0:
         return
-    if not _get_setting_bool(db, "automation_chain_validation", False):
+    if not get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
         return
 
-    logger.info("Auto-chain: starting email validation", contacts_found=contacts_found)
+    logger.info("Auto-chain: starting email validation", contacts_found=contacts_found, tenant_id=tenant_id)
     try:
         from app.services.pipelines.email_validation import run_email_validation_pipeline
-        valid_result = run_email_validation_pipeline(triggered_by="auto_chain")
+        valid_result = run_email_validation_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
         validated = valid_result.get("validated", 0) if isinstance(valid_result, dict) else 0
         logger.info("Auto-chain: validation complete", validated=validated)
         log_automation_event(
@@ -405,10 +409,10 @@ def _run_auto_chain(db, leads_inserted: int):
     # Chain step 3: enrollment
     if validated <= 0:
         return
-    if not _get_setting_bool(db, "automation_chain_enrollment", False):
+    if not get_tenant_setting_bool(db, "automation_chain_enrollment", tenant_id=tenant_id, default=False):
         return
 
-    logger.info("Auto-chain: starting campaign auto-enrollment", validated=validated)
+    logger.info("Auto-chain: starting campaign auto-enrollment", validated=validated, tenant_id=tenant_id)
     try:
         from app.services.auto_enrollment import run_auto_enrollment
         enroll_result = run_auto_enrollment(db)
@@ -448,8 +452,8 @@ def job_backup_cleanup():
     logger.info("Running backup cleanup")
     db = _get_db()
     try:
-        from app.core.config import get_setting
-        retention = get_setting(db, "backup_retention_days", 3)
+        from app.core.settings_resolver import get_tenant_setting
+        retention = get_tenant_setting(db, "backup_retention_days", default=3)
         from app.services.backup_service import cleanup_old_backups
         deleted = cleanup_old_backups(int(retention))
         logger.info("Backup cleanup complete", deleted_count=deleted, retention_days=retention)
@@ -545,17 +549,18 @@ def job_crm_sync():
         logger.info("Job crm_sync skipped (disabled)")
         return
     logger.info("Running nightly CRM sync")
-    db = _get_db()
-    try:
-        from app.services.crm_sync_engine import run_crm_sync
-        result = run_crm_sync(db)
-        logger.info("CRM sync complete", result=result)
-        from app.services.automation_logger import log_automation_event
-        log_automation_event(db, "crm_sync", "Nightly CRM sync completed", details=result)
-    except Exception as e:
-        logger.error("CRM sync failed", error=str(e))
-    finally:
-        db.close()
+    for tid in _get_active_tenant_ids():
+        db = _get_db()
+        try:
+            from app.services.crm_sync_engine import run_crm_sync
+            result = run_crm_sync(db, tenant_id=tid)
+            logger.info("CRM sync complete", tenant_id=tid, result=result)
+            from app.services.automation_logger import log_automation_event
+            log_automation_event(db, "crm_sync", "Nightly CRM sync completed", details=result)
+        except Exception as e:
+            logger.error("CRM sync failed", tenant_id=tid, error=str(e))
+        finally:
+            db.close()
 
 
 def job_auto_enrollment():

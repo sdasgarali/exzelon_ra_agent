@@ -4,9 +4,15 @@ from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.api.deps.auth import get_user_settings_tab_access, get_all_settings_tab_permissions
 from app.core.config import settings as app_config
+from app.core.settings_resolver import (
+    get_tenant_setting,
+    set_tenant_setting,
+    delete_tenant_setting,
+    get_tenant_overrides,
+)
 from app.db.models.user import User, UserRole
 from app.db.models.settings import Settings
 from app.schemas.settings import SettingUpdate, SettingResponse
@@ -502,12 +508,22 @@ async def get_my_settings_tab_permissions(
 @router.get("", response_model=List[SettingResponse])
 async def list_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """List all settings. Filters by tab permissions for non-super-admin users."""
+    """List all settings. Returns merged global+tenant settings.
+
+    Tenant overrides are applied on top of global defaults.
+    Each item includes is_tenant_override=True if a tenant-specific value exists.
+    """
     all_settings = db.query(Settings).order_by(Settings.key).all()
 
-    if current_user.role == UserRole.SUPER_ADMIN:
+    # Build tenant overrides lookup
+    overrides: Dict[str, object] = {}
+    if tenant_id is not None:
+        overrides = get_tenant_overrides(db, tenant_id)
+
+    if current_user.role == UserRole.SUPER_ADMIN and tenant_id is None:
         return [SettingResponse.model_validate(s) for s in all_settings]
 
     # Filter settings based on tab permissions
@@ -517,19 +533,37 @@ async def list_settings(
     result = []
     for s in all_settings:
         tab = SETTINGS_TAB_MAP.get(s.key)
-        # Allow unmapped keys (warmup settings, etc.) and keys in accessible tabs
-        if tab is None or tab in accessible_tabs:
-            result.append(SettingResponse.model_validate(s))
+        is_super = current_user.role == UserRole.SUPER_ADMIN
+        if is_super or tab is None or tab in accessible_tabs:
+            resp = SettingResponse.model_validate(s)
+            # Apply tenant override if exists
+            if s.key in overrides:
+                resp.value_json = json.dumps(overrides[s.key])
+                resp.is_tenant_override = True
+            result.append(resp)
     return result
+
+
+@router.get("/tenant-overrides", response_model=Dict[str, object])
+async def list_tenant_overrides(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List keys that the current tenant has explicitly overridden."""
+    if tenant_id is None:
+        return {}
+    return get_tenant_overrides(db, tenant_id)
 
 
 @router.get("/{key}", response_model=SettingResponse)
 async def get_setting(
     key: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get setting by key."""
+    """Get setting by key (resolved with tenant overrides)."""
     # Check tab-level read permission for non-super-admin
     if current_user.role != UserRole.SUPER_ADMIN:
         tab = SETTINGS_TAB_MAP.get(key)
@@ -547,7 +581,16 @@ async def get_setting(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Setting not found"
         )
-    return SettingResponse.model_validate(setting)
+    resp = SettingResponse.model_validate(setting)
+
+    # Apply tenant override if present
+    if tenant_id is not None:
+        overrides = get_tenant_overrides(db, tenant_id)
+        if key in overrides:
+            resp.value_json = json.dumps(overrides[key])
+            resp.is_tenant_override = True
+
+    return resp
 
 
 @router.put("/{key}", response_model=SettingResponse)
@@ -555,9 +598,14 @@ async def update_setting(
     key: str,
     setting_in: SettingUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Update or create setting (Admin only)."""
+    """Update or create setting (Admin only).
+
+    - Super admin without X-Tenant-ID: writes to global Settings table.
+    - Regular admin / super admin with X-Tenant-ID: writes to TenantSettings.
+    """
     # role_permissions is always super_admin only
     if key == 'role_permissions' and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
@@ -594,8 +642,6 @@ async def update_setting(
                 detail="backup_retention_days must be between 1 and 90",
             )
 
-    setting = db.query(Settings).filter(Settings.key == key).first()
-
     # Determine the value to store
     if setting_in.value_json is not None:
         value_json = setting_in.value_json
@@ -604,29 +650,53 @@ async def update_setting(
     else:
         value_json = json.dumps(None)
 
-    if not setting:
-        # Create new setting if it doesn't exist
-        setting = Settings(
+    parsed_value = json.loads(value_json)
+
+    # Write to tenant_settings if tenant context, else global
+    if tenant_id is not None:
+        set_tenant_setting(db, key, parsed_value, tenant_id=tenant_id, updated_by=current_user.email)
+        db.commit()
+
+        # Return the global row with override applied
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            resp = SettingResponse.model_validate(setting)
+            resp.value_json = value_json
+            resp.is_tenant_override = True
+            return resp
+        # No global row — return a synthetic response
+        return SettingResponse(
             key=key,
             value_json=value_json,
             type=setting_in.type or "string",
             description=setting_in.description or f"Setting: {key}",
             updated_by=current_user.email,
+            updated_at=__import__("datetime").datetime.utcnow(),
+            is_tenant_override=True,
         )
-        db.add(setting)
     else:
-        # Update existing setting
-        setting.value_json = value_json
-        if setting_in.type:
-            setting.type = setting_in.type
-        if setting_in.description:
-            setting.description = setting_in.description
-        setting.updated_by = current_user.email
+        # Global write (super admin without X-Tenant-ID)
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if not setting:
+            setting = Settings(
+                key=key,
+                value_json=value_json,
+                type=setting_in.type or "string",
+                description=setting_in.description or f"Setting: {key}",
+                updated_by=current_user.email,
+            )
+            db.add(setting)
+        else:
+            setting.value_json = value_json
+            if setting_in.type:
+                setting.type = setting_in.type
+            if setting_in.description:
+                setting.description = setting_in.description
+            setting.updated_by = current_user.email
 
-    db.commit()
-    db.refresh(setting)
-
-    return SettingResponse.model_validate(setting)
+        db.commit()
+        db.refresh(setting)
+        return SettingResponse.model_validate(setting)
 
 
 @router.post("/initialize")
@@ -654,15 +724,32 @@ async def initialize_settings(
     return {"message": f"Initialized {created} settings", "total": len(DEFAULT_SETTINGS)}
 
 
-def get_setting_value(db: Session, key: str, default: str = "") -> str:
-    """Get a setting value from database."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except:
-            return setting.value_json
-    return default
+def get_setting_value(db: Session, key: str, default: str = "", tenant_id: Optional[int] = None) -> str:
+    """Get a setting value from database (tenant-aware)."""
+    return get_tenant_setting(db, key, tenant_id=tenant_id, default=default)
+
+
+@router.delete("/{key}/tenant-override")
+async def remove_tenant_override(
+    key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Remove a tenant's override for a key, reverting to the global default."""
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tenant context — cannot delete a global setting via this endpoint",
+        )
+    deleted = delete_tenant_setting(db, key, tenant_id)
+    db.commit()
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No tenant override found for key '{key}'",
+        )
+    return {"message": f"Tenant override for '{key}' removed. Reverted to global default."}
 
 
 PROVIDER_TAB_MAP: Dict[str, str] = {
@@ -700,9 +787,10 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
 async def test_provider_connection(
     provider: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Test connection to a provider."""
+    """Test connection to a provider (uses tenant-specific API keys if set)."""
     # Check tab-level permission for the provider
     if current_user.role != UserRole.SUPER_ADMIN:
         tab = PROVIDER_TAB_MAP.get(provider)
@@ -714,9 +802,13 @@ async def test_provider_connection(
                     detail=f"No access to the '{tab}' settings tab"
                 )
 
+    # Tenant-aware setting getter (uses tenant's API keys if overridden)
+    def _gs(key: str, default: str = "") -> str:
+        return get_setting_value(db, key, default, tenant_id=tenant_id)
+
     try:
         if provider == "apollo":
-            api_key = get_setting_value(db, "apollo_api_key")
+            api_key = _gs("apollo_api_key")
             if not api_key:
                 return {"status": "error", "message": "Apollo API key not configured", "provider": provider}
             from app.services.adapters.contact_discovery.apollo import ApolloAdapter
@@ -725,7 +817,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "seamless":
-            api_key = get_setting_value(db, "seamless_api_key")
+            api_key = _gs("seamless_api_key")
             if not api_key:
                 return {"status": "error", "message": "Seamless API key not configured", "provider": provider}
             from app.services.adapters.contact_discovery.seamless import SeamlessAdapter
@@ -734,7 +826,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "neverbounce":
-            api_key = get_setting_value(db, "neverbounce_api_key")
+            api_key = _gs("neverbounce_api_key")
             if not api_key:
                 return {"status": "error", "message": "NeverBounce API key not configured", "provider": provider}
             from app.services.adapters.email_validation.neverbounce import NeverBounceAdapter
@@ -743,7 +835,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "zerobounce":
-            api_key = get_setting_value(db, "zerobounce_api_key")
+            api_key = _gs("zerobounce_api_key")
             if not api_key:
                 return {"status": "error", "message": "ZeroBounce API key not configured", "provider": provider}
             from app.services.adapters.email_validation.zerobounce import ZeroBounceAdapter
@@ -752,10 +844,10 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "smtp":
-            smtp_host = get_setting_value(db, "smtp_host")
-            smtp_port = get_setting_value(db, "smtp_port", "587")
-            smtp_user = get_setting_value(db, "smtp_user")
-            smtp_password = get_setting_value(db, "smtp_password")
+            smtp_host = _gs("smtp_host")
+            smtp_port = _gs("smtp_port", "587")
+            smtp_user = _gs("smtp_user")
+            smtp_password = _gs("smtp_password")
 
             if not smtp_host:
                 return {"status": "error", "message": "SMTP host not configured", "provider": provider}
@@ -777,8 +869,8 @@ async def test_provider_connection(
                 return {"status": "error", "message": f"SMTP error: {str(e)}", "provider": provider}
 
         elif provider == "m365":
-            m365_email = get_setting_value(db, "m365_admin_email")
-            m365_password = get_setting_value(db, "m365_admin_password")
+            m365_email = _gs("m365_admin_email")
+            m365_password = _gs("m365_admin_password")
 
             if not m365_email or not m365_password:
                 return {"status": "error", "message": "Microsoft 365 admin credentials not configured", "provider": provider}
@@ -800,7 +892,7 @@ async def test_provider_connection(
 
         # AI/LLM Providers
         elif provider == "groq":
-            api_key = get_setting_value(db, "groq_api_key")
+            api_key = _gs("groq_api_key")
             if not api_key:
                 return {"status": "error", "message": "Groq API key not configured", "provider": provider}
             from app.services.adapters.ai.groq import GroqAdapter
@@ -809,7 +901,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "openai":
-            api_key = get_setting_value(db, "openai_api_key")
+            api_key = _gs("openai_api_key")
             if not api_key:
                 return {"status": "error", "message": "OpenAI API key not configured", "provider": provider}
             from app.services.adapters.ai.openai_adapter import OpenAIAdapter
@@ -818,7 +910,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "anthropic":
-            api_key = get_setting_value(db, "anthropic_api_key")
+            api_key = _gs("anthropic_api_key")
             if not api_key:
                 return {"status": "error", "message": "Anthropic API key not configured", "provider": provider}
             from app.services.adapters.ai.anthropic_adapter import AnthropicAdapter
@@ -827,7 +919,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         elif provider == "gemini":
-            api_key = get_setting_value(db, "gemini_api_key")
+            api_key = _gs("gemini_api_key")
             if not api_key:
                 return {"status": "error", "message": "Gemini API key not configured", "provider": provider}
             from app.services.adapters.ai.gemini import GeminiAdapter
@@ -837,7 +929,7 @@ async def test_provider_connection(
 
         # Job Source Providers
         elif provider == "jsearch":
-            api_key = get_setting_value(db, "jsearch_api_key")
+            api_key = _gs("jsearch_api_key")
             if not api_key:
                 return {"status": "error", "message": "JSearch API key not configured. Get one at https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch", "provider": provider}
             from app.services.adapters.job_sources.jsearch import JSearchAdapter
@@ -850,7 +942,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your RapidAPI key", "provider": provider}
 
         elif provider == "indeed":
-            publisher_id = get_setting_value(db, "indeed_publisher_id")
+            publisher_id = _gs("indeed_publisher_id")
             if not publisher_id:
                 return {"status": "error", "message": "Indeed Publisher ID not configured. Apply at https://www.indeed.com/publisher", "provider": provider}
             from app.services.adapters.job_sources.indeed import IndeedAdapter
@@ -860,7 +952,7 @@ async def test_provider_connection(
 
         # New Job Source Providers
         elif provider == "theirstack":
-            api_key = get_setting_value(db, "theirstack_api_key")
+            api_key = _gs("theirstack_api_key")
             if not api_key:
                 return {"status": "error", "message": "TheirStack API key not configured. Get one at https://theirstack.com/", "provider": provider}
             from app.services.adapters.job_sources.theirstack import TheirStackAdapter
@@ -872,7 +964,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "serpapi":
-            api_key = get_setting_value(db, "serpapi_api_key")
+            api_key = _gs("serpapi_api_key")
             if not api_key:
                 return {"status": "error", "message": "SerpAPI key not configured. Get one at https://serpapi.com/", "provider": provider}
             from app.services.adapters.job_sources.serpapi import SerpAPIAdapter
@@ -881,8 +973,8 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "adzuna":
-            app_id = get_setting_value(db, "adzuna_app_id")
-            api_key = get_setting_value(db, "adzuna_api_key")
+            app_id = _gs("adzuna_app_id")
+            api_key = _gs("adzuna_api_key")
             if not app_id or not api_key:
                 return {"status": "error", "message": "Adzuna credentials not configured. Get them at https://developer.adzuna.com/", "provider": provider}
             from app.services.adapters.job_sources.adzuna import AdzunaAdapter
@@ -891,7 +983,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your credentials", "provider": provider}
 
         elif provider == "searchapi":
-            api_key = get_setting_value(db, "searchapi_api_key")
+            api_key = _gs("searchapi_api_key")
             if not api_key:
                 return {"status": "error", "message": "SearchAPI.io API key not configured. Get one at https://www.searchapi.io/", "provider": provider}
             from app.services.adapters.job_sources.searchapi import SearchAPIAdapter
@@ -900,8 +992,8 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "usajobs":
-            api_key = get_setting_value(db, "usajobs_api_key")
-            email = get_setting_value(db, "usajobs_email")
+            api_key = _gs("usajobs_api_key")
+            email = _gs("usajobs_email")
             if not api_key:
                 return {"status": "error", "message": "USAJOBS API key not configured. Get one free at https://developer.usajobs.gov/", "provider": provider}
             from app.services.adapters.job_sources.usajobs import USAJobsAdapter
@@ -910,7 +1002,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key and email", "provider": provider}
 
         elif provider == "jooble":
-            api_key = get_setting_value(db, "jooble_api_key")
+            api_key = _gs("jooble_api_key")
             if not api_key:
                 return {"status": "error", "message": "Jooble API key not configured. Get one free at https://jooble.org/api/about", "provider": provider}
             from app.services.adapters.job_sources.jooble import JoobleAdapter
@@ -919,7 +1011,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "jobdatafeeds":
-            api_key = get_setting_value(db, "jobdatafeeds_api_key")
+            api_key = _gs("jobdatafeeds_api_key")
             if not api_key:
                 return {"status": "error", "message": "JobDataFeeds API key not configured. Sign up at https://jobdatafeeds.com/", "provider": provider}
             from app.services.adapters.job_sources.jobdatafeeds import JobDataFeedsAdapter
@@ -928,7 +1020,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "coresignal":
-            api_key = get_setting_value(db, "coresignal_api_key")
+            api_key = _gs("coresignal_api_key")
             if not api_key:
                 return {"status": "error", "message": "Coresignal API key not configured. Get one at https://coresignal.com/", "provider": provider}
             from app.services.adapters.job_sources.coresignal import CoresignalAdapter
@@ -941,7 +1033,7 @@ async def test_provider_connection(
 
         # New Contact Discovery Providers
         elif provider == "hunter_contact":
-            api_key = get_setting_value(db, "hunter_contact_api_key")
+            api_key = _gs("hunter_contact_api_key")
             if not api_key:
                 return {"status": "error", "message": "Hunter.io API key not configured. Get one at https://hunter.io/", "provider": provider}
             from app.services.adapters.contact_discovery.hunter_contact import HunterContactAdapter
@@ -950,8 +1042,8 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "snovio":
-            client_id = get_setting_value(db, "snovio_client_id")
-            client_secret = get_setting_value(db, "snovio_client_secret")
+            client_id = _gs("snovio_client_id")
+            client_secret = _gs("snovio_client_secret")
             if not client_id or not client_secret:
                 return {"status": "error", "message": "Snov.io credentials not configured. Get them at https://snov.io/", "provider": provider}
             from app.services.adapters.contact_discovery.snovio import SnovioAdapter
@@ -960,7 +1052,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your credentials", "provider": provider}
 
         elif provider == "rocketreach":
-            api_key = get_setting_value(db, "rocketreach_api_key")
+            api_key = _gs("rocketreach_api_key")
             if not api_key:
                 return {"status": "error", "message": "RocketReach API key not configured. Get one at https://rocketreach.co/", "provider": provider}
             from app.services.adapters.contact_discovery.rocketreach import RocketReachAdapter
@@ -969,7 +1061,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "pdl":
-            api_key = get_setting_value(db, "pdl_api_key")
+            api_key = _gs("pdl_api_key")
             if not api_key:
                 return {"status": "error", "message": "People Data Labs API key not configured. Get one at https://www.peopledatalabs.com/", "provider": provider}
             from app.services.adapters.contact_discovery.pdl import PDLAdapter
@@ -978,7 +1070,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "proxycurl":
-            api_key = get_setting_value(db, "proxycurl_api_key")
+            api_key = _gs("proxycurl_api_key")
             if not api_key:
                 return {"status": "error", "message": "Proxycurl API key not configured. Get one at https://nubela.co/proxycurl/", "provider": provider}
             from app.services.adapters.contact_discovery.proxycurl import ProxycurlAdapter
@@ -988,7 +1080,7 @@ async def test_provider_connection(
 
         # Company Enrichment Providers
         elif provider == "clearbit":
-            api_key = get_setting_value(db, "clearbit_api_key")
+            api_key = _gs("clearbit_api_key")
             if not api_key:
                 return {"status": "error", "message": "Clearbit API key not configured. Get one at https://clearbit.com/", "provider": provider}
             from app.services.adapters.company.clearbit import ClearbitAdapter
@@ -997,7 +1089,7 @@ async def test_provider_connection(
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
 
         elif provider == "opencorporates":
-            api_key = get_setting_value(db, "opencorporates_api_key")
+            api_key = _gs("opencorporates_api_key")
             if not api_key:
                 return {"status": "error", "message": "OpenCorporates API key not configured. Get one at https://opencorporates.com/", "provider": provider}
             from app.services.adapters.company.opencorporates import OpenCorporatesAdapter

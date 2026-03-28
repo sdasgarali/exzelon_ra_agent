@@ -6,17 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.dns_check_result import DNSCheckResult
-from app.db.models.settings import Settings
-
-
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
+from app.core.settings_resolver import get_tenant_setting
 
 
 def check_spf(domain: str) -> Dict[str, Any]:
@@ -86,13 +76,13 @@ def calculate_dns_score(spf_valid: bool, dkim_valid: bool, dmarc_valid: bool) ->
     return score
 
 
-def run_dns_health_check(mailbox_id: int, db: Session) -> Dict[str, Any]:
+def run_dns_health_check(mailbox_id: int, db: Session, tenant_id=None) -> Dict[str, Any]:
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
 
     domain = mailbox.email.split("@")[1]
-    selector = _get_setting(db, "warmup_dkim_selector", "default")
+    selector = get_tenant_setting(db, "warmup_dkim_selector", tenant_id=tenant_id, default="default")
 
     spf = check_spf(domain)
     dkim = check_dkim(domain, selector)

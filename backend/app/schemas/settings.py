@@ -20,6 +20,7 @@ class SettingResponse(BaseModel):
     description: Optional[str] = None
     updated_by: Optional[str] = None
     updated_at: datetime
+    is_tenant_override: bool = False
 
     class Config:
         from_attributes = True

@@ -748,6 +748,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for Phase 3 multi-tenancy: {e}")
 
+    # Migration: create tenant_settings table for per-tenant setting overrides
+    try:
+        from sqlalchemy import text as sa_text_ts, inspect as sa_inspect_ts
+        with engine.connect() as conn:
+            inspector_ts = sa_inspect_ts(engine)
+            if "tenant_settings" not in inspector_ts.get_table_names():
+                conn.execute(sa_text_ts(
+                    "CREATE TABLE tenant_settings ("
+                    "  id INT AUTO_INCREMENT PRIMARY KEY,"
+                    "  tenant_id INT NOT NULL,"
+                    "  `key` VARCHAR(100) NOT NULL,"
+                    "  value_json TEXT,"
+                    "  updated_by VARCHAR(255),"
+                    "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                    "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    "  is_archived BOOLEAN NOT NULL DEFAULT 0,"
+                    "  UNIQUE KEY uq_tenant_settings_tid_key (tenant_id, `key`),"
+                    "  INDEX idx_tenant_settings_tid_key (tenant_id, `key`),"
+                    "  CONSTRAINT fk_tenant_settings_tenant FOREIGN KEY (tenant_id)"
+                    "    REFERENCES tenants(tenant_id) ON DELETE CASCADE"
+                    ")"
+                ))
+                conn.commit()
+                logger.info("Migration: created tenant_settings table")
+    except Exception as e:
+        logger.warning(f"Migration check for tenant_settings table: {e}")
+
     # Migration: Phase 4 multi-tenancy — add tenant_id to remaining tables
     try:
         from sqlalchemy import text as sa_text_mt4, inspect as sa_inspect_mt4

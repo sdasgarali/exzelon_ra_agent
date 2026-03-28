@@ -1,21 +1,9 @@
 """Domain Reputation Tracker - DNS+blacklist proxy score."""
-import json
 from datetime import datetime
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox
-from app.db.models.settings import Settings
-
-
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
 
 
 def calculate_domain_score(dns_score: int, is_blacklisted: bool, bounce_rate: float = 0) -> int:

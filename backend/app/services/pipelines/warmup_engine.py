@@ -7,7 +7,7 @@ import structlog
 from app.db.base import SessionLocal
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.job_run import JobRun, JobStatus
-from app.db.models.settings import Settings
+from app.core.settings_resolver import get_tenant_setting
 
 logger = structlog.get_logger()
 
@@ -19,47 +19,36 @@ PHASE_NAMES = {
 }
 
 
-def _get_setting(db, key: str, default=None):
-    """Get a setting value from the database."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            return setting.value_json
-    return default
-
-
-def load_warmup_config(db) -> Dict[str, Any]:
+def load_warmup_config(db, tenant_id=None) -> Dict[str, Any]:
     """Load all warmup settings from Settings table into a config dict."""
     config = {
-        "phase_1_days": int(_get_setting(db, "warmup_phase_1_days", 7)),
-        "phase_1_min_emails": int(_get_setting(db, "warmup_phase_1_min_emails", 2)),
-        "phase_1_max_emails": int(_get_setting(db, "warmup_phase_1_max_emails", 5)),
-        "phase_2_days": int(_get_setting(db, "warmup_phase_2_days", 7)),
-        "phase_2_min_emails": int(_get_setting(db, "warmup_phase_2_min_emails", 5)),
-        "phase_2_max_emails": int(_get_setting(db, "warmup_phase_2_max_emails", 15)),
-        "phase_3_days": int(_get_setting(db, "warmup_phase_3_days", 7)),
-        "phase_3_min_emails": int(_get_setting(db, "warmup_phase_3_min_emails", 15)),
-        "phase_3_max_emails": int(_get_setting(db, "warmup_phase_3_max_emails", 25)),
-        "phase_4_days": int(_get_setting(db, "warmup_phase_4_days", 9)),
-        "phase_4_min_emails": int(_get_setting(db, "warmup_phase_4_min_emails", 25)),
-        "phase_4_max_emails": int(_get_setting(db, "warmup_phase_4_max_emails", 35)),
-        "bounce_rate_good": float(_get_setting(db, "warmup_bounce_rate_good", 2.0)),
-        "bounce_rate_bad": float(_get_setting(db, "warmup_bounce_rate_bad", 5.0)),
-        "reply_rate_good": float(_get_setting(db, "warmup_reply_rate_good", 10.0)),
-        "complaint_rate_bad": float(_get_setting(db, "warmup_complaint_rate_bad", 0.1)),
-        "weight_bounce_rate": int(_get_setting(db, "warmup_weight_bounce_rate", 35)),
-        "weight_reply_rate": int(_get_setting(db, "warmup_weight_reply_rate", 25)),
-        "weight_complaint_rate": int(_get_setting(db, "warmup_weight_complaint_rate", 25)),
-        "weight_age": int(_get_setting(db, "warmup_weight_age", 15)),
-        "auto_pause_bounce_rate": float(_get_setting(db, "warmup_auto_pause_bounce_rate", 5.0)),
-        "auto_pause_complaint_rate": float(_get_setting(db, "warmup_auto_pause_complaint_rate", 0.3)),
-        "min_emails_for_scoring": int(_get_setting(db, "warmup_min_emails_for_scoring", 10)),
-        "active_health_threshold": int(_get_setting(db, "warmup_active_health_threshold", 80)),
-        "active_min_days": int(_get_setting(db, "warmup_active_min_days", 7)),
-        "total_days": int(_get_setting(db, "warmup_total_days", 30)),
-        "daily_increment": float(_get_setting(db, "warmup_daily_increment", 1.0)),
+        "phase_1_days": int(get_tenant_setting(db, "warmup_phase_1_days", tenant_id=tenant_id, default=7)),
+        "phase_1_min_emails": int(get_tenant_setting(db, "warmup_phase_1_min_emails", tenant_id=tenant_id, default=2)),
+        "phase_1_max_emails": int(get_tenant_setting(db, "warmup_phase_1_max_emails", tenant_id=tenant_id, default=5)),
+        "phase_2_days": int(get_tenant_setting(db, "warmup_phase_2_days", tenant_id=tenant_id, default=7)),
+        "phase_2_min_emails": int(get_tenant_setting(db, "warmup_phase_2_min_emails", tenant_id=tenant_id, default=5)),
+        "phase_2_max_emails": int(get_tenant_setting(db, "warmup_phase_2_max_emails", tenant_id=tenant_id, default=15)),
+        "phase_3_days": int(get_tenant_setting(db, "warmup_phase_3_days", tenant_id=tenant_id, default=7)),
+        "phase_3_min_emails": int(get_tenant_setting(db, "warmup_phase_3_min_emails", tenant_id=tenant_id, default=15)),
+        "phase_3_max_emails": int(get_tenant_setting(db, "warmup_phase_3_max_emails", tenant_id=tenant_id, default=25)),
+        "phase_4_days": int(get_tenant_setting(db, "warmup_phase_4_days", tenant_id=tenant_id, default=9)),
+        "phase_4_min_emails": int(get_tenant_setting(db, "warmup_phase_4_min_emails", tenant_id=tenant_id, default=25)),
+        "phase_4_max_emails": int(get_tenant_setting(db, "warmup_phase_4_max_emails", tenant_id=tenant_id, default=35)),
+        "bounce_rate_good": float(get_tenant_setting(db, "warmup_bounce_rate_good", tenant_id=tenant_id, default=2.0)),
+        "bounce_rate_bad": float(get_tenant_setting(db, "warmup_bounce_rate_bad", tenant_id=tenant_id, default=5.0)),
+        "reply_rate_good": float(get_tenant_setting(db, "warmup_reply_rate_good", tenant_id=tenant_id, default=10.0)),
+        "complaint_rate_bad": float(get_tenant_setting(db, "warmup_complaint_rate_bad", tenant_id=tenant_id, default=0.1)),
+        "weight_bounce_rate": int(get_tenant_setting(db, "warmup_weight_bounce_rate", tenant_id=tenant_id, default=35)),
+        "weight_reply_rate": int(get_tenant_setting(db, "warmup_weight_reply_rate", tenant_id=tenant_id, default=25)),
+        "weight_complaint_rate": int(get_tenant_setting(db, "warmup_weight_complaint_rate", tenant_id=tenant_id, default=25)),
+        "weight_age": int(get_tenant_setting(db, "warmup_weight_age", tenant_id=tenant_id, default=15)),
+        "auto_pause_bounce_rate": float(get_tenant_setting(db, "warmup_auto_pause_bounce_rate", tenant_id=tenant_id, default=5.0)),
+        "auto_pause_complaint_rate": float(get_tenant_setting(db, "warmup_auto_pause_complaint_rate", tenant_id=tenant_id, default=0.3)),
+        "min_emails_for_scoring": int(get_tenant_setting(db, "warmup_min_emails_for_scoring", tenant_id=tenant_id, default=10)),
+        "active_health_threshold": int(get_tenant_setting(db, "warmup_active_health_threshold", tenant_id=tenant_id, default=80)),
+        "active_min_days": int(get_tenant_setting(db, "warmup_active_min_days", tenant_id=tenant_id, default=7)),
+        "total_days": int(get_tenant_setting(db, "warmup_total_days", tenant_id=tenant_id, default=30)),
+        "daily_increment": float(get_tenant_setting(db, "warmup_daily_increment", tenant_id=tenant_id, default=1.0)),
     }
     return config
 

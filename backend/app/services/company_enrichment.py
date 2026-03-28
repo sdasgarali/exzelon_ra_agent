@@ -8,7 +8,6 @@ Multi-tier enrichment strategy:
 
 Only fills missing fields (never overwrites existing data).
 """
-import json
 import structlog
 from datetime import datetime, date
 from typing import Optional
@@ -17,8 +16,8 @@ from sqlalchemy import func
 
 from app.db.models.client import ClientInfo
 from app.db.models.lead import LeadDetails
-from app.db.models.settings import Settings
 from app.core.config import settings
+from app.core.settings_resolver import get_tenant_setting
 
 logger = structlog.get_logger()
 
@@ -95,27 +94,16 @@ def enrich_from_leads(db: Session, client: ClientInfo) -> dict:
     return updated
 
 
-def _get_setting(db: Session, key: str, default=None):
-    """Read a single setting value from the settings table."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
-
-
-def _get_ai_adapter(db: Session):
+def _get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
     """Load the configured AI adapter from settings."""
-    provider = _get_setting(db, "warmup_ai_provider", "groq")
+    provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
     api_key_map = {
         "groq": "groq_api_key",
         "openai": "openai_api_key",
         "anthropic": "anthropic_api_key",
         "gemini": "gemini_api_key",
     }
-    api_key = _get_setting(db, api_key_map.get(provider, "groq_api_key"), "")
+    api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
     if not api_key:
         return None
     try:
@@ -148,7 +136,7 @@ _LLM_FIELD_LIMITS = {
 }
 
 
-def enrich_from_llm(db: Session, client: ClientInfo) -> dict:
+def enrich_from_llm(db: Session, client: ClientInfo, tenant_id: Optional[int] = None) -> dict:
     """Tier 2: Use configured AI adapter to research missing company fields.
 
     Only fills null fields, never overwrites existing data.
@@ -163,7 +151,7 @@ def enrich_from_llm(db: Session, client: ClientInfo) -> dict:
     if not missing:
         return {}
 
-    adapter = _get_ai_adapter(db)
+    adapter = _get_ai_adapter(db, tenant_id=tenant_id)
     if not adapter:
         logger.debug("llm_enrich_skipped", reason="no_ai_adapter_configured")
         return {}
@@ -215,7 +203,7 @@ def enrich_from_llm(db: Session, client: ClientInfo) -> dict:
     return updated
 
 
-def enrich_client(db: Session, client: ClientInfo) -> dict:
+def enrich_client(db: Session, client: ClientInfo, tenant_id: Optional[int] = None) -> dict:
     """Run all enrichment tiers for a single client.
 
     Returns summary of what was enriched.
@@ -228,14 +216,14 @@ def enrich_client(db: Session, client: ClientInfo) -> dict:
         result["fields_updated"].extend(list(lead_updates.keys()))
 
     # Tier 2: LLM research (uses configured AI adapter)
-    llm_updates = enrich_from_llm(db, client)
+    llm_updates = enrich_from_llm(db, client, tenant_id=tenant_id)
     if llm_updates:
         result["fields_updated"].extend(list(llm_updates.keys()))
 
     return result
 
 
-def bulk_enrich_clients(db: Session, client_ids: list[int]) -> dict:
+def bulk_enrich_clients(db: Session, client_ids: list[int], tenant_id: Optional[int] = None) -> dict:
     """Enrich multiple clients."""
     results = []
     enriched = 0
@@ -248,7 +236,7 @@ def bulk_enrich_clients(db: Session, client_ids: list[int]) -> dict:
             skipped += 1
             continue
 
-        r = enrich_client(db, client)
+        r = enrich_client(db, client, tenant_id=tenant_id)
         results.append(r)
         if r["fields_updated"]:
             enriched += 1

@@ -12,21 +12,11 @@ from sqlalchemy import and_, or_
 
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_email import WarmupEmail, WarmupEmailStatus
-from app.db.models.settings import Settings
 from app.services.warmup.tracking import inject_tracking
+from app.core.settings_resolver import get_tenant_setting
 
 
-def _get_setting(db: Session, key: str, default=None):
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    if setting and setting.value_json:
-        try:
-            return json.loads(setting.value_json)
-        except Exception:
-            pass
-    return default
-
-
-def get_peer_pairs(db: Session, mailbox: SenderMailbox) -> List[SenderMailbox]:
+def get_peer_pairs(db: Session, mailbox: SenderMailbox, tenant_id=None) -> List[SenderMailbox]:
     peers = db.query(SenderMailbox).filter(
         and_(
             SenderMailbox.mailbox_id != mailbox.mailbox_id,
@@ -37,7 +27,7 @@ def get_peer_pairs(db: Session, mailbox: SenderMailbox) -> List[SenderMailbox]:
     ).all()
     if not peers:
         return []
-    max_per_pair = int(_get_setting(db, "warmup_peer_max_emails_per_pair", 3))
+    max_per_pair = int(get_tenant_setting(db, "warmup_peer_max_emails_per_pair", tenant_id=tenant_id, default=3))
     random.shuffle(peers)
     return peers[:max_per_pair]
 
@@ -71,14 +61,14 @@ def send_warmup_email(sender_mailbox: SenderMailbox, receiver_email: str, subjec
         return {"success": False, "error": str(e)}
 
 
-def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]:
+def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None) -> Dict[str, Any]:
     from app.services.warmup.content_generator import generate_warmup_subject, generate_warmup_body, generate_ai_warmup_content
     from app.services.warmup.smart_scheduler import should_skip_weekend
 
-    if should_skip_weekend(db):
+    if should_skip_weekend(db, tenant_id=tenant_id):
         return {"skipped": True, "reason": "Weekend - skipping warmup"}
 
-    enabled = _get_setting(db, "warmup_peer_enabled", True)
+    enabled = get_tenant_setting(db, "warmup_peer_enabled", tenant_id=tenant_id, default=True)
     if not enabled:
         return {"skipped": True, "reason": "Peer warmup disabled"}
 
@@ -97,7 +87,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]
         if mb.emails_sent_today >= mb.daily_send_limit:
             continue
 
-        peers = get_peer_pairs(db, mb)
+        peers = get_peer_pairs(db, mb, tenant_id=tenant_id)
         for peer in peers:
             if mb.emails_sent_today >= mb.daily_send_limit:
                 break
@@ -106,7 +96,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]
             receiver_name = peer.display_name or peer.email.split("@")[0]
 
             # Try AI content first, fallback to templates
-            ai_content = generate_ai_warmup_content(db, sender_name, receiver_name)
+            ai_content = generate_ai_warmup_content(db, sender_name, receiver_name, tenant_id=tenant_id)
             if ai_content:
                 subject = ai_content["subject"]
                 body_html = ai_content["body_html"]
@@ -122,7 +112,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]
 
             tracking_id = str(uuid.uuid4())
             # Inject tracking pixel into HTML body for open tracking
-            body_html = inject_tracking(body_html, tracking_id, db)
+            body_html = inject_tracking(body_html, tracking_id, db, tenant_id=tenant_id)
 
             result = send_warmup_email(mb, peer.email, subject, body_html, body_text)
             results["total"] += 1
@@ -160,7 +150,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None) -> Dict[str, Any]
     return results
 
 
-def run_auto_reply_cycle(db: Session) -> Dict[str, Any]:
+def run_auto_reply_cycle(db: Session, tenant_id=None) -> Dict[str, Any]:
     """Auto-reply to received warmup emails to boost reply rates and ISP reputation.
 
     Logic:
@@ -173,16 +163,16 @@ def run_auto_reply_cycle(db: Session) -> Dict[str, Any]:
     from app.services.warmup.content_generator import generate_warmup_reply
     from app.services.warmup.smart_scheduler import should_skip_weekend
 
-    if should_skip_weekend(db):
+    if should_skip_weekend(db, tenant_id=tenant_id):
         return {"skipped": True, "reason": "Weekend - skipping auto-replies"}
 
-    enabled = _get_setting(db, "warmup_auto_reply_enabled", True)
+    enabled = get_tenant_setting(db, "warmup_auto_reply_enabled", tenant_id=tenant_id, default=True)
     if not enabled:
         return {"skipped": True, "reason": "Auto-reply disabled"}
 
-    reply_rate_target = float(_get_setting(db, "warmup_auto_reply_rate", 0.5))
-    min_delay_minutes = int(_get_setting(db, "warmup_auto_reply_min_delay", 15))
-    max_delay_minutes = int(_get_setting(db, "warmup_auto_reply_max_delay", 90))
+    reply_rate_target = float(get_tenant_setting(db, "warmup_auto_reply_rate", tenant_id=tenant_id, default=0.5))
+    min_delay_minutes = int(get_tenant_setting(db, "warmup_auto_reply_min_delay", tenant_id=tenant_id, default=15))
+    max_delay_minutes = int(get_tenant_setting(db, "warmup_auto_reply_max_delay", tenant_id=tenant_id, default=90))
 
     now = datetime.utcnow()
     delay_cutoff = now - timedelta(minutes=min_delay_minutes)
@@ -236,6 +226,7 @@ def run_auto_reply_cycle(db: Session) -> Dict[str, Any]:
             original_body=email_record.body_text or "",
             sender_name=replier_name,
             db=db,
+            tenant_id=tenant_id,
         )
 
         # Send the reply
