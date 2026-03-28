@@ -495,26 +495,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for smtp_relay_config_json: {e}")
 
-    # Migration: encrypt existing plaintext mailbox passwords
-    try:
-        from app.core.encryption import encrypt_field, is_encrypted
-        from app.db.base import SessionLocal as _MigSessionLocal
-        from app.db.models.sender_mailbox import SenderMailbox as _MigMailbox
-        _mig_db = _MigSessionLocal()
-        try:
-            _mailboxes = _mig_db.query(_MigMailbox).all()
-            _migrated = 0
-            for _mb in _mailboxes:
-                if _mb.password and not is_encrypted(_mb.password):
-                    _mb.password = encrypt_field(_mb.password)
-                    _migrated += 1
-            if _migrated:
-                _mig_db.commit()
-                logger.info(f"Migration: encrypted {_migrated} plaintext mailbox password(s)")
-        finally:
-            _mig_db.close()
-    except Exception as e:
-        logger.warning(f"Migration check for password encryption: {e}")
+    # NOTE: Password encryption migration moved below Phase 4 multi-tenancy
+    # (ORM queries require tenant_id column to exist first)
 
     # Migration: add deal automation columns (is_auto_created, probability_manual)
     try:
@@ -597,30 +579,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for inbox soft-delete columns: {e}")
 
-    # Cleanup: mark orphaned pipeline runs as failed on startup
-    # (runs stuck as 'running' from server crashes or restarts)
-    try:
-        from app.db.base import SessionLocal as _CleanupSession
-        from app.db.models.job_run import JobRun, JobStatus
-        from datetime import datetime, timedelta
-        _cleanup_db = _CleanupSession()
-        try:
-            stale_cutoff = datetime.utcnow() - timedelta(hours=1)
-            stale_runs = _cleanup_db.query(JobRun).filter(
-                JobRun.status == JobStatus.RUNNING,
-                JobRun.created_at < stale_cutoff,
-            ).all()
-            for run in stale_runs:
-                run.status = JobStatus.FAILED
-                run.error_message = "Orphaned run - process crashed or server restarted"
-                run.ended_at = datetime.utcnow()
-            if stale_runs:
-                _cleanup_db.commit()
-                logger.info(f"Cleanup: marked {len(stale_runs)} orphaned pipeline run(s) as failed")
-        finally:
-            _cleanup_db.close()
-    except Exception as e:
-        logger.warning(f"Cleanup check for orphaned runs: {e}")
+    # NOTE: Orphaned runs cleanup moved below Phase 4 multi-tenancy
+    # (ORM queries require tenant_id column to exist first)
 
     # Migration: Multi-tenancy — add tenant_id + verification columns to users
     try:
@@ -809,6 +769,53 @@ async def lifespan(app: FastAPI):
                     logger.info(f"Migration: tenant_id added to {tbl}")
     except Exception as e:
         logger.warning(f"Migration check for Phase 4 multi-tenancy: {e}")
+
+    # Migration: encrypt existing plaintext mailbox passwords
+    # (must run AFTER Phase 2 multi-tenancy which adds tenant_id to sender_mailboxes)
+    try:
+        from app.core.encryption import encrypt_field, is_encrypted
+        from app.db.base import SessionLocal as _MigSessionLocal
+        from app.db.models.sender_mailbox import SenderMailbox as _MigMailbox
+        _mig_db = _MigSessionLocal()
+        try:
+            _mailboxes = _mig_db.query(_MigMailbox).all()
+            _migrated = 0
+            for _mb in _mailboxes:
+                if _mb.password and not is_encrypted(_mb.password):
+                    _mb.password = encrypt_field(_mb.password)
+                    _migrated += 1
+            if _migrated:
+                _mig_db.commit()
+                logger.info(f"Migration: encrypted {_migrated} plaintext mailbox password(s)")
+        finally:
+            _mig_db.close()
+    except Exception as e:
+        logger.warning(f"Migration check for password encryption: {e}")
+
+    # Cleanup: mark orphaned pipeline runs as failed on startup
+    # (must run AFTER Phase 4 multi-tenancy which adds tenant_id to job_runs)
+    try:
+        from app.db.base import SessionLocal as _CleanupSession
+        from app.db.models.job_run import JobRun, JobStatus
+        from datetime import datetime, timedelta
+        _cleanup_db = _CleanupSession()
+        try:
+            stale_cutoff = datetime.utcnow() - timedelta(hours=1)
+            stale_runs = _cleanup_db.query(JobRun).filter(
+                JobRun.status == JobStatus.RUNNING,
+                JobRun.created_at < stale_cutoff,
+            ).all()
+            for run in stale_runs:
+                run.status = JobStatus.FAILED
+                run.error_message = "Orphaned run - process crashed or server restarted"
+                run.ended_at = datetime.utcnow()
+            if stale_runs:
+                _cleanup_db.commit()
+                logger.info(f"Cleanup: marked {len(stale_runs)} orphaned pipeline run(s) as failed")
+        finally:
+            _cleanup_db.close()
+    except Exception as e:
+        logger.warning(f"Cleanup check for orphaned runs: {e}")
 
     _seed_warmup_profiles()
     _seed_default_email_template()
