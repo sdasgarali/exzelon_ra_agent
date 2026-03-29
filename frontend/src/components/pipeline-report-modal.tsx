@@ -62,6 +62,15 @@ interface RunMetadata {
   duration_seconds: number | null
 }
 
+interface ErrorAnalysisItem {
+  error_type: string
+  adapter: string | null
+  adapter_label: string
+  message: string
+  root_cause: string
+  proposed_solutions: string[]
+}
+
 interface QualityFunnel {
   total_discovered: number
   new_added: number
@@ -83,6 +92,7 @@ interface SummaryData {
   api_diagnostics?: ApiDiagnostic[]
   counters?: Record<string, number | string>
   quality_funnel?: QualityFunnel
+  error_analysis?: ErrorAnalysisItem[]
 }
 
 export function PipelineReportModal({
@@ -98,6 +108,7 @@ export function PipelineReportModal({
   const [data, setData] = useState<SummaryData | null>(null)
   const [diagExpanded, setDiagExpanded] = useState(false)
   const [funnelExpanded, setFunnelExpanded] = useState(false)
+  const [errorAnalysisExpanded, setErrorAnalysisExpanded] = useState(true)
 
   useEffect(() => {
     if (open && runId) {
@@ -108,6 +119,7 @@ export function PipelineReportModal({
       setError('')
       setDiagExpanded(false)
       setFunnelExpanded(false)
+      setErrorAnalysisExpanded(true)
     }
   }, [open, runId])
 
@@ -458,6 +470,63 @@ export function PipelineReportModal({
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Error Analysis */}
+              {data.error_analysis && data.error_analysis.length > 0 && (
+                <div className="mb-5">
+                  <button
+                    onClick={() => setErrorAnalysisExpanded(!errorAnalysisExpanded)}
+                    className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2 w-full text-left"
+                  >
+                    <XCircle className="w-4 h-4 text-red-500" />
+                    Error Analysis
+                    <span className="bg-red-100 text-red-700 text-xs font-medium px-1.5 py-0.5 rounded-full">
+                      {data.error_analysis.length}
+                    </span>
+                    <span className="ml-auto">
+                      {errorAnalysisExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </span>
+                  </button>
+                  {errorAnalysisExpanded && (
+                    <div className="space-y-3">
+                      {data.error_analysis.map((ea, i) => (
+                        <div key={i} className="border border-red-200 rounded-lg p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                            <span className="text-sm font-medium text-gray-800">{ea.adapter_label}</span>
+                            <span className="bg-red-50 text-red-600 text-xs px-1.5 py-0.5 rounded font-mono">
+                              {ea.error_type.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          {ea.message && (
+                            <div className="bg-gray-100 rounded px-2 py-1.5 mb-2">
+                              <code className="text-xs text-gray-600 font-mono break-all">{ea.message}</code>
+                            </div>
+                          )}
+                          {ea.root_cause && (
+                            <p className="text-sm text-gray-700 mb-2">
+                              <span className="font-medium">Root cause:</span> {ea.root_cause}
+                            </p>
+                          )}
+                          {ea.proposed_solutions && ea.proposed_solutions.length > 0 && (
+                            <div>
+                              <span className="text-sm font-medium text-gray-700">Solutions:</span>
+                              <ul className="mt-1 space-y-1">
+                                {ea.proposed_solutions.map((sol, si) => (
+                                  <li key={si} className="flex items-start gap-2 text-sm text-gray-600">
+                                    <span className="text-blue-500 mt-0.5 flex-shrink-0">&#8226;</span>
+                                    {sol}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

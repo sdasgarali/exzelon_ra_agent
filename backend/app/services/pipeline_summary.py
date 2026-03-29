@@ -99,6 +99,168 @@ PIPELINE_MECHANISM_KNOWLEDGE = {
 # Alias for the short name
 PIPELINE_MECHANISM_KNOWLEDGE["outreach"] = PIPELINE_MECHANISM_KNOWLEDGE["outreach_send"]
 
+# Maps error_type -> (root_cause_template, [solution_templates])
+# {adapter_label} is substituted at runtime with the human-readable adapter name.
+ERROR_TYPE_FALLBACK_SOLUTIONS: Dict[str, tuple] = {
+    "api_key_invalid": (
+        "The API key for {adapter_label} is missing, expired, or incorrect.",
+        [
+            "Verify your API key in Settings > Integrations for {adapter_label}.",
+            "Regenerate the key in your {adapter_label} account dashboard.",
+            "Ensure the API key has the required scopes/permissions.",
+        ],
+    ),
+    "credits_exhausted": (
+        "API credits for {adapter_label} have been fully consumed.",
+        [
+            "Check your remaining credits in the {adapter_label} account dashboard.",
+            "Upgrade your {adapter_label} plan for additional credits.",
+            "Enable alternative data sources to reduce dependency on {adapter_label}.",
+        ],
+    ),
+    "rate_limited": (
+        "Too many requests were sent to {adapter_label} in a short period.",
+        [
+            "Wait 15-30 minutes before retrying the pipeline.",
+            "Reduce the number of parallel workers in pipeline settings.",
+            "Consider upgrading your {adapter_label} API tier for higher rate limits.",
+        ],
+    ),
+    "connection_error": (
+        "Network or DNS failure when connecting to {adapter_label}.",
+        [
+            "Check your server's internet connectivity.",
+            "Check if {adapter_label} is experiencing an outage (status page).",
+            "Verify firewall rules are not blocking outbound requests.",
+            "Retry the pipeline — transient network issues often resolve themselves.",
+        ],
+    ),
+    "high_error_rate": (
+        "More than 50% of validation requests to {adapter_label} returned errors.",
+        [
+            "Check {adapter_label} service status for any ongoing incidents.",
+            "Review the quality of email addresses being submitted for validation.",
+            "Try switching to a different email validation provider.",
+        ],
+    ),
+    "smtp_failure": (
+        "SMTP authentication or connectivity failed for {adapter_label}.",
+        [
+            "Verify mailbox credentials (email + app password) in Mailbox settings.",
+            "Check SMTP port and TLS/SSL configuration.",
+            "Verify SPF, DKIM, and DMARC DNS records for the sending domain.",
+            "Check if the sending IP or domain is on any email blacklists.",
+        ],
+    ),
+    "no_match": (
+        "Zero results returned from {adapter_label} for the given search criteria.",
+        [
+            "Broaden search criteria (expand job titles, industries, or locations).",
+            "Verify that {adapter_label} has coverage for your target market.",
+            "Check if search filters are too restrictive.",
+        ],
+    ),
+    "low_results": (
+        "Fewer results than expected were returned from {adapter_label}.",
+        [
+            "Review target job titles and industries for broader coverage.",
+            "{adapter_label} may have limited data for your specific market segment.",
+            "Consider adding more data providers to supplement results.",
+        ],
+    ),
+    "pipeline_failure": (
+        "An unhandled exception occurred during pipeline execution.",
+        [
+            "Check the error message details below for specifics.",
+            "Review application logs for the full stack trace.",
+            "Retry the pipeline — transient errors may resolve on retry.",
+        ],
+    ),
+    "unknown": (
+        "An unexpected error occurred with {adapter_label}.",
+        [
+            "Review the error message for more details.",
+            "Check application logs for additional context.",
+            "If the issue persists, contact support with the run ID.",
+        ],
+    ),
+}
+
+
+def build_error_details(counters: Dict[str, Any], error_message: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Extract error entries from api_diagnostics and top-level error_message.
+
+    Returns a list of dicts with keys: error_type, adapter, adapter_label, message,
+    root_cause (empty string), proposed_solutions (empty list).
+    """
+    errors: List[Dict[str, Any]] = []
+    seen_messages: set = set()
+
+    # 1. Scan api_diagnostics for entries with status="error"/"warning" AND error_type set
+    api_diag = counters.get("api_diagnostics", [])
+    if isinstance(api_diag, list):
+        for d in api_diag:
+            if not isinstance(d, dict):
+                continue
+            diag_status = d.get("status", "")
+            error_type = d.get("error_type")
+            if diag_status == "error" and error_type:
+                msg = d.get("error_message", "") or ""
+                adapter = d.get("adapter", "unknown")
+                errors.append({
+                    "error_type": error_type,
+                    "adapter": adapter,
+                    "adapter_label": ADAPTER_LABELS.get(adapter, adapter),
+                    "message": msg,
+                    "root_cause": "",
+                    "proposed_solutions": [],
+                })
+                if msg:
+                    seen_messages.add(msg.strip().lower())
+            elif diag_status == "warning" and error_type:
+                msg = d.get("error_message", "") or ""
+                adapter = d.get("adapter", "unknown")
+                errors.append({
+                    "error_type": error_type,
+                    "adapter": adapter,
+                    "adapter_label": ADAPTER_LABELS.get(adapter, adapter),
+                    "message": msg,
+                    "root_cause": "",
+                    "proposed_solutions": [],
+                })
+                if msg:
+                    seen_messages.add(msg.strip().lower())
+
+    # 2. If top-level error_message exists and isn't already captured, add as pipeline_failure
+    if error_message:
+        normalized = error_message.strip().lower()
+        if normalized not in seen_messages:
+            errors.append({
+                "error_type": "pipeline_failure",
+                "adapter": None,
+                "adapter_label": "Pipeline",
+                "message": error_message,
+                "root_cause": "",
+                "proposed_solutions": [],
+            })
+
+    return errors
+
+
+def _fill_error_analysis_fallback(error_details: List[Dict[str, Any]]) -> None:
+    """Fill root_cause and proposed_solutions using ERROR_TYPE_FALLBACK_SOLUTIONS templates.
+
+    Modifies error_details in-place. Uses {adapter_label} substitution.
+    Falls back to 'unknown' for unrecognized error_types.
+    """
+    for entry in error_details:
+        error_type = entry.get("error_type", "unknown")
+        adapter_label = entry.get("adapter_label", "the service")
+        template = ERROR_TYPE_FALLBACK_SOLUTIONS.get(error_type, ERROR_TYPE_FALLBACK_SOLUTIONS["unknown"])
+        root_cause_tpl, solutions_tpl = template
+        entry["root_cause"] = root_cause_tpl.format(adapter_label=adapter_label)
+        entry["proposed_solutions"] = [s.format(adapter_label=adapter_label) for s in solutions_tpl]
+
 
 def calculate_success_score(pipeline_name: str, counters: Dict[str, Any], status: str) -> int:
     """Calculate a deterministic 0-100 success score from pipeline counters.
@@ -596,7 +758,8 @@ def _build_api_diagnostics(pipeline_name: str, counters: Dict[str, Any]) -> List
 
 def _build_ai_prompt(pipeline_name: str, counters: Dict[str, Any], score: int,
                      status: str, duration: Optional[float], error_message: Optional[str],
-                     source_breakdown: List[Dict[str, Any]], api_diagnostics: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+                     source_breakdown: List[Dict[str, Any]], api_diagnostics: List[Dict[str, Any]],
+                     error_details: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, str]]:
     """Build the messages list for the AI adapter with mechanism knowledge."""
     # Filter counters to simple scalar values for metrics display
     metrics_lines = "\n".join(
@@ -659,11 +822,26 @@ def _build_ai_prompt(pipeline_name: str, counters: Dict[str, Any], score: int,
     if error_message:
         user_msg += f"Error: {error_message}\n"
 
-    user_msg += (
-        '\nRespond as JSON: {"summary": "2-3 sentence overview", '
-        '"suggestions": ["actionable suggestion 1", ...], '
-        '"highlights": ["positive highlight 1", ...]}'
-    )
+    # Add error details for AI analysis
+    if error_details:
+        error_lines = []
+        for ed in error_details:
+            error_lines.append(f"  - {ed['adapter_label']}: {ed['error_type']} — {ed['message'][:100]}")
+        user_msg += "Errors Encountered:\n" + "\n".join(error_lines) + "\n"
+
+    if error_details:
+        user_msg += (
+            '\nRespond as JSON: {"summary": "2-3 sentence overview", '
+            '"suggestions": ["actionable suggestion 1", ...], '
+            '"highlights": ["positive highlight 1", ...], '
+            '"error_analysis": [{"root_cause": "explanation", "proposed_solutions": ["fix 1", ...]}, ...]}'
+        )
+    else:
+        user_msg += (
+            '\nRespond as JSON: {"summary": "2-3 sentence overview", '
+            '"suggestions": ["actionable suggestion 1", ...], '
+            '"highlights": ["positive highlight 1", ...]}'
+        )
 
     return [
         {"role": "system", "content": system_msg},
@@ -672,7 +850,8 @@ def _build_ai_prompt(pipeline_name: str, counters: Dict[str, Any], score: int,
 
 
 def _fallback_summary(pipeline_name: str, counters: Dict[str, Any], score: int,
-                      status: str, duration: Optional[float], error_message: Optional[str]) -> Dict[str, Any]:
+                      status: str, duration: Optional[float], error_message: Optional[str],
+                      error_details: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Generate a template-based summary when no AI adapter is available."""
     name = pipeline_name.replace("_", " ").title()
     duration_str = f" in {duration:.1f}s" if duration else ""
@@ -727,10 +906,15 @@ def _fallback_summary(pipeline_name: str, counters: Dict[str, Any], score: int,
     if errors == 0 and total > 0:
         highlights.append("Zero errors during processing")
 
+    # Fill error analysis with fallback templates
+    if error_details:
+        _fill_error_analysis_fallback(error_details)
+
     return {
         "summary": summary,
         "suggestions": suggestions,
         "highlights": highlights,
+        "error_analysis": error_details or [],
     }
 
 
@@ -773,6 +957,9 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
     source_breakdown = _build_source_breakdown(job_run.pipeline_name, counters)
     api_diagnostics = _build_api_diagnostics(job_run.pipeline_name, counters)
 
+    # Build error details from diagnostics + error_message
+    error_details = build_error_details(counters, error_message)
+
     # Try AI generation
     ai_generated = False
     narrative: Optional[Dict[str, Any]] = None
@@ -783,9 +970,10 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
         if adapter:
             messages = _build_ai_prompt(
                 job_run.pipeline_name, counters, score, status, duration, error_message,
-                source_breakdown, api_diagnostics
+                source_breakdown, api_diagnostics, error_details
             )
-            raw = adapter._call_api(messages, temperature=0.4, max_tokens=500)
+            max_tokens = 700 if error_details else 500
+            raw = adapter._call_api(messages, temperature=0.4, max_tokens=max_tokens)
 
             # Strip markdown fences if present
             cleaned = raw.strip()
@@ -801,7 +989,21 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
         logger.warning(f"AI summary generation failed, using fallback: {e}")
 
     if not narrative:
-        narrative = _fallback_summary(job_run.pipeline_name, counters, score, status, duration, error_message)
+        narrative = _fallback_summary(job_run.pipeline_name, counters, score, status, duration, error_message, error_details)
+
+    # Merge AI error_analysis back into error_details (by index), fill gaps with fallback
+    if ai_generated and error_details:
+        ai_error_analysis = narrative.get("error_analysis", [])
+        for i, entry in enumerate(error_details):
+            if i < len(ai_error_analysis) and isinstance(ai_error_analysis[i], dict):
+                ai_ea = ai_error_analysis[i]
+                if ai_ea.get("root_cause"):
+                    entry["root_cause"] = ai_ea["root_cause"]
+                if ai_ea.get("proposed_solutions"):
+                    entry["proposed_solutions"] = ai_ea["proposed_solutions"]
+            # Fill any remaining gaps with fallback
+            if not entry["root_cause"] or not entry["proposed_solutions"]:
+                _fill_error_analysis_fallback([entry])
 
     # Build flat counters for response (only simple scalar values)
     flat_counters = {k: v for k, v in counters.items() if isinstance(v, (int, float, str, bool))}
@@ -821,4 +1023,6 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
         "counters": flat_counters,
         # Quality funnel (replaces success_score in UI)
         "quality_funnel": quality_funnel,
+        # Error analysis
+        "error_analysis": error_details,
     }

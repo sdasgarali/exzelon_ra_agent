@@ -7,12 +7,15 @@ from datetime import datetime, timezone
 from app.services.pipeline_summary import (
     calculate_success_score,
     build_quality_funnel,
+    build_error_details,
+    _fill_error_analysis_fallback,
     generate_pipeline_summary,
     _fallback_summary,
     _build_run_metadata,
     _build_source_breakdown,
     _build_api_diagnostics,
     ADAPTER_LABELS,
+    ERROR_TYPE_FALLBACK_SOLUTIONS,
 )
 from app.db.models.job_run import JobRun, JobStatus
 
@@ -361,6 +364,119 @@ class TestBuildApiDiagnostics:
         assert result == []
 
 
+class TestBuildErrorDetails:
+    """Tests for build_error_details extraction from counters and error_message."""
+
+    def test_extracts_errors_from_api_diagnostics(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "apollo", "status": "error", "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ]
+        }
+        result = build_error_details(counters)
+        assert len(result) == 1
+        assert result[0]["error_type"] == "api_key_invalid"
+        assert result[0]["adapter"] == "apollo"
+        assert result[0]["adapter_label"] == "Apollo.io"
+        assert result[0]["message"] == "401 Unauthorized"
+        assert result[0]["root_cause"] == ""
+        assert result[0]["proposed_solutions"] == []
+
+    def test_extracts_top_level_error_message(self):
+        counters = {}
+        result = build_error_details(counters, "Connection timeout")
+        assert len(result) == 1
+        assert result[0]["error_type"] == "pipeline_failure"
+        assert result[0]["adapter"] is None
+        assert result[0]["adapter_label"] == "Pipeline"
+        assert result[0]["message"] == "Connection timeout"
+
+    def test_deduplicates_error_message_matching_diagnostics(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "apollo", "status": "error", "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ]
+        }
+        result = build_error_details(counters, "401 Unauthorized")
+        assert len(result) == 1  # Not duplicated
+
+    def test_empty_when_no_errors(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "error_type": None, "error_message": None},
+            ]
+        }
+        result = build_error_details(counters)
+        assert result == []
+
+    def test_multiple_adapter_errors(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "apollo", "status": "error", "error_type": "api_key_invalid", "error_message": "401"},
+                {"adapter": "jsearch", "status": "error", "error_type": "rate_limited", "error_message": "429 Too Many"},
+            ]
+        }
+        result = build_error_details(counters)
+        assert len(result) == 2
+        assert result[0]["error_type"] == "api_key_invalid"
+        assert result[1]["error_type"] == "rate_limited"
+
+    def test_warning_with_error_type_included(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "neverbounce", "status": "warning", "error_type": "high_error_rate", "error_message": "50% errors"},
+            ]
+        }
+        result = build_error_details(counters)
+        assert len(result) == 1
+        assert result[0]["error_type"] == "high_error_rate"
+
+    def test_warning_without_error_type_excluded(self):
+        counters = {
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "warning", "error_type": None, "error_message": None},
+            ]
+        }
+        result = build_error_details(counters)
+        assert result == []
+
+    def test_missing_api_diagnostics_key(self):
+        counters = {"inserted": 10}
+        result = build_error_details(counters)
+        assert result == []
+
+
+class TestFillErrorAnalysisFallback:
+    """Tests for _fill_error_analysis_fallback template filling."""
+
+    def test_fills_known_error_type_with_substitution(self):
+        errors = [{
+            "error_type": "api_key_invalid",
+            "adapter": "apollo",
+            "adapter_label": "Apollo.io",
+            "message": "401",
+            "root_cause": "",
+            "proposed_solutions": [],
+        }]
+        _fill_error_analysis_fallback(errors)
+        assert "Apollo.io" in errors[0]["root_cause"]
+        assert len(errors[0]["proposed_solutions"]) >= 2
+        assert any("Apollo.io" in s for s in errors[0]["proposed_solutions"])
+
+    def test_falls_back_to_unknown_for_unrecognized_type(self):
+        errors = [{
+            "error_type": "totally_new_error_type",
+            "adapter": "x",
+            "adapter_label": "X Service",
+            "message": "boom",
+            "root_cause": "",
+            "proposed_solutions": [],
+        }]
+        _fill_error_analysis_fallback(errors)
+        assert "X Service" in errors[0]["root_cause"]
+        assert len(errors[0]["proposed_solutions"]) >= 1
+
+
 class TestFallbackSummary:
     """Tests for the template-based fallback summary."""
 
@@ -397,6 +513,25 @@ class TestFallbackSummary:
         assert isinstance(result["summary"], str)
         assert isinstance(result["suggestions"], list)
         assert isinstance(result["highlights"], list)
+
+    def test_fallback_includes_error_analysis_when_errors_exist(self):
+        error_details = [{
+            "error_type": "api_key_invalid",
+            "adapter": "apollo",
+            "adapter_label": "Apollo.io",
+            "message": "401",
+            "root_cause": "",
+            "proposed_solutions": [],
+        }]
+        result = _fallback_summary("lead_sourcing", {"inserted": 5, "errors": 1}, 60, "completed", 10.0, None, error_details)
+        assert "error_analysis" in result
+        assert len(result["error_analysis"]) == 1
+        assert result["error_analysis"][0]["root_cause"] != ""
+        assert len(result["error_analysis"][0]["proposed_solutions"]) >= 1
+
+    def test_fallback_empty_error_analysis_when_clean(self):
+        result = _fallback_summary("lead_sourcing", {"inserted": 10, "errors": 0}, 100, "completed", 10.0, None)
+        assert result["error_analysis"] == []
 
 
 class TestGeneratePipelineSummary:
@@ -553,3 +688,61 @@ class TestGeneratePipelineSummary:
         assert len(result["api_diagnostics"]) == 2
         apollo_diag = next(d for d in result["api_diagnostics"] if d["adapter_name"] == "apollo")
         assert apollo_diag["error_message"] == "401 Unauthorized"
+
+    def test_error_analysis_populated_from_diagnostics(self, db_session, test_tenant):
+        """api_diagnostics with errors produces error_analysis with root_cause + solutions."""
+        counters = json.dumps({
+            "inserted": 25, "updated": 0, "skipped": 5, "errors": 1,
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "jobs_returned": 30, "error_type": None, "error_message": None},
+                {"adapter": "apollo", "status": "error", "jobs_returned": 0, "error_type": "api_key_invalid", "error_message": "401 Unauthorized"},
+            ],
+        })
+        run = JobRun(
+            tenant_id=test_tenant.tenant_id,
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json=counters,
+            triggered_by="test@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            result = generate_pipeline_summary(db_session, run)
+
+        assert "error_analysis" in result
+        assert len(result["error_analysis"]) == 1
+        ea = result["error_analysis"][0]
+        assert ea["error_type"] == "api_key_invalid"
+        assert ea["adapter"] == "apollo"
+        assert ea["adapter_label"] == "Apollo.io"
+        assert ea["root_cause"] != ""
+        assert "Apollo.io" in ea["root_cause"]
+        assert len(ea["proposed_solutions"]) >= 2
+
+    def test_clean_run_empty_error_analysis(self, db_session, test_tenant):
+        """Clean run with no errors produces empty error_analysis."""
+        counters = json.dumps({
+            "inserted": 10, "updated": 2, "skipped": 1, "errors": 0,
+            "api_diagnostics": [
+                {"adapter": "jsearch", "status": "success", "jobs_returned": 13, "error_type": None, "error_message": None},
+            ],
+        })
+        run = JobRun(
+            tenant_id=test_tenant.tenant_id,
+            pipeline_name="lead_sourcing",
+            status=JobStatus.COMPLETED,
+            counters_json=counters,
+            triggered_by="test@test.com",
+        )
+        db_session.add(run)
+        db_session.commit()
+        db_session.refresh(run)
+
+        with patch("app.services.warmup.content_generator.get_ai_adapter", return_value=None):
+            result = generate_pipeline_summary(db_session, run)
+
+        assert "error_analysis" in result
+        assert result["error_analysis"] == []
