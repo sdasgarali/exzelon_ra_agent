@@ -981,6 +981,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Cleanup check for orphaned runs: {e}")
 
+    # Migration: add billing columns to tenants
+    try:
+        from sqlalchemy import text as sa_text_billing, inspect as sa_inspect_billing
+        with engine.connect() as conn:
+            inspector_billing = sa_inspect_billing(engine)
+            if "tenants" in inspector_billing.get_table_names():
+                tenant_cols = [c["name"] for c in inspector_billing.get_columns("tenants")]
+                for col_name, col_def in [
+                    ("monthly_price_cents", "INT DEFAULT 0 NOT NULL"),
+                    ("billing_email", "VARCHAR(255) NULL"),
+                    ("billing_address_json", "TEXT NULL"),
+                    ("stripe_customer_id", "VARCHAR(100) NULL"),
+                    ("tax_rate_percent", "DECIMAL(5,2) DEFAULT 0 NOT NULL"),
+                ]:
+                    if col_name not in tenant_cols:
+                        try:
+                            conn.execute(sa_text_billing(f"ALTER TABLE tenants ADD COLUMN {col_name} {col_def}"))
+                            conn.commit()
+                            logger.info(f"Migration: added {col_name} to tenants")
+                        except Exception:
+                            pass
+                # Add index on stripe_customer_id
+                try:
+                    conn.execute(sa_text_billing("CREATE INDEX idx_tenants_stripe_customer ON tenants(stripe_customer_id)"))
+                    conn.commit()
+                    logger.info("Migration: added index idx_tenants_stripe_customer")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Migration check for tenant billing columns: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

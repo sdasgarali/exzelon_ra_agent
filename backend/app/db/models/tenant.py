@@ -1,7 +1,7 @@
 """Multi-tenant model for organization isolation."""
 from enum import Enum as PyEnum
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, Enum,
+    Column, Integer, String, Text, Boolean, Enum, Numeric,
 )
 from app.db.base import Base
 
@@ -35,6 +35,13 @@ class Tenant(Base):
     max_contacts = Column(Integer, default=0, nullable=False)
     max_campaigns = Column(Integer, default=0, nullable=False)
     max_leads = Column(Integer, default=0, nullable=False)
+
+    # Billing
+    monthly_price_cents = Column(Integer, default=0, nullable=False)
+    billing_email = Column(String(255), nullable=True)
+    billing_address_json = Column(Text, nullable=True)
+    stripe_customer_id = Column(String(100), nullable=True, index=True)
+    tax_rate_percent = Column(Numeric(5, 2), default=0, nullable=False)
 
     def __repr__(self) -> str:
         return f"<Tenant(tenant_id={self.tenant_id}, slug='{self.slug}', plan='{self.plan}')>"

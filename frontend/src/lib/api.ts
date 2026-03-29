@@ -1098,6 +1098,64 @@ export const tenantsApi = {
   },
 }
 
+// Billing API
+export const billingApi = {
+  // Super admin
+  listInvoices: async (params?: { status?: string; tenant_id?: number; date_from?: string; date_to?: string; page?: number; page_size?: number }) => {
+    const response = await api.get('/billing/invoices', { params })
+    return response.data
+  },
+  bulkGenerate: async (data: { tenant_ids: number[]; period_start: string; period_end: string }) => {
+    const response = await api.post('/billing/invoices/bulk-generate', data)
+    return response.data
+  },
+  markPaid: async (invoiceId: number, data: { payment_method: string; reference?: string; notes?: string }) => {
+    const response = await api.put(`/billing/invoices/${invoiceId}/mark-paid`, data)
+    return response.data
+  },
+  overrideAmount: async (invoiceId: number, data: { new_amount_cents: number; reason: string }) => {
+    const response = await api.put(`/billing/invoices/${invoiceId}/override-amount`, data)
+    return response.data
+  },
+  softDelete: async (invoiceId: number) => {
+    const response = await api.delete(`/billing/invoices/${invoiceId}`)
+    return response.data
+  },
+  listPayments: async (params?: { tenant_id?: number; page?: number; page_size?: number }) => {
+    const response = await api.get('/billing/payments', { params })
+    return response.data
+  },
+  stats: async () => {
+    const response = await api.get('/billing/stats')
+    return response.data
+  },
+  downloadPdf: async (invoiceId: number) => {
+    const response = await api.get(`/billing/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+    return response.data
+  },
+  // Tenant routes
+  myInvoices: async (params?: { page?: number; page_size?: number }) => {
+    const response = await api.get('/billing/my-invoices', { params })
+    return response.data
+  },
+  myInvoice: async (invoiceId: number) => {
+    const response = await api.get(`/billing/my-invoices/${invoiceId}`)
+    return response.data
+  },
+  myInvoicePdf: async (invoiceId: number) => {
+    const response = await api.get(`/billing/my-invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+    return response.data
+  },
+  pay: async (invoiceId: number, data?: { success_url?: string; cancel_url?: string }) => {
+    const response = await api.post(`/billing/my-invoices/${invoiceId}/pay`, data || {})
+    return response.data
+  },
+  myPayments: async (params?: { page?: number; page_size?: number }) => {
+    const response = await api.get('/billing/my-payments', { params })
+    return response.data
+  },
+}
+
 // Integrations API (API Keys)
 export const integrationsApi = {
   // API Keys

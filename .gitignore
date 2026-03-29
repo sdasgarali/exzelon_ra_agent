@@ -92,6 +92,7 @@ start_app.py
 backend/data/exports/
 backend/data/*.backup
 backend/data/backups/
+backend/data/invoices/
 
 # Misc
 *.bak

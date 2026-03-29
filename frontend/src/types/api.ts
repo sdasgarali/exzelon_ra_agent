@@ -444,3 +444,62 @@ export interface TenantDetail extends TenantSummary {
   max_leads: number;
   users: TenantUser[];
 }
+
+// ─── Billing & Invoicing ─────────────────────────────────────────────────
+
+export interface Invoice {
+  invoice_id: number;
+  tenant_id: number;
+  invoice_number: string;
+  period_start: string | null;
+  period_end: string | null;
+  due_date: string | null;
+  subtotal_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  currency: string;
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'void';
+  paid_at: string | null;
+  paid_via: string | null;
+  payment_reference: string | null;
+  stripe_invoice_id: string | null;
+  notes: string | null;
+  pdf_path: string | null;
+  reminder_count: number;
+  last_reminder_at: string | null;
+  created_at: string | null;
+  is_archived: boolean;
+  line_items?: InvoiceLineItem[];
+}
+
+export interface InvoiceLineItem {
+  line_id: number;
+  invoice_id: number;
+  description: string;
+  quantity: number;
+  unit_price_cents: number;
+  total_cents: number;
+  item_type: 'subscription' | 'addon' | 'credit' | 'tax' | 'discount';
+}
+
+export interface PaymentRecord {
+  payment_id: number;
+  tenant_id: number;
+  invoice_id: number | null;
+  amount_cents: number;
+  currency: string;
+  payment_method: string;
+  reference: string | null;
+  stripe_payment_id: string | null;
+  status: 'succeeded' | 'pending' | 'failed' | 'refunded';
+  recorded_by: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface BillingStats {
+  total_outstanding_cents: number;
+  collected_this_month_cents: number;
+  overdue_count: number;
+  mrr_cents: number;
+}

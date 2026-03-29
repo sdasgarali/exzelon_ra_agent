@@ -109,6 +109,17 @@ Kanban-style deal tracking:
 - Deal stats: win rate, avg deal size, pipeline value
 - Activity timeline per deal
 
+### Billing & Invoicing (`services/billing/`)
+
+Complete billing module with invoice lifecycle management:
+- **Invoice Generator** (`invoice_generator.py`) -- INV-YYYY-NNNN numbering, auto-generates monthly invoices for tenants with `monthly_price_cents > 0`, duplicate prevention, tax calculation
+- **PDF Generator** (`pdf_generator.py`) -- Professional PDF invoices via reportlab (company header, line items, totals). Stored in `data/invoices/{tenant_id}/`
+- **Payment Gateway** (`payment_gateway.py`) -- Abstract `PaymentGateway` interface with `StripeGateway` and `ManualGateway`. Factory: `get_payment_gateway()` returns Stripe if `STRIPE_SECRET_KEY` set
+- **Billing Mailer** (`billing_mailer.py`) -- 3 email types: new invoice (with PDF), overdue reminder, payment acknowledgement
+- **Scheduler Jobs** -- `job_generate_monthly_invoices` (1st at 2AM), `job_check_overdue_invoices` (daily 6AM), `job_send_overdue_reminders` (daily 9AM)
+- **Business rules**: Invoices generated on 1st, due on 5th (`INVOICE_DUE_DAY`), reminders every 3 days (`INVOICE_REMINDER_INTERVAL_DAYS`), max 5 reminders
+- **Config**: `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY`, `BILLING_COMPANY_*`, `BILLING_TAX_RATE_DEFAULT`, `INVOICE_*`
+
 ### Webhook System (`services/webhook_dispatcher.py`)
 
 Event-driven webhook delivery:
@@ -169,6 +180,9 @@ Domain reputation management subsystem:
 - **ICPProfile** -- AI-generated Ideal Customer Profiles (industries, job titles, states, company sizes)
 - **DealTask** -- task management within deals (assignee, due date, priority, status)
 - **CRMSyncLog** -- bidirectional CRM sync operation logging (direction, entity type, records synced)
+- **Invoice** -- monthly invoices with INV-YYYY-NNNN numbering, period dates, status lifecycle (draft→sent→paid/overdue), tax, PDF path, reminder tracking
+- **InvoiceLineItem** -- line items (subscription/addon/credit/tax/discount) within an invoice
+- **PaymentRecord** -- payment records against invoices (stripe/manual/bank_transfer/check/card), with status tracking
 
 ### Additional Services (Phase 5 — "Beat Instantly" Features)
 
@@ -200,6 +214,7 @@ Domain reputation management subsystem:
 | `/spam-check` | `api/endpoints/spam_check.py` | Email spam score checking |
 | `/tracking-domains` | `api/endpoints/tracking_domains.py` | Custom tracking domain CRUD + verify |
 | `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate) |
+| `/billing` | `api/endpoints/billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
 
 ### Multi-Tenancy Architecture
 
@@ -238,6 +253,7 @@ cd backend && pytest -k test_name     # Run specific test by name
 2. For local dev: uses MySQL (`DB_TYPE=mysql`, `exzelon_ra_agent` database). Requires MySQL 8.x on localhost:3306
 3. To migrate from old `cold_email_ai_agent` DB: `python scripts/migrate_to_exzelon.py`
 4. Frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000/api/v1`)
+5. For billing: set `BILLING_ENABLED=true`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BILLING_COMPANY_NAME`, `BILLING_COMPANY_EMAIL` in `.env`
 
 ## Production Deployment (VPS)
 
@@ -410,4 +426,5 @@ When you make changes in these categories, you **MUST** update the corresponding
 | **New environment variable** | `backend/.env`, `.env.example`, `core/config.py`, document in Environment Setup |
 | **New npm/pip dependency** | `requirements.txt` or `package.json`, note rationale in commit message |
 | **New RBAC module** | DEFAULT_PERMISSIONS in roles page, MODULES array, backend permission checks |
+| **Billing plan pricing change** | `backend/app/db/models/tenant.py` (monthly_price_cents), billing docs in this section |
 | **Infrastructure change** | `deploy/` directory, CLAUDE.md Deployment section, `Plan_WIP.md` notes |

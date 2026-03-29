@@ -33,6 +33,10 @@ from app.db.models.icp_profile import ICPProfile
 from app.db.models.deal_task import DealTask, TaskStatus, TaskPriority
 from app.db.models.crm_sync_log import CRMSyncLog
 from app.db.models.tenant_settings import TenantSettings
+from app.db.models.invoice import (
+    Invoice, InvoiceLineItem, PaymentRecord,
+    InvoiceStatus, PaymentStatus, LineItemType, PaymentMethod,
+)
 
 __all__ = [
     "User",
@@ -87,4 +91,11 @@ __all__ = [
     "TaskPriority",
     "CRMSyncLog",
     "TenantSettings",
+    "Invoice",
+    "InvoiceLineItem",
+    "PaymentRecord",
+    "InvoiceStatus",
+    "PaymentStatus",
+    "LineItemType",
+    "PaymentMethod",
 ]

@@ -51,6 +51,11 @@ def init_scheduler():
 
         _scheduler.add_job(job_cleanup_stale_tenants, CronTrigger(hour=3, minute=0), id="cleanup_stale_tenants", name="Cleanup Stale Tenants", replace_existing=True)
 
+        # Billing & Invoicing jobs
+        _scheduler.add_job(job_generate_monthly_invoices, CronTrigger(day=1, hour=2, minute=0), id="monthly_invoices", name="Monthly Invoice Generation", replace_existing=True)
+        _scheduler.add_job(job_check_overdue_invoices, CronTrigger(hour=6, minute=0), id="overdue_check", name="Overdue Invoice Check", replace_existing=True)
+        _scheduler.add_job(job_send_overdue_reminders, CronTrigger(hour=9, minute=0), id="overdue_reminders", name="Overdue Invoice Reminders", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -671,6 +676,125 @@ def job_cleanup_stale_tenants():
     except Exception as e:
         logger.error("Tenant cleanup failed", error=str(e))
         db.rollback()
+    finally:
+        db.close()
+
+
+def job_generate_monthly_invoices():
+    """Generate invoices for all active tenants on the 1st of each month."""
+    from app.core.config import settings as app_settings
+    if not app_settings.BILLING_ENABLED:
+        logger.info("Job monthly_invoices skipped (BILLING_ENABLED=false)")
+        return
+    if not _is_job_enabled("monthly_invoices"):
+        logger.info("Job monthly_invoices skipped (disabled)")
+        return
+    logger.info("Running monthly invoice generation")
+    db = _get_db()
+    try:
+        from app.db.models.tenant import Tenant
+        from app.services.billing.invoice_generator import bulk_generate_invoices, get_billing_period
+        period_start, period_end = get_billing_period()
+        # Get all active tenants with monthly_price_cents > 0
+        tenants = db.query(Tenant).filter(
+            Tenant.is_active == True,
+            Tenant.monthly_price_cents > 0,
+        ).all()
+        tenant_ids = [t.tenant_id for t in tenants]
+        if not tenant_ids:
+            logger.info("No billable tenants found")
+            return
+        result = bulk_generate_invoices(db, tenant_ids, period_start, period_end, created_by="scheduler")
+        logger.info("Monthly invoice generation complete",
+                    generated=result["generated"], skipped=result["skipped"], errors=result["errors"])
+        from app.services.automation_logger import log_automation_event
+        log_automation_event(db, "billing", f"Monthly invoices: {result['generated']} generated", details=result)
+    except Exception as e:
+        logger.error("Monthly invoice generation failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_check_overdue_invoices():
+    """Mark sent invoices as overdue where due_date < today. Runs daily."""
+    from app.core.config import settings as app_settings
+    if not app_settings.BILLING_ENABLED:
+        return
+    if not _is_job_enabled("overdue_check"):
+        logger.info("Job overdue_check skipped (disabled)")
+        return
+    logger.info("Running overdue invoice check")
+    db = _get_db()
+    try:
+        from app.db.models.invoice import Invoice, InvoiceStatus
+        today = date.today()
+        overdue = db.query(Invoice).filter(
+            Invoice.status == InvoiceStatus.SENT,
+            Invoice.due_date < today,
+            Invoice.is_archived == False,
+        ).all()
+        count = 0
+        for inv in overdue:
+            inv.status = InvoiceStatus.OVERDUE
+            count += 1
+        if count:
+            db.commit()
+            logger.info("Marked invoices as overdue", count=count)
+    except Exception as e:
+        logger.error("Overdue invoice check failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_send_overdue_reminders():
+    """Send reminders for overdue invoices. Respects interval and max reminders."""
+    from app.core.config import settings as app_settings
+    if not app_settings.BILLING_ENABLED:
+        return
+    if not _is_job_enabled("overdue_reminders"):
+        logger.info("Job overdue_reminders skipped (disabled)")
+        return
+    logger.info("Running overdue invoice reminders")
+    db = _get_db()
+    try:
+        from datetime import datetime, timedelta
+        from app.db.models.invoice import Invoice, InvoiceStatus
+        from app.db.models.tenant import Tenant
+        from app.services.billing.billing_mailer import send_reminder_email
+
+        today = date.today()
+        interval = app_settings.INVOICE_REMINDER_INTERVAL_DAYS
+        max_reminders = app_settings.INVOICE_MAX_REMINDERS
+
+        overdue_invoices = db.query(Invoice).filter(
+            Invoice.status == InvoiceStatus.OVERDUE,
+            Invoice.is_archived == False,
+            Invoice.reminder_count < max_reminders,
+        ).all()
+
+        sent = 0
+        for inv in overdue_invoices:
+            # Check interval since last reminder
+            if inv.last_reminder_at:
+                next_reminder = inv.last_reminder_at + timedelta(days=interval)
+                if datetime.utcnow() < next_reminder:
+                    continue
+
+            tenant = db.query(Tenant).filter(Tenant.tenant_id == inv.tenant_id).first()
+            if not tenant:
+                continue
+
+            days_overdue = (today - inv.due_date).days
+            if send_reminder_email(inv, tenant, days_overdue):
+                inv.reminder_count += 1
+                inv.last_reminder_at = datetime.utcnow()
+                sent += 1
+
+        if sent:
+            db.commit()
+            logger.info("Overdue reminders sent", count=sent)
+    except Exception as e:
+        logger.error("Overdue reminder sending failed", error=str(e))
     finally:
         db.close()
 

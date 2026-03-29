@@ -135,6 +135,22 @@ class Settings(BaseSettings):
     MIN_SALARY_THRESHOLD: int = 30000
     DATA_RETENTION_DAYS: int = 180
 
+    # Billing & Invoicing
+    BILLING_ENABLED: bool = False
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    BILLING_TAX_RATE_DEFAULT: float = 0.0
+    BILLING_COMPANY_NAME: str = ""
+    BILLING_COMPANY_ADDRESS: str = ""
+    BILLING_COMPANY_LOGO_PATH: str = ""
+    BILLING_COMPANY_EMAIL: str = ""
+    BILLING_COMPANY_PHONE: str = ""
+    BILLING_COMPANY_WEBSITE: str = ""
+    INVOICE_REMINDER_INTERVAL_DAYS: int = 3
+    INVOICE_MAX_REMINDERS: int = 5
+    INVOICE_DUE_DAY: int = 5
+
     # Industries (Non-IT only)
     TARGET_INDUSTRIES: list[str] = [
         "Healthcare", "Manufacturing", "Logistics", "Retail", "BFSI",
