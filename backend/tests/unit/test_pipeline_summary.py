@@ -503,10 +503,10 @@ class TestFallbackSummary:
         result = _fallback_summary("lead_sourcing", counters, 30, "completed", 10.0, None)
         assert any("error" in s.lower() for s in result["suggestions"])
 
-    def test_fallback_perfect_score_suggestion(self):
+    def test_fallback_clean_run_suggestion(self):
         counters = {"inserted": 10, "updated": 0, "skipped": 0, "errors": 0}
         result = _fallback_summary("lead_sourcing", counters, 100, "completed", 10.0, None)
-        assert any("perfect" in s.lower() or "no improvements" in s.lower() for s in result["suggestions"])
+        assert any("clean run" in s.lower() for s in result["suggestions"])
 
     def test_fallback_returns_valid_dict(self):
         result = _fallback_summary("email_validation", {"valid": 5, "invalid": 2}, 70, "completed", None, None)

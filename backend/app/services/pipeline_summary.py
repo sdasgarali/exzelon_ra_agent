@@ -878,16 +878,16 @@ def _fallback_summary(pipeline_name: str, counters: Dict[str, Any], score: int,
     errors = counters.get("errors", 0)
     total = sum(v for v in counters.values() if isinstance(v, (int, float)))
 
-    if score < 60:
-        suggestions.append(f"Score is low ({score}/100). Review the pipeline configuration and input data quality.")
     if errors and total and (errors / max(total, 1)) > 0.1:
         suggestions.append("Error rate exceeds 10%. Check API key configuration and service availability.")
     if pipeline_name == "lead_sourcing" and counters.get("skipped", 0) > counters.get("inserted", 0):
         suggestions.append("High skip rate detected. Consider expanding search criteria or target industries.")
     if pipeline_name == "email_validation" and counters.get("invalid", 0) > counters.get("valid", 0):
         suggestions.append("More invalid than valid emails. Review contact discovery sources for data quality.")
-    if not suggestions and score == 100:
-        suggestions.append("Perfect score. No improvements needed for this run.")
+    if pipeline_name in ("outreach_send", "outreach") and errors > 0:
+        suggestions.append("Some emails failed to send. Check mailbox credentials and SMTP configuration.")
+    if not suggestions and errors == 0:
+        suggestions.append("Clean run with no issues detected.")
 
     # Build highlights
     highlights: List[str] = []
