@@ -11,6 +11,12 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Shield,
+  XCircle,
+  HelpCircle,
+  Clock,
+  Database,
+  SearchX,
 } from 'lucide-react'
 
 interface PipelineReportModalProps {
@@ -56,6 +62,15 @@ interface RunMetadata {
   duration_seconds: number | null
 }
 
+interface QualityFunnel {
+  total_discovered: number
+  new_added: number
+  updated: number
+  duplicates_caught: number
+  errors: number
+  filter_breakdown: Array<{ label: string; count: number; icon: string }>
+}
+
 interface SummaryData {
   success_score: number
   summary: string
@@ -67,6 +82,7 @@ interface SummaryData {
   source_breakdown?: SourceBreakdown[]
   api_diagnostics?: ApiDiagnostic[]
   counters?: Record<string, number | string>
+  quality_funnel?: QualityFunnel
 }
 
 export function PipelineReportModal({
@@ -81,6 +97,7 @@ export function PipelineReportModal({
   const [error, setError] = useState('')
   const [data, setData] = useState<SummaryData | null>(null)
   const [diagExpanded, setDiagExpanded] = useState(false)
+  const [funnelExpanded, setFunnelExpanded] = useState(false)
 
   useEffect(() => {
     if (open && runId) {
@@ -90,6 +107,7 @@ export function PipelineReportModal({
       setData(null)
       setError('')
       setDiagExpanded(false)
+      setFunnelExpanded(false)
     }
   }, [open, runId])
 
@@ -119,10 +137,15 @@ export function PipelineReportModal({
     return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
   }
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return { bg: 'bg-green-50', text: 'text-green-700', bar: 'bg-green-500', ring: 'ring-green-200' }
-    if (score >= 60) return { bg: 'bg-yellow-50', text: 'text-yellow-700', bar: 'bg-yellow-500', ring: 'ring-yellow-200' }
-    return { bg: 'bg-red-50', text: 'text-red-700', bar: 'bg-red-500', ring: 'ring-red-200' }
+  const funnelIconMap: Record<string, React.ReactNode> = {
+    'shield': <Shield className="w-4 h-4 text-blue-500" />,
+    'refresh-cw': <RefreshCw className="w-4 h-4 text-blue-500" />,
+    'alert-triangle': <AlertTriangle className="w-4 h-4 text-red-500" />,
+    'database': <Database className="w-4 h-4 text-purple-500" />,
+    'search-x': <SearchX className="w-4 h-4 text-gray-500" />,
+    'x-circle': <XCircle className="w-4 h-4 text-red-500" />,
+    'help-circle': <HelpCircle className="w-4 h-4 text-yellow-500" />,
+    'clock': <Clock className="w-4 h-4 text-gray-500" />,
   }
 
   const getStatusBadge = (s: string) => {
@@ -213,29 +236,96 @@ export function PipelineReportModal({
 
           {data && !loading && (
             <>
-              {/* Success Score */}
-              {(() => {
-                const colors = getScoreColor(data.success_score)
+              {/* Quality Funnel */}
+              {data.quality_funnel ? (() => {
+                const qf = data.quality_funnel!
+                const total = qf.total_discovered || 1
+                const newPct = (qf.new_added / total) * 100
+                const updPct = (qf.updated / total) * 100
+                const filtPct = (qf.duplicates_caught / total) * 100
+                const errPct = (qf.errors / total) * 100
                 return (
-                  <div className={`mb-5 p-4 rounded-lg ${colors.bg} ring-1 ${colors.ring}`}>
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <div className={`text-3xl font-bold ${colors.text}`}>{data.success_score}</div>
-                        <div className="text-xs text-gray-500 font-medium">/100</div>
+                  <div className="mb-5 p-4 rounded-lg bg-green-50 ring-1 ring-green-200">
+                    {/* Hero number */}
+                    <div className="flex items-baseline gap-3 mb-1">
+                      <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0 self-center" />
+                      <span className="text-3xl font-bold text-green-700">{qf.new_added.toLocaleString()}</span>
+                      <span className="text-sm font-medium text-gray-700">
+                        {data.run_metadata?.pipeline_name === 'email_validation' ? 'Valid Emails' :
+                         data.run_metadata?.pipeline_name?.includes('outreach') ? 'Emails Sent' :
+                         data.run_metadata?.pipeline_name === 'contact_enrichment' ? 'Contacts Found' :
+                         'New Leads Added'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 ml-9 mb-3">
+                      from {qf.total_discovered.toLocaleString()} discovered
+                    </div>
+
+                    {/* Stacked bar */}
+                    {qf.total_discovered > 0 && (
+                      <div className="w-full h-3 rounded-full bg-gray-200 flex overflow-hidden mb-2">
+                        {newPct > 0 && <div className="bg-green-500 h-full" style={{ width: `${newPct}%` }} title={`New: ${qf.new_added}`} />}
+                        {updPct > 0 && <div className="bg-blue-400 h-full" style={{ width: `${updPct}%` }} title={`Updated: ${qf.updated}`} />}
+                        {filtPct > 0 && <div className="bg-gray-400 h-full" style={{ width: `${filtPct}%` }} title={`Filtered: ${qf.duplicates_caught}`} />}
+                        {errPct > 0 && <div className="bg-red-400 h-full" style={{ width: `${errPct}%` }} title={`Errors: ${qf.errors}`} />}
                       </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-700 mb-1.5">Success Score</div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5">
-                          <div
-                            className={`h-2.5 rounded-full ${colors.bar} transition-all`}
-                            style={{ width: `${data.success_score}%` }}
-                          />
-                        </div>
+                    )}
+
+                    {/* Legend */}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 ml-1 mb-3">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" />{qf.new_added} new</span>
+                      {qf.updated > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-400 inline-block" />{qf.updated} updated</span>}
+                      {qf.duplicates_caught > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-gray-400 inline-block" />{qf.duplicates_caught} filtered</span>}
+                      {qf.errors > 0 && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" />{qf.errors} errors</span>}
+                    </div>
+
+                    {/* Collapsible filter breakdown */}
+                    {qf.filter_breakdown.length > 0 && (
+                      <div>
+                        <button
+                          onClick={() => setFunnelExpanded(!funnelExpanded)}
+                          className="text-xs text-gray-600 hover:text-gray-800 flex items-center gap-1 font-medium"
+                        >
+                          {funnelExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          Quality Filter Details
+                        </button>
+                        {funnelExpanded && (
+                          <div className="mt-2 space-y-1.5 pl-1">
+                            {qf.filter_breakdown.map((fb, i) => (
+                              <div key={i} className="flex items-center justify-between text-sm">
+                                <span className="flex items-center gap-2 text-gray-700">
+                                  {funnelIconMap[fb.icon] || <Shield className="w-4 h-4 text-gray-400" />}
+                                  {fb.label}
+                                </span>
+                                <span className="font-medium text-gray-600 tabular-nums">{fb.count.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })() : (
+                /* Fallback for old cached data without quality_funnel */
+                <div className="mb-5 p-4 rounded-lg bg-gray-50 ring-1 ring-gray-200">
+                  <div className="flex items-center gap-4">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-gray-700">{data.success_score}</div>
+                      <div className="text-xs text-gray-500 font-medium">/100</div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-700 mb-1.5">Success Score</div>
+                      <div className="w-full bg-gray-200 rounded-full h-2.5">
+                        <div
+                          className="h-2.5 rounded-full bg-gray-500 transition-all"
+                          style={{ width: `${data.success_score}%` }}
+                        />
                       </div>
                     </div>
                   </div>
-                )
-              })()}
+                </div>
+              )}
 
               {/* Source Breakdown Table */}
               {sourceBreakdown.length > 0 && (
@@ -398,7 +488,7 @@ export function PipelineReportModal({
               )}
 
               {/* Suggestions */}
-              {data.suggestions && data.suggestions.length > 0 && data.success_score < 100 && (
+              {data.suggestions && data.suggestions.length > 0 && (
                 <div className="mb-5">
                   <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4 text-yellow-600" />

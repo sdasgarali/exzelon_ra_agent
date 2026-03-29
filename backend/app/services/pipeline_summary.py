@@ -172,6 +172,145 @@ def calculate_success_score(pipeline_name: str, counters: Dict[str, Any], status
     return 50
 
 
+def build_quality_funnel(pipeline_name: str, counters: Dict[str, Any], status: str) -> Dict[str, Any]:
+    """Build a quality funnel breakdown that reframes filtering as positive quality control.
+
+    Args:
+        pipeline_name: Name of the pipeline
+        counters: Parsed counters dict from job_run.counters_json
+        status: Job status string (completed, failed, cancelled)
+
+    Returns:
+        Dict with total_discovered, new_added, updated, duplicates_caught, errors, filter_breakdown
+    """
+    if status == "failed":
+        errors = 1 if counters.get("errors", 0) == 0 else counters["errors"]
+        error_msg = "Pipeline failed"
+        return {
+            "total_discovered": 0,
+            "new_added": 0,
+            "updated": 0,
+            "duplicates_caught": 0,
+            "errors": errors,
+            "filter_breakdown": [
+                {"label": "Errors", "count": errors, "icon": "alert-triangle"},
+            ],
+        }
+
+    pipeline = pipeline_name.lower()
+    errors = counters.get("errors", 0)
+
+    if pipeline == "lead_sourcing":
+        inserted = counters.get("inserted", 0)
+        updated = counters.get("updated", 0)
+        skipped = counters.get("skipped", 0)
+        total = inserted + updated + skipped + errors
+        breakdown = []
+        if skipped > 0:
+            breakdown.append({"label": "Duplicates removed", "count": skipped, "icon": "shield"})
+        if updated > 0:
+            breakdown.append({"label": "Records updated", "count": updated, "icon": "refresh-cw"})
+        if errors > 0:
+            breakdown.append({"label": "Errors", "count": errors, "icon": "alert-triangle"})
+        return {
+            "total_discovered": total,
+            "new_added": inserted,
+            "updated": updated,
+            "duplicates_caught": skipped,
+            "errors": errors,
+            "filter_breakdown": breakdown,
+        }
+
+    if pipeline == "contact_enrichment":
+        contacts_found = counters.get("contacts_found", 0)
+        contacts_reused = counters.get("contacts_reused", 0)
+        skipped = counters.get("skipped", 0)
+        total = contacts_found + contacts_reused + skipped + errors
+        breakdown = []
+        if contacts_reused > 0:
+            breakdown.append({"label": "Reused from cache", "count": contacts_reused, "icon": "database"})
+        if skipped > 0:
+            breakdown.append({"label": "No results", "count": skipped, "icon": "search-x"})
+        if errors > 0:
+            breakdown.append({"label": "Errors", "count": errors, "icon": "alert-triangle"})
+        return {
+            "total_discovered": total,
+            "new_added": contacts_found,
+            "updated": contacts_reused,
+            "duplicates_caught": skipped,
+            "errors": errors,
+            "filter_breakdown": breakdown,
+        }
+
+    if pipeline == "email_validation":
+        valid = counters.get("valid", 0)
+        invalid = counters.get("invalid", 0)
+        catch_all = counters.get("catch_all", 0)
+        unknown = counters.get("unknown", 0)
+        validated = counters.get("validated", 0) or (valid + invalid + catch_all + unknown + errors)
+        breakdown = []
+        if invalid > 0:
+            breakdown.append({"label": "Invalid emails", "count": invalid, "icon": "x-circle"})
+        if catch_all > 0:
+            breakdown.append({"label": "Catch-all domains", "count": catch_all, "icon": "help-circle"})
+        if unknown > 0:
+            breakdown.append({"label": "Unknown status", "count": unknown, "icon": "help-circle"})
+        if errors > 0:
+            breakdown.append({"label": "Errors", "count": errors, "icon": "alert-triangle"})
+        return {
+            "total_discovered": validated,
+            "new_added": valid,
+            "updated": 0,
+            "duplicates_caught": invalid + catch_all + unknown,
+            "errors": errors,
+            "filter_breakdown": breakdown,
+        }
+
+    if pipeline in ("outreach_send", "outreach"):
+        sent = counters.get("sent", 0)
+        skipped = counters.get("skipped", 0)
+        total = counters.get("total", 0) or (sent + skipped + errors)
+        breakdown = []
+        if skipped > 0:
+            breakdown.append({"label": "Skipped (cooldown/limit)", "count": skipped, "icon": "clock"})
+        if errors > 0:
+            breakdown.append({"label": "Send errors", "count": errors, "icon": "alert-triangle"})
+        return {
+            "total_discovered": total,
+            "new_added": sent,
+            "updated": 0,
+            "duplicates_caught": skipped,
+            "errors": errors,
+            "filter_breakdown": breakdown,
+        }
+
+    if pipeline == "outreach_mailmerge":
+        exported = counters.get("exported", 0)
+        skipped = counters.get("skipped", 0)
+        total = counters.get("total", 0) or (exported + skipped)
+        breakdown = []
+        if skipped > 0:
+            breakdown.append({"label": "Skipped (ineligible)", "count": skipped, "icon": "clock"})
+        return {
+            "total_discovered": total,
+            "new_added": exported,
+            "updated": 0,
+            "duplicates_caught": skipped,
+            "errors": 0,
+            "filter_breakdown": breakdown,
+        }
+
+    # Unknown pipeline — empty funnel
+    return {
+        "total_discovered": 0,
+        "new_added": 0,
+        "updated": 0,
+        "duplicates_caught": 0,
+        "errors": 0,
+        "filter_breakdown": [],
+    }
+
+
 # --- Builder Functions ---
 
 def _build_run_metadata(job_run: JobRun) -> Dict[str, Any]:
@@ -620,6 +759,7 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
 
     status = job_run.status.value if isinstance(job_run.status, JobStatus) else str(job_run.status)
     score = calculate_success_score(job_run.pipeline_name, counters, status)
+    quality_funnel = build_quality_funnel(job_run.pipeline_name, counters, status)
 
     # Calculate duration
     duration: Optional[float] = None
@@ -667,16 +807,18 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
     flat_counters = {k: v for k, v in counters.items() if isinstance(v, (int, float, str, bool))}
 
     return {
-        # Existing fields (preserved)
+        # Existing fields (preserved for backward compat)
         "success_score": score,
         "summary": narrative.get("summary", ""),
         "suggestions": narrative.get("suggestions", []),
         "highlights": narrative.get("highlights", []),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "ai_generated": ai_generated,
-        # NEW: Enhanced sections
+        # Enhanced sections
         "run_metadata": run_metadata,
         "source_breakdown": source_breakdown,
         "api_diagnostics": api_diagnostics,
         "counters": flat_counters,
+        # Quality funnel (replaces success_score in UI)
+        "quality_funnel": quality_funnel,
     }

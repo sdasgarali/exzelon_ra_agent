@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.services.pipeline_summary import (
     calculate_success_score,
+    build_quality_funnel,
     generate_pipeline_summary,
     _fallback_summary,
     _build_run_metadata,
@@ -85,6 +86,88 @@ class TestCalculateSuccessScore:
 
     def test_empty_counters(self):
         assert calculate_success_score("lead_sourcing", {}, "completed") == 0
+
+
+class TestBuildQualityFunnel:
+    """Tests for the quality funnel builder."""
+
+    def test_lead_sourcing_funnel(self):
+        counters = {"inserted": 285, "updated": 103, "skipped": 812, "errors": 2}
+        result = build_quality_funnel("lead_sourcing", counters, "completed")
+        assert result["total_discovered"] == 285 + 103 + 812 + 2
+        assert result["new_added"] == 285
+        assert result["updated"] == 103
+        assert result["duplicates_caught"] == 812
+        assert result["errors"] == 2
+        labels = [fb["label"] for fb in result["filter_breakdown"]]
+        assert "Duplicates removed" in labels
+        assert "Records updated" in labels
+        assert "Errors" in labels
+
+    def test_contact_enrichment_funnel(self):
+        counters = {"contacts_found": 50, "contacts_reused": 10, "skipped": 3, "errors": 1}
+        result = build_quality_funnel("contact_enrichment", counters, "completed")
+        assert result["new_added"] == 50
+        assert result["updated"] == 10
+        assert result["duplicates_caught"] == 3
+        assert result["errors"] == 1
+        labels = [fb["label"] for fb in result["filter_breakdown"]]
+        assert "Reused from cache" in labels
+
+    def test_email_validation_funnel(self):
+        counters = {"validated": 100, "valid": 80, "invalid": 10, "catch_all": 5, "unknown": 3, "errors": 2}
+        result = build_quality_funnel("email_validation", counters, "completed")
+        assert result["new_added"] == 80
+        assert result["duplicates_caught"] == 10 + 5 + 3
+        assert result["errors"] == 2
+        labels = [fb["label"] for fb in result["filter_breakdown"]]
+        assert "Invalid emails" in labels
+        assert "Catch-all domains" in labels
+        assert "Unknown status" in labels
+        assert "Errors" in labels
+
+    def test_outreach_funnel(self):
+        counters = {"sent": 25, "skipped": 5, "total": 33, "errors": 3}
+        result = build_quality_funnel("outreach_send", counters, "completed")
+        assert result["new_added"] == 25
+        assert result["duplicates_caught"] == 5
+        assert result["total_discovered"] == 33
+        assert result["errors"] == 3
+
+    def test_outreach_alias(self):
+        counters = {"sent": 10, "total": 10, "errors": 0}
+        result = build_quality_funnel("outreach", counters, "completed")
+        assert result["new_added"] == 10
+
+    def test_failed_status_all_zeros(self):
+        counters = {"inserted": 100, "updated": 50, "skipped": 30, "errors": 0}
+        result = build_quality_funnel("lead_sourcing", counters, "failed")
+        assert result["new_added"] == 0
+        assert result["updated"] == 0
+        assert result["duplicates_caught"] == 0
+        assert result["errors"] >= 1
+        assert len(result["filter_breakdown"]) == 1
+        assert result["filter_breakdown"][0]["label"] == "Errors"
+
+    def test_zero_records_empty_funnel(self):
+        counters = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
+        result = build_quality_funnel("lead_sourcing", counters, "completed")
+        assert result["total_discovered"] == 0
+        assert result["new_added"] == 0
+        assert result["filter_breakdown"] == []
+
+    def test_unknown_pipeline_empty(self):
+        result = build_quality_funnel("custom_pipeline", {"foo": 42}, "completed")
+        assert result["total_discovered"] == 0
+        assert result["new_added"] == 0
+        assert result["filter_breakdown"] == []
+
+    def test_mailmerge_funnel(self):
+        counters = {"exported": 30, "skipped": 2, "total": 32}
+        result = build_quality_funnel("outreach_mailmerge", counters, "completed")
+        assert result["new_added"] == 30
+        assert result["duplicates_caught"] == 2
+        assert result["total_discovered"] == 32
 
 
 class TestBuildRunMetadata:
@@ -348,6 +431,11 @@ class TestGeneratePipelineSummary:
         assert "counters" in result
         assert result["run_metadata"]["pipeline_name"] == "lead_sourcing"
         assert result["run_metadata"]["pipeline_label"] == "Lead Sourcing"
+        # Quality funnel
+        assert "quality_funnel" in result
+        qf = result["quality_funnel"]
+        assert qf["new_added"] == 10
+        assert qf["updated"] == 2
 
     def test_summary_with_ai_adapter(self, db_session, test_tenant):
         """When AI adapter is available, uses it for narrative."""
