@@ -123,8 +123,8 @@ export default function BillingPage() {
         billingApi.listPayments(),
         billingApi.stats(),
       ])
-      setInvoices(invoiceData.items || invoiceData)
-      setPayments(paymentData.items || paymentData)
+      setInvoices(invoiceData.invoices || [])
+      setPayments(paymentData.payments || [])
       setStats(statsData)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load billing data')
@@ -141,8 +141,8 @@ export default function BillingPage() {
         billingApi.myInvoices(),
         billingApi.myPayments(),
       ])
-      setInvoices(invoiceData.items || invoiceData)
-      setPayments(paymentData.items || paymentData)
+      setInvoices(invoiceData.invoices || [])
+      setPayments(paymentData.payments || [])
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load billing data')
     } finally {
