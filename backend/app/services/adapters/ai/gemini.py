@@ -120,52 +120,34 @@ Return a JSON object with these fields (use null for any field you are not confi
         template: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Generate personalized cold email content."""
+        """Generate personalized cold email content using shared outreach prompts."""
+        from app.services.adapters.ai.prompts import (
+            OUTREACH_SYSTEM_PROMPT,
+            build_outreach_user_prompt,
+            parse_ai_email_response,
+        )
+
         context = context or {}
+        step_number = context.get("step_number", 1)
 
-        system_prompt = """You are an expert cold email copywriter for staffing/recruitment services.
-Write compelling, personalized emails that:
-- Are concise (under 150 words)
-- Focus on the recipient's needs
-- Include a clear call-to-action
-- Sound natural and human, not salesy
-- Reference the specific job posting when relevant"""
+        user_prompt = build_outreach_user_prompt(
+            contact_name=contact_name,
+            contact_title=contact_title,
+            company_name=company_name,
+            job_title=job_title,
+            context=context,
+            step_number=step_number,
+        )
 
-        user_prompt = f"""Write a personalized cold email to:
-- Name: {contact_name}
-- Title: {contact_title}
-- Company: {company_name}
-- Job Posting: {job_title}
-
-Our company offers staffing/recruitment services for their industry.
-
-{f'Additional context: {context}' if context else ''}
-{f'Use this template as a guide: {template}' if template else ''}
-
-Respond in this exact format:
-SUBJECT: [subject line]
----
-[email body - HTML formatted with <p> tags]
----
-[email body - plain text version]"""
+        if template:
+            user_prompt += f"\n\nUse this template as a guide: {template}"
 
         try:
             result = self._call_api(
                 prompt=user_prompt,
-                system_instruction=system_prompt
+                system_instruction=OUTREACH_SYSTEM_PROMPT
             )
-
-            # Parse the response
-            parts = result.split("---")
-            subject_line = parts[0].replace("SUBJECT:", "").strip()
-            body_html = parts[1].strip() if len(parts) > 1 else parts[0]
-            body_text = parts[2].strip() if len(parts) > 2 else body_html
-
-            return {
-                "subject": subject_line,
-                "body_html": body_html,
-                "body_text": body_text
-            }
+            return parse_ai_email_response(result, contact_name, job_title)
         except Exception as e:
             return {
                 "subject": f"Regarding your {job_title} opening",

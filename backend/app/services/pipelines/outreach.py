@@ -21,6 +21,7 @@ from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.services.pipelines.cancel_helper import check_cancel
+from app.services.outreach_draft_service import draft_outreach_email, clear_research_cache
 
 logger = structlog.get_logger()
 
@@ -416,6 +417,7 @@ def run_outreach_send_pipeline(
 
     try:
         logger.info("Starting outreach send", dry_run=dry_run, limit=limit)
+        clear_research_cache()
 
         # Check daily limit
         today = datetime.utcnow().date()
@@ -505,10 +507,17 @@ def run_outreach_send_pipeline(
             # Generate unsub footer
             unsub_footer = generate_unsub_footer(event.tracking_id)
 
+            # Look up the contact's associated lead for job_title and company context
+            contact_lead = None
+            if contact.lead_id:
+                contact_lead = db.query(LeadDetails).filter(
+                    LeadDetails.lead_id == contact.lead_id
+                ).first()
+
             # Use template if available, otherwise fallback to hardcoded
             if active_template:
                 subject, body_content, body_text = render_template(
-                    active_template, contact, None, sending_mailbox, signature_html,
+                    active_template, contact, contact_lead, sending_mailbox, signature_html,
                     unsub_url=unsub_footer["url"]
                 )
                 # Append unsub footer if template doesn't include {{unsubscribe_link}}
@@ -516,14 +525,25 @@ def run_outreach_send_pipeline(
                     body_content += unsub_footer["html"]
                     body_text += unsub_footer["text"]
             else:
-                body_content = f"<p>Dear {contact.first_name},</p>"
-                body_content += "<p>We noticed your company is hiring and wanted to reach out about our staffing solutions.</p>"
-                body_content += signature_html
-                body_content += unsub_footer["html"]
+                # Try AI-personalized draft first
+                ai_draft = draft_outreach_email(
+                    db, contact, lead=contact_lead, mailbox=sending_mailbox, tenant_id=tenant_id,
+                )
+                if ai_draft:
+                    subject, body_content, body_text = ai_draft
+                    body_content += signature_html
+                    body_content += unsub_footer["html"]
+                    body_text += unsub_footer["text"]
+                else:
+                    # Hardcoded fallback (original)
+                    body_content = f"<p>Dear {contact.first_name},</p>"
+                    body_content += "<p>We noticed your company is hiring and wanted to reach out about our staffing solutions.</p>"
+                    body_content += signature_html
+                    body_content += unsub_footer["html"]
 
-                subject = f"Exciting Opportunity at {contact.client_name}"
-                body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
-                body_text += unsub_footer["text"]
+                    subject = f"Exciting Opportunity at {contact.client_name}"
+                    body_text = f"Dear {contact.first_name},\nWe noticed your company is hiring..."
+                    body_text += unsub_footer["text"]
 
             # Initialize per-mailbox tracking
             mbx_email = sending_mailbox.email
@@ -641,6 +661,7 @@ def run_outreach_for_lead(
 
     try:
         logger.info("Starting outreach for lead", lead_id=lead_id, dry_run=dry_run)
+        clear_research_cache()
 
         lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
         if not lead:
@@ -726,14 +747,25 @@ def run_outreach_for_lead(
                     body_content += unsub_footer["html"]
                     body_text += unsub_footer["text"]
             else:
-                body_content = f"<p>Dear {contact.first_name},</p>"
-                body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
-                body_content += signature_html
-                body_content += unsub_footer["html"]
+                # Try AI-personalized draft first
+                ai_draft = draft_outreach_email(
+                    db, contact, lead=lead, mailbox=sending_mailbox, tenant_id=tenant_id,
+                )
+                if ai_draft:
+                    subject, body_content, body_text = ai_draft
+                    body_content += signature_html
+                    body_content += unsub_footer["html"]
+                    body_text += unsub_footer["text"]
+                else:
+                    # Hardcoded fallback (original)
+                    body_content = f"<p>Dear {contact.first_name},</p>"
+                    body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
+                    body_content += signature_html
+                    body_content += unsub_footer["html"]
 
-                subject = f"Staffing for {lead.job_title} at {lead.client_name}"
-                body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
-                body_text += unsub_footer["text"]
+                    subject = f"Staffing for {lead.job_title} at {lead.client_name}"
+                    body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
+                    body_text += unsub_footer["text"]
 
             try:
                 if dry_run:
