@@ -301,6 +301,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for summary_json: {e}")
 
+    # Migration: add industry and company_size columns to lead_details
+    try:
+        from sqlalchemy import text as sa_text_ind, inspect as sa_inspect_ind
+        with engine.connect() as conn:
+            inspector_ind = sa_inspect_ind(engine)
+            lead_cols = [c["name"] for c in inspector_ind.get_columns("lead_details")]
+            for col_name, col_def in [
+                ("industry", "VARCHAR(255) NULL"),
+                ("company_size", "VARCHAR(100) NULL"),
+            ]:
+                if col_name not in lead_cols:
+                    try:
+                        conn.execute(sa_text_ind(f"ALTER TABLE lead_details ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} column to lead_details")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for industry/company_size: {e}")
+
     # Migration: add is_archived column to all tables if missing
     try:
         from sqlalchemy import text as sa_text2, inspect as sa_inspect

@@ -267,15 +267,32 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                         seen_companies.add(company_name)
 
                         # Create job lead from person's company
+                        person_state = person.get("state", "")[:2].upper() if person.get("state") else ""
+                        person_city = person.get("city", "") or ""
+                        if not person_state and person_city:
+                            from app.utils.us_states import city_to_state
+                            person_state = city_to_state(person_city) or ""
+                        person_title = person.get("title", "HR/Hiring Role")
+                        import hashlib
+                        from urllib.parse import quote_plus
+                        p_uid = hashlib.md5(f"{company_name}|{person_title}|{person_state}".encode()).hexdigest()[:12]
+                        p_search = f"{person_title} {company_name}"
+                        p_loc = f"&location={quote_plus(person_state)}" if person_state else ""
+                        p_job_url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(p_search)}{p_loc}&trk=exz-{p_uid}"
                         jobs.append({
                             "client_name": company_name,
-                            "job_title": person.get("title", "HR/Hiring Role"),
-                            "state": person.get("state", "")[:2].upper() if person.get("state") else "",
+                            "job_title": person_title,
+                            "state": person_state,
+                            "city": person_city,
                             "posting_date": date.today(),
-                            "job_link": org.get("linkedin_url", "") or org.get("website_url", ""),
+                            "job_link": p_job_url,
                             "salary_min": None,
                             "salary_max": None,
                             "source": "apollo",
+                            "employer_linkedin_url": org.get("linkedin_url", "") or "",
+                            "employer_website": org.get("website_url", "") or "",
+                            "industry": org.get("industry", ""),
+                            "company_size": str(org.get("estimated_num_employees", "") or ""),
                             # Extra contact info for enrichment
                             "contact_first_name": person.get("first_name"),
                             "contact_last_name": person.get("last_name"),
@@ -317,12 +334,13 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
                 return None
 
         # Extract location/state
+        city = org.get("city", "") or ""
         state = ""
         if org.get("state"):
             state = org.get("state", "")[:2].upper()
-        elif org.get("city") and org.get("country") == "United States":
-            # Would need city->state mapping
-            pass
+        elif city and org.get("country") == "United States":
+            from app.utils.us_states import city_to_state
+            state = city_to_state(city) or ""
 
         # Determine job title - cycle through all provided titles
         job_title = "Operations/HR Role"
@@ -330,25 +348,57 @@ class ApolloJobSourceAdapter(JobSourceAdapter):
             # Use modulo to cycle through all job titles
             job_title = job_titles[index % len(job_titles)]
 
-        # IMPACT: Generate unique job_link per lead using company+title combination.
-        # Previously used company LinkedIn URL, causing ALL leads from same company
-        # to be deduplicated by job_link on subsequent runs (same URL = skip).
-        # Now each lead has a unique link so dedup only catches true duplicates.
+        # Generate a LinkedIn job search URL so the link takes users to
+        # actual job listings rather than the company profile page.
         import hashlib
+        from urllib.parse import quote_plus
         unique_id = hashlib.md5(f"{company_name}|{job_title}|{state}".encode()).hexdigest()[:12]
-        company_url = org.get("linkedin_url", "") or org.get("website_url", "")
+        search_query = f"{job_title} {company_name}"
+        location_param = f"&location={quote_plus(state)}" if state else ""
+        job_search_url = f"https://www.linkedin.com/jobs/search/?keywords={quote_plus(search_query)}{location_param}&trk=exz-{unique_id}"
+
+        linkedin_url = org.get("linkedin_url", "") or ""
+        website_url = org.get("website_url", "") or ""
+
+        # Format company size as readable range
+        num_employees = org.get("estimated_num_employees")
+        company_size = ""
+        if num_employees:
+            try:
+                n = int(num_employees)
+                if n <= 10:
+                    company_size = "1-10"
+                elif n <= 50:
+                    company_size = "11-50"
+                elif n <= 200:
+                    company_size = "51-200"
+                elif n <= 500:
+                    company_size = "201-500"
+                elif n <= 1000:
+                    company_size = "501-1000"
+                elif n <= 5000:
+                    company_size = "1001-5000"
+                elif n <= 10000:
+                    company_size = "5001-10000"
+                else:
+                    company_size = "10001+"
+            except (ValueError, TypeError):
+                company_size = str(num_employees)
 
         return {
             "client_name": company_name,
             "job_title": job_title,
             "state": state,
+            "city": city,
             "posting_date": date.today(),
-            "job_link": f"{company_url}#job-{unique_id}" if company_url else "",
+            "job_link": job_search_url,
             "salary_min": None,
             "salary_max": None,
             "source": "apollo",
+            "employer_linkedin_url": linkedin_url,
+            "employer_website": website_url,
             "industry": org.get("industry", ""),
-            "company_size": org.get("estimated_num_employees", "")
+            "company_size": company_size,
         }
 
     def normalize(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:

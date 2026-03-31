@@ -101,20 +101,21 @@ async def list_leads(
     if job_title:
         query = query.filter(LeadDetails.job_title.ilike(f"%{job_title}%"))
 
-    # Filter by industry/company_size via client_info JOIN
-    if industry or company_size:
-        # Get matching client names from client_info
-        client_q = db.query(ClientInfo.client_name)
-        if industry:
-            client_q = client_q.filter(ClientInfo.industry == industry)
-        if company_size:
-            client_q = client_q.filter(ClientInfo.company_size == company_size)
+    # Filter by industry/company_size — check both lead_details and client_info
+    if industry:
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.industry == industry)
         matching_names = [r[0] for r in client_q.all()]
-        if matching_names:
-            query = query.filter(LeadDetails.client_name.in_(matching_names))
-        else:
-            # No clients match — return empty
-            query = query.filter(LeadDetails.lead_id == -1)
+        query = query.filter(
+            (LeadDetails.industry == industry) |
+            (LeadDetails.client_name.in_(matching_names) if matching_names else False)
+        )
+    if company_size:
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size == company_size)
+        matching_names = [r[0] for r in client_q.all()]
+        query = query.filter(
+            (LeadDetails.company_size == company_size) |
+            (LeadDetails.client_name.in_(matching_names) if matching_names else False)
+        )
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -209,8 +210,8 @@ async def list_leads(
         lead_dict = LeadResponse.model_validate(lead).model_dump()
         lead_dict['contact_count'] = contact_counts.get(lead.lead_id, 0)
         ci = client_info_map.get(lead.client_name, {})
-        lead_dict['industry'] = ci.get("industry")
-        lead_dict['company_size'] = ci.get("company_size")
+        lead_dict['industry'] = lead.industry or ci.get("industry")
+        lead_dict['company_size'] = lead.company_size or ci.get("company_size")
         lead_responses.append(lead_dict)
 
     return {
@@ -1218,6 +1219,19 @@ async def get_lead_detail(
     lead_dict['contact_count'] = len(contacts)
     lead_dict['contacts'] = [ContactResponse.model_validate(c).model_dump() for c in contacts]
     lead_dict['outreach_events'] = enriched_events
+
+    # Enrich with industry/company_size (prefer lead, fallback to client_info)
+    if not lead.industry or not lead.company_size:
+        ci = db.query(ClientInfo).filter(ClientInfo.client_name == lead.client_name).first()
+        if ci:
+            lead_dict['industry'] = lead.industry or ci.industry
+            lead_dict['company_size'] = lead.company_size or ci.company_size
+        else:
+            lead_dict['industry'] = lead.industry
+            lead_dict['company_size'] = lead.company_size
+    else:
+        lead_dict['industry'] = lead.industry
+        lead_dict['company_size'] = lead.company_size
 
     return lead_dict
 

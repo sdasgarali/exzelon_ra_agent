@@ -69,6 +69,8 @@ class LeadDetails(Base):
     city = Column(String(100), nullable=True)  # City name (more granular than state)
     employer_linkedin_url = Column(String(500), nullable=True)  # Company LinkedIn URL for identity matching
     employer_website = Column(String(500), nullable=True)  # Company website URL
+    industry = Column(String(255), nullable=True)  # Company industry (e.g., "Staffing and Recruiting")
+    company_size = Column(String(100), nullable=True)  # Employee count or range (e.g., "51-200")
 
     # Contact information (denormalized - primary contact for quick access)
     first_name = Column(String(100), nullable=True)

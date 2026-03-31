@@ -225,6 +225,12 @@ class JSearchAdapter(JobSourceAdapter):
 
         return jobs
 
+    @staticmethod
+    def _normalize_state(state: str) -> str:
+        """Normalize state to 2-letter code."""
+        from app.utils.us_states import normalize_state
+        return normalize_state(state)
+
     def normalize(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize JSearch API response to standard format."""
         if not raw_data:
@@ -240,12 +246,11 @@ class JSearchAdapter(JobSourceAdapter):
         # Extract state from location
         state = raw_data.get("job_state", "")
         if not state:
-            # Try to extract from city
             city = raw_data.get("job_city", "")
             country = raw_data.get("job_country", "")
             if country == "US" and city:
-                # Would need a city->state mapping for accuracy
-                state = ""
+                from app.utils.us_states import city_to_state
+                state = city_to_state(city) or ""
 
         # Parse salary
         salary_min = raw_data.get("job_min_salary")
@@ -267,7 +272,7 @@ class JSearchAdapter(JobSourceAdapter):
         return {
             "client_name": raw_data.get("employer_name", "Unknown Company"),
             "job_title": raw_data.get("job_title", "Unknown Position"),
-            "state": state[:2].upper() if state else "",
+            "state": self._normalize_state(state),
             "posting_date": posting_date,
             "job_link": raw_data.get("job_apply_link", "") or raw_data.get("job_google_link", ""),
             "salary_min": float(salary_min) if salary_min else None,

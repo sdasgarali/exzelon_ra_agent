@@ -703,6 +703,8 @@ def run_lead_sourcing_pipeline(
                     city=job_data.get("city") or None,
                     employer_linkedin_url=job_data.get("employer_linkedin_url") or None,
                     employer_website=job_data.get("employer_website") or None,
+                    industry=job_data.get("industry") or None,
+                    company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
                 )
                 db.add(lead)
                 # Flush immediately to catch IntegrityError per-lead
@@ -728,6 +730,8 @@ def run_lead_sourcing_pipeline(
                     employer_website=job_data.get("employer_website"),
                     employer_linkedin_url=job_data.get("employer_linkedin_url"),
                     tenant_id=tenant_id,
+                    industry=job_data.get("industry"),
+                    company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
                 )
 
             except Exception as e:
@@ -840,7 +844,7 @@ def _extract_domain(url: str) -> str:
         return ""
 
 
-def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None):
+def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None, industry: str = None, company_size: str = None):
     """Create or update client_info record with normalized matching."""
     try:
         # Try exact match first (scoped to tenant)
@@ -876,6 +880,10 @@ def upsert_client(db, client_name: str, employer_website: str = None, employer_l
                 client.domain = _extract_domain(employer_website)
             if employer_linkedin_url:
                 client.linkedin_url = employer_linkedin_url
+            if industry:
+                client.industry = industry
+            if company_size:
+                client.company_size = company_size
             db.add(client)
             db.flush()
         else:
@@ -888,6 +896,10 @@ def upsert_client(db, client_name: str, employer_website: str = None, employer_l
                     client.domain = _extract_domain(employer_website)
             if employer_linkedin_url and not client.linkedin_url:
                 client.linkedin_url = employer_linkedin_url
+            if industry and not client.industry:
+                client.industry = industry
+            if company_size and not client.company_size:
+                client.company_size = company_size
 
             # Compute client category based on posting frequency
             # Read thresholds from settings DB (same keys as clients endpoint)
