@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 54: Multi-tenant isolation E2E testing — COMPLETE. Created 2 new tenants (Neuraforz + Medeoan) with enterprise plan, admin users, demo data. Fixed 3 bugs: (1) contact email uniqueness was global not per-tenant, (2-3) dashboard OutreachEvent queries had no tenant filtering. Fixed client_info unique index issue (ix_client_info_client_name was blocking cross-tenant same-name companies). Created comprehensive test script (9 categories, 56 tests) with .docx report generation. ALL 56 TESTS PASS (100%). Report: Multi_Tenant_Isolation_Test_Report.docx
+> Session 55: Login History & Activity Audit — COMPLETE. Added LoginHistory model, User lockout columns (failed_login_count, locked_until), audit_helper.py service, login recording + account lockout in auth.py (5 failures → 15min lock, 423 response), audit logging for user CRUD + impersonation, 6 new /activity API endpoints (super admin), Activity Log dashboard page (3 tabs: Login History, Activity Audit, Active Users), 11 unit + 13 integration tests. 592 total tests pass, 40% coverage.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -65,6 +65,16 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 55: Login History & Activity Audit (2026-03-31)
+  - LoginHistory model (login_history table) with email, success, failure_reason, IP, user agent, multi-index
+  - User lockout: failed_login_count + locked_until columns, 5 failures → 15-min lock, 423 HTTP response
+  - audit_helper.py: write_audit_log() + get_client_ip() shared helpers
+  - Login recording: every attempt logged (success + all failure types: invalid_credentials, inactive, unverified, locked)
+  - Audit logging: login success, signup, user CRUD (create/update/delete with field diffs), impersonation start
+  - 6 new API endpoints: /activity/login-history, /login-history/stats, /auth-events, /active-users, /my-login-history, /unlock-user/{id}
+  - Frontend: Activity Log page (/dashboard/activity-log) with 3 tabs, stats cards, filters, pagination, unlock button
+  - 11 unit + 13 integration tests, 592 total pass, 40% coverage
+  - New files: login_history.py, audit_helper.py, activity_log.py, activity-log/page.tsx, test_login_history.py, test_activity_log.py
 - [x] Session 53: Multi-Tenant Settings Architecture (2026-03-28)
   - Phase 1: Created TenantSettings model + centralized settings_resolver.py (4-layer resolution)
   - Phase 2: Updated settings.py API endpoints (tenant-aware GET/PUT, new tenant-overrides + delete-override endpoints)

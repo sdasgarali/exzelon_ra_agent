@@ -16,6 +16,7 @@ from app.db.models.campaign import Campaign
 from app.api.deps.auth import get_current_active_user, require_role, UserRole
 from app.core.security import create_access_token
 from app.core.config import settings
+from app.services.audit_helper import write_audit_log
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
 
@@ -234,6 +235,12 @@ async def impersonate_tenant(
         data=token_data,
         expires_delta=timedelta(hours=2),  # Short-lived impersonation token
     )
+
+    write_audit_log(db, tenant_id=0, entity_type="auth",
+                    entity_id=current_user.user_id, action="impersonation_start",
+                    changed_by=current_user.email,
+                    notes=f"target_tenant={tenant_id} ({tenant.name})")
+    db.commit()
 
     return {
         "access_token": access_token,

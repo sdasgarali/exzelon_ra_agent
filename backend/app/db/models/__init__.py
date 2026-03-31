@@ -37,6 +37,7 @@ from app.db.models.invoice import (
     Invoice, InvoiceLineItem, PaymentRecord,
     InvoiceStatus, PaymentStatus, LineItemType, PaymentMethod,
 )
+from app.db.models.login_history import LoginHistory
 
 __all__ = [
     "User",
@@ -98,4 +99,5 @@ __all__ = [
     "PaymentStatus",
     "LineItemType",
     "PaymentMethod",
+    "LoginHistory",
 ]

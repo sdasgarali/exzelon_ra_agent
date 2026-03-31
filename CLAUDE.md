@@ -157,7 +157,7 @@ Domain reputation management subsystem:
 ## Key Data Models
 
 - **Tenant** -- multi-tenant organization with TenantPlan enum (starter/professional/enterprise), plan limits (max_users, max_mailboxes, max_contacts, max_campaigns, max_leads), unique slug
-- **User** -- users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), tenant relationship
+- **User** -- users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), account lockout (failed_login_count, locked_until), tenant relationship
 - **LeadDetails** -- job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
 - **ContactDetails** -- decision-makers with priority levels (P1 job poster through P5 functional manager)
 - **LeadContactAssociation** -- many-to-many junction table
@@ -183,6 +183,7 @@ Domain reputation management subsystem:
 - **Invoice** -- monthly invoices with INV-YYYY-NNNN numbering, period dates, status lifecycle (draft→sent→paid/overdue), tax, PDF path, reminder tracking
 - **InvoiceLineItem** -- line items (subscription/addon/credit/tax/discount) within an invoice
 - **PaymentRecord** -- payment records against invoices (stripe/manual/bank_transfer/check/card), with status tracking
+- **LoginHistory** -- every login attempt (success/failure) with email, IP, user agent, failure reason (invalid_credentials/inactive/unverified/locked), multi-index for analytics
 
 ### Additional Services (Phase 5 — "Beat Instantly" Features)
 
@@ -215,6 +216,7 @@ Domain reputation management subsystem:
 | `/tracking-domains` | `api/endpoints/tracking_domains.py` | Custom tracking domain CRUD + verify |
 | `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate) |
 | `/billing` | `api/endpoints/billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
+| `/activity` | `api/endpoints/activity_log.py` | Login history (paginated, filterable), 24h stats, auth audit events, active users, my-login-history, unlock user. Super admin only (except my-login-history) |
 
 ### Multi-Tenancy Architecture
 
@@ -226,6 +228,28 @@ Domain reputation management subsystem:
 - **Demo seeder**: `services/demo_seeder.py` — seeds sample data for new starter-plan tenants on email verify
 - **Tenant cleanup**: Scheduler job at 3 AM UTC — deactivates empty tenants, deletes unverified users >72h old
 - **Ad-hoc migrations**: Phase 2-4 migration blocks in `main.py` lifespan (ALTER TABLE + backfill + NOT NULL + INDEX)
+
+## Auto-Invoked Skills (MANDATORY)
+
+The following project skills MUST be automatically invoked when their trigger conditions are met. Do NOT skip these — invoke via `/sales-draft-outreach` or the Skill tool before responding.
+
+| Skill | Trigger Conditions | File |
+|-------|-------------------|------|
+| `sales-draft-outreach` | Any outreach-related task (see triggers below) | `.claude/commands/sales-draft-outreach.md` |
+
+### sales-draft-outreach — Trigger Conditions
+
+**ALWAYS invoke this skill when ANY of the following occur:**
+
+1. **Direct requests**: User says "draft outreach", "write cold email", "reach out to", "draft email to", "write email to", "LinkedIn message to", "contact [person]", "outreach to [company]"
+2. **Pipeline outreach stage**: Working on Pipeline Stage 4 (Outreach) — AI email content generation, campaign email drafting, sequence step creation
+3. **Campaign email creation**: Creating or editing email content for campaigns, sequence steps, A/B test variants, or email templates meant for prospect communication
+4. **Contact follow-up**: Drafting follow-up emails, re-engagement messages, or post-event outreach for any contact
+5. **AI content generation**: When `ai_content.py`, `ai_sequence_generator.py`, or `campaign_engine.py` logic is being discussed or modified for email personalization
+6. **Inbox reply drafting**: Composing replies to inbound messages in the unified inbox that are outreach-oriented (not internal)
+7. **Code changes to outreach modules**: When modifying `services/pipelines/outreach.py`, `services/campaign_engine.py`, `services/ai_sequence_generator.py`, `api/endpoints/sequence_generator.py`, or email template logic — use the skill's email style guidelines as the quality standard
+
+**The skill provides**: Research-first methodology, AIDA email structure, hook prioritization, plain-text formatting rules, anti-patterns to avoid, channel selection logic, and follow-up sequence templates.
 
 ## Business Rules (configured in `core/config.py`)
 
@@ -427,4 +451,5 @@ When you make changes in these categories, you **MUST** update the corresponding
 | **New npm/pip dependency** | `requirements.txt` or `package.json`, note rationale in commit message |
 | **New RBAC module** | DEFAULT_PERMISSIONS in roles page, MODULES array, backend permission checks |
 | **Billing plan pricing change** | `backend/app/db/models/tenant.py` (monthly_price_cents), billing docs in this section |
+| **Outreach email content/logic** | Follow `.claude/commands/sales-draft-outreach.md` skill guidelines (AIDA structure, plain text, no markdown in emails) |
 | **Infrastructure change** | `deploy/` directory, CLAUDE.md Deployment section, `Plan_WIP.md` notes |

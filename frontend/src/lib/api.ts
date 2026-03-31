@@ -1156,6 +1156,34 @@ export const billingApi = {
   },
 }
 
+// Activity Log API
+export const activityApi = {
+  getLoginHistory: async (params?: Record<string, any>) => {
+    const response = await api.get('/activity/login-history', { params })
+    return response.data
+  },
+  getLoginHistoryStats: async () => {
+    const response = await api.get('/activity/login-history/stats')
+    return response.data
+  },
+  getAuthEvents: async (params?: Record<string, any>) => {
+    const response = await api.get('/activity/auth-events', { params })
+    return response.data
+  },
+  getActiveUsers: async (params?: Record<string, any>) => {
+    const response = await api.get('/activity/active-users', { params })
+    return response.data
+  },
+  getMyLoginHistory: async (params?: Record<string, any>) => {
+    const response = await api.get('/activity/my-login-history', { params })
+    return response.data
+  },
+  unlockUser: async (userId: number) => {
+    const response = await api.post(`/activity/unlock-user/${userId}`)
+    return response.data
+  },
+}
+
 // Integrations API (API Keys)
 export const integrationsApi = {
   // API Keys

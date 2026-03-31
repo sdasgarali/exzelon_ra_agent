@@ -7,7 +7,7 @@ from app.api.endpoints import (
     campaigns, inbox, webhooks, deals, copilot, integrations, automation,
     tracking_domains, lead_search, saved_searches, analytics,
     icp_wizard, sequence_generator, crm_sync, deal_tasks, spam_check,
-    admin_tenants, billing,
+    admin_tenants, billing, activity_log,
 )
 
 api_router = APIRouter()
@@ -47,3 +47,4 @@ api_router.include_router(deal_tasks.router)
 api_router.include_router(spam_check.router)
 api_router.include_router(admin_tenants.router)
 api_router.include_router(billing.router)
+api_router.include_router(activity_log.router)

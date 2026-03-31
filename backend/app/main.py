@@ -1012,6 +1012,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for tenant billing columns: {e}")
 
+    # Migration: add login lockout columns to users
+    try:
+        from sqlalchemy import text as sa_text_lockout, inspect as sa_inspect_lockout
+        with engine.connect() as conn:
+            inspector_lockout = sa_inspect_lockout(engine)
+            user_cols = [c["name"] for c in inspector_lockout.get_columns("users")]
+            for col_name, col_def in [
+                ("failed_login_count", "INT DEFAULT 0 NOT NULL"),
+                ("locked_until", "DATETIME NULL"),
+            ]:
+                if col_name not in user_cols:
+                    try:
+                        conn.execute(sa_text_lockout(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to users")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for login lockout columns: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

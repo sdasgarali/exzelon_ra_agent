@@ -7,6 +7,7 @@ from app.api.deps import get_db, get_current_active_user, require_role
 from app.core.security import get_password_hash
 from app.db.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
+from app.services.audit_helper import write_audit_log
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -82,6 +83,13 @@ async def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    write_audit_log(db, tenant_id=current_user.tenant_id or 0, entity_type="user",
+                    entity_id=user.user_id, action="user_created",
+                    changed_by=current_user.email,
+                    notes=f"email={user.email}, role={user.role.value if hasattr(user.role, 'value') else user.role}")
+    db.commit()
+
     return UserResponse.model_validate(user)
 
 
@@ -133,11 +141,29 @@ async def update_user(
 
     update_data = user_in.model_dump(exclude_unset=True)
 
+    # Capture old values for audit
+    changed_fields = {}
+    for field, new_val in update_data.items():
+        if field == "password":
+            changed_fields["password"] = {"old": "***", "new": "***"}
+            continue
+        old_val = getattr(user, field, None)
+        if hasattr(old_val, "value"):
+            old_val = old_val.value
+        new_display = new_val.value if hasattr(new_val, "value") else new_val
+        if str(old_val) != str(new_display):
+            changed_fields[field] = {"old": str(old_val), "new": str(new_display)}
+
     if "password" in update_data:
         update_data["password_hash"] = get_password_hash(update_data.pop("password"))
 
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    if changed_fields:
+        write_audit_log(db, tenant_id=current_user.tenant_id or 0, entity_type="user",
+                        entity_id=user.user_id, action="user_updated",
+                        changed_by=current_user.email, changed_fields=changed_fields)
 
     db.commit()
     db.refresh(user)
@@ -181,5 +207,9 @@ async def delete_user(
                 detail="Cannot delete the last super admin"
             )
 
+    write_audit_log(db, tenant_id=current_user.tenant_id or 0, entity_type="user",
+                    entity_id=user.user_id, action="user_deleted",
+                    changed_by=current_user.email,
+                    notes=f"email={user.email}")
     db.delete(user)
     db.commit()

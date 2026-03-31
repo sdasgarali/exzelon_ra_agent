@@ -12,11 +12,32 @@ from app.api.deps.plan_limits import check_plan_limit
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
 from app.db.models.user import User, UserRole
+from app.db.models.login_history import LoginHistory
 from app.schemas.user import UserCreate, UserResponse, Token
 from app.schemas.tenant import SignupRequest, SignupResponse, VerifyResponse
+from app.services.audit_helper import write_audit_log, get_client_ip
 
 limiter = Limiter(key_func=get_remote_address, swallow_errors=True)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Lockout constants
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+
+
+def _record_login(db: Session, *, email: str, success: bool, user: User = None,
+                   failure_reason: str = None, ip: str = None, ua: str = None):
+    """Record a login attempt in login_history."""
+    entry = LoginHistory(
+        tenant_id=user.tenant_id if user else None,
+        user_id=user.user_id if user else None,
+        email_attempted=email,
+        success=success,
+        failure_reason=failure_reason,
+        ip_address=ip,
+        user_agent=ua,
+    )
+    db.add(entry)
 
 
 @router.post("/login", response_model=Token)
@@ -27,9 +48,31 @@ async def login(
     db: Session = Depends(get_db)
 ):
     """Authenticate user and return JWT token."""
-    user = db.query(User).filter(User.email == form_data.username).first()
+    ip = get_client_ip(request)
+    ua = (request.headers.get("User-Agent") or "")[:500]
+    email = form_data.username
 
+    user = db.query(User).filter(User.email == email).first()
+
+    # Check if account is locked
+    if user and user.locked_until and user.locked_until > datetime.utcnow():
+        _record_login(db, email=email, success=False, user=user,
+                       failure_reason="locked", ip=ip, ua=ua)
+        db.commit()
+        raise HTTPException(
+            status_code=423,
+            detail=f"Account locked due to too many failed attempts. Try again after {user.locked_until.strftime('%H:%M UTC')}.",
+        )
+
+    # Check credentials
     if not user or not verify_password(form_data.password, user.password_hash):
+        if user:
+            user.failed_login_count = (user.failed_login_count or 0) + 1
+            if user.failed_login_count >= MAX_FAILED_ATTEMPTS:
+                user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+        _record_login(db, email=email, success=False, user=user,
+                       failure_reason="invalid_credentials", ip=ip, ua=ua)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -37,6 +80,9 @@ async def login(
         )
 
     if not user.is_active:
+        _record_login(db, email=email, success=False, user=user,
+                       failure_reason="inactive", ip=ip, ua=ua)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user account"
@@ -44,13 +90,23 @@ async def login(
 
     # Check email verification (skip for pre-existing users without tenant)
     if not user.is_verified and user.tenant_id is not None:
+        _record_login(db, email=email, success=False, user=user,
+                       failure_reason="unverified", ip=ip, ua=ua)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email not verified. Check your inbox for the verification link."
         )
 
-    # Update last login
+    # Success — reset lockout counters
+    user.failed_login_count = 0
+    user.locked_until = None
     user.last_login_at = datetime.utcnow()
+
+    _record_login(db, email=email, success=True, user=user, ip=ip, ua=ua)
+    write_audit_log(db, tenant_id=user.tenant_id or 0, entity_type="auth",
+                    entity_id=user.user_id, action="login_success",
+                    changed_by=user.email, notes=f"IP: {ip}")
     db.commit()
 
     # Build token with tenant context
@@ -107,6 +163,12 @@ async def signup(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    ip = get_client_ip(request)
+    write_audit_log(db, tenant_id=tenant.tenant_id, entity_type="auth",
+                    entity_id=user.user_id, action="signup",
+                    changed_by=user.email, notes=f"company={data.company_name}, IP: {ip}")
+    db.commit()
 
     # Send verification email
     send_verification_email(user, db)

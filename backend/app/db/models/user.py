@@ -31,6 +31,10 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
 
+    # Account lockout
+    failed_login_count = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime, nullable=True)
+
     # Multi-tenancy
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
 
