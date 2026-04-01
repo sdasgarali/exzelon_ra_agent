@@ -37,7 +37,7 @@ const CATEGORY_OPTIONS = [
   { value: 'dormant', label: 'Dormant', color: 'bg-gray-100 text-gray-800' },
 ]
 
-type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'created_at'
+type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'services' | 'website' | 'linkedin_url' | 'created_at'
 type SortOrder = 'asc' | 'desc'
 
 export default function ClientsPage() {
@@ -503,14 +503,23 @@ export default function ClientsPage() {
                 >
                   Category <SortIcon field="client_category" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Services
+                <th
+                  onClick={() => handleSort('services')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Services <SortIcon field="services" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Website
+                <th
+                  onClick={() => handleSort('website')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Website <SortIcon field="website" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  LinkedIn
+                <th
+                  onClick={() => handleSort('linkedin_url')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  LinkedIn <SortIcon field="linkedin_url" />
                 </th>
                 <th
                   onClick={() => handleSort('created_at')}

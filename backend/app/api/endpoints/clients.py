@@ -30,6 +30,9 @@ SORT_COLUMNS = {
     "industry": ClientInfo.industry,
     "company_size": ClientInfo.company_size,
     "location_state": ClientInfo.location_state,
+    "services": ClientInfo.service_count,
+    "website": ClientInfo.website,
+    "linkedin_url": ClientInfo.linkedin_url,
     "created_at": ClientInfo.created_at,
 }
 
