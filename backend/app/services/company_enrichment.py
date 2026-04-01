@@ -127,6 +127,7 @@ def _get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
 # Fields that LLM can fill, mapped to max lengths for string columns
 _LLM_FIELD_LIMITS = {
     "website": 500,
+    "linkedin_url": 500,
     "industry": 100,
     "description": 2000,
     "company_size": 50,
