@@ -701,7 +701,7 @@ def run_outreach_for_lead(
             return {"message": "Lead is archived, skipping outreach", **counters}
 
         # Get contacts via junction table + legacy FK
-        junction_cids = [row[0] for row in db.query(LeadContactAssociation).filter(
+        junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
             LeadContactAssociation.lead_id == lead_id
         ).all()]
 
