@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { warmupApi } from '@/lib/api'
+import { warmupApi, settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
@@ -92,7 +92,10 @@ function hText(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-
 /* COMPONENT */
 export default function WarmupEnginePage() {
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const [warmupPermission, setWarmupPermission] = useState<string>('read')
+  const canWrite = warmupPermission === 'full' || warmupPermission === 'read_write'
+  const canAdmin = warmupPermission === 'full'
+  const isAdmin = canWrite  // backward compat for tab filtering
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [status, setStatus] = useState<WarmupStatusData | null>(null)
   const [config, setConfig] = useState<WarmupConfigData | null>(null)
@@ -132,8 +135,13 @@ export default function WarmupEnginePage() {
     try {
       setLoading(true)
       setError('')
-      const [s, c, sc] = await Promise.all([warmupApi.getStatus(), warmupApi.getConfig(), warmupApi.getSchedule()])
+      // Fetch permissions + warmup data in parallel
+      const [s, c, sc, perms] = await Promise.all([
+        warmupApi.getStatus(), warmupApi.getConfig(), warmupApi.getSchedule(),
+        settingsApi.getMyPermissions().catch(() => ({} as Record<string, string>)),
+      ])
       setStatus(s); setConfig(c); setEditConfig({ ...c }); setSchedule(sc)
+      if (perms.warmup) setWarmupPermission(perms.warmup)
       try { const u = await warmupApi.getUnreadCount(); setUnreadCount(typeof u === 'number' ? u : u?.count ?? 0) } catch {}
     } catch (e: any) { if (e.code !== 'ERR_CANCELED') { setError(e?.response?.data?.detail || 'Failed to load warmup data') } }
     finally { setLoading(false) }
@@ -291,8 +299,8 @@ export default function WarmupEnginePage() {
             </div>
             <div className="flex items-center gap-3">
               {unreadCount > 0 && <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">{unreadCount} unread alert{unreadCount > 1 ? 's' : ''}</span>}
-              {isAdmin && <button onClick={handleAssessAll} disabled={assessing} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium">{assessing ? 'Assessing...' : 'Assess All'}</button>}
-              {isAdmin && <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>}
+              {canWrite && <button onClick={handleAssessAll} disabled={assessing} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium">{assessing ? 'Assessing...' : 'Assess All'}</button>}
+              {canWrite && <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>}
             </div>
           </div>
 
@@ -313,14 +321,14 @@ export default function WarmupEnginePage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['Email','Day / Phase','Health Score','Status','Daily Limit','Bounce %','Reply %','DNS Score','Blacklisted','Profile ID', ...(isAdmin ? ['Actions'] : [])].map(h => (
+                    {['Email','Day / Phase','Health Score','Status','Daily Limit','Bounce %','Reply %','DNS Score','Blacklisted','Profile ID', ...(canWrite ? ['Actions'] : [])].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {status.mailboxes.length === 0 ? (
-                    <tr><td colSpan={isAdmin ? 11 : 10} className="px-4 py-8 text-center text-gray-500">No mailboxes found. Add mailboxes in the Mailboxes page first.</td></tr>
+                    <tr><td colSpan={canWrite ? 11 : 10} className="px-4 py-8 text-center text-gray-500">No mailboxes found. Add mailboxes in the Mailboxes page first.</td></tr>
                   ) : status.mailboxes.map(mb => (
                     <tr key={mb.mailbox_id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm">
@@ -349,7 +357,7 @@ export default function WarmupEnginePage() {
                       <td className="px-4 py-3 text-sm text-gray-600">{mb.dns_score}</td>
                       <td className="px-4 py-3 text-sm">{mb.is_blacklisted ? <span className="text-red-600 font-bold">X</span> : <span className="text-green-600 font-bold">{String.fromCharCode(10003)}</span>}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">{mb.warmup_profile_id ?? '-'}</td>
-                      {isAdmin && (
+                      {canWrite && (
                         <td className="px-4 py-3 text-sm space-x-2">
                           <button onClick={() => handleAssessOne(mb.mailbox_id)} className="text-orange-600 hover:text-orange-800 text-xs font-medium">Assess</button>
                           {(mb.warmup_status === 'paused' || mb.warmup_status === 'blacklisted') && <button onClick={() => handleRecovery(mb.mailbox_id)} className="text-purple-600 hover:text-purple-800 text-xs font-medium">Recovery</button>}
@@ -625,7 +633,8 @@ export default function WarmupEnginePage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">Warmup Settings</h2>
-            <button onClick={handleSaveConfig} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">{saving ? 'Saving...' : 'Save Config'}</button>
+            {canAdmin && <button onClick={handleSaveConfig} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">{saving ? 'Saving...' : 'Save Config'}</button>}
+            {!canAdmin && <span className="text-sm text-gray-400 italic">Read-only access</span>}
           </div>
 
           {/* Phase Configuration */}

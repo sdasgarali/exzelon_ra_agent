@@ -360,6 +360,10 @@ export const settingsApi = {
     const response = await api.get('/settings/my-permissions/settings-tabs')
     return response.data
   },
+  getMyPermissions: async (): Promise<Record<string, string>> => {
+    const response = await api.get('/settings/my-permissions')
+    return response.data
+  },
 }
 
 // Mailboxes API

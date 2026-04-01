@@ -165,6 +165,75 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
     return {tab: 'no_access' for tab in tabs}
 
 
+PERMISSION_LEVELS = ['no_access', 'read', 'read_write', 'full']
+
+
+def get_module_permission(db: Session, user: User, module_key: str) -> str:
+    """Returns the user's effective permission level for any module.
+
+    Resolves through 3 layers (highest priority wins):
+      Layer 3: User-specific overrides
+      Layer 2: Role-based permissions (from settings)
+      Layer 1: Defaults (super_admin=full, viewer=no_access, etc.)
+
+    Returns one of: 'full', 'read_write', 'read', 'no_access'.
+    """
+    if user.role == UserRole.SUPER_ADMIN:
+        return 'full'
+
+    from app.core.settings_resolver import get_tenant_setting
+
+    # Layer 3: User-specific overrides
+    user_overrides = get_tenant_setting(db, 'user_permission_overrides', tenant_id=user.tenant_id, default=None)
+    if user_overrides and isinstance(user_overrides, dict):
+        user_key = f"user_{user.user_id}"
+        override = user_overrides.get(user_key, {})
+        if isinstance(override, dict) and module_key in override:
+            return override[module_key]
+
+    # Layer 2: Role-based permissions
+    role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
+    if role_perms and isinstance(role_perms, dict):
+        role_config = role_perms.get(user.role.value, {})
+        if module_key in role_config:
+            perm = role_config[module_key]
+            # Could be a string or a dict (for modules with independent tabs)
+            if isinstance(perm, str):
+                return perm
+
+    # Layer 1: Safe defaults
+    defaults = {
+        'admin': 'full',
+        'operator': 'read_write',
+        'viewer': 'read',
+    }
+    return defaults.get(user.role.value, 'no_access')
+
+
+def require_module_permission(module_key: str, min_level: str):
+    """Dependency factory to enforce minimum permission level for a module.
+
+    Usage: current_user = Depends(require_module_permission('warmup', 'read_write'))
+    """
+    min_idx = PERMISSION_LEVELS.index(min_level)
+
+    async def permission_checker(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return current_user
+        level = get_module_permission(db, current_user, module_key)
+        level_idx = PERMISSION_LEVELS.index(level) if level in PERMISSION_LEVELS else 0
+        if level_idx < min_idx:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permission for {module_key}. Required: {min_level}, yours: {level}"
+            )
+        return current_user
+    return permission_checker
+
+
 def _extract_tenant_id(user: User, x_tenant_id: Optional[int] = None) -> Optional[int]:
     """Extract tenant_id from user context.
 

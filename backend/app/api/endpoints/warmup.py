@@ -9,6 +9,7 @@ import json
 import io
 
 from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps.auth import require_module_permission
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_email import WarmupEmail
@@ -193,9 +194,9 @@ async def get_warmup_config(
 async def update_warmup_config(
     config_update: WarmupConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'full')),
 ):
-    """Update warmup configuration (Admin only)."""
+    """Update warmup configuration (requires full warmup permission)."""
     from app.db.models.settings import Settings
 
     updates = config_update.model_dump(exclude_unset=True)
@@ -248,7 +249,7 @@ async def update_warmup_config(
 @router.post("/assess", response_model=WarmupAssessmentResult)
 async def assess_all_mailboxes(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Assess all active mailboxes."""
     result = run_warmup_assessment(triggered_by=current_user.email)
@@ -263,7 +264,7 @@ async def assess_all_mailboxes(
 async def assess_single_mailbox(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Assess a single mailbox (synchronous)."""
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
@@ -341,7 +342,7 @@ async def get_health_scores(
 async def trigger_peer_warmup(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Trigger a peer-to-peer warmup cycle.
 
@@ -362,7 +363,7 @@ async def trigger_peer_warmup(
 @router.post("/peer/auto-reply")
 async def trigger_auto_reply(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Trigger an auto-reply cycle manually.
 
@@ -490,7 +491,7 @@ async def get_analytics(
 async def run_dns_check(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run DNS health check for one or all mailboxes."""
@@ -559,7 +560,7 @@ async def get_dns_results(
 async def run_blacklist_check_endpoint(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run blacklist check for one or all mailboxes."""
@@ -628,7 +629,7 @@ async def get_blacklist_results(
 async def run_placement_test_endpoint(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Run inbox placement test for a specific mailbox."""
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
@@ -685,7 +686,7 @@ async def get_alerts(
 async def mark_alert_read(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Mark a single alert as read."""
     alert = db.query(WarmupAlert).filter(WarmupAlert.id == alert_id).first()
@@ -704,7 +705,7 @@ async def mark_alert_read(
 @router.put("/alerts/read-all")
 async def mark_all_alerts_read(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
     """Mark all unread alerts as read."""
     count = (
@@ -755,9 +756,9 @@ async def list_profiles(
 async def create_profile(
     profile_in: WarmupProfileCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'full')),
 ):
-    """Create a new warmup profile (Admin only)."""
+    """Create a new warmup profile (requires full warmup permission)."""
     profile = WarmupProfile(
         name=profile_in.name,
         description=profile_in.description,
@@ -780,9 +781,9 @@ async def update_profile(
     profile_id: int,
     profile_in: WarmupProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'full')),
 ):
-    """Update a warmup profile (Admin only)."""
+    """Update a warmup profile (requires full warmup permission)."""
     profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -804,9 +805,9 @@ async def update_profile(
 async def delete_profile(
     profile_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'full')),
 ):
-    """Delete a warmup profile (Admin only). System profiles cannot be deleted."""
+    """Delete a warmup profile (requires full warmup permission). System profiles cannot be deleted."""
     profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -827,9 +828,9 @@ async def apply_profile(
     profile_id: int,
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
-    """Apply a warmup profile to a specific mailbox (Admin only)."""
+    """Apply a warmup profile to a specific mailbox."""
     profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -855,9 +856,9 @@ async def apply_profile(
 async def start_recovery_endpoint(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    current_user: User = Depends(require_module_permission('warmup', 'read_write')),
 ):
-    """Start auto-recovery for a specific mailbox (Admin only)."""
+    """Start auto-recovery for a specific mailbox."""
     mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")

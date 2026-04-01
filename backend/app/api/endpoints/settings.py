@@ -4,7 +4,7 @@ from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps import get_db, require_role, get_current_tenant_id, get_current_active_user
 from app.api.deps.auth import get_user_settings_tab_access, get_all_settings_tab_permissions
 from app.core.config import settings as app_config
 from app.core.settings_resolver import (
@@ -494,6 +494,22 @@ DEFAULT_SETTINGS = {
     "deal_score_to_probability": {"value": True, "type": "boolean", "description": "Auto-update deal probability from contact lead score"},
 
 }
+
+
+@router.get("/my-permissions")
+async def get_my_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get the current user's effective permissions for all modules."""
+    from app.api.deps.auth import get_module_permission
+    modules = [
+        'leads', 'contacts', 'deals', 'campaigns', 'inbox', 'analytics',
+        'outreach', 'templates', 'mailboxes', 'warmup', 'pipelines',
+        'automation', 'settings', 'users', 'roles', 'clients',
+        'icp', 'validation', 'billing',
+    ]
+    return {m: get_module_permission(db, current_user, m) for m in modules}
 
 
 @router.get("/my-permissions/settings-tabs")
