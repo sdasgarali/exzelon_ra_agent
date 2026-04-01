@@ -19,6 +19,7 @@ interface Lead {
   contact_count: number  // Number of contacts linked to this lead
   industry: string | null
   company_size: string | null
+  data_type: string
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -27,6 +28,7 @@ interface Lead {
 interface LeadFilterOptions {
   industries: string[]
   company_sizes: string[]
+  data_types: string[]
 }
 
 interface Contact {
@@ -80,14 +82,15 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterSource, setFilterSource] = useState('')
-  const [filterState, setFilterState] = useState('')
+  const [filterState, setFilterState] = useState<string[]>([])
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
-  const [filterIndustry, setFilterIndustry] = useState('')
-  const [filterCompanySize, setFilterCompanySize] = useState('')
+  const [filterIndustry, setFilterIndustry] = useState<string[]>([])
+  const [filterCompanySize, setFilterCompanySize] = useState<string[]>([])
+  const [filterDataType, setFilterDataType] = useState('')
 
   // Filter options from backend
-  const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [] })
+  const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [], data_types: [] })
 
   // Sorting
   const [sortBy, setSortBy] = useState<SortField>('created_at')
@@ -166,7 +169,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -181,11 +184,12 @@ export default function LeadsPage() {
       if (debouncedSearch) params.search = debouncedSearch
       if (filterStatus) params.status = filterStatus
       if (filterSource) params.source = filterSource
-      if (filterState) params.state = filterState
+      if (filterState.length) params.state = filterState
       if (filterFromDate) params.from_date = filterFromDate
       if (filterToDate) params.to_date = filterToDate
-      if (filterIndustry) params.industry = filterIndustry
-      if (filterCompanySize) params.company_size = filterCompanySize
+      if (filterIndustry.length) params.industry = filterIndustry
+      if (filterCompanySize.length) params.company_size = filterCompanySize
+      if (filterDataType) params.data_type = filterDataType
       if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
@@ -230,11 +234,12 @@ export default function LeadsPage() {
     setSearch('')
     setFilterStatus('')
     setFilterSource('')
-    setFilterState('')
+    setFilterState([])
     setFilterFromDate('')
     setFilterToDate('')
-    setFilterIndustry('')
-    setFilterCompanySize('')
+    setFilterIndustry([])
+    setFilterCompanySize([])
+    setFilterDataType('')
     setShowArchived(false)
     setPage(1)
   }
@@ -245,7 +250,7 @@ export default function LeadsPage() {
       const params = new URLSearchParams()
       if (filterStatus) params.append('status', filterStatus)
       if (filterSource) params.append('source', filterSource)
-      if (filterState) params.append('state', filterState)
+      filterState.forEach(s => params.append('state', s))
       if (filterFromDate) params.append('from_date', filterFromDate)
       if (filterToDate) params.append('to_date', filterToDate)
       if (debouncedSearch) params.append('search', debouncedSearch)
@@ -529,7 +534,67 @@ export default function LeadsPage() {
     return sortOrder === 'asc' ? <span className="ml-1">&#8593;</span> : <span className="ml-1">&#8595;</span>
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, search].filter(Boolean).length + (showArchived ? 1 : 0)
+  // Multi-select dropdown component
+  const MultiSelectDropdown = ({ label, options, selected, onChange }: {
+    label: string
+    options: string[]
+    selected: string[]
+    onChange: (vals: string[]) => void
+  }) => {
+    const [open, setOpen] = useState(false)
+    const ref = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      }
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const toggle = (val: string) => {
+      onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val])
+      setPage(1)
+    }
+
+    return (
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={`input w-full text-left flex items-center justify-between ${selected.length > 0 ? 'border-blue-400 bg-blue-50' : ''}`}
+        >
+          <span className="truncate text-sm">
+            {selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}
+          </span>
+          <span className="text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
+        </button>
+        {open && (
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            <div className="flex gap-2 px-3 py-2 border-b bg-gray-50 sticky top-0">
+              <button type="button" onClick={() => { onChange([...options]); setPage(1) }} className="text-xs text-blue-600 hover:underline">Select All</button>
+              <button type="button" onClick={() => { onChange([]); setPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
+            </div>
+            {options.map(opt => (
+              <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={() => toggle(opt)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+                />
+                {opt}
+              </label>
+            ))}
+            {options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No options available</div>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterDataType, search].filter(Boolean).length
+    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -722,44 +787,44 @@ export default function LeadsPage() {
         {/* Expanded Filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t">
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <div>
               <label className="label text-sm">State</label>
-              <select
-                value={filterState}
-                onChange={(e) => { setFilterState(e.target.value); setPage(1); }}
-                className="input w-full"
-              >
-                <option value="">All States</option>
-                {US_STATES.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <MultiSelectDropdown
+                label="States"
+                options={US_STATES}
+                selected={filterState}
+                onChange={setFilterState}
+              />
             </div>
             <div>
               <label className="label text-sm">Industry</label>
-              <select
-                value={filterIndustry}
-                onChange={(e) => { setFilterIndustry(e.target.value); setPage(1); }}
-                className="input w-full"
-              >
-                <option value="">All Industries</option>
-                {leadFilterOptions.industries.map(i => (
-                  <option key={i} value={i}>{i}</option>
-                ))}
-              </select>
+              <MultiSelectDropdown
+                label="Industries"
+                options={leadFilterOptions.industries}
+                selected={filterIndustry}
+                onChange={setFilterIndustry}
+              />
             </div>
             <div>
               <label className="label text-sm">Company Size</label>
+              <MultiSelectDropdown
+                label="Sizes"
+                options={leadFilterOptions.company_sizes}
+                selected={filterCompanySize}
+                onChange={setFilterCompanySize}
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Data Type</label>
               <select
-                value={filterCompanySize}
-                onChange={(e) => { setFilterCompanySize(e.target.value); setPage(1); }}
+                value={filterDataType}
+                onChange={(e) => { setFilterDataType(e.target.value); setPage(1); }}
                 className="input w-full"
               >
-                <option value="">All Sizes</option>
-                {leadFilterOptions.company_sizes.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                <option value="">All</option>
+                <option value="prod">Production</option>
+                <option value="test">Test</option>
               </select>
             </div>
             <div>
@@ -904,10 +969,13 @@ export default function LeadsPage() {
                       />
                     </td>
                     <td className="px-3 py-3">
-                      <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">
-                        #{lead.lead_id}
-                      </Link>
-                      {lead.is_archived && <span className="ml-1 text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-medium">Archived</span>}
+                      <div className="flex items-center gap-1">
+                        <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">
+                          #{lead.lead_id}
+                        </Link>
+                        {lead.data_type === 'test' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">TEST</span>}
+                        {lead.is_archived && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-medium">Archived</span>}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline">

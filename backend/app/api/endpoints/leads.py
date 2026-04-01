@@ -12,7 +12,7 @@ from app.api.deps import get_db, get_current_active_user, require_role, get_curr
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
-from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
+from app.db.models.lead import LeadDetails, LeadStatus, DataType, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
@@ -63,11 +63,12 @@ async def list_leads(
     limit: Optional[int] = Query(None, ge=1, le=500),
     status: Optional[LeadStatus] = None,
     source: Optional[str] = None,
-    state: Optional[str] = None,
+    state: Optional[List[str]] = Query(None),
     client_name: Optional[str] = None,
     job_title: Optional[str] = None,
-    industry: Optional[str] = None,
-    company_size: Optional[str] = None,
+    industry: Optional[List[str]] = Query(None),
+    company_size: Optional[List[str]] = Query(None),
+    data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
@@ -95,7 +96,7 @@ async def list_leads(
     if source:
         query = query.filter(LeadDetails.source == source)
     if state:
-        query = query.filter(LeadDetails.state == state)
+        query = query.filter(LeadDetails.state.in_(state))
     if client_name:
         query = query.filter(LeadDetails.client_name.ilike(f"%{client_name}%"))
     if job_title:
@@ -103,19 +104,21 @@ async def list_leads(
 
     # Filter by industry/company_size — check both lead_details and client_info
     if industry:
-        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.industry == industry)
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.industry.in_(industry))
         matching_names = [r[0] for r in client_q.all()]
         query = query.filter(
-            (LeadDetails.industry == industry) |
+            (LeadDetails.industry.in_(industry)) |
             (LeadDetails.client_name.in_(matching_names) if matching_names else False)
         )
     if company_size:
-        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size == company_size)
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size.in_(company_size))
         matching_names = [r[0] for r in client_q.all()]
         query = query.filter(
-            (LeadDetails.company_size == company_size) |
+            (LeadDetails.company_size.in_(company_size)) |
             (LeadDetails.client_name.in_(matching_names) if matching_names else False)
         )
+    if data_type:
+        query = query.filter(LeadDetails.data_type == data_type)
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -212,6 +215,7 @@ async def list_leads(
         ci = client_info_map.get(lead.client_name, {})
         lead_dict['industry'] = lead.industry or ci.get("industry")
         lead_dict['company_size'] = lead.company_size or ci.get("company_size")
+        lead_dict['data_type'] = lead.data_type.value if hasattr(lead.data_type, 'value') else (lead.data_type or 'prod')
         lead_responses.append(lead_dict)
 
     return {
@@ -443,6 +447,7 @@ async def get_lead_filter_options(
     return {
         "industries": industries,
         "company_sizes": sizes,
+        "data_types": ["test", "prod"],
     }
 
 

@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 58: User Onboarding — Getting Started Dashboard + Interactive Tour — COMPLETE. Added 3-route onboarding API (status/dismiss/reset), Getting Started widget with 6-step visual checklist shown above dashboard, driver.js interactive tour with 10 steps highlighting sidebar nav items, floating help (?) button, auto-launch on first visit. 12 integration tests pass, frontend build clean, 592 backend tests pass.
+> Session 60: Leads page multi-select filters + data_type filter. Added DataType enum (test/prod) to LeadDetails model, migration in main.py, multi-value Query params for state/industry/company_size on GET /leads, data_type filter, checkbox dropdown UI component on frontend, TEST badge on lead rows. 604 tests pass, frontend builds clean.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)

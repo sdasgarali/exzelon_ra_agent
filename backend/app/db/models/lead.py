@@ -5,6 +5,12 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
+class DataType(str, PyEnum):
+    """Data type: test vs production data."""
+    TEST = "test"
+    PROD = "prod"
+
+
 class LeadStatus(str, PyEnum):
     """Lead processing status."""
     OPEN = "open"
@@ -79,6 +85,9 @@ class LeadDetails(Base):
     contact_email = Column(String(255), nullable=True)
     contact_phone = Column(String(50), nullable=True)
     contact_source = Column(String(50), nullable=True)  # apollo, seamless
+
+    # Data type (test vs production)
+    data_type = Column(Enum(DataType, values_callable=lambda x: [e.value for e in x]), default=DataType.PROD, nullable=False)
 
     # Status tracking
     lead_status = Column(Enum(LeadStatus, values_callable=lambda x: [e.value for e in x]), default=LeadStatus.NEW, nullable=False)

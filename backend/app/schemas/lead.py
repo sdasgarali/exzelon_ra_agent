@@ -3,7 +3,7 @@ from datetime import date, datetime
 from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel
-from app.db.models.lead import LeadStatus
+from app.db.models.lead import LeadStatus, DataType
 
 
 class LeadBase(BaseModel):
@@ -41,6 +41,7 @@ class LeadUpdate(BaseModel):
     contact_phone: Optional[str] = None
     contact_source: Optional[str] = None
     lead_status: Optional[LeadStatus] = None
+    data_type: Optional[str] = None
     skip_reason: Optional[str] = None
     ra_name: Optional[str] = None
 
@@ -55,6 +56,7 @@ class LeadResponse(LeadBase):
     contact_phone: Optional[str] = None
     contact_source: Optional[str] = None
     lead_status: LeadStatus
+    data_type: Optional[str] = "prod"
     skip_reason: Optional[str] = None
     contact_count: Optional[int] = 0
     industry: Optional[str] = None
