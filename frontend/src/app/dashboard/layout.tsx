@@ -48,22 +48,37 @@ import {
 } from 'lucide-react'
 
 const navigation = [
+  // Home
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-sky-400' },
-  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400', tourId: 'nav-leads' },
-  { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
-  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400', tourId: 'nav-contacts' },
-  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
-  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-campaigns' },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-inbox' },
-  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-deals' },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+
+  // Step 1: Setup — mailboxes & warmup
   { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-mailboxes' },
   { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+
+  // Step 2: Source — pipeline execution & lead results
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400', tourId: 'nav-leads' },
+  { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
+
+  // Step 3: Enrich & Step 4: Validate
+  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400', tourId: 'nav-contacts' },
+  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
+
+  // Step 5: Campaign — targeting, templates, sequences, outreach
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-campaigns' },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+
+  // Step 6: Engage & Close
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-inbox' },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-deals' },
+
+  // Reporting & Monitoring
+  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
+
+  // Administration
   { name: 'Activity Log', href: '/dashboard/activity-log', icon: ScrollText, iconColor: 'text-cyan-400', roles: ['super_admin'] as string[] },
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] },
