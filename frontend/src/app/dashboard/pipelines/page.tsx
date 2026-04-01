@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
-import { Search, UserPlus, ShieldCheck, Send, FileText } from 'lucide-react'
+import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
 
 interface PipelineRun {
   run_id: number
@@ -21,6 +21,7 @@ interface PipelineRun {
   adapters_used: string[] | null
   is_cancel_requested?: boolean
   progress_pct?: number
+  logs_path?: string | null
 }
 
 interface PipelineStats {
@@ -471,7 +472,7 @@ export default function PipelinesPage() {
           setSuccess('Email validation pipeline started!')
           break
         case 'outreach':
-          await pipelinesApi.runOutreach('mailmerge', true)
+          await pipelinesApi.runOutreach('mailmerge', false)
           setSuccess('Outreach pipeline started!')
           break
       }
@@ -819,19 +820,30 @@ export default function PipelinesPage() {
                       <span className="text-xs text-gray-500 animate-pulse">Cancelling...</span>
                     )}
                     {['completed', 'failed', 'cancelled'].includes(run.status?.toLowerCase()) && (
-                      <button
-                        onClick={() => {
-                          setReportRunId(run.run_id)
-                          setReportPipeline(run.pipeline_name)
-                          setReportStatus(run.status)
-                          setReportDuration(run.duration_seconds)
-                          setShowReport(true)
-                        }}
-                        className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 flex items-center gap-1"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Report
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            setReportRunId(run.run_id)
+                            setReportPipeline(run.pipeline_name)
+                            setReportStatus(run.status)
+                            setReportDuration(run.duration_seconds)
+                            setShowReport(true)
+                          }}
+                          className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 flex items-center gap-1"
+                        >
+                          <FileText className="w-3 h-3" />
+                          Report
+                        </button>
+                        {run.pipeline_name === 'outreach_mailmerge' && run.logs_path && run.status?.toLowerCase() === 'completed' && (
+                          <button
+                            onClick={() => pipelinesApi.downloadExport(run.run_id)}
+                            className="px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full hover:bg-green-200 flex items-center gap-1"
+                          >
+                            <Download className="w-3 h-3" />
+                            CSV
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </td>

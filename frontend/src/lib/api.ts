@@ -289,11 +289,28 @@ export const pipelinesApi = {
     const response = await api.post('/pipelines/email-validation/run')
     return response.data
   },
-  runOutreach: async (mode: string, dryRun: boolean = true, leadIds?: number[]) => {
+  runOutreach: async (mode: string, dryRun: boolean = false, leadIds?: number[]) => {
     const response = await api.post('/pipelines/outreach/run',
       leadIds ? { lead_ids: leadIds } : undefined,
       { params: { mode, dry_run: dryRun } })
     return response.data
+  },
+  downloadExport: async (runId: number) => {
+    const response = await api.get(`/pipelines/runs/${runId}/download`, {
+      responseType: 'blob',
+    })
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    const disposition = response.headers['content-disposition']
+    const filename = disposition
+      ? disposition.split('filename=')[1]?.replace(/"/g, '')
+      : `mailmerge_export_${runId}.csv`
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
   },
   getRunDetail: async (runId: number) => {
     const response = await api.get(`/pipelines/runs/${runId}`)

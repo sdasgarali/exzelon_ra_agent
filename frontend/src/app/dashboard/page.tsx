@@ -369,6 +369,33 @@ export default function DashboardPage() {
 
   // --- Pipeline Handler Functions ---
 
+  const pollAndDownloadMailmerge = async (runId: number) => {
+    toast('success', 'Mailmerge export started — preparing CSV...')
+    const maxAttempts = 60
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const detail = await pipelinesApi.getRunDetail(runId)
+        if (detail.status === 'completed') {
+          if (detail.logs_path) {
+            await pipelinesApi.downloadExport(runId)
+            toast('success', 'Mailmerge CSV downloaded!')
+          } else {
+            toast('info', 'Mailmerge completed but no contacts were eligible for export')
+          }
+          return
+        }
+        if (detail.status === 'failed') {
+          toast('error', detail.error_message || 'Mailmerge export failed')
+          return
+        }
+      } catch {
+        // Polling error, keep trying
+      }
+    }
+    toast('info', 'Mailmerge is still running — check the Pipelines page for the download')
+  }
+
   const handleRunWithSelectedLeads = async (runAll: boolean) => {
     if (runAll) {
       setShowRunAllLeadsConfirm(true)
@@ -381,11 +408,11 @@ export default function DashboardPage() {
       if (selectorPipeline === 'enrich') {
         await pipelinesApi.runContactEnrichment(leadIds)
         toast('success', `Contact enrichment started for ${leadIds.length} selected leads`)
+        router.push('/dashboard/pipelines')
       } else {
-        await pipelinesApi.runOutreach('mailmerge', true, leadIds)
-        toast('success', `Mailmerge export started for ${leadIds.length} selected leads`)
+        const result = await pipelinesApi.runOutreach('mailmerge', false, leadIds)
+        await pollAndDownloadMailmerge(result.run_id)
       }
-      router.push('/dashboard/pipelines')
     } catch {
       toast('error', `Failed to start ${selectorPipeline === 'enrich' ? 'contact enrichment' : 'outreach'}`)
     }
@@ -400,11 +427,11 @@ export default function DashboardPage() {
       if (selectorPipeline === 'enrich') {
         await pipelinesApi.runContactEnrichment()
         toast('success', 'Contact enrichment started for all leads')
+        router.push('/dashboard/pipelines')
       } else {
-        await pipelinesApi.runOutreach('mailmerge', true)
-        toast('success', 'Mailmerge export started for all leads')
+        const result = await pipelinesApi.runOutreach('mailmerge', false)
+        await pollAndDownloadMailmerge(result.run_id)
       }
-      router.push('/dashboard/pipelines')
     } catch {
       toast('error', `Failed to start ${selectorPipeline === 'enrich' ? 'contact enrichment' : 'outreach'}`)
     }

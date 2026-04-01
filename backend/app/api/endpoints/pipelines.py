@@ -1,7 +1,9 @@
 """Pipeline management endpoints."""
 import json
+import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Body
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from datetime import timezone
@@ -153,6 +155,7 @@ async def list_job_runs(
             "adapters_used": adapters_used,
             "is_cancel_requested": bool(r.is_cancel_requested),
             "progress_pct": r.progress_pct or 0,
+            "logs_path": r.logs_path,
         })
     return results
 
@@ -216,6 +219,30 @@ async def get_job_run(
         "is_cancel_requested": bool(run.is_cancel_requested),
         "progress_pct": run.progress_pct or 0,
     }
+
+
+@router.get("/runs/{run_id}/download")
+async def download_run_export(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Download the export file (CSV) for a completed pipeline run."""
+    query = db.query(JobRun).filter(JobRun.run_id == run_id)
+    query = tenant_filter(query, JobRun, tenant_id)
+    run = query.first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Job run not found")
+
+    if not run.logs_path:
+        raise HTTPException(status_code=404, detail="No export file for this run")
+
+    if not os.path.isfile(run.logs_path):
+        raise HTTPException(status_code=404, detail="Export file not found on disk")
+
+    filename = os.path.basename(run.logs_path)
+    return FileResponse(run.logs_path, media_type="text/csv", filename=filename)
 
 
 @router.get("/runs/{run_id}/summary")
@@ -448,6 +475,33 @@ async def run_outreach(
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
     lead_ids = request.lead_ids if request else None
 
+    if mode == "mailmerge":
+        from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
+        # Create JobRun eagerly so we can return run_id for polling/download
+        job_run = JobRun(
+            tenant_id=tenant_id or 1,
+            pipeline_name="outreach_mailmerge",
+            status=JobStatus.RUNNING,
+            triggered_by=current_user.email,
+        )
+        db.add(job_run)
+        db.commit()
+        db.refresh(job_run)
+        run_id = job_run.run_id
+
+        background_tasks.add_task(
+            run_outreach_mailmerge_pipeline,
+            triggered_by=current_user.email,
+            tenant_id=tenant_id,
+            lead_ids=lead_ids,
+            existing_run_id=run_id,
+        )
+        return {
+            "message": f"Mailmerge export started{f' for {len(lead_ids)} selected leads' if lead_ids else ''}",
+            "status": "processing",
+            "run_id": run_id,
+        }
+
     if lead_ids:
         from app.services.pipelines.outreach import run_outreach_for_lead
         for lid in lead_ids:
@@ -457,22 +511,14 @@ async def run_outreach(
             "status": "processing"
         }
 
-    if mode == "mailmerge":
-        from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
-        background_tasks.add_task(
-            run_outreach_mailmerge_pipeline,
-            triggered_by=current_user.email,
-            tenant_id=tenant_id,
-        )
-    else:
-        from app.services.pipelines.outreach import run_outreach_send_pipeline
-        background_tasks.add_task(
-            run_outreach_send_pipeline,
-            dry_run=dry_run,
-            limit=30,
-            triggered_by=current_user.email,
-            tenant_id=tenant_id,
-        )
+    from app.services.pipelines.outreach import run_outreach_send_pipeline
+    background_tasks.add_task(
+        run_outreach_send_pipeline,
+        dry_run=dry_run,
+        limit=30,
+        triggered_by=current_user.email,
+        tenant_id=tenant_id,
+    )
 
     return {
         "message": f"Outreach pipeline started (mode={mode}, dry_run={dry_run})",

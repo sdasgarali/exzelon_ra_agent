@@ -236,6 +236,8 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
 def run_outreach_mailmerge_pipeline(
     triggered_by: str = "system",
     tenant_id: Optional[int] = None,
+    lead_ids: Optional[List[int]] = None,
+    existing_run_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate mail merge export package.
@@ -243,28 +245,53 @@ def run_outreach_mailmerge_pipeline(
     Creates:
     1. Verified contacts CSV
     2. Word template guide
+
+    Args:
+        lead_ids: If provided, only export contacts associated with these leads.
+        existing_run_id: If provided, reuse this JobRun instead of creating a new one.
     """
     db = SessionLocal()
     counters = {"eligible": 0, "skipped": 0, "exported": 0}
 
-    # Create job run record
-    job_run = JobRun(
-        tenant_id=tenant_id or 1,
-        pipeline_name="outreach_mailmerge",
-        status=JobStatus.RUNNING,
-        triggered_by=triggered_by,
-    )
-    db.add(job_run)
-    db.commit()
+    # Use existing job run or create new one
+    if existing_run_id:
+        job_run = db.query(JobRun).filter(JobRun.run_id == existing_run_id).first()
+        if not job_run:
+            job_run = JobRun(
+                tenant_id=tenant_id or 1,
+                pipeline_name="outreach_mailmerge",
+                status=JobStatus.RUNNING,
+                triggered_by=triggered_by,
+            )
+            db.add(job_run)
+            db.commit()
+    else:
+        job_run = JobRun(
+            tenant_id=tenant_id or 1,
+            pipeline_name="outreach_mailmerge",
+            status=JobStatus.RUNNING,
+            triggered_by=triggered_by,
+        )
+        db.add(job_run)
+        db.commit()
 
     try:
-        logger.info("Starting mailmerge export")
+        logger.info("Starting mailmerge export", lead_ids=lead_ids)
 
-        # Get validated contacts (excluding archived)
-        contacts = db.query(ContactDetails).filter(
+        # Get validated contacts, optionally filtered by lead_ids
+        query = db.query(ContactDetails).filter(
             ContactDetails.validation_status == "valid",
-            ContactDetails.is_archived == False
-        ).all()
+        )
+        if tenant_id:
+            query = query.filter(ContactDetails.tenant_id == tenant_id)
+        if lead_ids:
+            contact_ids_sub = (
+                db.query(LeadContactAssociation.contact_id)
+                .filter(LeadContactAssociation.lead_id.in_(lead_ids))
+                .subquery()
+            )
+            query = query.filter(ContactDetails.contact_id.in_(contact_ids_sub))
+        contacts = query.all()
 
         eligible_contacts = []
         for contact in contacts:
