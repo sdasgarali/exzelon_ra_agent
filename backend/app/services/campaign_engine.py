@@ -17,6 +17,7 @@ from app.db.models.campaign import (
     CampaignStatus, StepType, CampaignContactStatus,
 )
 from app.db.models.contact import ContactDetails
+from app.db.models.lead import LeadDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.core.config import settings
@@ -155,6 +156,14 @@ def _execute_email_step(
         cc.next_send_at = None
         return False
 
+    # Look up associated lead for job_title / job_location placeholders
+    contact_lead = None
+    _lead_id = cc.lead_id or contact.lead_id
+    if _lead_id:
+        contact_lead = db.query(LeadDetails).filter(
+            LeadDetails.lead_id == _lead_id
+        ).first()
+
     # Check eligibility (suppression, validation, etc.)
     eligible, reason = check_send_eligibility(db, contact)
     if not eligible:
@@ -204,17 +213,27 @@ def _execute_email_step(
         body_html += signature_html
 
     # Placeholder substitution — Jinja2 with fallback to manual replace
+    _job_title = (contact_lead.job_title if contact_lead and contact_lead.job_title else "")
+    _job_location = (contact_lead.state if contact_lead and contact_lead.state else "")
+    _company = (contact_lead.client_name if contact_lead and contact_lead.client_name else (contact.client_name or ""))
     template_context = {
         "contact_first_name": contact.first_name or "",
         "contact_last_name": contact.last_name or "",
-        "company_name": contact.client_name or "",
+        "company_name": _company,
         "contact_title": contact.title or "",
+        "job_title": _job_title,
+        "job_location": _job_location,
         "contact": {
             "first_name": contact.first_name or "",
             "last_name": contact.last_name or "",
             "title": contact.title or "",
             "email": contact.email or "",
             "company": contact.client_name or "",
+        },
+        "lead": {
+            "job_title": _job_title,
+            "location": _job_location,
+            "company": _company,
         },
         "sender": {
             "name": mailbox.display_name or "",
@@ -231,8 +250,10 @@ def _execute_email_step(
         placeholders = {
             "{{contact_first_name}}": contact.first_name or "",
             "{{contact_last_name}}": contact.last_name or "",
-            "{{company_name}}": contact.client_name or "",
+            "{{company_name}}": _company,
             "{{contact_title}}": contact.title or "",
+            "{{job_title}}": _job_title,
+            "{{job_location}}": _job_location,
         }
         for ph, val in placeholders.items():
             subject = subject.replace(ph, val)
