@@ -92,7 +92,7 @@ def _deal_to_dict(d: Deal, db: Session = None) -> dict:
             ClientInfo.client_id == d.client_id
         ).first()
         if client:
-            result["client_name"] = client.name
+            result["client_name"] = client.client_name
 
     if db:
         stage = db.query(DealStage).filter(DealStage.stage_id == d.stage_id).first()
