@@ -53,12 +53,31 @@ resolve_domain_ip = resolve_mx_ip
 
 
 def check_ip_blacklist(ip: str, provider: str) -> Dict[str, Any]:
+    """Check if an IP is listed on a DNSBL provider.
+
+    DNSBL responses in 127.0.0.x range indicate actual listings.
+    127.255.255.x responses are error/test codes (e.g., Spamhaus returns
+    127.255.255.254 for unauthorized queries from public resolvers) and
+    must NOT be treated as real blacklist hits.
+    """
     try:
         import dns.resolver
         reversed_ip = ".".join(reversed(ip.split(".")))
         query = f"{reversed_ip}.{provider}"
-        dns.resolver.resolve(query, "A")
-        return {"provider": provider, "listed": True, "details": "IP found on blacklist"}
+        answers = dns.resolver.resolve(query, "A")
+
+        # Inspect the actual response IP to distinguish real listings from errors
+        for answer in answers:
+            response_ip = str(answer)
+            # Real blacklist listings return 127.0.0.x (x=2-11 for Spamhaus)
+            if response_ip.startswith("127.0.0."):
+                return {"provider": provider, "listed": True, "details": f"Listed ({response_ip})"}
+
+        # 127.255.255.254 = unauthorized query (Spamhaus free tier block)
+        # 127.255.255.252 = typing/test error
+        # Any other 127.x response = not a real listing
+        response_str = str(answers[0]) if answers else "unknown"
+        return {"provider": provider, "listed": False, "details": f"Non-listing response ({response_str})"}
     except Exception:
         return {"provider": provider, "listed": False, "details": "Not listed"}
 
