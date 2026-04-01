@@ -94,9 +94,9 @@ preflight() {
         log_ok "Created $FRONTEND_ENV_FILE"
     fi
 
-    # Check services exist
+    # Check services exist (use systemctl cat which is more reliable)
     for svc in $API_SERVICE $WEB_SERVICE; do
-        if ! systemctl list-unit-files | grep -q "^${svc}.service"; then
+        if ! systemctl cat "${svc}.service" &>/dev/null; then
             log_fail "Systemd service not found: ${svc}"
             log_warn "Copy service files: cp ${APP_DIR}/deploy/systemd/*.service /etc/systemd/system/ && systemctl daemon-reload"
             exit 1
