@@ -1052,6 +1052,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for login lockout columns: {e}")
 
+    # Migration: add data_type column to lead_details (test vs prod)
+    try:
+        from sqlalchemy import text as sa_text_dt, inspect as sa_inspect_dt
+        with engine.connect() as conn:
+            inspector_dt = sa_inspect_dt(engine)
+            lead_cols_dt = [c["name"] for c in inspector_dt.get_columns("lead_details")]
+            if "data_type" not in lead_cols_dt:
+                try:
+                    conn.execute(sa_text_dt(
+                        "ALTER TABLE lead_details ADD COLUMN data_type VARCHAR(10) DEFAULT 'prod' NOT NULL"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added data_type column to lead_details")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Migration check for data_type column: {e}")
+
     # Migration: add onboarding_dismissed_at column to users
     try:
         from sqlalchemy import text as sa_text_onboard, inspect as sa_inspect_onboard
@@ -1183,7 +1201,8 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)

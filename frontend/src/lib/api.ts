@@ -299,7 +299,17 @@ export const pipelinesApi = {
     const response = await api.get(`/pipelines/runs/${runId}/download`, {
       responseType: 'blob',
     })
-    const url = window.URL.createObjectURL(new Blob([response.data]))
+    // Validate we got actual CSV data, not an error JSON wrapped in a blob
+    const blob = response.data as Blob
+    if (blob.size === 0) {
+      throw new Error('Downloaded file is empty')
+    }
+    if (blob.type && blob.type.includes('application/json')) {
+      const text = await blob.text()
+      const err = JSON.parse(text)
+      throw new Error(err.detail || 'Download failed')
+    }
+    const url = window.URL.createObjectURL(new Blob([blob]))
     const link = document.createElement('a')
     link.href = url
     const disposition = response.headers['content-disposition']

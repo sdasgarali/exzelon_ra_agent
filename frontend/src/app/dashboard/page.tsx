@@ -372,25 +372,42 @@ export default function DashboardPage() {
   const pollAndDownloadMailmerge = async (runId: number) => {
     toast('success', 'Mailmerge export started — preparing CSV...')
     const maxAttempts = 60
+    let pollErrors = 0
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 2000))
+      let detail
       try {
-        const detail = await pipelinesApi.getRunDetail(runId)
-        if (detail.status === 'completed') {
-          if (detail.logs_path) {
+        detail = await pipelinesApi.getRunDetail(runId)
+        pollErrors = 0 // reset on success
+      } catch {
+        pollErrors++
+        if (pollErrors >= 5) {
+          toast('error', 'Lost connection while waiting for mailmerge — check the Pipelines page')
+          return
+        }
+        continue
+      }
+
+      if (detail.status === 'completed') {
+        if (detail.logs_path) {
+          try {
             await pipelinesApi.downloadExport(runId)
             toast('success', 'Mailmerge CSV downloaded!')
-          } else {
-            toast('info', 'Mailmerge completed but no contacts were eligible for export')
+          } catch {
+            toast('error', 'Mailmerge completed but the CSV download failed. Try downloading from the Pipelines page.')
           }
-          return
+        } else {
+          toast('info', 'Mailmerge completed but no contacts were eligible for export')
         }
-        if (detail.status === 'failed') {
-          toast('error', detail.error_message || 'Mailmerge export failed')
-          return
-        }
-      } catch {
-        // Polling error, keep trying
+        return
+      }
+      if (detail.status === 'failed') {
+        toast('error', detail.error_message || 'Mailmerge export failed')
+        return
+      }
+      if (detail.status === 'cancelled') {
+        toast('info', 'Mailmerge export was cancelled')
+        return
       }
     }
     toast('info', 'Mailmerge is still running — check the Pipelines page for the download')
