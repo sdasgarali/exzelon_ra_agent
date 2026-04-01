@@ -68,3 +68,78 @@ body {
   border-color: rgba(56, 189, 248, 0.3);
   box-shadow: 0 0 30px rgba(56, 189, 248, 0.1);
 }
+
+/* driver.js tour custom theme */
+.exzelon-tour-popover {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid #e5e7eb !important;
+  max-width: 340px !important;
+}
+
+.dark .exzelon-tour-popover {
+  background: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #f3f4f6 !important;
+}
+
+.exzelon-tour-popover .driver-popover-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+}
+
+.dark .exzelon-tour-popover .driver-popover-title {
+  color: #f9fafb !important;
+}
+
+.exzelon-tour-popover .driver-popover-description {
+  font-size: 14px !important;
+  color: #6b7280 !important;
+  line-height: 1.5 !important;
+}
+
+.dark .exzelon-tour-popover .driver-popover-description {
+  color: #9ca3af !important;
+}
+
+.exzelon-tour-popover .driver-popover-next-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 6px 16px !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  text-shadow: none !important;
+}
+
+.exzelon-tour-popover .driver-popover-next-btn:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+}
+
+.exzelon-tour-popover .driver-popover-prev-btn {
+  background: transparent !important;
+  color: #6b7280 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  padding: 6px 16px !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  text-shadow: none !important;
+}
+
+.dark .exzelon-tour-popover .driver-popover-prev-btn {
+  color: #9ca3af !important;
+  border-color: #4b5563 !important;
+}
+
+.exzelon-tour-popover .driver-popover-close-btn {
+  color: #9ca3af !important;
+}
+
+.exzelon-tour-popover .driver-popover-progress-text {
+  font-size: 12px !important;
+  color: #9ca3af !important;
+}

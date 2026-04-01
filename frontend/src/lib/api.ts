@@ -1185,6 +1185,21 @@ export const activityApi = {
 }
 
 // Integrations API (API Keys)
+export const onboardingApi = {
+  getStatus: async () => {
+    const response = await api.get('/onboarding/status')
+    return response.data
+  },
+  dismiss: async () => {
+    const response = await api.post('/onboarding/dismiss')
+    return response.data
+  },
+  reset: async () => {
+    const response = await api.post('/onboarding/reset')
+    return response.data
+  },
+}
+
 export const integrationsApi = {
   // API Keys
   listApiKeys: async () => {

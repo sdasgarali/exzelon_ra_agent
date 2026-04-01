@@ -1052,6 +1052,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for login lockout columns: {e}")
 
+    # Migration: add onboarding_dismissed_at column to users
+    try:
+        from sqlalchemy import text as sa_text_onboard, inspect as sa_inspect_onboard
+        with engine.connect() as conn:
+            inspector_onboard = sa_inspect_onboard(engine)
+            user_cols_onboard = [c["name"] for c in inspector_onboard.get_columns("users")]
+            if "onboarding_dismissed_at" not in user_cols_onboard:
+                try:
+                    conn.execute(sa_text_onboard("ALTER TABLE users ADD COLUMN onboarding_dismissed_at DATETIME NULL"))
+                    conn.commit()
+                    logger.info("Migration: added onboarding_dismissed_at to users")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Migration check for onboarding_dismissed_at: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

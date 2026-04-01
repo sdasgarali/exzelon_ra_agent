@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi, pipelinesApi, leadsApi, contactsApi } from '@/lib/api'
+import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi } from '@/lib/api'
 import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { GettingStarted } from '@/components/getting-started'
 import {
   Building,
   Users,
@@ -217,6 +218,23 @@ export default function DashboardPage() {
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardApi.stats(),
   })
+
+  const { data: onboardingStatus, refetch: refetchOnboarding } = useQuery({
+    queryKey: ['onboarding-status'],
+    queryFn: () => onboardingApi.getStatus(),
+  })
+
+  const showOnboarding = onboardingStatus?.should_show_onboarding &&
+    user?.role !== 'viewer'
+
+  const handleDismissOnboarding = async () => {
+    try {
+      await onboardingApi.dismiss()
+      refetchOnboarding()
+    } catch {
+      toast('error', 'Failed to dismiss onboarding')
+    }
+  }
 
   // --- Selector Fetch Functions ---
 
@@ -504,6 +522,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* Getting Started onboarding widget */}
+      {showOnboarding && (
+        <GettingStarted status={onboardingStatus} onDismiss={handleDismissOnboarding} />
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
         <p className="text-gray-600 mt-1">Overview of your cold-email automation</p>
@@ -582,7 +605,7 @@ export default function DashboardPage() {
 
       {/* Quick Actions — admin and operator only */}
       {user?.role !== 'viewer' && (
-        <div className="card">
+        <div className="card" data-tour="quick-actions">
           <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="flex flex-col">

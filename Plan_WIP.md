@@ -1,7 +1,7 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 55: Login History & Activity Audit — COMPLETE. Added LoginHistory model, User lockout columns (failed_login_count, locked_until), audit_helper.py service, login recording + account lockout in auth.py (5 failures → 15min lock, 423 response), audit logging for user CRUD + impersonation, 6 new /activity API endpoints (super admin), Activity Log dashboard page (3 tabs: Login History, Activity Audit, Active Users), 11 unit + 13 integration tests. 592 total tests pass, 40% coverage.
+> Session 58: User Onboarding — Getting Started Dashboard + Interactive Tour — COMPLETE. Added 3-route onboarding API (status/dismiss/reset), Getting Started widget with 6-step visual checklist shown above dashboard, driver.js interactive tour with 10 steps highlighting sidebar nav items, floating help (?) button, auto-launch on first visit. 12 integration tests pass, frontend build clean, 592 backend tests pass.
 
 ## Immediate TODO
 - [x] VPS Production Deployment (all 8 phases complete)
@@ -65,6 +65,16 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 56: Lead Data Quality & Client Enrichment (2026-03-31)
+  - Committed & deployed industry/company_size columns, Apollo job link improvements, state mapping (e21eb2d)
+  - Fixed 15 bad state codes on VPS (TE→TX, VI→VA, PE→PA, GE→GA, etc.) — 839 leads corrected
+  - Backfilled 50 lead industries from client_info cross-join
+  - Converted 2,956 job links from linkedin.com/company/ to linkedin.com/jobs/search/ URLs
+  - Fixed campaign engine: added lead lookup for {{job_title}} / {{job_location}} placeholders (21af296)
+  - Added linkedin_url to research_company() in all 4 AI adapters (groq, openai, anthropic, gemini) + _LLM_FIELD_LIMITS (754987d)
+  - Configured Groq API key on VPS (.env + verified enrichment works)
+  - Added server-side sorting for Services, Website, LinkedIn columns on clients page (0e7ffdc)
+  - Bulk enriched 527/1,369 clients via Groq AI (380/1,444 websites, 154/1,444 LinkedIn URLs)
 - [x] Session 55: Login History & Activity Audit (2026-03-31)
   - LoginHistory model (login_history table) with email, success, failure_reason, IP, user agent, multi-index
   - User lockout: failed_login_count + locked_until columns, 5 failures → 15-min lock, 423 HTTP response

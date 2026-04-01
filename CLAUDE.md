@@ -217,6 +217,17 @@ Domain reputation management subsystem:
 | `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate) |
 | `/billing` | `api/endpoints/billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
 | `/activity` | `api/endpoints/activity_log.py` | Login history (paginated, filterable), 24h stats, auth audit events, active users, my-login-history, unlock user. Super admin only (except my-login-history) |
+| `/onboarding` | `api/endpoints/onboarding.py` | 6-step onboarding status (auto-detected from data), dismiss, reset (super admin). Per-user dismiss, tenant-filtered queries |
+
+### User Onboarding System
+
+- **Getting Started Widget**: 6-step visual checklist shown above dashboard when setup is incomplete (mailboxes → leads → contacts → validation → campaigns → deals)
+- **Auto-detection**: Each step checks `COUNT > 0` against tenant's data (no manual flags to get out of sync)
+- **Per-user dismiss**: `onboarding_dismissed_at` column on User model — each user controls their own view
+- **Interactive Tour**: driver.js spotlight walkthrough (~10 steps), auto-launches on first visit (localStorage `tour_completed` flag)
+- **Help button**: Floating `?` button (bottom-right) replays the tour anytime
+- **Viewer excluded**: Getting Started widget only shows for admin/operator/super_admin roles
+- **Files**: `api/endpoints/onboarding.py`, `components/getting-started.tsx`, `hooks/use-tour.ts`, `lib/tour-config.ts`
 
 ### Multi-Tenancy Architecture
 

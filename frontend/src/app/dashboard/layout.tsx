@@ -11,6 +11,7 @@ import { OfflineBanner } from '@/components/offline-banner'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { useTheme } from '@/components/theme-provider'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
+import { useTour } from '@/hooks/use-tour'
 import {
   LayoutDashboard,
   Users,
@@ -43,22 +44,23 @@ import {
   Building2,
   Receipt,
   ScrollText,
+  HelpCircle,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-sky-400' },
-  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400' },
+  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400', tourId: 'nav-leads' },
   { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
-  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400' },
-  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400' },
-  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400', tourId: 'nav-contacts' },
+  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-campaigns' },
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-inbox' },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-deals' },
   { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-mailboxes' },
   { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
@@ -81,6 +83,7 @@ export default function DashboardLayout({
   const { user, logout, isAuthenticated, impersonation, startImpersonation, stopImpersonation } = useAuthStore()
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
+  const { startTour } = useTour()
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -120,6 +123,17 @@ export default function DashboardLayout({
       return () => clearInterval(interval)
     }
   }, [mounted])
+
+  // Auto-launch tour on first visit
+  useEffect(() => {
+    if (mounted && isAuthenticated() && pathname === '/dashboard') {
+      const tourDone = localStorage.getItem('tour_completed')
+      if (!tourDone) {
+        const timer = setTimeout(() => startTour(), 1500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [mounted, pathname])
 
   // Fetch tenant list for super_admin dropdown
   useEffect(() => {
@@ -210,7 +224,7 @@ export default function DashboardLayout({
         )}
       </div>
 
-      <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation">
+      <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation" data-tour="sidebar">
         {navigation.filter(item => {
           if (item.roles && !item.roles.includes(user?.role || 'viewer')) return false
           return true
@@ -223,6 +237,7 @@ export default function DashboardLayout({
               key={item.name}
               href={item.href}
               aria-current={isActive ? 'page' : undefined}
+              data-tour={item.tourId || undefined}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                 isActive
                   ? 'bg-primary-600 text-white font-medium'
@@ -342,6 +357,16 @@ export default function DashboardLayout({
         </div>
         <main className="p-4 lg:p-8 dark:text-gray-100"><ErrorBoundary>{children}</ErrorBoundary></main>
       </div>
+
+      {/* Floating help / tour button */}
+      <button
+        data-tour="help-button"
+        onClick={startTour}
+        className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition-colors"
+        title="Replay guided tour"
+      >
+        <HelpCircle className="w-5 h-5" />
+      </button>
 
       {/* Keyboard shortcuts help dialog */}
       {helpOpen && (
