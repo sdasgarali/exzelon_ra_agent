@@ -327,27 +327,24 @@ def _create_contact(state, email, first_name, last_name, title, client_name,
             body["validation_status"] = "Valid"
         return "PASS", f"Created contact '{email}' (ID={cid})", body
     elif resp.status_code == 400 and "already exists" in resp.text.lower():
-        # Fetch existing by email (include archived contacts)
-        search_resp = api_get(state, "/contacts", params={
-            "search": email, "limit": 5, "show_archived": "true",
-        })
-        if search_resp.status_code == 200:
-            data = search_resp.json()
-            items = data.get("items", data if isinstance(data, list) else [])
-            for c in items:
-                if c.get("email", "").lower() == email.lower():
-                    cid = c["contact_id"]
-                    # Unarchive and set validation status if needed
-                    api_put(state, f"/contacts/{cid}", json_data={
-                        "validation_status": "Valid",
-                    })
-                    # Unarchive via restore endpoint if available
-                    requests.post(
-                        f"{state.base_url}/contacts/{cid}/restore",
-                        headers=_headers(state), timeout=15,
-                    )
-                    c["validation_status"] = "Valid"
-                    return "PASS", f"Contact '{email}' already exists (ID={cid}), updated", c
+        # Search both non-archived and archived contacts
+        for archived_flag in [None, "true"]:
+            params = {"search": email, "limit": 5}
+            if archived_flag:
+                params["show_archived"] = archived_flag
+            search_resp = api_get(state, "/contacts", params=params)
+            if search_resp.status_code == 200:
+                data = search_resp.json()
+                items = data.get("items", data if isinstance(data, list) else [])
+                for c in items:
+                    if c.get("email", "").lower() == email.lower():
+                        cid = c["contact_id"]
+                        # Ensure validation status is Valid
+                        api_put(state, f"/contacts/{cid}", json_data={
+                            "validation_status": "Valid",
+                        })
+                        c["validation_status"] = "Valid"
+                        return "PASS", f"Contact '{email}' already exists (ID={cid}), updated", c
         return "SKIP", f"Contact '{email}' exists but couldn't fetch ID", None
     return "FAIL", f"HTTP {resp.status_code}: {resp.text[:200]}", None
 
