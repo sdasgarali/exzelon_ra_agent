@@ -130,10 +130,16 @@ async def list_leads(
         if search_stripped.isdigit():
             query = query.filter(LeadDetails.lead_id == int(search_stripped))
         else:
+            # Find lead IDs that have contacts matching the search email
+            contact_lead_ids = db.query(LeadContactAssociation.lead_id).join(
+                ContactDetails, ContactDetails.contact_id == LeadContactAssociation.contact_id
+            ).filter(ContactDetails.email.ilike(f"%{search}%")).distinct()
+
             query = query.filter(
                 (LeadDetails.client_name.ilike(f"%{search}%")) |
                 (LeadDetails.job_title.ilike(f"%{search}%")) |
-                (LeadDetails.state.ilike(f"%{search}%"))
+                (LeadDetails.state.ilike(f"%{search}%")) |
+                (LeadDetails.lead_id.in_(contact_lead_ids))
             )
 
     total = query.count()
