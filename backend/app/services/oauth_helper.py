@@ -3,7 +3,6 @@
 Implements the OAuth2 Authorization Code flow with XOAUTH2 SASL mechanism.
 Falls back to Basic Auth (password) for non-OAuth mailboxes.
 """
-import base64
 import json
 import urllib.parse
 from datetime import datetime, timedelta
@@ -191,12 +190,15 @@ def get_valid_access_token(db, mailbox) -> str:
 
 
 def build_xoauth2_string(email: str, access_token: str) -> str:
-    """Build the base64-encoded XOAUTH2 SASL string.
+    """Build the raw XOAUTH2 SASL string (NOT base64-encoded).
 
     Format: user={email}\\x01auth=Bearer {token}\\x01\\x01
+
+    smtplib.SMTP.auth() and imaplib.IMAP4.authenticate() handle
+    the base64 encoding themselves — returning pre-encoded data
+    causes double-encoding and authentication failure.
     """
-    auth_string = f"user={email}\x01auth=Bearer {access_token}\x01\x01"
-    return base64.b64encode(auth_string.encode()).decode()
+    return f"user={email}\x01auth=Bearer {access_token}\x01\x01"
 
 
 def smtp_authenticate(server, email: str, mailbox, db) -> None:

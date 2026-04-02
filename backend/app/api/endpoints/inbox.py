@@ -376,6 +376,7 @@ def send_reply(
         subject=subject,
         body_html=data.body_html,
         body_text=data.body_text,
+        db=db,
     )
 
     if not result["success"]:

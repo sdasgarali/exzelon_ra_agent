@@ -32,12 +32,19 @@ def send_outreach_email(
     to_email: str,
     subject: str,
     body_html: str,
-    body_text: str
+    body_text: str,
+    db=None,
 ) -> Dict[str, Any]:
     """Send an outreach email using the sender mailbox's own SMTP credentials.
 
     Follows the same proven pattern as warmup peer emails.
+
+    Args:
+        db: SQLAlchemy session for OAuth token refresh. If None, creates a
+            temporary session (not recommended — token refresh may not persist
+            if the mailbox belongs to a different session).
     """
+    _own_db = False
     try:
         msg = MIMEMultipart("alternative")
         msg["From"] = f"{sender_mailbox.display_name or sender_mailbox.email} <{sender_mailbox.email}>"
@@ -53,12 +60,14 @@ def send_outreach_email(
         server = smtplib.SMTP(smtp_host, sender_mailbox.smtp_port or 587, timeout=30)
         server.starttls()
         from app.services.oauth_helper import smtp_authenticate
-        from app.db.base import SessionLocal
-        _auth_db = SessionLocal()
+        if db is None:
+            _own_db = True
+            db = SessionLocal()
         try:
-            smtp_authenticate(server, sender_mailbox.email, sender_mailbox, _auth_db)
+            smtp_authenticate(server, sender_mailbox.email, sender_mailbox, db)
         finally:
-            _auth_db.close()
+            if _own_db:
+                db.close()
         server.sendmail(sender_mailbox.email, to_email, msg.as_string())
         server.quit()
 
@@ -626,7 +635,8 @@ def run_outreach_send_pipeline(
                         to_email=contact.email,
                         subject=subject,
                         body_html=body_content,
-                        body_text=body_text
+                        body_text=body_text,
+                        db=db,
                     )
 
                     if result["success"]:
@@ -853,7 +863,8 @@ def run_outreach_for_lead(
                             to_email=contact.email,
                             subject=subject,
                             body_html=body_content,
-                            body_text=body_text
+                            body_text=body_text,
+                            db=db,
                         )
                         if result["success"]:
                             event.status = OutreachStatus.SENT

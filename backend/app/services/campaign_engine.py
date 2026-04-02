@@ -289,6 +289,7 @@ def _execute_email_step(
         subject=subject,
         body_html=body_html,
         body_text=body_text,
+        db=db,
     )
 
     if result["success"]:

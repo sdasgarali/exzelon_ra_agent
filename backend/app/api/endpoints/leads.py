@@ -1323,7 +1323,7 @@ async def run_outreach_for_lead(
         )
 
     from app.services.pipelines.outreach import run_outreach_for_lead as _run
-    result = _run(lead_id=lead_id, dry_run=dry_run, triggered_by=current_user.email)
+    result = _run(lead_id=lead_id, dry_run=dry_run, triggered_by=current_user.email, tenant_id=tenant_id)
 
     return result
 

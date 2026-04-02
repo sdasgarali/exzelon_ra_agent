@@ -8,7 +8,6 @@ Tests cover:
 - Access token retrieval with expiry logic
 - SMTP and IMAP authentication dispatch
 """
-import base64
 import json
 import pytest
 from unittest.mock import patch, MagicMock, PropertyMock
@@ -35,19 +34,22 @@ pytestmark = pytest.mark.unit
 class TestBuildXoauth2String:
     """Tests for the XOAUTH2 SASL string builder."""
 
-    def test_produces_valid_base64(self):
-        """The result must be valid base64."""
+    def test_returns_raw_sasl_string(self):
+        """The result must be the raw SASL string (NOT base64-encoded).
+
+        smtplib.SMTP.auth() and imaplib.IMAP4.authenticate() handle
+        the base64 encoding — returning pre-encoded data would cause
+        double-encoding and auth failure.
+        """
         result = build_xoauth2_string("user@example.com", "tok_abc")
-        # Should not raise
-        decoded = base64.b64decode(result).decode()
-        assert isinstance(decoded, str)
+        expected = "user=user@example.com\x01auth=Bearer tok_abc\x01\x01"
+        assert result == expected
 
     def test_contains_correct_format(self):
-        """Decoded string must follow user={email}\\x01auth=Bearer {token}\\x01\\x01."""
+        """String must follow user={email}\\x01auth=Bearer {token}\\x01\\x01."""
         result = build_xoauth2_string("alice@contoso.com", "my-access-token")
-        decoded = base64.b64decode(result).decode()
         expected = "user=alice@contoso.com\x01auth=Bearer my-access-token\x01\x01"
-        assert decoded == expected
+        assert result == expected
 
     def test_different_inputs_produce_different_output(self):
         """Sanity: different email / token combos yield distinct strings."""
