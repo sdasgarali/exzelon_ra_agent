@@ -321,12 +321,14 @@ class TestSmtpAuthenticate:
     @patch("app.services.oauth_helper.build_xoauth2_string", return_value="xoauth2-blob")
     def test_uses_xoauth2_for_oauth2_mailbox(self, mock_xoauth, mock_get_token, mock_decrypt):
         server = MagicMock()
+        server.auth.return_value = (235, b"2.7.0 Authentication successful")
         mailbox = MagicMock()
         mailbox.auth_method = "oauth2"
         db = MagicMock()
 
         smtp_authenticate(server, "user@example.com", mailbox, db)
 
+        server.ehlo_or_helo_if_needed.assert_called_once()
         mock_get_token.assert_called_once_with(db, mailbox)
         mock_xoauth.assert_called_once_with("user@example.com", "at-xyz")
         server.auth.assert_called_once()

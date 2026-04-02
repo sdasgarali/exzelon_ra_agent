@@ -4,6 +4,7 @@ Implements the OAuth2 Authorization Code flow with XOAUTH2 SASL mechanism.
 Falls back to Basic Auth (password) for non-OAuth mailboxes.
 """
 import json
+import smtplib
 import urllib.parse
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -211,10 +212,17 @@ def smtp_authenticate(server, email: str, mailbox, db) -> None:
         db: SQLAlchemy session (needed for token refresh persistence).
     """
     if getattr(mailbox, "auth_method", "password") == "oauth2":
+        # EHLO is required after STARTTLS — server.login() does this
+        # automatically, but server.auth() does NOT.  Without it the
+        # server returns 503 "Send hello first" which smtplib silently
+        # treats as success, causing sendmail to fail with 530.
+        server.ehlo_or_helo_if_needed()
         access_token = get_valid_access_token(db, mailbox)
         xoauth2_str = build_xoauth2_string(email, access_token)
         # smtplib.SMTP.auth() with XOAUTH2 mechanism
-        server.auth("XOAUTH2", lambda challenge=None: xoauth2_str)
+        code, resp = server.auth("XOAUTH2", lambda challenge=None: xoauth2_str)
+        if code != 235:
+            raise smtplib.SMTPAuthenticationError(code, resp)
         logger.debug("SMTP OAuth2 auth successful", email=email)
     else:
         plain_password = decrypt_field(mailbox.password)
