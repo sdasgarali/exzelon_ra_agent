@@ -290,6 +290,7 @@ def _execute_email_step(
         body_html=body_html,
         body_text=body_text,
         db=db,
+        unsub_url=unsub_footer.get("url", ""),
     )
 
     if result["success"]:
@@ -313,6 +314,13 @@ def _execute_email_step(
 
         # Update contact last outreach
         contact.last_outreach_date = datetime.utcnow().isoformat()
+
+        # Sync to unified inbox immediately (don't wait for scheduled job)
+        try:
+            from app.services.pipelines.outreach import _sync_sent_to_inbox
+            _sync_sent_to_inbox(db, event, contact, mailbox)
+        except Exception as e:
+            logger.warning("Campaign inbox sync failed", error=str(e))
 
         # Deal automation: log email sent + auto-advance stage
         try:

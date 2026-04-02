@@ -28,7 +28,7 @@ def inject_tracking(html_body: str, tracking_id: str, db: Session = None, tenant
         base_url = get_tenant_setting(db, "warmup_tracking_base_url", tenant_id=tenant_id, default=base_url)
 
     pixel_url = generate_tracking_pixel_url(tracking_id, base_url)
-    pixel_tag = f'<img src="{pixel_url}" width="1" height="1" style="display:none" alt="" />'
+    pixel_tag = f'<img src="{pixel_url}" width="1" height="1" alt="" border="0" />'
 
     if "</body>" in html_body:
         html_body = html_body.replace("</body>", f"{pixel_tag}</body>")

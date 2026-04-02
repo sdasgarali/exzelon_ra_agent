@@ -27,6 +27,52 @@ from app.services.outreach_draft_service import draft_outreach_email, clear_rese
 logger = structlog.get_logger()
 
 
+def _sync_sent_to_inbox(db, event: OutreachEvent, contact, mailbox: SenderMailbox) -> None:
+    """Create an InboxMessage immediately after a successful send.
+
+    This replaces reliance on the scheduled inbox_sync job (which only
+    runs every 5 min, 8am-7pm UTC) — sent emails now appear in the
+    unified inbox instantly.
+    """
+    try:
+        from app.services.inbox_syncer import compute_thread_id
+        from app.db.models.inbox_message import InboxMessage, MessageDirection
+
+        thread_id = compute_thread_id(
+            message_id=event.message_id,
+            contact_email=contact.email if contact else None,
+            subject=event.subject,
+        )
+        _tenant_id = (
+            getattr(contact, "tenant_id", None)
+            or getattr(mailbox, "tenant_id", None)
+            or event.tenant_id
+            or 1
+        )
+        msg = InboxMessage(
+            tenant_id=_tenant_id,
+            thread_id=thread_id,
+            contact_id=event.contact_id,
+            mailbox_id=event.sender_mailbox_id,
+            outreach_event_id=event.event_id,
+            campaign_id=event.campaign_id,
+            direction=MessageDirection.SENT,
+            from_email=mailbox.email if mailbox else "unknown",
+            to_email=contact.email if contact else "unknown",
+            subject=event.subject,
+            body_html=event.body_html,
+            body_text=event.body_text,
+            raw_message_id=event.message_id,
+            received_at=event.sent_at or datetime.utcnow(),
+            is_read=True,
+        )
+        db.add(msg)
+        # Don't commit here — let the caller commit as part of the batch
+    except Exception as e:
+        logger.warning("Failed to sync sent email to inbox immediately",
+                       event_id=event.event_id, error=str(e))
+
+
 def send_outreach_email(
     sender_mailbox: SenderMailbox,
     to_email: str,
@@ -34,6 +80,7 @@ def send_outreach_email(
     body_html: str,
     body_text: str,
     db=None,
+    unsub_url: str = "",
 ) -> Dict[str, Any]:
     """Send an outreach email using the sender mailbox's own SMTP credentials.
 
@@ -43,14 +90,24 @@ def send_outreach_email(
         db: SQLAlchemy session for OAuth token refresh. If None, creates a
             temporary session (not recommended — token refresh may not persist
             if the mailbox belongs to a different session).
+        unsub_url: Unsubscribe URL for List-Unsubscribe header (improves deliverability).
     """
     _own_db = False
     try:
+        sender_domain = sender_mailbox.email.split("@")[1]
         msg = MIMEMultipart("alternative")
         msg["From"] = f"{sender_mailbox.display_name or sender_mailbox.email} <{sender_mailbox.email}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_mailbox.email.split('@')[1]}>"
+        msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_domain}>"
+        msg["Reply-To"] = sender_mailbox.email
+
+        # Deliverability headers — List-Unsubscribe is required by Gmail/Outlook
+        # for bulk senders (RFC 8058). Missing this header is the #1 cause of
+        # junk folder placement for legitimate outreach.
+        if unsub_url:
+            msg["List-Unsubscribe"] = f"<{unsub_url}>, <mailto:{sender_mailbox.email}?subject=Unsubscribe>"
+            msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
 
         if body_text:
             msg.attach(MIMEText(body_text, "plain", "utf-8"))
@@ -637,6 +694,7 @@ def run_outreach_send_pipeline(
                         body_html=body_content,
                         body_text=body_text,
                         db=db,
+                        unsub_url=unsub_footer.get("url", ""),
                     )
 
                     if result["success"]:
@@ -664,6 +722,7 @@ def run_outreach_send_pipeline(
 
                 if event.status == OutreachStatus.SENT:
                     contact.last_outreach_date = datetime.now().isoformat()
+                    _sync_sent_to_inbox(db, event, contact, sending_mailbox)
 
             except Exception as e:
                 logger.error("Error sending email", error=str(e), email=contact.email)
@@ -865,6 +924,7 @@ def run_outreach_for_lead(
                             body_html=body_content,
                             body_text=body_text,
                             db=db,
+                            unsub_url=unsub_footer.get("url", ""),
                         )
                         if result["success"]:
                             event.status = OutreachStatus.SENT
@@ -917,6 +977,7 @@ def run_outreach_for_lead(
 
             if event.status == OutreachStatus.SENT:
                 contact.last_outreach_date = datetime.now().isoformat()
+                _sync_sent_to_inbox(db, event, contact, sending_mailbox)
 
         db.commit()
         logger.info("Lead outreach completed", counters=counters)
