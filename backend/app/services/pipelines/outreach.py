@@ -729,112 +729,143 @@ def run_outreach_for_lead(
                 logger.debug("Contact skipped", email=contact.email, reason=reason)
                 continue
 
-            # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
-            sending_mailbox = db.query(SenderMailbox).filter(
-                SenderMailbox.is_active == True,
-                SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-                SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
-                SenderMailbox.connection_status == "successful"
-            ).order_by(SenderMailbox.emails_sent_today.asc()).first()
+            # Get candidate mailboxes (Cold Ready or Active, under limit, successful connection)
+            failed_mailbox_ids: list = []
+            sending_mailbox = None
+            result = None
 
-            if not sending_mailbox:
-                logger.warning("No available sender mailbox with successful connection")
-                counters["skipped"] += 1
+            while True:
+                mbx_query = db.query(SenderMailbox).filter(
+                    SenderMailbox.is_active == True,
+                    SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+                    SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
+                    SenderMailbox.connection_status == "successful",
+                )
+                if failed_mailbox_ids:
+                    mbx_query = mbx_query.filter(SenderMailbox.mailbox_id.notin_(failed_mailbox_ids))
+                sending_mailbox = mbx_query.order_by(SenderMailbox.emails_sent_today.asc()).first()
+
+                if not sending_mailbox:
+                    if failed_mailbox_ids:
+                        logger.warning("All available mailboxes failed for contact", email=contact.email)
+                    else:
+                        logger.warning("No available sender mailbox with successful connection")
+                    counters["skipped"] += 1
+                    break
+
+                signature_html = ""
+                if sending_mailbox.email_signature_json:
+                    signature_html = render_signature_html(sending_mailbox.email_signature_json)
+
+                # Pre-create event to get tracking_id for unsub link
+                event = OutreachEvent(
+                    tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
+                    contact_id=contact.contact_id,
+                    lead_id=lead_id,
+                    channel=OutreachChannel.SMTP,
+                    status=OutreachStatus.SKIPPED,
+                    skip_reason="pending_send",
+                    template_id=used_template_id,
+                    sender_mailbox_id=sending_mailbox.mailbox_id,
+                )
+                db.add(event)
+                db.flush()  # Get tracking_id
+
+                # Generate unsub footer
+                unsub_footer = generate_unsub_footer(event.tracking_id)
+
+                # Use template if available, otherwise fallback to hardcoded
+                if active_template:
+                    subject, body_content, body_text = render_template(
+                        active_template, contact, lead, sending_mailbox, signature_html,
+                        unsub_url=unsub_footer["url"]
+                    )
+                    if "unsub/" not in body_content:
+                        body_content += unsub_footer["html"]
+                        body_text += unsub_footer["text"]
+                else:
+                    ai_draft = draft_outreach_email(
+                        db, contact, lead=lead, mailbox=sending_mailbox, tenant_id=tenant_id,
+                    )
+                    if ai_draft:
+                        subject, body_content, body_text = ai_draft
+                        body_content += signature_html
+                        body_content += unsub_footer["html"]
+                        body_text += unsub_footer["text"]
+                    else:
+                        body_content = f"<p>Dear {contact.first_name},</p>"
+                        body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
+                        body_content += signature_html
+                        body_content += unsub_footer["html"]
+                        subject = f"Staffing for {lead.job_title} at {lead.client_name}"
+                        body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
+                        body_text += unsub_footer["text"]
+
+                try:
+                    if dry_run:
+                        logger.info("DRY RUN - Would send to", email=contact.email, via=sending_mailbox.email)
+                        event.status = OutreachStatus.SKIPPED
+                        event.skip_reason = "dry_run"
+                        break
+                    else:
+                        result = send_outreach_email(
+                            sender_mailbox=sending_mailbox,
+                            to_email=contact.email,
+                            subject=subject,
+                            body_html=body_content,
+                            body_text=body_text
+                        )
+                        if result["success"]:
+                            event.status = OutreachStatus.SENT
+                            event.skip_reason = None
+                            counters["sent"] += 1
+                            sending_mailbox.emails_sent_today += 1
+                            sending_mailbox.total_emails_sent += 1
+                            sending_mailbox.last_sent_at = datetime.utcnow()
+                            break
+                        else:
+                            # Auth/connection failure — mark mailbox failed and try next
+                            err_str = result.get("error", "")
+                            is_auth_error = any(s in err_str for s in [
+                                "not authenticated", "Token refresh failed",
+                                "invalid_grant", "530", "535",
+                            ])
+                            if is_auth_error:
+                                logger.warning("Mailbox auth failed, marking failed and trying next",
+                                               mailbox=sending_mailbox.email)
+                                sending_mailbox.connection_status = "failed"
+                                sending_mailbox.connection_error = err_str[:500]
+                                failed_mailbox_ids.append(sending_mailbox.mailbox_id)
+                                event.status = OutreachStatus.SKIPPED
+                                event.skip_reason = f"mailbox_auth_failed:{sending_mailbox.email}"
+                                db.flush()
+                                continue  # Try next mailbox
+                            else:
+                                event.status = OutreachStatus.SKIPPED
+                                event.skip_reason = err_str
+                                counters["errors"] += 1
+                                break
+
+                except Exception as e:
+                    logger.error("Error sending to contact", error=str(e), email=contact.email)
+                    event.status = OutreachStatus.SKIPPED
+                    event.skip_reason = str(e)
+                    counters["errors"] += 1
+                    break
+
+            # If we broke out without a mailbox (skipped), continue to next contact
+            if sending_mailbox is None:
                 continue
 
-            signature_html = ""
-            if sending_mailbox.email_signature_json:
-                signature_html = render_signature_html(sending_mailbox.email_signature_json)
+            # Update event with email content
+            event.subject = subject
+            event.body_html = body_content
+            event.body_text = body_text
+            if result and result.get("success"):
+                event.message_id = result["message_id"]
 
-            # Pre-create event to get tracking_id for unsub link
-            event = OutreachEvent(
-                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
-                contact_id=contact.contact_id,
-                lead_id=lead_id,
-                channel=OutreachChannel.SMTP,
-                status=OutreachStatus.SKIPPED,
-                skip_reason="pending_send",
-                template_id=used_template_id,
-                sender_mailbox_id=sending_mailbox.mailbox_id,
-            )
-            db.add(event)
-            db.flush()  # Get tracking_id
-
-            # Generate unsub footer
-            unsub_footer = generate_unsub_footer(event.tracking_id)
-
-            # Use template if available, otherwise fallback to hardcoded
-            if active_template:
-                subject, body_content, body_text = render_template(
-                    active_template, contact, lead, sending_mailbox, signature_html,
-                    unsub_url=unsub_footer["url"]
-                )
-                # Append unsub footer if template doesn't include {{unsubscribe_link}}
-                if "unsub/" not in body_content:
-                    body_content += unsub_footer["html"]
-                    body_text += unsub_footer["text"]
-            else:
-                # Try AI-personalized draft first
-                ai_draft = draft_outreach_email(
-                    db, contact, lead=lead, mailbox=sending_mailbox, tenant_id=tenant_id,
-                )
-                if ai_draft:
-                    subject, body_content, body_text = ai_draft
-                    body_content += signature_html
-                    body_content += unsub_footer["html"]
-                    body_text += unsub_footer["text"]
-                else:
-                    # Hardcoded fallback (original)
-                    body_content = f"<p>Dear {contact.first_name},</p>"
-                    body_content += f"<p>We noticed {lead.client_name} is hiring for {lead.job_title} and wanted to reach out about our staffing solutions.</p>"
-                    body_content += signature_html
-                    body_content += unsub_footer["html"]
-
-                    subject = f"Staffing for {lead.job_title} at {lead.client_name}"
-                    body_text = f"Dear {contact.first_name},\nWe noticed {lead.client_name} is hiring for {lead.job_title}..."
-                    body_text += unsub_footer["text"]
-
-            try:
-                if dry_run:
-                    logger.info("DRY RUN - Would send to", email=contact.email, via=sending_mailbox.email)
-                    event.status = OutreachStatus.SKIPPED
-                    event.skip_reason = "dry_run"
-                else:
-                    result = send_outreach_email(
-                        sender_mailbox=sending_mailbox,
-                        to_email=contact.email,
-                        subject=subject,
-                        body_html=body_content,
-                        body_text=body_text
-                    )
-                    if result["success"]:
-                        event.status = OutreachStatus.SENT
-                        event.skip_reason = None
-                        counters["sent"] += 1
-                        # Update mailbox counters
-                        sending_mailbox.emails_sent_today += 1
-                        sending_mailbox.total_emails_sent += 1
-                        sending_mailbox.last_sent_at = datetime.utcnow()
-                    else:
-                        event.status = OutreachStatus.SKIPPED
-                        event.skip_reason = result.get("error", "Unknown error")
-                        counters["errors"] += 1
-
-                # Update event with email content
-                event.subject = subject
-                event.body_html = body_content
-                event.body_text = body_text
-                if not dry_run and result.get("success"):
-                    event.message_id = result["message_id"]
-
-                if event.status == OutreachStatus.SENT:
-                    contact.last_outreach_date = datetime.now().isoformat()
-
-            except Exception as e:
-                logger.error("Error sending to contact", error=str(e), email=contact.email)
-                event.status = OutreachStatus.SKIPPED
-                event.skip_reason = str(e)
-                counters["errors"] += 1
+            if event.status == OutreachStatus.SENT:
+                contact.last_outreach_date = datetime.now().isoformat()
 
         db.commit()
         logger.info("Lead outreach completed", counters=counters)
