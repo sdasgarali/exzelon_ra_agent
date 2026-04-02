@@ -6,7 +6,7 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.db.models.inbox_message import InboxMessage, MessageDirection
-from app.db.models.outreach import OutreachEvent, OutreachStatus
+from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox
 
@@ -27,7 +27,7 @@ def compute_thread_id(message_id: str = None, in_reply_to: str = None, contact_e
     return hashlib.md5(key.encode()).hexdigest()[:20]
 
 
-def sync_inbox(db: Session) -> Dict[str, Any]:
+def sync_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
     """Sync outreach events into inbox_messages table.
 
     Creates InboxMessage(direction=SENT) for OutreachEvents missing inbox records.
@@ -36,8 +36,10 @@ def sync_inbox(db: Session) -> Dict[str, Any]:
     results = {"sent_synced": 0, "replies_synced": 0, "errors": 0}
 
     # 1. Sync sent outreach events that don't have inbox records yet
+    #    Exclude mailmerge events (CSV exports, not real email sends)
     sent_events = db.query(OutreachEvent).filter(
         OutreachEvent.status == OutreachStatus.SENT,
+        OutreachEvent.channel != OutreachChannel.MAILMERGE,
         ~OutreachEvent.event_id.in_(
             db.query(InboxMessage.outreach_event_id).filter(
                 InboxMessage.outreach_event_id.isnot(None)
@@ -214,6 +216,6 @@ def sync_inbox(db: Session) -> Dict[str, Any]:
     return results
 
 
-def backfill_inbox(db: Session) -> Dict[str, Any]:
+def backfill_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
     """One-time migration: populate inbox from all existing outreach events."""
-    return sync_inbox(db)
+    return sync_inbox(db, tenant_id=tenant_id)

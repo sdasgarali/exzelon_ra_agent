@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import structlog
+from sqlalchemy import func as sa_func
 
 from app.db.base import SessionLocal
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES, is_closed_status
@@ -170,12 +171,35 @@ def render_template(template, contact, lead, mailbox, signature_html, logo_url="
     return subject, body_html, body_text
 
 
-def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
+def resolve_business_rules(db, tenant_id: Optional[int] = None) -> dict:
+    """Resolve business rules from DB settings table, falling back to config.py defaults.
+
+    This ensures UI-configured settings (Settings page) are respected at runtime.
+    """
+    from app.core.settings_resolver import get_tenant_setting
+    cooldown = get_tenant_setting(db, 'cooldown_days', tenant_id=tenant_id, default=None)
+    max_contacts = get_tenant_setting(db, 'max_contacts_per_company_job', tenant_id=tenant_id, default=None)
+    daily_limit = get_tenant_setting(db, 'daily_send_limit', tenant_id=tenant_id, default=None)
+    return {
+        'cooldown_days': int(cooldown) if cooldown is not None else settings.COOLDOWN_DAYS,
+        'max_contacts_per_company_job': int(max_contacts) if max_contacts is not None else settings.MAX_CONTACTS_PER_COMPANY_PER_JOB,
+        'daily_send_limit': int(daily_limit) if daily_limit is not None else settings.DAILY_SEND_LIMIT,
+    }
+
+
+def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional[dict] = None) -> tuple[bool, str]:
     """
     Check if a contact is eligible for outreach.
 
+    Args:
+        business_rules: Pre-resolved dict with cooldown_days, max_contacts_per_company_job.
+                        If None, falls back to config.py defaults.
+
     Returns (eligible, reason)
     """
+    cooldown_days = business_rules['cooldown_days'] if business_rules else settings.COOLDOWN_DAYS
+    max_contacts = business_rules['max_contacts_per_company_job'] if business_rules else settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+
     # Check contact-level outreach status first
     from app.db.models.contact import OutreachStatus as ContactOutreachStatus
     if hasattr(contact, 'outreach_status') and contact.outreach_status:
@@ -204,7 +228,7 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
             return False, "Email not validated or invalid"
 
     # Check cooldown period for this specific contact
-    cooldown_date = datetime.utcnow() - timedelta(days=settings.COOLDOWN_DAYS)
+    cooldown_date = datetime.utcnow() - timedelta(days=cooldown_days)
     recent_outreach = db.query(OutreachEvent).filter(
         OutreachEvent.contact_id == contact.contact_id,
         OutreachEvent.sent_at >= cooldown_date,
@@ -213,21 +237,25 @@ def check_send_eligibility(db, contact: ContactDetails) -> tuple[bool, str]:
     if recent_outreach:
         return False, f"Cooldown: sent on {recent_outreach.sent_at.date()}"
 
-    # Check per-lead contact limit (only contacts linked to the same lead)
+    # Check per-lead contact limit (distinct contacts per lead, not total sends)
     if contact.lead_id:
-        lead_contacts_sent = db.query(OutreachEvent).join(ContactDetails).filter(
+        lead_contacts_sent = db.query(
+            sa_func.count(sa_func.distinct(OutreachEvent.contact_id))
+        ).join(ContactDetails).filter(
             ContactDetails.lead_id == contact.lead_id,
             OutreachEvent.status == OutreachStatus.SENT
-        ).count()
-        if lead_contacts_sent >= settings.MAX_CONTACTS_PER_COMPANY_PER_JOB:
-            return False, f"Max contacts per lead reached ({lead_contacts_sent}/{settings.MAX_CONTACTS_PER_COMPANY_PER_JOB})"
+        ).scalar() or 0
+        if lead_contacts_sent >= max_contacts:
+            return False, f"Max contacts per lead reached ({lead_contacts_sent}/{max_contacts})"
     else:
         # Fallback for legacy contacts without lead_id
-        company_contacts_sent = db.query(OutreachEvent).join(ContactDetails).filter(
+        company_contacts_sent = db.query(
+            sa_func.count(sa_func.distinct(OutreachEvent.contact_id))
+        ).join(ContactDetails).filter(
             ContactDetails.client_name == contact.client_name,
             OutreachEvent.status == OutreachStatus.SENT
-        ).count()
-        if company_contacts_sent >= settings.MAX_CONTACTS_PER_COMPANY_PER_JOB:
+        ).scalar() or 0
+        if company_contacts_sent >= max_contacts:
             return False, "Max contacts per company reached"
 
     return True, "Eligible"
@@ -278,6 +306,9 @@ def run_outreach_mailmerge_pipeline(
     try:
         logger.info("Starting mailmerge export", lead_ids=lead_ids)
 
+        # Resolve business rules from DB settings (once, not per-contact)
+        biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
+
         # Get validated contacts, optionally filtered by lead_ids
         query = db.query(ContactDetails).filter(
             ContactDetails.validation_status == "valid",
@@ -295,7 +326,7 @@ def run_outreach_mailmerge_pipeline(
 
         eligible_contacts = []
         for contact in contacts:
-            eligible, reason = check_send_eligibility(db, contact)
+            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
             if eligible:
                 eligible_contacts.append(contact)
                 counters["eligible"] += 1
@@ -384,6 +415,9 @@ COMPLIANCE NOTES:
                 channel=OutreachChannel.MAILMERGE,
                 status=OutreachStatus.SENT,
                 skip_reason=None,
+                subject=f"Mail Merge Export — {contact.client_name or 'Contact'}",
+                body_text=f"Exported for mail merge to {contact.first_name or ''} {contact.last_name or ''} ({contact.email}) at {contact.client_name or 'N/A'}",
+                body_html=f"<p>Exported for mail merge to {contact.first_name or ''} {contact.last_name or ''} ({contact.email}) at {contact.client_name or 'N/A'}</p>",
             )
             db.add(event)
 
@@ -446,6 +480,9 @@ def run_outreach_send_pipeline(
         logger.info("Starting outreach send", dry_run=dry_run, limit=limit)
         clear_research_cache()
 
+        # Resolve business rules from DB settings (once, not per-contact)
+        biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
+
         # Check daily limit
         today = datetime.utcnow().date()
         today_sent = db.query(OutreachEvent).filter(
@@ -454,7 +491,7 @@ def run_outreach_send_pipeline(
             OutreachEvent.channel != OutreachChannel.MAILMERGE
         ).count()
 
-        remaining_limit = min(limit, settings.DAILY_SEND_LIMIT - today_sent)
+        remaining_limit = min(limit, biz_rules['daily_send_limit'] - today_sent)
         if remaining_limit <= 0:
             logger.info("Daily send limit reached")
             job_run.status = JobStatus.COMPLETED
@@ -489,7 +526,7 @@ def run_outreach_send_pipeline(
             if sent_count >= remaining_limit:
                 break
 
-            eligible, reason = check_send_eligibility(db, contact)
+            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
             if not eligible:
                 counters["skipped"] += 1
                 if "cooldown" in reason.lower():
@@ -690,6 +727,9 @@ def run_outreach_for_lead(
         logger.info("Starting outreach for lead", lead_id=lead_id, dry_run=dry_run)
         clear_research_cache()
 
+        # Resolve business rules from DB settings (once, not per-contact)
+        biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
+
         lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
         if not lead:
             return {"error": "Lead not found", "lead_id": lead_id}
@@ -723,7 +763,7 @@ def run_outreach_for_lead(
         used_template_id = active_template.template_id if active_template else None
 
         for contact in contacts:
-            eligible, reason = check_send_eligibility(db, contact)
+            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
             if not eligible:
                 counters["skipped"] += 1
                 logger.debug("Contact skipped", email=contact.email, reason=reason)
