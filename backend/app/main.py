@@ -226,11 +226,31 @@ def _seed_deal_stages():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
+
+    # Use MySQL advisory lock to serialize migrations across workers
+    _migration_lock_conn = None
+    _got_lock = False
+    if settings.DB_TYPE == "mysql":
+        try:
+            from sqlalchemy import text as _lock_text
+            _migration_lock_conn = engine.connect()
+            result = _migration_lock_conn.execute(_lock_text("SELECT GET_LOCK('exzelon_migration', 30)"))
+            _got_lock = result.scalar() == 1
+            if _got_lock:
+                logger.info("Acquired migration lock")
+            else:
+                logger.info("Migration lock held by another worker, waiting...")
+                # Try once more with longer timeout
+                result = _migration_lock_conn.execute(_lock_text("SELECT GET_LOCK('exzelon_migration', 60)"))
+                _got_lock = result.scalar() == 1
+        except Exception as lock_err:
+            logger.warning(f"Advisory lock not available: {lock_err}")
+
     try:
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         # With multiple workers, race conditions can cause "table already exists" errors
-        if "already exists" in str(e):
+        if "already exists" in str(e) or "1684" in str(e) or "being modified" in str(e):
             logger.warning("Table creation race condition (harmless)", error=str(e))
         else:
             raise
@@ -1213,6 +1233,21 @@ async def lifespan(app: FastAPI):
             _demo_db.close()
     except Exception as e:
         logger.warning(f"Demo data seeding: {e}")
+
+    # Release MySQL advisory lock after migrations complete
+    if _migration_lock_conn and _got_lock:
+        try:
+            from sqlalchemy import text as _unlock_text
+            _migration_lock_conn.execute(_unlock_text("SELECT RELEASE_LOCK('exzelon_migration')"))
+            _migration_lock_conn.close()
+            logger.info("Released migration lock")
+        except Exception as unlock_err:
+            logger.warning(f"Failed to release migration lock: {unlock_err}")
+    elif _migration_lock_conn:
+        try:
+            _migration_lock_conn.close()
+        except Exception:
+            pass
 
     # Start warmup scheduler — only ONE worker should run it.
     # Use a file lock so that in multi-worker deployments (e.g. 4 uvicorn workers),
