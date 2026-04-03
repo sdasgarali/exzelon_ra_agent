@@ -260,7 +260,10 @@ async def get_mailbox_stats(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get mailbox statistics."""
-    mailboxes = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).all()
+    mailboxes = tenant_filter(
+        db.query(SenderMailbox).filter(SenderMailbox.is_archived == False),
+        SenderMailbox, tenant_id
+    ).all()
 
     total = len(mailboxes)
     active = sum(1 for m in mailboxes if m.is_active)
@@ -397,6 +400,13 @@ async def update_mailbox(
             detail="Mailbox not found"
         )
 
+    # Archived mailboxes cannot be edited — restore them first
+    if mailbox.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot edit an archived mailbox. A Super Admin must restore it first."
+        )
+
     # Update fields if provided
     update_data = mailbox_in.model_dump(exclude_unset=True)
 
@@ -440,6 +450,74 @@ async def delete_mailbox(
     db.commit()
 
     return {"message": f"Mailbox {mailbox.email} archived successfully"}
+
+
+@router.post("/{mailbox_id}/restore")
+async def restore_mailbox(
+    mailbox_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Restore an archived mailbox and activate it (Super Admin only).
+
+    Archived and active are mutually exclusive:
+    restoring sets is_archived=False, is_active=True.
+    """
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
+    if not mailbox:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mailbox not found"
+        )
+    if not mailbox.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mailbox is not archived"
+        )
+
+    mailbox.is_archived = False
+    mailbox.is_active = True
+    db.commit()
+
+    return {"message": f"Mailbox {mailbox.email} restored and activated successfully"}
+
+
+@router.delete("/{mailbox_id}/permanent")
+async def permanent_delete_mailbox(
+    mailbox_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Permanently delete a mailbox (Super Admin only).
+
+    Only archived mailboxes can be permanently deleted.
+    This action is irreversible.
+    """
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
+    if not mailbox:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mailbox not found"
+        )
+    if not mailbox.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only archived mailboxes can be permanently deleted. Archive it first."
+        )
+
+    email = mailbox.email
+    db.delete(mailbox)
+    db.commit()
+
+    return {"message": f"Mailbox {email} permanently deleted"}
 
 
 def _test_smtp_sync(smtp_host: str, smtp_port: int, email: str, password: str = None, mailbox=None, db=None) -> tuple[bool, str]:

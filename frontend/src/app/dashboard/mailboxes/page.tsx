@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { mailboxesApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import { useToast } from '@/components/toast'
 
 interface Mailbox {
@@ -15,6 +16,7 @@ interface Mailbox {
   imap_port: number
   warmup_status: string
   is_active: boolean
+  is_archived: boolean
   daily_send_limit: number
   emails_sent_today: number
   total_emails_sent: number
@@ -118,6 +120,7 @@ type SortDir = 'asc' | 'desc'
 
 export default function MailboxesPage() {
   const { toast } = useToast()
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [stats, setStats] = useState<MailboxStats | null>(null)
   const [showArchived, setShowArchived] = useState(false)
@@ -432,7 +435,29 @@ export default function MailboxesPage() {
       await mailboxesApi.delete(id)
       fetchData()
     } catch (error: any) {
-      toast('error', error.response?.data?.detail || 'Failed to delete mailbox')
+      toast('error', error.response?.data?.detail || 'Failed to archive mailbox')
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    if (!confirm('Restore this mailbox? It will be unarchived and activated.')) return
+    try {
+      await mailboxesApi.restore(id)
+      toast('success', 'Mailbox restored and activated')
+      fetchData()
+    } catch (error: any) {
+      toast('error', error.response?.data?.detail || 'Failed to restore mailbox')
+    }
+  }
+
+  const handlePermanentDelete = async (id: number) => {
+    if (!confirm('PERMANENTLY DELETE this mailbox? This action is irreversible and all data will be lost.')) return
+    try {
+      await mailboxesApi.permanentDelete(id)
+      toast('success', 'Mailbox permanently deleted')
+      fetchData()
+    } catch (error: any) {
+      toast('error', error.response?.data?.detail || 'Failed to permanently delete mailbox')
     }
   }
 
@@ -926,11 +951,26 @@ export default function MailboxesPage() {
                   )}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                  <button onClick={() => handleTestConnection(mailbox.mailbox_id)} disabled={testingId === mailbox.mailbox_id} className="text-green-600 hover:text-green-900 disabled:opacity-50">
-                    {testingId === mailbox.mailbox_id ? 'Testing...' : 'Test'}
-                  </button>
-                  <button onClick={() => handleEdit(mailbox)} className="text-blue-600 hover:text-blue-900">Edit</button>
-                  <button onClick={() => handleDelete(mailbox.mailbox_id)} className="text-red-600 hover:text-red-900">Archive</button>
+                  {showArchived ? (
+                    /* Archived view: Super Admin gets Restore + Permanent Delete */
+                    isSuperAdmin ? (
+                      <>
+                        <button onClick={() => handleRestore(mailbox.mailbox_id)} className="text-green-600 hover:text-green-900">Restore</button>
+                        <button onClick={() => handlePermanentDelete(mailbox.mailbox_id)} className="text-red-600 hover:text-red-900">Delete Permanently</button>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 text-xs">Super Admin required</span>
+                    )
+                  ) : (
+                    /* Active view: normal actions */
+                    <>
+                      <button onClick={() => handleTestConnection(mailbox.mailbox_id)} disabled={testingId === mailbox.mailbox_id} className="text-green-600 hover:text-green-900 disabled:opacity-50">
+                        {testingId === mailbox.mailbox_id ? 'Testing...' : 'Test'}
+                      </button>
+                      <button onClick={() => handleEdit(mailbox)} className="text-blue-600 hover:text-blue-900">Edit</button>
+                      <button onClick={() => handleDelete(mailbox.mailbox_id)} className="text-red-600 hover:text-red-900">Archive</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

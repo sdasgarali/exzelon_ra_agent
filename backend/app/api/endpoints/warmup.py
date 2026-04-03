@@ -107,7 +107,10 @@ async def get_warmup_status(
     Returns all mailboxes with their warmup status and enterprise metrics.
     """
     config = load_warmup_config(db)
-    q = db.query(SenderMailbox).filter(SenderMailbox.connection_status == "successful")
+    q = db.query(SenderMailbox).filter(
+        SenderMailbox.connection_status == "successful",
+        SenderMailbox.is_archived == False,
+    )
     if tenant_id is not None:
         q = q.filter(SenderMailbox.tenant_id == tenant_id)
     mailboxes = q.order_by(SenderMailbox.email).all()
@@ -303,7 +306,8 @@ async def get_health_scores(
     """Get health scores for all mailboxes."""
     config = load_warmup_config(db)
     q = db.query(SenderMailbox).filter(
-        SenderMailbox.connection_status == "successful"
+        SenderMailbox.connection_status == "successful",
+        SenderMailbox.is_archived == False,
     )
     if tenant_id is not None:
         q = q.filter(SenderMailbox.tenant_id == tenant_id)

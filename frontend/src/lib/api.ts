@@ -397,6 +397,13 @@ export const mailboxesApi = {
   delete: async (id: number) => {
     await api.delete(`/mailboxes/${id}`)
   },
+  restore: async (id: number) => {
+    const response = await api.post(`/mailboxes/${id}/restore`)
+    return response.data
+  },
+  permanentDelete: async (id: number) => {
+    await api.delete(`/mailboxes/${id}/permanent`)
+  },
   stats: async () => {
     const response = await api.get('/mailboxes/stats')
     return response.data

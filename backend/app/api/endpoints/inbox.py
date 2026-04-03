@@ -103,19 +103,35 @@ def list_threads(
         unread_count_query = tenant_filter(unread_count_query, InboxMessage, tenant_id)
         unread_count = unread_count_query.count()
 
-        # Get contact info — try DB contact first, then infer from received messages
-        contact_name = latest_msg.from_email
-        if latest_msg.contact_id:
+        # Get contact info — always show the "other party" in the conversation,
+        # not the app's own mailbox email.
+        contact_name = None
+
+        # 1. Try DB contact first (most reliable source of display name)
+        _contact_id = latest_msg.contact_id
+        if not _contact_id:
+            # Check any message in the thread for a contact_id
+            any_msg_with_contact = db.query(InboxMessage.contact_id).filter(
+                InboxMessage.thread_id == thread_id,
+                InboxMessage.contact_id.isnot(None),
+            ).first()
+            if any_msg_with_contact:
+                _contact_id = any_msg_with_contact[0]
+
+        if _contact_id:
             contact_query = db.query(ContactDetails).filter(
-                ContactDetails.contact_id == latest_msg.contact_id
+                ContactDetails.contact_id == _contact_id
             )
             contact_query = tenant_filter(contact_query, ContactDetails, tenant_id)
             contact = contact_query.first()
             if contact:
-                contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or latest_msg.from_email
-        else:
-            # For threads without contact_id, use the external email as contact identifier
-            # Find the first received message to get the external sender's email
+                full_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+                if full_name:
+                    contact_name = full_name
+
+        # 2. If no name from contact, determine the "other party" email
+        if not contact_name:
+            # Check for received messages — the external sender
             received_msg_query = db.query(InboxMessage).filter(
                 InboxMessage.thread_id == thread_id,
                 InboxMessage.direction == MessageDirection.RECEIVED,
@@ -125,7 +141,7 @@ def list_threads(
             if received_msg:
                 contact_name = received_msg.from_email
             else:
-                # Sent-only thread — use the recipient
+                # Sent-only thread — use the RECIPIENT (to_email), not the sender
                 sent_msg_query = db.query(InboxMessage).filter(
                     InboxMessage.thread_id == thread_id,
                     InboxMessage.direction == MessageDirection.SENT,
@@ -134,6 +150,10 @@ def list_threads(
                 sent_msg = sent_msg_query.first()
                 if sent_msg:
                     contact_name = sent_msg.to_email
+
+        # 3. Final fallback
+        if not contact_name:
+            contact_name = latest_msg.to_email if latest_msg.direction == MessageDirection.SENT else latest_msg.from_email
 
         # Get category/sentiment/snippet from latest RECEIVED message (not sent)
         latest_received_query = db.query(InboxMessage).filter(

@@ -1,4 +1,5 @@
 """Outreach pipeline service."""
+import imaplib
 import json
 import os
 import smtplib
@@ -6,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import structlog
@@ -73,6 +75,59 @@ def _sync_sent_to_inbox(db, event: OutreachEvent, contact, mailbox: SenderMailbo
                        event_id=event.event_id, error=str(e))
 
 
+def _get_sent_folder_name(imap_host: str) -> str:
+    """Return the IMAP Sent folder name based on provider.
+
+    Office 365 / Outlook uses "Sent Items".
+    Gmail uses "[Gmail]/Sent Mail".
+    Generic IMAP servers typically use "Sent".
+    """
+    host = (imap_host or "").lower()
+    if "outlook" in host or "office365" in host or "microsoft" in host:
+        return "Sent Items"
+    if "gmail" in host or "google" in host:
+        return "[Gmail]/Sent Mail"
+    return "Sent"
+
+
+def _save_to_imap_sent(sender_mailbox: SenderMailbox, msg_bytes: bytes, db) -> None:
+    """Save a copy of a sent email to the mailbox's IMAP Sent folder.
+
+    This ensures sent outreach emails appear in the user's actual
+    Outlook/Gmail Sent Items. Without this, SMTP-only sends are invisible
+    in external mail clients.
+    """
+    imap_host = sender_mailbox.imap_host or "outlook.office365.com"
+    imap_port = sender_mailbox.imap_port or 993
+    sent_folder = _get_sent_folder_name(imap_host)
+
+    try:
+        from app.services.oauth_helper import imap_authenticate
+        imap = imaplib.IMAP4_SSL(imap_host, imap_port)
+        imap_authenticate(imap, sender_mailbox.email, sender_mailbox, db)
+
+        # APPEND to Sent folder with \Seen flag so it shows as read
+        status, response = imap.append(
+            sent_folder,
+            "\\Seen",
+            imaplib.Time2Internaldate(datetime.utcnow()),
+            msg_bytes,
+        )
+        if status != "OK":
+            logger.warning("IMAP APPEND to Sent folder failed",
+                           mailbox=sender_mailbox.email, folder=sent_folder,
+                           status=status, response=str(response))
+        else:
+            logger.debug("Saved sent email to IMAP Sent folder",
+                         mailbox=sender_mailbox.email, folder=sent_folder)
+        imap.logout()
+    except Exception as e:
+        # Non-fatal — the email was already sent successfully via SMTP.
+        # Log the error but don't fail the overall send operation.
+        logger.warning("Failed to save sent email to IMAP Sent folder",
+                       mailbox=sender_mailbox.email, error=str(e))
+
+
 def send_outreach_email(
     sender_mailbox: SenderMailbox,
     to_email: str,
@@ -85,6 +140,8 @@ def send_outreach_email(
     """Send an outreach email using the sender mailbox's own SMTP credentials.
 
     Follows the same proven pattern as warmup peer emails.
+    After sending, saves a copy to the IMAP Sent folder so the email
+    appears in the user's actual Outlook/Gmail.
 
     Args:
         db: SQLAlchemy session for OAuth token refresh. If None, creates a
@@ -101,6 +158,7 @@ def send_outreach_email(
         msg["Subject"] = subject
         msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_domain}>"
         msg["Reply-To"] = sender_mailbox.email
+        msg["Date"] = formatdate(localtime=True)
 
         # Deliverability headers — List-Unsubscribe is required by Gmail/Outlook
         # for bulk senders (RFC 8058). Missing this header is the #1 cause of
@@ -125,8 +183,20 @@ def send_outreach_email(
         finally:
             if _own_db:
                 db.close()
-        server.sendmail(sender_mailbox.email, to_email, msg.as_string())
+        msg_string = msg.as_string()
+        server.sendmail(sender_mailbox.email, to_email, msg_string)
         server.quit()
+
+        # Save to IMAP Sent folder so the email appears in Outlook/Gmail
+        if db and not _own_db:
+            _save_to_imap_sent(sender_mailbox, msg_string.encode(), db)
+        else:
+            # If we don't have a persistent db session, create one for IMAP save
+            _imap_db = SessionLocal()
+            try:
+                _save_to_imap_sent(sender_mailbox, msg_string.encode(), _imap_db)
+            finally:
+                _imap_db.close()
 
         return {"success": True, "message_id": msg["Message-ID"], "error": None}
     except Exception as e:
