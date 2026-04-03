@@ -28,6 +28,7 @@ interface JobSourceConfig {
   company_size_priority_1_max: number
   company_size_priority_2_min: number
   company_size_priority_2_max: number
+  company_size_no_preference: boolean
   exclude_it_keywords: string[]
   exclude_staffing_keywords: string[]
   theirstack_api_key: string
@@ -150,7 +151,8 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
 
 // Tab ID to permission key mapping
 const TAB_PERM_MAP: Record<string, string> = {
-  jobsources: 'job_sources',
+  jobfilters: 'job_filters',
+  jobsourceapis: 'job_source_apis',
   ai: 'ai_llm',
   contacts: 'contacts',
   validation: 'validation',
@@ -160,12 +162,17 @@ const TAB_PERM_MAP: Record<string, string> = {
 
 // Setting key to tab mapping (for All Settings filtering)
 const SETTING_TAB_MAP: Record<string, string> = {
-  job_source_provider: 'job_sources', jsearch_api_key: 'job_sources', indeed_publisher_id: 'job_sources',
-  apollo_api_key: 'job_sources', lead_sources: 'job_sources', enabled_sources: 'job_sources',
-  target_states: 'job_sources', available_job_titles: 'job_sources', target_job_titles: 'job_sources',
-  target_industries: 'job_sources', company_size_priority_1_max: 'job_sources',
-  company_size_priority_2_min: 'job_sources', company_size_priority_2_max: 'job_sources',
-  exclude_it_keywords: 'job_sources', exclude_staffing_keywords: 'job_sources',
+  target_states: 'job_filters', available_job_titles: 'job_filters', target_job_titles: 'job_filters',
+  target_industries: 'job_filters', company_size_priority_1_max: 'job_filters',
+  company_size_priority_2_min: 'job_filters', company_size_priority_2_max: 'job_filters',
+  company_size_no_preference: 'job_filters',
+  exclude_it_keywords: 'job_filters', exclude_staffing_keywords: 'job_filters',
+  job_source_provider: 'job_source_apis', jsearch_api_key: 'job_source_apis', indeed_publisher_id: 'job_source_apis',
+  apollo_api_key: 'job_source_apis', lead_sources: 'job_source_apis', enabled_sources: 'job_source_apis',
+  theirstack_api_key: 'job_source_apis', serpapi_api_key: 'job_source_apis',
+  adzuna_app_id: 'job_source_apis', adzuna_api_key: 'job_source_apis',
+  searchapi_api_key: 'job_source_apis', usajobs_api_key: 'job_source_apis', usajobs_email: 'job_source_apis',
+  jooble_api_key: 'job_source_apis', jobdatafeeds_api_key: 'job_source_apis', coresignal_api_key: 'job_source_apis',
   ai_provider: 'ai_llm', groq_api_key: 'ai_llm', openai_api_key: 'ai_llm',
   anthropic_api_key: 'ai_llm', gemini_api_key: 'ai_llm', ai_model: 'ai_llm',
   contact_provider: 'contacts', contact_providers: 'contacts', seamless_api_key: 'contacts',
@@ -222,6 +229,7 @@ export default function SettingsPage() {
     company_size_priority_1_max: 50,
     company_size_priority_2_min: 51,
     company_size_priority_2_max: 500,
+    company_size_no_preference: false,
     exclude_it_keywords: DEFAULT_IT_EXCLUSIONS,
     exclude_staffing_keywords: DEFAULT_STAFFING_EXCLUSIONS,
     theirstack_api_key: '',
@@ -323,21 +331,21 @@ export default function SettingsPage() {
       setPermissionsLoaded(true)
 
       // Set initial active tab to the first accessible tab
-      const tabOrder = ['jobsources', 'ai', 'contacts', 'validation', 'outreach', 'business']
+      const tabOrder = ['jobfilters', 'jobsourceapis', 'ai', 'contacts', 'validation', 'outreach', 'business']
       const firstAccessible = tabOrder.find(tabId => {
         const permKey = TAB_PERM_MAP[tabId]
         return perms[permKey] && perms[permKey] !== 'no_access'
       })
-      setActiveTab(firstAccessible || 'jobsources')
+      setActiveTab(firstAccessible || 'jobfilters')
 
       // Now fetch settings
       await fetchSettings()
     } catch {
       // If permissions endpoint fails, default to super_admin-like access for backwards compat
-      const defaultPerms = { job_sources: 'full', ai_llm: 'full', contacts: 'full', validation: 'full', outreach: 'full', business_rules: 'full' }
+      const defaultPerms = { job_filters: 'full', job_source_apis: 'full', ai_llm: 'full', contacts: 'full', validation: 'full', outreach: 'full', business_rules: 'full' }
       setTabPermissions(defaultPerms)
       setPermissionsLoaded(true)
-      setActiveTab('jobsources')
+      setActiveTab('jobfilters')
       await fetchSettings()
     }
   }
@@ -398,6 +406,7 @@ export default function SettingsPage() {
         company_size_priority_1_max: settingsMap.company_size_priority_1_max ?? 50,
         company_size_priority_2_min: settingsMap.company_size_priority_2_min ?? 51,
         company_size_priority_2_max: settingsMap.company_size_priority_2_max ?? 500,
+        company_size_no_preference: settingsMap.company_size_no_preference === true,
         exclude_it_keywords: settingsMap.exclude_it_keywords || DEFAULT_IT_EXCLUSIONS,
         exclude_staffing_keywords: settingsMap.exclude_staffing_keywords || DEFAULT_STAFFING_EXCLUSIONS,
         theirstack_api_key: settingsMap.theirstack_api_key || '',
@@ -499,14 +508,8 @@ export default function SettingsPage() {
       setError('')
       setSuccess('')
 
-      if (configType === 'jobsources') {
+      if (configType === 'jobfilters') {
         await Promise.all([
-          saveSetting('job_source_provider', jobSourceConfig.job_source_provider),
-          saveSetting('jsearch_api_key', jobSourceConfig.jsearch_api_key),
-          saveSetting('indeed_publisher_id', jobSourceConfig.indeed_publisher_id),
-          saveSetting('apollo_api_key', jobSourceConfig.apollo_api_key),
-          saveSetting('lead_sources', jobSourceConfig.lead_sources, 'list'),
-          saveSetting('enabled_sources', jobSourceConfig.enabled_sources, 'list'),
           saveSetting('target_states', jobSourceConfig.target_states, 'list'),
           saveSetting('available_job_titles', jobSourceConfig.available_job_titles, 'list'),
           saveSetting('target_job_titles', jobSourceConfig.target_job_titles, 'list'),
@@ -514,8 +517,18 @@ export default function SettingsPage() {
           saveSetting('company_size_priority_1_max', jobSourceConfig.company_size_priority_1_max, 'integer'),
           saveSetting('company_size_priority_2_min', jobSourceConfig.company_size_priority_2_min, 'integer'),
           saveSetting('company_size_priority_2_max', jobSourceConfig.company_size_priority_2_max, 'integer'),
+          saveSetting('company_size_no_preference', jobSourceConfig.company_size_no_preference, 'boolean'),
           saveSetting('exclude_it_keywords', jobSourceConfig.exclude_it_keywords, 'list'),
           saveSetting('exclude_staffing_keywords', jobSourceConfig.exclude_staffing_keywords, 'list'),
+        ])
+      } else if (configType === 'jobsourceapis') {
+        await Promise.all([
+          saveSetting('job_source_provider', jobSourceConfig.job_source_provider),
+          saveSetting('jsearch_api_key', jobSourceConfig.jsearch_api_key),
+          saveSetting('indeed_publisher_id', jobSourceConfig.indeed_publisher_id),
+          saveSetting('apollo_api_key', jobSourceConfig.apollo_api_key),
+          saveSetting('lead_sources', jobSourceConfig.lead_sources, 'list'),
+          saveSetting('enabled_sources', jobSourceConfig.enabled_sources, 'list'),
           saveSetting('theirstack_api_key', jobSourceConfig.theirstack_api_key),
           saveSetting('serpapi_api_key', jobSourceConfig.serpapi_api_key),
           saveSetting('adzuna_app_id', jobSourceConfig.adzuna_app_id),
@@ -683,12 +696,13 @@ export default function SettingsPage() {
       <div className="border-b border-gray-200 mb-6 overflow-x-auto">
         <nav className="flex space-x-4">
           {[
-            { id: 'jobsources', label: '1. Job Sources', color: 'indigo' },
-            { id: 'ai', label: '2. AI/LLM', color: 'pink' },
-            { id: 'contacts', label: '3. Contacts', color: 'purple' },
-            { id: 'validation', label: '4. Validation', color: 'cyan' },
-            { id: 'outreach', label: '5. Outreach', color: 'orange' },
-            { id: 'business', label: '6. Business Rules', color: 'gray' },
+            { id: 'jobfilters', label: '1. Job Filters', color: 'indigo' },
+            { id: 'jobsourceapis', label: '2. Job Source APIs', color: 'teal' },
+            { id: 'ai', label: '3. AI/LLM', color: 'pink' },
+            { id: 'contacts', label: '4. Contacts', color: 'purple' },
+            { id: 'validation', label: '5. Validation', color: 'cyan' },
+            { id: 'outreach', label: '6. Outreach', color: 'orange' },
+            { id: 'business', label: '7. Business Rules', color: 'gray' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -722,10 +736,10 @@ export default function SettingsPage() {
         </nav>
       </div>
 
-      {/* Tab 1: Job Sources */}
-      {activeTab === 'jobsources' && (
-        <fieldset disabled={!canWriteTab('jobsources')} className="space-y-6">
-          {!canWriteTab('jobsources') && (
+      {/* Tab 1: Job Filters */}
+      {activeTab === 'jobfilters' && (
+        <fieldset disabled={!canWriteTab('jobfilters')} className="space-y-6">
+          {!canWriteTab('jobfilters') && (
             <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
               You have read-only access to this tab. Contact a super admin to request edit access.
             </div>
@@ -733,488 +747,13 @@ export default function SettingsPage() {
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></span>
-              Job Sources Configuration
+              Job Filters
             </h3>
             <p className="text-sm text-gray-500 mb-4">
-              Configure where to fetch job postings from (LinkedIn, Indeed, Glassdoor, etc.)
+              Configure which states, job titles, industries, and company sizes to target for lead sourcing
             </p>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="label">Job Source Provider</label>
-                  <select
-                    value={jobSourceConfig.job_source_provider}
-                    onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, job_source_provider: e.target.value })}
-                    className="input"
-                  >
-                    <option value="mock">Mock (Development - Free)</option>
-                    <option value="jsearch">JSearch API (LinkedIn, Indeed, Glassdoor)</option>
-                    <option value="indeed">Indeed Publisher API</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {jobSourceConfig.job_source_provider === 'mock' && 'Uses sample data for testing'}
-                    {jobSourceConfig.job_source_provider === 'jsearch' && 'Aggregates from multiple job boards via RapidAPI'}
-                    {jobSourceConfig.job_source_provider === 'indeed' && 'Direct Indeed API (requires Publisher account)'}
-                  </p>
-                </div>
-
-                {jobSourceConfig.job_source_provider === 'jsearch' && (
-                  <div>
-                    <label className="label">JSearch API Key (RapidAPI)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        value={jobSourceConfig.jsearch_api_key}
-                        onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jsearch_api_key: e.target.value })}
-                        placeholder="Enter RapidAPI key"
-                        className="input flex-1"
-                      />
-                      <button
-                        onClick={() => testConnection('jsearch')}
-                        disabled={testing === 'jsearch' || !jobSourceConfig.jsearch_api_key}
-                        className="btn-secondary text-sm"
-                      >
-                        {testing === 'jsearch' ? 'Testing...' : 'Test'}
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Get key at <a href="https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch" target="_blank" className="text-blue-600 underline">rapidapi.com/jsearch</a> (500 free requests/month)
-                    </p>
-                    {testResults.jsearch && (
-                      <p className={`text-sm mt-1 ${testResults.jsearch.success ? 'text-green-600' : 'text-red-600'}`}>
-                        {testResults.jsearch.message}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {jobSourceConfig.job_source_provider === 'indeed' && (
-                  <div>
-                    <label className="label">Indeed Publisher ID</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="password"
-                        value={jobSourceConfig.indeed_publisher_id}
-                        onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, indeed_publisher_id: e.target.value })}
-                        placeholder="Enter Publisher ID"
-                        className="input flex-1"
-                      />
-                      <button
-                        onClick={() => testConnection('indeed')}
-                        disabled={testing === 'indeed' || !jobSourceConfig.indeed_publisher_id}
-                        className="btn-secondary text-sm"
-                      >
-                        {testing === 'indeed' ? 'Testing...' : 'Test'}
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Apply at <a href="https://www.indeed.com/publisher" target="_blank" className="text-blue-600 underline">indeed.com/publisher</a>
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Multi-Source Lead Configuration */}
-              <div className="border-t pt-6 mt-6">
-                <h4 className="font-medium text-gray-700 mb-3 flex items-center">
-                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                  Multi-Source Lead Fetching (Maximize Leads)
-                </h4>
-                <p className="text-sm text-gray-500 mb-4">
-                  Enable multiple lead sources to maximize coverage. Duplicates are automatically removed based on company name normalization.
-                </p>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="label">Enabled Lead Sources</label>
-                    <div className="space-y-2 border rounded-lg p-3 bg-gray-50">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('jsearch')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">JSearch (LinkedIn, Indeed, Glassdoor)</span>
-                        {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('apollo')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'apollo'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'apollo') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">Apollo.io (Company/People Search)</span>
-                        {jobSourceConfig.apollo_api_key && <span className="text-xs text-green-600">API key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('theirstack')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
-                        {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('serpapi')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
-                        {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('adzuna')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
-                        {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('searchapi')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'searchapi'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'searchapi') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">SearchAPI.io (Google Jobs)</span>
-                        <span className="text-xs text-gray-500">$40/mo</span>
-                        {jobSourceConfig.searchapi_api_key && <span className="text-xs text-green-600">Key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('usajobs')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'usajobs'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'usajobs') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">USAJOBS (Federal)</span>
-                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
-                        {jobSourceConfig.usajobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('jooble')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jooble'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jooble') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">Jooble (71 Countries)</span>
-                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
-                        {jobSourceConfig.jooble_api_key && <span className="text-xs text-green-600">Key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('jobdatafeeds')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jobdatafeeds'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jobdatafeeds') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">JobDataFeeds (Bulk US)</span>
-                        <span className="text-xs text-gray-500">$200-400/mo</span>
-                        {jobSourceConfig.jobdatafeeds_api_key && <span className="text-xs text-green-600">Key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('coresignal')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
-                        <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
-                        {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.lead_sources.includes('mock')}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') })
-                            }
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">Mock (Test Data)</span>
-                        {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
-                      </label>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {jobSourceConfig.lead_sources.length === 0 && <span className="text-red-500">Select at least one source</span>}
-                      {jobSourceConfig.lead_sources.length === 1 && `Using ${jobSourceConfig.lead_sources[0]} only`}
-                      {jobSourceConfig.lead_sources.length > 1 && `Using ${jobSourceConfig.lead_sources.length} sources with automatic deduplication`}
-                    </p>
-                  </div>
-
-                  {/* Apollo API Key for Lead Sourcing */}
-                  {jobSourceConfig.lead_sources.includes('apollo') && (
-                    <div>
-                      <label className="label">Apollo API Key (for Lead Sourcing)</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={jobSourceConfig.apollo_api_key}
-                          onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, apollo_api_key: e.target.value })}
-                          placeholder="Enter Apollo API key"
-                          className="input flex-1"
-                        />
-                        <button
-                          onClick={() => testConnection('apollo')}
-                          disabled={testing === 'apollo' || !jobSourceConfig.apollo_api_key}
-                          className="btn-secondary text-sm"
-                        >
-                          {testing === 'apollo' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get key at <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" className="text-blue-600 underline">apollo.io/settings</a>
-                      </p>
-                      {testResults.apollo && (
-                        <p className={`text-sm mt-1 ${testResults.apollo.success ? 'text-green-600' : 'text-red-600'}`}>
-                          {testResults.apollo.message}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TheirStack API Key */}
-                  {jobSourceConfig.lead_sources.includes('theirstack') && (
-                    <div>
-                      <label className="label">TheirStack API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.theirstack_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, theirstack_api_key: e.target.value })} placeholder="Enter TheirStack API key" className="input flex-1" />
-                        <button onClick={() => testConnection('theirstack')} disabled={testing === 'theirstack' || !jobSourceConfig.theirstack_api_key} className="btn-secondary text-sm">
-                          {testing === 'theirstack' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get key at <a href="https://theirstack.com/" target="_blank" className="text-blue-600 underline">theirstack.com</a> — Free: 100 req/mo | Paid: from $49/mo
-                      </p>
-                      {testResults.theirstack && (
-                        <p className={`text-sm mt-1 ${testResults.theirstack.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.theirstack.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* SerpAPI Key */}
-                  {jobSourceConfig.lead_sources.includes('serpapi') && (
-                    <div>
-                      <label className="label">SerpAPI Key (Google Jobs)</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.serpapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, serpapi_api_key: e.target.value })} placeholder="Enter SerpAPI key" className="input flex-1" />
-                        <button onClick={() => testConnection('serpapi')} disabled={testing === 'serpapi' || !jobSourceConfig.serpapi_api_key} className="btn-secondary text-sm">
-                          {testing === 'serpapi' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get key at <a href="https://serpapi.com/" target="_blank" className="text-blue-600 underline">serpapi.com</a> — Free: 100 req/mo | Paid: from $50/mo
-                      </p>
-                      {testResults.serpapi && (
-                        <p className={`text-sm mt-1 ${testResults.serpapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.serpapi.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Adzuna Credentials */}
-                  {jobSourceConfig.lead_sources.includes('adzuna') && (
-                    <div>
-                      <label className="label">Adzuna App ID</label>
-                      <input type="text" value={jobSourceConfig.adzuna_app_id} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_app_id: e.target.value })} placeholder="Enter Adzuna App ID" className="input w-full mb-2" />
-                      <label className="label">Adzuna API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.adzuna_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_api_key: e.target.value })} placeholder="Enter Adzuna API key" className="input flex-1" />
-                        <button onClick={() => testConnection('adzuna')} disabled={testing === 'adzuna' || !jobSourceConfig.adzuna_app_id || !jobSourceConfig.adzuna_api_key} className="btn-secondary text-sm">
-                          {testing === 'adzuna' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get credentials at <a href="https://developer.adzuna.com/" target="_blank" className="text-blue-600 underline">developer.adzuna.com</a> — Free: 250 req/mo | Paid: from $99/mo
-                      </p>
-                      {testResults.adzuna && (
-                        <p className={`text-sm mt-1 ${testResults.adzuna.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.adzuna.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* SearchAPI Key */}
-                  {jobSourceConfig.lead_sources.includes('searchapi') && (
-                    <div>
-                      <label className="label">SearchAPI.io API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.searchapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, searchapi_api_key: e.target.value })} placeholder="Enter SearchAPI.io key" className="input flex-1" />
-                        <button onClick={() => testConnection('searchapi')} disabled={testing === 'searchapi' || !jobSourceConfig.searchapi_api_key} className="btn-secondary text-sm">
-                          {testing === 'searchapi' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get key at <a href="https://www.searchapi.io/" target="_blank" className="text-blue-600 underline">searchapi.io</a> — Google Jobs data at $40/mo
-                      </p>
-                      {testResults.searchapi && (
-                        <p className={`text-sm mt-1 ${testResults.searchapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.searchapi.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* USAJOBS Credentials */}
-                  {jobSourceConfig.lead_sources.includes('usajobs') && (
-                    <div>
-                      <label className="label">USAJOBS API Key</label>
-                      <input type="password" value={jobSourceConfig.usajobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_api_key: e.target.value })} placeholder="Enter USAJOBS API key" className="input w-full mb-2" />
-                      <label className="label">USAJOBS Email (User-Agent)</label>
-                      <div className="flex gap-2">
-                        <input type="text" value={jobSourceConfig.usajobs_email} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_email: e.target.value })} placeholder="your-email@example.com" className="input flex-1" />
-                        <button onClick={() => testConnection('usajobs')} disabled={testing === 'usajobs' || !jobSourceConfig.usajobs_api_key} className="btn-secondary text-sm">
-                          {testing === 'usajobs' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get free API key at <a href="https://developer.usajobs.gov/" target="_blank" className="text-blue-600 underline">developer.usajobs.gov</a> — US federal jobs, completely free
-                      </p>
-                      {testResults.usajobs && (
-                        <p className={`text-sm mt-1 ${testResults.usajobs.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.usajobs.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Jooble Key */}
-                  {jobSourceConfig.lead_sources.includes('jooble') && (
-                    <div>
-                      <label className="label">Jooble API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.jooble_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jooble_api_key: e.target.value })} placeholder="Enter Jooble API key" className="input flex-1" />
-                        <button onClick={() => testConnection('jooble')} disabled={testing === 'jooble' || !jobSourceConfig.jooble_api_key} className="btn-secondary text-sm">
-                          {testing === 'jooble' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Get free key at <a href="https://jooble.org/api/about" target="_blank" className="text-blue-600 underline">jooble.org/api</a> — 71-country aggregator, free
-                      </p>
-                      {testResults.jooble && (
-                        <p className={`text-sm mt-1 ${testResults.jooble.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jooble.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* JobDataFeeds Key */}
-                  {jobSourceConfig.lead_sources.includes('jobdatafeeds') && (
-                    <div>
-                      <label className="label">JobDataFeeds API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.jobdatafeeds_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jobdatafeeds_api_key: e.target.value })} placeholder="Enter JobDataFeeds API key" className="input flex-1" />
-                        <button onClick={() => testConnection('jobdatafeeds')} disabled={testing === 'jobdatafeeds' || !jobSourceConfig.jobdatafeeds_api_key} className="btn-secondary text-sm">
-                          {testing === 'jobdatafeeds' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Sign up at <a href="https://jobdatafeeds.com/" target="_blank" className="text-blue-600 underline">jobdatafeeds.com</a> — Bulk US jobs ~$1/1,000 jobs ($200-400/mo)
-                      </p>
-                      {testResults.jobdatafeeds && (
-                        <p className={`text-sm mt-1 ${testResults.jobdatafeeds.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jobdatafeeds.message}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Coresignal Key */}
-                  {jobSourceConfig.lead_sources.includes('coresignal') && (
-                    <div>
-                      <label className="label">Coresignal API Key</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.coresignal_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, coresignal_api_key: e.target.value })} placeholder="Enter Coresignal API key" className="input flex-1" />
-                        <button onClick={() => testConnection('coresignal')} disabled={testing === 'coresignal' || !jobSourceConfig.coresignal_api_key} className="btn-secondary text-sm">
-                          {testing === 'coresignal' ? 'Testing...' : 'Test'}
-                        </button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Sign up at <a href="https://coresignal.com/" target="_blank" className="text-blue-600 underline">coresignal.com</a> — 399M+ jobs with recruiter contacts ($800-1,500/mo)
-                      </p>
-                      {testResults.coresignal && (
-                        <p className={`text-sm mt-1 ${testResults.coresignal.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.coresignal.message}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Multi-source info box */}
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-700">
-                    <strong>How it works:</strong> When multiple sources are enabled, leads are fetched in parallel from all sources.
-                    Company names are normalized (removing Inc., Corp., LLC, etc.) and duplicates are merged, keeping the record with the most complete data.
-                  </p>
-                </div>
-              </div>
-
               {/* Target States */}
               <div>
                 <label className="label">Target States</label>
@@ -1417,13 +956,6 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {jobSourceConfig.job_source_provider === 'mock' && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-700">
-                    <strong>Mock Mode:</strong> Using simulated job data. For real job postings, configure JSearch API (recommended) or Indeed Publisher API.
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1506,7 +1038,18 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-4">
               Configure company size priorities for targeting. Smaller companies are prioritized first.
             </p>
-            <div className="grid grid-cols-3 gap-4">
+            {/* No Preference checkbox */}
+            <label className="flex items-center gap-2 cursor-pointer mb-4 p-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors">
+              <input
+                type="checkbox"
+                checked={jobSourceConfig.company_size_no_preference}
+                onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_no_preference: e.target.checked })}
+                className="w-4 h-4 accent-blue-600"
+              />
+              <span className="text-sm font-semibold text-gray-700">No Preference</span>
+              <span className="text-xs text-gray-500">— Accept all company sizes, no priority matching</span>
+            </label>
+            <div className={`grid grid-cols-3 gap-4 ${jobSourceConfig.company_size_no_preference ? 'opacity-50 pointer-events-none' : ''}`}>
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <h4 className="font-medium text-green-700 mb-2">Priority 1 (Preferred)</h4>
                 <label className="label text-sm">Max Employees</label>
@@ -1516,6 +1059,7 @@ export default function SettingsPage() {
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_1_max: parseInt(e.target.value) || 50 })}
                   className="input"
                   min="1"
+                  disabled={jobSourceConfig.company_size_no_preference}
                 />
                 <p className="text-xs text-green-600 mt-1">Companies with up to {jobSourceConfig.company_size_priority_1_max} employees</p>
               </div>
@@ -1528,6 +1072,7 @@ export default function SettingsPage() {
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_2_min: parseInt(e.target.value) || 51 })}
                   className="input mb-2"
                   min="1"
+                  disabled={jobSourceConfig.company_size_no_preference}
                 />
                 <label className="label text-sm">Max Employees</label>
                 <input
@@ -1536,6 +1081,7 @@ export default function SettingsPage() {
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_2_max: parseInt(e.target.value) || 500 })}
                   className="input"
                   min="1"
+                  disabled={jobSourceConfig.company_size_no_preference}
                 />
                 <p className="text-xs text-yellow-600 mt-1">{jobSourceConfig.company_size_priority_2_min} - {jobSourceConfig.company_size_priority_2_max} employees</p>
               </div>
@@ -1817,17 +1363,373 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {canWriteTab('jobsources') && (
+          {canWriteTab('jobfilters') && (
             <div className="flex justify-end">
-              <button onClick={() => saveAllSettings('jobsources')} disabled={saving} className="btn-primary">
-                {saving ? 'Saving...' : 'Save All Job Source Settings'}
+              <button onClick={() => saveAllSettings('jobfilters')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Job Filter Settings'}
               </button>
             </div>
           )}
         </fieldset>
       )}
 
-      {/* Tab 2: AI/LLM */}
+      {/* Tab 2: Job Source APIs */}
+      {activeTab === 'jobsourceapis' && (
+        <fieldset disabled={!canWriteTab('jobsourceapis')} className="space-y-6">
+          {!canWriteTab('jobsourceapis') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+              <span className="w-3 h-3 bg-teal-500 rounded-full mr-2"></span>
+              Job Source APIs
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Configure where to fetch job postings from (LinkedIn, Indeed, Glassdoor, etc.) and manage API keys
+            </p>
+
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="label">Job Source Provider</label>
+                  <select
+                    value={jobSourceConfig.job_source_provider}
+                    onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, job_source_provider: e.target.value })}
+                    className="input"
+                  >
+                    <option value="mock">Mock (Development - Free)</option>
+                    <option value="jsearch">JSearch API (LinkedIn, Indeed, Glassdoor)</option>
+                    <option value="indeed">Indeed Publisher API</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {jobSourceConfig.job_source_provider === 'mock' && 'Uses sample data for testing'}
+                    {jobSourceConfig.job_source_provider === 'jsearch' && 'Aggregates from multiple job boards via RapidAPI'}
+                    {jobSourceConfig.job_source_provider === 'indeed' && 'Direct Indeed API (requires Publisher account)'}
+                  </p>
+                </div>
+
+                {jobSourceConfig.job_source_provider === 'jsearch' && (
+                  <div>
+                    <label className="label">JSearch API Key (RapidAPI)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={jobSourceConfig.jsearch_api_key}
+                        onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jsearch_api_key: e.target.value })}
+                        placeholder="Enter RapidAPI key"
+                        className="input flex-1"
+                      />
+                      <button
+                        onClick={() => testConnection('jsearch')}
+                        disabled={testing === 'jsearch' || !jobSourceConfig.jsearch_api_key}
+                        className="btn-secondary text-sm"
+                      >
+                        {testing === 'jsearch' ? 'Testing...' : 'Test'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get key at <a href="https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch" target="_blank" className="text-blue-600 underline">rapidapi.com/jsearch</a> (500 free requests/month)
+                    </p>
+                    {testResults.jsearch && (
+                      <p className={`text-sm mt-1 ${testResults.jsearch.success ? 'text-green-600' : 'text-red-600'}`}>
+                        {testResults.jsearch.message}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {jobSourceConfig.job_source_provider === 'indeed' && (
+                  <div>
+                    <label className="label">Indeed Publisher ID</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={jobSourceConfig.indeed_publisher_id}
+                        onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, indeed_publisher_id: e.target.value })}
+                        placeholder="Enter Publisher ID"
+                        className="input flex-1"
+                      />
+                      <button
+                        onClick={() => testConnection('indeed')}
+                        disabled={testing === 'indeed' || !jobSourceConfig.indeed_publisher_id}
+                        className="btn-secondary text-sm"
+                      >
+                        {testing === 'indeed' ? 'Testing...' : 'Test'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Apply at <a href="https://www.indeed.com/publisher" target="_blank" className="text-blue-600 underline">indeed.com/publisher</a>
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Multi-Source Lead Configuration */}
+              <div className="border-t pt-6 mt-6">
+                <h4 className="font-medium text-gray-700 mb-3 flex items-center">
+                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                  Multi-Source Lead Fetching (Maximize Leads)
+                </h4>
+                <p className="text-sm text-gray-500 mb-4">
+                  Enable multiple lead sources to maximize coverage. Duplicates are automatically removed based on company name normalization.
+                </p>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="label">Enabled Lead Sources</label>
+                    <div className="space-y-2 border rounded-lg p-3 bg-gray-50">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jsearch')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">JSearch (LinkedIn, Indeed, Glassdoor)</span>
+                        {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('apollo')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'apollo'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'apollo') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Apollo.io (Company/People Search)</span>
+                        {jobSourceConfig.apollo_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
+                        {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('serpapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
+                        {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('adzuna')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
+                        {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('searchapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'searchapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'searchapi') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">SearchAPI.io (Google Jobs)</span>
+                        <span className="text-xs text-gray-500">$40/mo</span>
+                        {jobSourceConfig.searchapi_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('usajobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'usajobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'usajobs') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">USAJOBS (Federal)</span>
+                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
+                        {jobSourceConfig.usajobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jooble')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jooble'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jooble') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Jooble (71 Countries)</span>
+                        <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
+                        {jobSourceConfig.jooble_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jobdatafeeds')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jobdatafeeds'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jobdatafeeds') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">JobDataFeeds (Bulk US)</span>
+                        <span className="text-xs text-gray-500">$200-400/mo</span>
+                        {jobSourceConfig.jobdatafeeds_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('coresignal')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
+                        <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
+                        {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('mock')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Mock (Test Data)</span>
+                        {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {jobSourceConfig.lead_sources.length === 0 && <span className="text-red-500">Select at least one source</span>}
+                      {jobSourceConfig.lead_sources.length === 1 && `Using ${jobSourceConfig.lead_sources[0]} only`}
+                      {jobSourceConfig.lead_sources.length > 1 && `Using ${jobSourceConfig.lead_sources.length} sources with automatic deduplication`}
+                    </p>
+                  </div>
+
+                  {/* Apollo API Key */}
+                  {jobSourceConfig.lead_sources.includes('apollo') && (
+                    <div>
+                      <label className="label">Apollo API Key (for Lead Sourcing)</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.apollo_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, apollo_api_key: e.target.value })} placeholder="Enter Apollo API key" className="input flex-1" />
+                        <button onClick={() => testConnection('apollo')} disabled={testing === 'apollo' || !jobSourceConfig.apollo_api_key} className="btn-secondary text-sm">{testing === 'apollo' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get key at <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" className="text-blue-600 underline">apollo.io/settings</a></p>
+                      {testResults.apollo && <p className={`text-sm mt-1 ${testResults.apollo.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.apollo.message}</p>}
+                    </div>
+                  )}
+
+                  {/* TheirStack API Key */}
+                  {jobSourceConfig.lead_sources.includes('theirstack') && (
+                    <div>
+                      <label className="label">TheirStack API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.theirstack_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, theirstack_api_key: e.target.value })} placeholder="Enter TheirStack API key" className="input flex-1" />
+                        <button onClick={() => testConnection('theirstack')} disabled={testing === 'theirstack' || !jobSourceConfig.theirstack_api_key} className="btn-secondary text-sm">{testing === 'theirstack' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get key at <a href="https://theirstack.com/" target="_blank" className="text-blue-600 underline">theirstack.com</a> — Free: 100 req/mo | Paid: from $49/mo</p>
+                      {testResults.theirstack && <p className={`text-sm mt-1 ${testResults.theirstack.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.theirstack.message}</p>}
+                    </div>
+                  )}
+
+                  {/* SerpAPI Key */}
+                  {jobSourceConfig.lead_sources.includes('serpapi') && (
+                    <div>
+                      <label className="label">SerpAPI Key (Google Jobs)</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.serpapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, serpapi_api_key: e.target.value })} placeholder="Enter SerpAPI key" className="input flex-1" />
+                        <button onClick={() => testConnection('serpapi')} disabled={testing === 'serpapi' || !jobSourceConfig.serpapi_api_key} className="btn-secondary text-sm">{testing === 'serpapi' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get key at <a href="https://serpapi.com/" target="_blank" className="text-blue-600 underline">serpapi.com</a> — Free: 100 req/mo | Paid: from $50/mo</p>
+                      {testResults.serpapi && <p className={`text-sm mt-1 ${testResults.serpapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.serpapi.message}</p>}
+                    </div>
+                  )}
+
+                  {/* Adzuna Credentials */}
+                  {jobSourceConfig.lead_sources.includes('adzuna') && (
+                    <div>
+                      <label className="label">Adzuna App ID</label>
+                      <input type="text" value={jobSourceConfig.adzuna_app_id} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_app_id: e.target.value })} placeholder="Enter Adzuna App ID" className="input w-full mb-2" />
+                      <label className="label">Adzuna API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.adzuna_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_api_key: e.target.value })} placeholder="Enter Adzuna API key" className="input flex-1" />
+                        <button onClick={() => testConnection('adzuna')} disabled={testing === 'adzuna' || !jobSourceConfig.adzuna_app_id || !jobSourceConfig.adzuna_api_key} className="btn-secondary text-sm">{testing === 'adzuna' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get credentials at <a href="https://developer.adzuna.com/" target="_blank" className="text-blue-600 underline">developer.adzuna.com</a> — Free: 250 req/mo | Paid: from $99/mo</p>
+                      {testResults.adzuna && <p className={`text-sm mt-1 ${testResults.adzuna.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.adzuna.message}</p>}
+                    </div>
+                  )}
+
+                  {/* SearchAPI Key */}
+                  {jobSourceConfig.lead_sources.includes('searchapi') && (
+                    <div>
+                      <label className="label">SearchAPI.io API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.searchapi_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, searchapi_api_key: e.target.value })} placeholder="Enter SearchAPI.io key" className="input flex-1" />
+                        <button onClick={() => testConnection('searchapi')} disabled={testing === 'searchapi' || !jobSourceConfig.searchapi_api_key} className="btn-secondary text-sm">{testing === 'searchapi' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get key at <a href="https://www.searchapi.io/" target="_blank" className="text-blue-600 underline">searchapi.io</a> — Google Jobs data at $40/mo</p>
+                      {testResults.searchapi && <p className={`text-sm mt-1 ${testResults.searchapi.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.searchapi.message}</p>}
+                    </div>
+                  )}
+
+                  {/* USAJOBS Credentials */}
+                  {jobSourceConfig.lead_sources.includes('usajobs') && (
+                    <div>
+                      <label className="label">USAJOBS API Key</label>
+                      <input type="password" value={jobSourceConfig.usajobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_api_key: e.target.value })} placeholder="Enter USAJOBS API key" className="input w-full mb-2" />
+                      <label className="label">USAJOBS Email (User-Agent)</label>
+                      <div className="flex gap-2">
+                        <input type="text" value={jobSourceConfig.usajobs_email} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_email: e.target.value })} placeholder="your-email@example.com" className="input flex-1" />
+                        <button onClick={() => testConnection('usajobs')} disabled={testing === 'usajobs' || !jobSourceConfig.usajobs_api_key} className="btn-secondary text-sm">{testing === 'usajobs' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get free API key at <a href="https://developer.usajobs.gov/" target="_blank" className="text-blue-600 underline">developer.usajobs.gov</a> — US federal jobs, completely free</p>
+                      {testResults.usajobs && <p className={`text-sm mt-1 ${testResults.usajobs.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.usajobs.message}</p>}
+                    </div>
+                  )}
+
+                  {/* Jooble Key */}
+                  {jobSourceConfig.lead_sources.includes('jooble') && (
+                    <div>
+                      <label className="label">Jooble API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.jooble_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jooble_api_key: e.target.value })} placeholder="Enter Jooble API key" className="input flex-1" />
+                        <button onClick={() => testConnection('jooble')} disabled={testing === 'jooble' || !jobSourceConfig.jooble_api_key} className="btn-secondary text-sm">{testing === 'jooble' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Get free key at <a href="https://jooble.org/api/about" target="_blank" className="text-blue-600 underline">jooble.org/api</a> — 71-country aggregator, free</p>
+                      {testResults.jooble && <p className={`text-sm mt-1 ${testResults.jooble.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jooble.message}</p>}
+                    </div>
+                  )}
+
+                  {/* JobDataFeeds Key */}
+                  {jobSourceConfig.lead_sources.includes('jobdatafeeds') && (
+                    <div>
+                      <label className="label">JobDataFeeds API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.jobdatafeeds_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, jobdatafeeds_api_key: e.target.value })} placeholder="Enter JobDataFeeds API key" className="input flex-1" />
+                        <button onClick={() => testConnection('jobdatafeeds')} disabled={testing === 'jobdatafeeds' || !jobSourceConfig.jobdatafeeds_api_key} className="btn-secondary text-sm">{testing === 'jobdatafeeds' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Sign up at <a href="https://jobdatafeeds.com/" target="_blank" className="text-blue-600 underline">jobdatafeeds.com</a> — Bulk US jobs ~$1/1,000 jobs ($200-400/mo)</p>
+                      {testResults.jobdatafeeds && <p className={`text-sm mt-1 ${testResults.jobdatafeeds.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.jobdatafeeds.message}</p>}
+                    </div>
+                  )}
+
+                  {/* Coresignal Key */}
+                  {jobSourceConfig.lead_sources.includes('coresignal') && (
+                    <div>
+                      <label className="label">Coresignal API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.coresignal_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, coresignal_api_key: e.target.value })} placeholder="Enter Coresignal API key" className="input flex-1" />
+                        <button onClick={() => testConnection('coresignal')} disabled={testing === 'coresignal' || !jobSourceConfig.coresignal_api_key} className="btn-secondary text-sm">{testing === 'coresignal' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Sign up at <a href="https://coresignal.com/" target="_blank" className="text-blue-600 underline">coresignal.com</a> — 399M+ jobs with recruiter contacts ($800-1,500/mo)</p>
+                      {testResults.coresignal && <p className={`text-sm mt-1 ${testResults.coresignal.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.coresignal.message}</p>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Multi-source info box */}
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    <strong>How it works:</strong> When multiple sources are enabled, leads are fetched in parallel from all sources.
+                    Company names are normalized (removing Inc., Corp., LLC, etc.) and duplicates are merged, keeping the record with the most complete data.
+                  </p>
+                </div>
+              </div>
+
+              {jobSourceConfig.job_source_provider === 'mock' && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-700">
+                    <strong>Mock Mode:</strong> Using simulated job data. For real job postings, configure JSearch API (recommended) or Indeed Publisher API.
+                  </p>
+                </div>
+              )}
+
+              {/* Enabled Sub-Sources */}
+              <div className="border-t pt-6 mt-6">
+                <h4 className="font-medium text-gray-700 mb-3 flex items-center">
+                  <span className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span>
+                  Enabled Sub-Sources (per JSearch)
+                </h4>
+                <p className="text-sm text-gray-500 mb-3">
+                  Select which job boards to include when JSearch fetches results.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {['linkedin', 'indeed', 'glassdoor', 'simplyhired', 'ziprecruiter'].map((source) => (
+                    <label key={source} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={jobSourceConfig.enabled_sources.includes(source)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setJobSourceConfig({ ...jobSourceConfig, enabled_sources: [...jobSourceConfig.enabled_sources, source] })
+                          } else {
+                            setJobSourceConfig({ ...jobSourceConfig, enabled_sources: jobSourceConfig.enabled_sources.filter(s => s !== source) })
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm capitalize">{source}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {canWriteTab('jobsourceapis') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('jobsourceapis')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Job Source API Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
+      )}
+
+      {/* Tab 3: AI/LLM */}
       {activeTab === 'ai' && (
         <fieldset disabled={!canWriteTab('ai')} className="space-y-6">
           {!canWriteTab('ai') && (
@@ -2017,7 +1919,7 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 3: Contacts */}
+      {/* Tab 4: Contacts */}
       {activeTab === 'contacts' && (
         <fieldset disabled={!canWriteTab('contacts')} className="space-y-6">
           {!canWriteTab('contacts') && (
@@ -2284,7 +2186,7 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 4: Validation */}
+      {/* Tab 5: Validation */}
       {activeTab === 'validation' && (
         <fieldset disabled={!canWriteTab('validation')} className="space-y-6">
           {!canWriteTab('validation') && (
@@ -2515,7 +2417,7 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 5: Outreach */}
+      {/* Tab 6: Outreach */}
       {activeTab === 'outreach' && (
         <fieldset disabled={!canWriteTab('outreach')} className="space-y-6">
           {!canWriteTab('outreach') && (
@@ -2751,7 +2653,7 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 6: Business Rules */}
+      {/* Tab 7: Business Rules */}
       {activeTab === 'business' && (
         <fieldset disabled={!canWriteTab('business')} className="space-y-6">
           {!canWriteTab('business') && (
@@ -2894,7 +2796,7 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 7: All Settings */}
+      {/* Tab 8: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
           {!isSuperAdmin && (
