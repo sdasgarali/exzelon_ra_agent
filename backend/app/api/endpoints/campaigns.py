@@ -42,6 +42,7 @@ class CampaignCreate(BaseModel):
     mailbox_ids: List[int] = []
     daily_limit: int = 30
     enrollment_rules: Optional[EnrollmentRules] = None
+    preview_mode: bool = False
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -53,6 +54,7 @@ class CampaignUpdate(BaseModel):
     mailbox_ids: Optional[List[int]] = None
     daily_limit: Optional[int] = None
     enrollment_rules: Optional[EnrollmentRules] = None
+    preview_mode: Optional[bool] = None
 
 class StepCreate(BaseModel):
     step_type: str  # email/wait/condition
@@ -119,6 +121,7 @@ def _campaign_to_dict(c: Campaign, include_steps: bool = False, db: Session = No
         "is_archived": c.is_archived,
         "enrollment_rules": json.loads(c.enrollment_rules_json) if c.enrollment_rules_json else None,
         "auto_enrolled_today": c.auto_enrolled_today or 0,
+        "preview_mode": getattr(c, 'preview_mode', False) or False,
     }
     if include_steps and db:
         steps = db.query(SequenceStep).filter(
@@ -219,6 +222,7 @@ def create_campaign(
         enrollment_rules_json=json.dumps(data.enrollment_rules.model_dump()) if data.enrollment_rules else None,
         created_by=user.user_id,
         tenant_id=tenant_id or 1,
+        preview_mode=data.preview_mode,
     )
     db.add(campaign)
     db.commit()
@@ -273,6 +277,8 @@ def update_campaign(
         campaign.daily_limit = data.daily_limit
     if data.enrollment_rules is not None:
         campaign.enrollment_rules_json = json.dumps(data.enrollment_rules.model_dump())
+    if data.preview_mode is not None:
+        campaign.preview_mode = data.preview_mode
 
     db.commit()
     db.refresh(campaign)

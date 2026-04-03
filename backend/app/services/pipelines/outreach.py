@@ -593,9 +593,12 @@ def run_outreach_send_pipeline(
     limit: int = 30,
     triggered_by: str = "system",
     tenant_id: Optional[int] = None,
+    preview_mode: bool = False,
 ) -> Dict[str, Any]:
     """
     Send emails programmatically with rate limiting.
+
+    When preview_mode=True, generates OutreachDraft records instead of sending.
     """
     db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0}
@@ -613,8 +616,19 @@ def run_outreach_send_pipeline(
     db.commit()
 
     try:
-        logger.info("Starting outreach send", dry_run=dry_run, limit=limit)
+        logger.info("Starting outreach send", dry_run=dry_run, limit=limit, preview_mode=preview_mode)
         clear_research_cache()
+
+        # Preview mode: generate drafts instead of sending
+        if preview_mode:
+            from app.services.email_preview_service import generate_pipeline_drafts
+            result = generate_pipeline_drafts(tenant_id or 1, limit, db)
+            job_run.status = JobStatus.COMPLETED
+            job_run.progress_pct = 100
+            job_run.ended_at = datetime.utcnow()
+            job_run.counters_json = json.dumps(result)
+            db.commit()
+            return result
 
         # Resolve business rules from DB settings (once, not per-contact)
         biz_rules = resolve_business_rules(db, tenant_id=tenant_id)

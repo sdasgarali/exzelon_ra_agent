@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { campaignsApi, contactsApi, leadsApi, mailboxesApi } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
+  FileSearch, Loader2,
 } from 'lucide-react'
 
 type TabView = 'list' | 'detail'
@@ -68,6 +70,7 @@ export default function CampaignsPage() {
     send_window_start: '09:00', send_window_end: '17:00',
     send_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
     daily_limit: 30,
+    preview_mode: false,
   })
   const [actionMenu, setActionMenu] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -176,7 +179,7 @@ export default function CampaignsPage() {
       }
       const created = await campaignsApi.create(payload)
       setShowCreateModal(false)
-      setCampaignForm({ name: '', description: '', timezone: 'US/Eastern', send_window_start: '09:00', send_window_end: '17:00', send_days: ['mon','tue','wed','thu','fri'], daily_limit: 30 })
+      setCampaignForm({ name: '', description: '', timezone: 'US/Eastern', send_window_start: '09:00', send_window_end: '17:00', send_days: ['mon','tue','wed','thu','fri'], daily_limit: 30, preview_mode: false })
       setSelectedMailboxIds([])
       await fetchCampaigns()
       openDetail(created)
@@ -520,6 +523,19 @@ export default function CampaignsPage() {
                   <label className="block text-sm font-medium mb-1">Daily Limit</label>
                   <input type="number" value={campaignForm.daily_limit} onChange={e => setCampaignForm(f => ({ ...f, daily_limit: parseInt(e.target.value) || 30 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                 </div>
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <label className="block text-sm font-medium">Preview & Approve</label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Generate drafts for review instead of sending directly</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCampaignForm(f => ({ ...f, preview_mode: !f.preview_mode }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${campaignForm.preview_mode ? 'bg-teal-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${campaignForm.preview_mode ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Mailboxes</label>
                   <div className="border rounded-lg p-2 max-h-32 overflow-y-auto dark:border-gray-600">
@@ -560,6 +576,9 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selectedCampaign?.name}</h1>
           <div className="flex items-center gap-3 mt-1">
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[selectedCampaign?.status || ''] || ''}`}>{selectedCampaign?.status}</span>
+            {(selectedCampaign as any)?.preview_mode && (
+              <span className="px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">Preview Mode</span>
+            )}
             <span className="text-sm text-gray-500">{selectedCampaign?.total_contacts} contacts</span>
             <span className="text-sm text-gray-500">{selectedCampaign?.total_sent} sent</span>
           </div>
@@ -628,6 +647,27 @@ export default function CampaignsPage() {
                     )}
                   </div>
                   <div className="flex gap-1">
+                    {step.step_type === 'email' && (
+                      <button
+                        onClick={async () => {
+                          if (!selectedCampaign) return
+                          try {
+                            const result = await emailPreviewApi.generateDrafts({
+                              source: 'campaign',
+                              campaign_id: selectedCampaign.campaign_id,
+                              step_index: step.step_order,
+                            })
+                            if (result.batch_id) {
+                              window.location.href = `/dashboard/email-preview?batch_id=${result.batch_id}&source=campaign`
+                            }
+                          } catch (err) { console.error(err) }
+                        }}
+                        className="p-1 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded"
+                        title="Generate Previews"
+                      >
+                        <FileSearch className="w-4 h-4 text-teal-500" />
+                      </button>
+                    )}
                     <button onClick={() => { setEditingStep(step); setStepForm({ step_type: step.step_type, subject: step.subject || '', body_html: step.body_html || '', delay_days: step.delay_days, delay_hours: step.delay_hours, reply_to_thread: step.reply_to_thread, condition_type: step.condition_type || '', condition_window_hours: step.condition_window_hours || 24, variants_json: step.variants_json || '' }); setShowStepModal(true) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                       <Eye className="w-4 h-4 text-gray-400" />
                     </button>

@@ -86,6 +86,16 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                 continue
 
             if step.step_type == StepType.EMAIL:
+                # Preview mode: generate draft instead of sending
+                if getattr(campaign, 'preview_mode', False) and campaign.preview_mode:
+                    try:
+                        from app.services.email_preview_service import generate_single_campaign_draft
+                        generate_single_campaign_draft(cc, step, campaign, db)
+                        results["processed"] += 1
+                        continue
+                    except Exception as e_preview:
+                        logger.error("Preview draft generation failed", cc_id=cc.id, error=str(e_preview))
+
                 success = _execute_email_step(cc, step, campaign, db)
                 if success:
                     results["sent"] += 1

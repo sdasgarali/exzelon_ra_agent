@@ -49,6 +49,7 @@ import {
   ScrollText,
   HelpCircle,
   Eye,
+  FileSearch,
 } from 'lucide-react'
 
 const navigation = [
@@ -73,6 +74,7 @@ const navigation = [
   { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-campaigns' },
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
 
   // Step 6: Engage & Close
   { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-inbox' },

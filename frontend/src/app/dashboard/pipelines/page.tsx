@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { pipelinesApi, dashboardApi, leadsApi, contactsApi } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
@@ -50,6 +51,7 @@ interface SelectorContact {
 }
 
 export default function PipelinesPage() {
+  const router = useRouter()
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [stats, setStats] = useState<PipelineStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -61,6 +63,7 @@ export default function PipelinesPage() {
   const [contactEnrichmentRunning, setContactEnrichmentRunning] = useState(false)
   const [emailValidationRunning, setEmailValidationRunning] = useState(false)
   const [outreachRunning, setOutreachRunning] = useState(false)
+  const [outreachPreviewMode, setOutreachPreviewMode] = useState(false)
   const [pipelineFilter, setPipelineFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const RUNS_PER_PAGE = 20
@@ -298,16 +301,32 @@ export default function PipelinesPage() {
         setContactEnrichmentRunning(false)
       }
     } else if (selectorPipeline === 'outreach') {
-      setOutreachRunning(true)
-      setError('')
-      setSuccess('')
-      try {
-        await pipelinesApi.runOutreach('send', true, leadIds)
-        setSuccess(`Outreach started for ${leadIds.length} selected leads!`)
-        startPolling('outreach')
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Failed to start outreach')
-        setOutreachRunning(false)
+      if (outreachPreviewMode) {
+        setOutreachRunning(true)
+        setError('')
+        setSuccess('')
+        try {
+          const res = await emailPreviewApi.generateDrafts({ source: 'pipeline', limit: leadIds.length || 30 })
+          const batchId = res.data?.batch_id
+          setSuccess(`Preview drafts generated for ${res.data?.drafts_created || leadIds.length} contacts!`)
+          setOutreachRunning(false)
+          router.push(`/dashboard/email-preview?batch_id=${batchId}&source=pipeline`)
+        } catch (err: any) {
+          setError(err.response?.data?.detail || 'Failed to generate preview drafts')
+          setOutreachRunning(false)
+        }
+      } else {
+        setOutreachRunning(true)
+        setError('')
+        setSuccess('')
+        try {
+          await pipelinesApi.runOutreach('send', true, leadIds)
+          setSuccess(`Outreach started for ${leadIds.length} selected leads!`)
+          startPolling('outreach')
+        } catch (err: any) {
+          setError(err.response?.data?.detail || 'Failed to start outreach')
+          setOutreachRunning(false)
+        }
       }
     }
   }
@@ -330,16 +349,32 @@ export default function PipelinesPage() {
         setContactEnrichmentRunning(false)
       }
     } else if (selectorPipeline === 'outreach') {
-      setOutreachRunning(true)
-      setError('')
-      setSuccess('')
-      try {
-        await pipelinesApi.runOutreach('send', true)
-        setSuccess('Outreach pipeline started!')
-        startPolling('outreach')
-      } catch (err: any) {
-        setError(err.response?.data?.detail || 'Failed to start outreach')
-        setOutreachRunning(false)
+      if (outreachPreviewMode) {
+        setOutreachRunning(true)
+        setError('')
+        setSuccess('')
+        try {
+          const res = await emailPreviewApi.generateDrafts({ source: 'pipeline', limit: 30 })
+          const batchId = res.data?.batch_id
+          setSuccess(`Preview drafts generated for ${res.data?.drafts_created || 0} contacts!`)
+          setOutreachRunning(false)
+          router.push(`/dashboard/email-preview?batch_id=${batchId}&source=pipeline`)
+        } catch (err: any) {
+          setError(err.response?.data?.detail || 'Failed to generate preview drafts')
+          setOutreachRunning(false)
+        }
+      } else {
+        setOutreachRunning(true)
+        setError('')
+        setSuccess('')
+        try {
+          await pipelinesApi.runOutreach('send', true)
+          setSuccess('Outreach pipeline started!')
+          startPolling('outreach')
+        } catch (err: any) {
+          setError(err.response?.data?.detail || 'Failed to start outreach')
+          setOutreachRunning(false)
+        }
       }
     }
   }
@@ -662,7 +697,16 @@ export default function PipelinesPage() {
         {/* Outreach */}
         <div className="card p-4 border-t-4 border-orange-500">
           <h4 className="font-semibold text-gray-800 mb-2">Outreach</h4>
-          <p className="text-sm text-gray-500 mb-4">Send emails or export for mail merge</p>
+          <p className="text-sm text-gray-500 mb-3">Send emails or export for mail merge</p>
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={outreachPreviewMode}
+              onChange={e => setOutreachPreviewMode(e.target.checked)}
+              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            Preview before send
+          </label>
           <button
             onClick={() => openLeadSelector('outreach')}
             disabled={outreachRunning}

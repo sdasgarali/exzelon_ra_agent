@@ -96,6 +96,9 @@ class Campaign(Base):
     # Assignment mode
     assignment_mode = Column(String(20), default='manual', nullable=False)  # manual/round_robin/weighted
 
+    # Preview & Approve mode — when True, generates drafts instead of sending
+    preview_mode = Column(Boolean, default=False, nullable=False)
+
     __table_args__ = (
         Index("idx_campaign_tenant", "tenant_id"),
         Index("idx_campaign_status", "status"),

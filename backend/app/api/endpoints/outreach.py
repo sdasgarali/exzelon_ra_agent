@@ -216,6 +216,7 @@ async def send_emails(
     background_tasks: BackgroundTasks,
     dry_run: bool = Query(True, description="If true, validate but don't send"),
     limit: int = Query(30, description="Max emails to send"),
+    preview_mode: bool = Query(False, description="If true, generate drafts instead of sending"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
@@ -227,11 +228,13 @@ async def send_emails(
         run_outreach_send_pipeline,
         dry_run=dry_run,
         limit=limit,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        preview_mode=preview_mode,
     )
 
+    mode = "preview" if preview_mode else f"dry_run={dry_run}"
     return {
-        "message": f"Email sending started (dry_run={dry_run}, limit={limit})",
+        "message": f"Email sending started ({mode}, limit={limit})",
         "status": "processing"
     }
 

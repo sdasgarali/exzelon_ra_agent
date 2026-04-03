@@ -1198,6 +1198,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for Phase 5 roadmap: {e}")
 
+    # Migration: add preview_mode column to campaigns
+    try:
+        from sqlalchemy import text as sa_text_preview, inspect as sa_inspect_preview
+        with engine.connect() as conn:
+            inspector_prev = sa_inspect_preview(engine)
+            camp_cols = [c["name"] for c in inspector_prev.get_columns("campaigns")]
+            if "preview_mode" not in camp_cols:
+                conn.execute(sa_text_preview(
+                    "ALTER TABLE campaigns ADD COLUMN preview_mode TINYINT(1) NOT NULL DEFAULT 0"
+                ))
+                conn.commit()
+                logger.info("Migration: added preview_mode column to campaigns")
+    except Exception as e:
+        logger.warning(f"Migration check for preview_mode: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

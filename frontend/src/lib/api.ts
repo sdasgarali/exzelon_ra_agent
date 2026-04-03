@@ -1238,6 +1238,85 @@ export const onboardingApi = {
   },
 }
 
+export const emailPreviewApi = {
+  generateDrafts: async (data: {
+    source: string
+    campaign_id?: number
+    step_index?: number
+    template_id?: number
+    mailbox_id?: number
+    contact_ids?: number[]
+    limit?: number
+  }) => {
+    const response = await api.post('/email-preview/generate', data)
+    return response.data
+  },
+  listDrafts: async (params?: {
+    batch_id?: string
+    status?: string
+    source?: string
+    campaign_id?: number
+    page?: number
+    per_page?: number
+  }) => {
+    const response = await api.get('/email-preview/drafts', { params })
+    return response.data
+  },
+  getDraft: async (id: number) => {
+    const response = await api.get(`/email-preview/drafts/${id}`)
+    return response.data
+  },
+  updateDraft: async (id: number, data: {
+    subject?: string
+    body_html?: string
+    body_text?: string
+    mailbox_id?: number
+  }) => {
+    const response = await api.put(`/email-preview/drafts/${id}`, data)
+    return response.data
+  },
+  approveDraft: async (id: number) => {
+    const response = await api.post(`/email-preview/drafts/${id}/approve`)
+    return response.data
+  },
+  rejectDraft: async (id: number) => {
+    const response = await api.post(`/email-preview/drafts/${id}/reject`)
+    return response.data
+  },
+  approveAll: async (batch_id: string) => {
+    const response = await api.post('/email-preview/drafts/approve-all', { batch_id })
+    return response.data
+  },
+  sendDraft: async (id: number) => {
+    const response = await api.post(`/email-preview/drafts/${id}/send`)
+    return response.data
+  },
+  sendBatch: async (batch_id: string) => {
+    const response = await api.post('/email-preview/drafts/send-batch', { batch_id })
+    return response.data
+  },
+  aiRewrite: async (id: number) => {
+    const response = await api.post(`/email-preview/drafts/${id}/ai-rewrite`)
+    return response.data
+  },
+  deliverabilityScore: async (data: {
+    mailbox_id: number
+    subject: string
+    body_html: string
+  }) => {
+    const response = await api.post('/email-preview/deliverability-score', data)
+    return response.data
+  },
+  spamCheck: async (data: { subject: string; body_html: string }) => {
+    const response = await api.post('/email-preview/spam-check', data)
+    return response.data
+  },
+  spamFix: async (id: number, replacements: Array<{ original: string; replacement: string }>) => {
+    const response = await api.post(`/email-preview/drafts/${id}/spam-fix`, { replacements })
+    return response.data
+  },
+}
+
 export const integrationsApi = {
   // API Keys
   listApiKeys: async () => {
