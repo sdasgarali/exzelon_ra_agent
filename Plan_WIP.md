@@ -1,9 +1,19 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 61: Implemented FULL 4-Phase Roadmap from Instantly.ai competitive analysis. 49 files changed (18 modified, 31 new). 7 new DB models (ReplyMacro, AIReplyDraft, ObjectionTemplate, CalendarBooking, CreditUsage, GoalTarget, NotificationEntry), 10 new services, 9 new endpoint groups, 3 new frontend components (CopilotChat, CommandPalette, NotificationCenter), 1 new page (/dashboard/visitors). Added migration hooks in main.py for all new columns. 604 tests pass, frontend builds clean. V2.0 competitive analysis .docx generated.
+> Session 62: Implemented AI Email Preview & Approve workflow (8 phases). Created OutreachDraft model, email_preview_service.py (draft generation, AI rewriting, deliverability scoring, spam checker with AI suggestions), 13 API endpoints, 3-panel Email Preview dashboard page, campaign preview_mode toggle, pipeline "preview before send" checkbox, nav integration. 16 files changed (12 modified, 4 new). Migration: preview_mode column on campaigns + outreach_drafts table. 604 tests pass, frontend builds clean. Committed 7617770, deployed to VPS.
 
 ## Immediate TODO
+- [x] AI Email Preview & Approve workflow with deliverability scoring and spam checker (2026-04-03)
+  - Phase 1: OutreachDraft DB model + Campaign preview_mode column + migration
+  - Phase 2: email_preview_service.py — draft generation (campaign/pipeline/broadcast), AI rewriting, composite deliverability score (DNS+spam+blacklist+reputation), spam word detection with AI replacement suggestions
+  - Phase 3: 13 REST API endpoints (generate, CRUD, approve/reject, batch send, AI rewrite, scoring, spam fix)
+  - Phase 4: Campaign engine preview_mode intercept, pipeline outreach preview_mode parameter
+  - Phase 5: emailPreviewApi frontend client (13 methods)
+  - Phase 6: 3-panel Email Preview dashboard (draft list + email preview + spam checker/deliverability gauge)
+  - Phase 7-8: Campaign preview toggle, pipeline "preview before send" checkbox, nav item
+  - 1 new model, 1 new service, 1 new endpoint file, 1 new frontend page, 12 files modified
+  - 604 tests pass, frontend builds clean, deployed to VPS (commit 7617770)
 - [x] 4-Phase Roadmap Implementation — ALL PHASES COMPLETE (2026-04-03)
   - Phase 1: AI Copilot Widget, Campaign Slow Ramp, Reply Macros, Auto-Pause, Lookalike Search, Engagement Heatmap
   - Phase 2: AI Reply Agent (HITL + Autopilot), Calendar Integration, SMS Outreach, Lead Round-Robin, Pipeline Forecasting
@@ -73,6 +83,18 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 62: AI Email Preview & Approve Workflow (2026-04-03)
+  - New model: OutreachDraft (status lifecycle: pending→approved→rejected→sent→expired, source: campaign/pipeline/broadcast)
+  - New service: email_preview_service.py — 12 functions: generate_campaign_drafts, generate_pipeline_drafts, generate_broadcast_drafts, ai_rewrite_draft, calculate_deliverability_score (composite: DNS 35% + spam 30% + blacklist 20% + reputation 15%), check_spam_and_suggest (AI replacement phrases), approve/reject/send drafts
+  - New API: 13 endpoints under /email-preview (generate, list, get, update, approve, reject, approve-all, send, send-batch, ai-rewrite, deliverability-score, spam-check, spam-fix)
+  - New page: /dashboard/email-preview — 3-panel layout (draft list | email preview | spam checker + deliverability gauge)
+  - Campaign integration: preview_mode toggle in create/edit modal, "Generate Previews" button per email step
+  - Pipeline integration: "Preview before send" checkbox on outreach card, redirects to email-preview page
+  - Navigation: Email Preview nav item with FileSearch icon (teal), roles: super_admin/admin/operator
+  - Migration: preview_mode TINYINT(1) on campaigns table (main.py lifespan hook)
+  - Fixed: OutreachDraft model index duplication issue in SQLite tests (switched from __table_args__ Index() to column-level index=True)
+  - 16 files changed (12 modified, 4 created), 604 tests pass, frontend builds clean
+  - Committed: 7617770, deployed to VPS
 - [x] Session 56: Lead Data Quality & Client Enrichment (2026-03-31)
   - Committed & deployed industry/company_size columns, Apollo job link improvements, state mapping (e21eb2d)
   - Fixed 15 bad state codes on VPS (TE→TX, VI→VA, PE→PA, GE→GA, etc.) — 839 leads corrected

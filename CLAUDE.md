@@ -91,6 +91,7 @@ Multi-step email sequence processor:
 - Round-robin mailbox selection from campaign's assigned mailboxes
 - Handles replies, bounces, and unsubscribes per campaign contact
 - Timezone-aware send windows using contact's US state
+- **Preview mode**: When `campaign.preview_mode=True`, generates OutreachDraft records instead of sending — enables human review via Email Preview page
 
 ### Unified Inbox (`services/inbox_syncer.py`)
 
@@ -133,7 +134,7 @@ Four sequential data-processing stages, each independently executable via API:
 1. **Lead Sourcing** -- fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id → employer_linkedin → company+title+state+city), sub-source tracking (LinkedIn/Indeed/Glassdoor), store
 2. **Contact Enrichment** -- discover decision-makers via Apollo/Seamless/Hunter/Snov.io/RocketReach/PDL/Proxycurl
 3. **Email Validation** -- verify email addresses before sending
-4. **Outreach** -- AI-generate email content, enforce rate limits and cooldowns, send
+4. **Outreach** -- AI-generate email content, enforce rate limits and cooldowns, send (supports `preview_mode` parameter to generate drafts instead of sending)
 
 ### Warmup Engine (`services/warmup/`)
 
@@ -165,7 +166,7 @@ Domain reputation management subsystem:
 - **SenderMailbox** -- email accounts with daily limits, health scores, warmup status
 - **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
-- **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment, slow ramp (enabled/increment/day), auto-pause thresholds (bounce/spam), AI auto-reply (enabled/delay/max), assignment mode (manual/round_robin/weighted)
+- **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment, slow ramp (enabled/increment/day), auto-pause thresholds (bounce/spam), AI auto-reply (enabled/delay/max), assignment mode (manual/round_robin/weighted), preview_mode (Boolean, generates drafts instead of sending)
 - **SequenceStep** -- campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats
 - **CampaignContact** -- contact enrollment tracking with current_step, next_send_at, status
 - **InboxMessage** -- unified inbox messages with thread_id, direction, category, sentiment
@@ -191,6 +192,7 @@ Domain reputation management subsystem:
 - **CreditUsage** -- credit/usage metering per tenant (usage_type, credits_used, reference tracking)
 - **GoalTarget** -- KPI goal tracking (metric targets: leads/emails/deals/revenue, period tracking)
 - **NotificationEntry** -- notification center entries (category, priority, link, read status, per-user/broadcast)
+- **OutreachDraft** -- email drafts for preview & approve workflow (contact_id, lead_id, campaign_id, step_id, mailbox_id, subject, body_html, original_subject, original_body_html, status: pending/approved/rejected/sent/expired, source: campaign/pipeline/broadcast, spam_score, spam_grade, flagged_words_json, deliverability_score, ai_rewritten, batch_id, variant_index)
 
 ### Additional Services (Phase 5 — "Beat Instantly" Features)
 
@@ -219,6 +221,7 @@ Domain reputation management subsystem:
 | DFY Service | `services/dfy_service.py` | Done-For-You setup (domain suggestions, DNS instructions, warmup estimation) |
 | Credit Metering | `services/credit_metering.py` | Usage tracking and credit metering per tenant |
 | IP Rotation | `services/ip_rotation.py` | SISR — dedicated IP pool management and rotation for high-volume sending |
+| Email Preview | `services/email_preview_service.py` | Draft generation (campaign/pipeline/broadcast), AI rewriting, composite deliverability scoring (DNS+spam+blacklist+reputation), spam word detection with AI replacement suggestions, approval workflow, batch send |
 
 ### Additional API Endpoints
 
@@ -249,6 +252,7 @@ Domain reputation management subsystem:
 | `/sms` | `api/endpoints/sms.py` | SMS outreach via Twilio (send, status check) |
 | `/objections` | `api/endpoints/objections.py` | AI objection template CRUD + seed + use-counter |
 | `/dfy` | `api/endpoints/dfy.py` | Done-For-You setup (domain suggestions, DNS setup, warmup estimates) |
+| `/email-preview` | `api/endpoints/email_preview.py` | Draft generation, CRUD, approve/reject, batch send, AI rewrite, deliverability score, spam check + AI suggestions, spam fix (13 endpoints) |
 
 ### User Onboarding System
 
@@ -262,8 +266,8 @@ Domain reputation management subsystem:
 
 ### Multi-Tenancy Architecture
 
-- **All 38 data models** have `tenant_id` column (NOT NULL, FK to `tenants.tenant_id`, indexed)
-- **All 28 endpoint files** use `get_current_tenant_id` dependency + `tenant_filter` query helper
+- **All 39 data models** have `tenant_id` column (NOT NULL, FK to `tenants.tenant_id`, indexed)
+- **All 29 endpoint files** use `get_current_tenant_id` dependency + `tenant_filter` query helper
 - **Super admin** (`tenant_id=None`) sees all tenants' data; regular users see only their tenant
 - **Super admin impersonation**: `X-Tenant-ID` header or `/admin/tenants/{id}/impersonate` endpoint
 - **Plan limits**: `check_plan_limit()` in `api/deps/plan_limits.py` — enforced at CREATE endpoints
@@ -417,7 +421,7 @@ Without this, `NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000/api/v1`, 
 
 ### Database Migrations
 
-Migrations are **auto-applied on app startup** via `main.py` lifespan hooks (ad-hoc `ALTER TABLE` statements at lines 214-318). No Alembic yet. After adding a new migration hook:
+Migrations are **auto-applied on app startup** via `main.py` lifespan hooks (ad-hoc `ALTER TABLE` statements). No Alembic yet. Latest migration: `preview_mode` TINYINT(1) column on `campaigns` table. `outreach_drafts` table auto-created via `create_all`. After adding a new migration hook:
 1. Add the migration in `backend/app/main.py` inside the `lifespan()` function
 2. Deploy normally — the migration runs when `exzelon-api` restarts
 3. Verify: `journalctl -u exzelon-api --since "5 min ago" | grep -i migrat`
