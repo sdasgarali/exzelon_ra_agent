@@ -8,6 +8,8 @@ from app.api.endpoints import (
     tracking_domains, lead_search, saved_searches, analytics,
     icp_wizard, sequence_generator, crm_sync, deal_tasks, spam_check,
     admin_tenants, billing, activity_log, onboarding,
+    reply_macros, notifications, calendar, credits, goals, visitor_tracking,
+    sms, objections, dfy,
 )
 
 api_router = APIRouter()
@@ -49,3 +51,14 @@ api_router.include_router(admin_tenants.router)
 api_router.include_router(billing.router)
 api_router.include_router(activity_log.router)
 api_router.include_router(onboarding.router)
+# Phase 1 Quick Wins
+api_router.include_router(reply_macros.router)
+api_router.include_router(notifications.router)
+api_router.include_router(calendar.router)
+api_router.include_router(credits.router)
+api_router.include_router(goals.router)
+api_router.include_router(visitor_tracking.router)
+# Phase 2-4 endpoints
+api_router.include_router(sms.router)
+api_router.include_router(objections.router)
+api_router.include_router(dfy.router)

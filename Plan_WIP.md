@@ -1,9 +1,17 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 60: Leads page multi-select filters + data_type filter. Added DataType enum (test/prod) to LeadDetails model, migration in main.py, multi-value Query params for state/industry/company_size on GET /leads, data_type filter, checkbox dropdown UI component on frontend, TEST badge on lead rows. 604 tests pass, frontend builds clean.
+> Session 61: Implemented FULL 4-Phase Roadmap from Instantly.ai competitive analysis. 49 files changed (18 modified, 31 new). 7 new DB models (ReplyMacro, AIReplyDraft, ObjectionTemplate, CalendarBooking, CreditUsage, GoalTarget, NotificationEntry), 10 new services, 9 new endpoint groups, 3 new frontend components (CopilotChat, CommandPalette, NotificationCenter), 1 new page (/dashboard/visitors). Added migration hooks in main.py for all new columns. 604 tests pass, frontend builds clean. V2.0 competitive analysis .docx generated.
 
 ## Immediate TODO
+- [x] 4-Phase Roadmap Implementation — ALL PHASES COMPLETE (2026-04-03)
+  - Phase 1: AI Copilot Widget, Campaign Slow Ramp, Reply Macros, Auto-Pause, Lookalike Search, Engagement Heatmap
+  - Phase 2: AI Reply Agent (HITL + Autopilot), Calendar Integration, SMS Outreach, Lead Round-Robin, Pipeline Forecasting
+  - Phase 3: Website Visitor Tracking, LinkedIn/SMS/Call step types, AI Objection Library, Intent Data & Buying Signals
+  - Phase 4: DFY Domain Service, White-Label/Agency Mode, Notification Center, Credit Metering, Goal Tracking, SISR IP Rotation
+  - UI/UX: Copilot Chat, Command Palette (Cmd+K), Notification Center, Glassmorphism, Goal Progress Rings, Engagement Heatmap
+  - 7 new models, 10 new services, 9 new endpoint groups, 3 new frontend components, 1 new dashboard page
+  - V2.0 competitive analysis .docx generated
 - [x] VPS Production Deployment (all 8 phases complete)
 - [x] Granular Settings tab permissions (per-tab view/edit control for admin role)
 - [x] Pipeline improvements: confirmations, contact selector, cancel, progress tracking

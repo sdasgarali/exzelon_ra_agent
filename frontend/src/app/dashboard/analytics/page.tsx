@@ -5,7 +5,7 @@ import axios from 'axios'
 import { api } from '@/lib/api'
 import {
   DollarSign, TrendingUp, Target, Award, BarChart3, Users,
-  Plus, Loader2, AlertCircle, Receipt, Trash2, Bot,
+  Plus, Loader2, AlertCircle, Receipt, Trash2, Bot, CalendarDays, Activity,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -127,6 +127,14 @@ export default function AnalyticsPage() {
   const [costsBySource, setCostsBySource] = useState<CostBySource[]>([])
   const [costsBySourceLoading, setCostsBySourceLoading] = useState(true)
 
+  // Engagement heatmap
+  const [heatmapData, setHeatmapData] = useState<Record<string, Record<string, { opens: number; replies: number; total: number }>>>({})
+  const [heatmapLoading, setHeatmapLoading] = useState(true)
+
+  // Pipeline forecast
+  const [forecast, setForecast] = useState<any>(null)
+  const [forecastLoading, setForecastLoading] = useState(true)
+
   // ---------- Data fetching ----------
 
   useEffect(() => {
@@ -135,6 +143,8 @@ export default function AnalyticsPage() {
     fetchLeaderboard()
     fetchCosts()
     fetchCostsBySource()
+    fetchHeatmap()
+    fetchForecast()
   }, [])
 
   const fetchRevenue = async () => {
@@ -198,6 +208,54 @@ export default function AnalyticsPage() {
       // silently fail — chart is supplementary
     }
     setCostsBySourceLoading(false)
+  }
+
+  const fetchHeatmap = async () => {
+    setHeatmapLoading(true)
+    try {
+      const { data } = await api.get('/analytics/engagement-heatmap', { params: { days: 30 } })
+      // Transform into { day: { hour: { opens, replies, total } } }
+      const map: Record<string, Record<string, { opens: number; replies: number; total: number }>> = {}
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      days.forEach(d => { map[d] = {} })
+      for (let h = 0; h < 24; h++) {
+        days.forEach(d => { map[d][h] = { opens: 0, replies: 0, total: 0 } })
+      }
+      if (data?.heatmap && Array.isArray(data.heatmap)) {
+        data.heatmap.forEach((entry: any) => {
+          const day = days[entry.day_of_week] || days[0]
+          const hour = String(entry.hour)
+          if (map[day] && map[day][hour] !== undefined) {
+            map[day][hour] = {
+              opens: entry.opens || 0,
+              replies: entry.replies || 0,
+              total: (entry.opens || 0) + (entry.replies || 0),
+            }
+          }
+        })
+      }
+      setHeatmapData(map)
+    } catch {
+      // silently fail - heatmap is supplementary
+    }
+    setHeatmapLoading(false)
+  }
+
+  const fetchForecast = async () => {
+    setForecastLoading(true)
+    try {
+      const { data } = await api.get('/analytics/forecast')
+      setForecast(data)
+    } catch {
+      try {
+        // Fallback to deals forecast
+        const { data } = await api.get('/deals/forecast')
+        setForecast(data)
+      } catch {
+        // silently fail
+      }
+    }
+    setForecastLoading(false)
   }
 
   const handleAddCost = async () => {
@@ -558,6 +616,154 @@ export default function AnalyticsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* --- Engagement Heatmap --- */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+          <CalendarDays className="w-5 h-5 text-green-600" /> Engagement Heatmap
+          <span className="text-xs font-normal text-gray-400 ml-1">(last 30 days)</span>
+        </h2>
+        {heatmapLoading ? renderSpinner() : (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-x-auto">
+            <div className="min-w-[700px]">
+              {/* Hour labels */}
+              <div className="flex mb-1">
+                <div className="w-12 flex-shrink-0" />
+                {Array.from({ length: 24 }, (_, h) => (
+                  <div key={h} className="flex-1 text-center text-[10px] text-gray-400 font-mono">
+                    {h}
+                  </div>
+                ))}
+              </div>
+              {/* Heatmap rows */}
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
+                const dayData = heatmapData[day] || {}
+                // Find max for scaling
+                const allTotals = Object.values(heatmapData).flatMap(d => Object.values(d).map(c => c.total))
+                const maxVal = Math.max(...allTotals, 1)
+                return (
+                  <div key={day} className="flex items-center mb-1">
+                    <div className="w-12 flex-shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">{day}</div>
+                    {Array.from({ length: 24 }, (_, h) => {
+                      const cell = dayData[h] || { opens: 0, replies: 0, total: 0 }
+                      const intensity = maxVal > 0 ? cell.total / maxVal : 0
+                      // Map intensity to green shades
+                      let bgClass = 'bg-gray-100 dark:bg-gray-700'
+                      if (intensity > 0 && intensity <= 0.2) bgClass = 'bg-green-100 dark:bg-green-900/30'
+                      else if (intensity <= 0.4) bgClass = 'bg-green-200 dark:bg-green-800/40'
+                      else if (intensity <= 0.6) bgClass = 'bg-green-300 dark:bg-green-700/60'
+                      else if (intensity <= 0.8) bgClass = 'bg-green-400 dark:bg-green-600/70'
+                      else if (intensity > 0.8) bgClass = 'bg-green-500 dark:bg-green-500'
+
+                      return (
+                        <div
+                          key={h}
+                          className={`flex-1 h-6 mx-0.5 rounded-sm ${bgClass} cursor-pointer transition-colors hover:ring-1 hover:ring-green-400`}
+                          title={`${day} ${h}:00 - Opens: ${cell.opens}, Replies: ${cell.replies}, Total: ${cell.total}`}
+                        />
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {/* Legend */}
+              <div className="flex items-center justify-end gap-2 mt-3">
+                <span className="text-[10px] text-gray-400">Less</span>
+                <div className="w-4 h-4 rounded-sm bg-gray-100 dark:bg-gray-700" />
+                <div className="w-4 h-4 rounded-sm bg-green-100 dark:bg-green-900/30" />
+                <div className="w-4 h-4 rounded-sm bg-green-200 dark:bg-green-800/40" />
+                <div className="w-4 h-4 rounded-sm bg-green-300 dark:bg-green-700/60" />
+                <div className="w-4 h-4 rounded-sm bg-green-400 dark:bg-green-600/70" />
+                <div className="w-4 h-4 rounded-sm bg-green-500 dark:bg-green-500" />
+                <span className="text-[10px] text-gray-400">More</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* --- Pipeline Forecast --- */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+          <Activity className="w-5 h-5 text-purple-600" /> Pipeline Forecast
+        </h2>
+        {forecastLoading ? renderSpinner() : !forecast ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-400">
+            No forecast data available. Add deals to generate projections.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Forecast Metric Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
+                  <Award className="w-4 h-4 text-amber-500" /> Win Rate
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {(forecast.win_rate || 0).toFixed(1)}%
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
+                  <DollarSign className="w-4 h-4 text-green-500" /> Avg Deal Value
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {fmtCurrency(forecast.avg_deal_value || forecast.avg_deal_size || 0)}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
+                  <Target className="w-4 h-4 text-purple-500" /> Weighted Pipeline
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {fmtCurrency(forecast.weighted_value || forecast.weighted_pipeline || 0)}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
+                  <TrendingUp className="w-4 h-4 text-blue-500" /> Total Pipeline
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {fmtCurrency(forecast.total_pipeline || forecast.total_value || 0)}
+                </p>
+              </div>
+            </div>
+
+            {/* Monthly Forecast Chart */}
+            {forecast.monthly && Array.isArray(forecast.monthly) && forecast.monthly.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Monthly Projected Revenue</h3>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={forecast.monthly} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtCurrency(v)} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: 8, color: '#fff' }}
+                      formatter={(value: number) => [fmtCurrency(value), 'Projected Revenue']}
+                    />
+                    <Bar dataKey="projected_revenue" name="Projected Revenue" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                {/* Confidence indicators */}
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  {forecast.monthly.map((m: any) => (
+                    <span key={m.month} className="flex items-center gap-1">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">{m.month}</span>:
+                      <span className={`font-semibold ${
+                        (m.confidence || 0) >= 70 ? 'text-green-600' :
+                        (m.confidence || 0) >= 40 ? 'text-amber-600' : 'text-red-500'
+                      }`}>
+                        {m.confidence || 0}% confidence
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

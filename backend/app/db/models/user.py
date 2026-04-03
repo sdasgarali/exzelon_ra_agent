@@ -46,6 +46,9 @@ class User(Base):
     # Onboarding
     onboarding_dismissed_at = Column(DateTime, nullable=True)
 
+    # Calendar link (Calendly/Cal.com)
+    calendar_link = Column(String(500), nullable=True)
+
     # Relationship
     tenant = relationship("Tenant", backref="users")
 

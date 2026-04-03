@@ -38,6 +38,13 @@ from app.db.models.invoice import (
     InvoiceStatus, PaymentStatus, LineItemType, PaymentMethod,
 )
 from app.db.models.login_history import LoginHistory
+from app.db.models.reply_macro import ReplyMacro
+from app.db.models.ai_reply_draft import AIReplyDraft
+from app.db.models.objection_template import ObjectionTemplate
+from app.db.models.calendar_booking import CalendarBooking
+from app.db.models.credit_usage import CreditUsage
+from app.db.models.goal_target import GoalTarget
+from app.db.models.notification import NotificationEntry
 
 __all__ = [
     "User",
@@ -100,4 +107,11 @@ __all__ = [
     "LineItemType",
     "PaymentMethod",
     "LoginHistory",
+    "ReplyMacro",
+    "AIReplyDraft",
+    "ObjectionTemplate",
+    "CalendarBooking",
+    "CreditUsage",
+    "GoalTarget",
+    "NotificationEntry",
 ]

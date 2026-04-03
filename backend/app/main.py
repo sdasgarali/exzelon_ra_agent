@@ -1086,6 +1086,98 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for onboarding_dismissed_at: {e}")
 
+    # ── Migration: Phase 5 — Roadmap features (campaigns, users, leads, mailboxes, tenants) ──
+    try:
+        from sqlalchemy import text as sa_text_p5, inspect as sa_inspect_p5
+        with engine.connect() as conn:
+            inspector_p5 = sa_inspect_p5(engine)
+
+            # Campaign model additions
+            camp_cols = [c["name"] for c in inspector_p5.get_columns("campaigns")]
+            camp_additions = {
+                "slow_ramp_enabled": "TINYINT(1) NOT NULL DEFAULT 0",
+                "slow_ramp_increment": "INT NOT NULL DEFAULT 2",
+                "slow_ramp_current_day": "INT NOT NULL DEFAULT 0",
+                "bounce_threshold": "INT NOT NULL DEFAULT 10",
+                "spam_threshold": "INT NOT NULL DEFAULT 5",
+                "auto_pause_reason": "VARCHAR(255) NULL",
+                "auto_reply_enabled": "TINYINT(1) NOT NULL DEFAULT 0",
+                "auto_reply_delay_minutes": "INT NOT NULL DEFAULT 5",
+                "max_auto_replies_per_thread": "INT NOT NULL DEFAULT 3",
+                "assignment_mode": "VARCHAR(20) NOT NULL DEFAULT 'manual'",
+            }
+            for col_name, col_def in camp_additions.items():
+                if col_name not in camp_cols:
+                    try:
+                        conn.execute(sa_text_p5(f"ALTER TABLE campaigns ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to campaigns")
+                    except Exception:
+                        pass
+
+            # StepType enum update (add sms, linkedin, call)
+            try:
+                conn.execute(sa_text_p5(
+                    "ALTER TABLE sequence_steps MODIFY COLUMN step_type "
+                    "ENUM('email','wait','condition','sms','linkedin','call') NOT NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: extended step_type enum")
+            except Exception:
+                pass
+
+            # User model: calendar_link
+            user_cols_p5 = [c["name"] for c in inspector_p5.get_columns("users")]
+            if "calendar_link" not in user_cols_p5:
+                try:
+                    conn.execute(sa_text_p5("ALTER TABLE users ADD COLUMN calendar_link VARCHAR(500) NULL"))
+                    conn.commit()
+                    logger.info("Migration: added calendar_link to users")
+                except Exception:
+                    pass
+
+            # Lead model: assigned_to
+            lead_cols_p5 = [c["name"] for c in inspector_p5.get_columns("lead_details")]
+            if "assigned_to" not in lead_cols_p5:
+                try:
+                    conn.execute(sa_text_p5("ALTER TABLE lead_details ADD COLUMN assigned_to INT NULL"))
+                    conn.commit()
+                    logger.info("Migration: added assigned_to to lead_details")
+                except Exception:
+                    pass
+
+            # SenderMailbox: dedicated_ip
+            mb_cols_p5 = [c["name"] for c in inspector_p5.get_columns("sender_mailboxes")]
+            if "dedicated_ip" not in mb_cols_p5:
+                try:
+                    conn.execute(sa_text_p5("ALTER TABLE sender_mailboxes ADD COLUMN dedicated_ip VARCHAR(45) NULL"))
+                    conn.commit()
+                    logger.info("Migration: added dedicated_ip to sender_mailboxes")
+                except Exception:
+                    pass
+
+            # Tenant model: white-label / agency fields
+            tenant_cols_p5 = [c["name"] for c in inspector_p5.get_columns("tenants")]
+            tenant_additions = {
+                "brand_name": "VARCHAR(255) NULL",
+                "brand_logo_url": "VARCHAR(500) NULL",
+                "brand_primary_color": "VARCHAR(7) NULL",
+                "brand_secondary_color": "VARCHAR(7) NULL",
+                "custom_domain": "VARCHAR(255) NULL",
+                "agency_mode": "TINYINT(1) NOT NULL DEFAULT 0",
+            }
+            for col_name, col_def in tenant_additions.items():
+                if col_name not in tenant_cols_p5:
+                    try:
+                        conn.execute(sa_text_p5(f"ALTER TABLE tenants ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to tenants")
+                    except Exception:
+                        pass
+
+    except Exception as e:
+        logger.warning(f"Migration check for Phase 5 roadmap: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

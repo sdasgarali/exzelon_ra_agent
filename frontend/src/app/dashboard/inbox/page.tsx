@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { inboxApi, mailboxesApi, automationApi } from '@/lib/api'
+import { api, inboxApi, mailboxesApi, automationApi } from '@/lib/api'
 import type { InboxThread, InboxMessage, InboxThreadDetail, AutomationEvent } from '@/types/api'
 import {
   Search, RefreshCw, ChevronDown, Send, Sparkles, User,
@@ -9,6 +9,7 @@ import {
   Clock, Tag, ThumbsUp, ThumbsDown, Minus, AlertCircle,
   Phone, Building, Briefcase, ExternalLink, Filter, Info,
   Bot, Zap, Activity, Trash2, CheckSquare, Square, CheckCheck,
+  FileText, Check, Edit3, XCircle, ChevronUp, Loader2,
 } from 'lucide-react'
 
 // ─── Category & sentiment config ────────────────────────────────────
@@ -82,6 +83,17 @@ export default function InboxPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: 'single' | 'bulk'; threadId?: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Reply macros state
+  const [macros, setMacros] = useState<{ id: string; name: string; body: string }[]>([])
+  const [showMacros, setShowMacros] = useState(false)
+  const [macrosLoading, setMacrosLoading] = useState(false)
+
+  // AI Reply Agent state
+  const [aiDraft, setAiDraft] = useState<{ body: string; confidence: string; confidence_score: number } | null>(null)
+  const [aiDraftLoading, setAiDraftLoading] = useState(false)
+  const [showAiDraft, setShowAiDraft] = useState(false)
+  const [aiDraftSending, setAiDraftSending] = useState(false)
 
   const fetchThreads = useCallback(async () => {
     setLoading(true)
@@ -190,6 +202,97 @@ export default function InboxPage() {
   useEffect(() => {
     if (showAutomationPanel) fetchAutomationEvents()
   }, [showAutomationPanel, fetchAutomationEvents])
+
+  // Fetch reply macros
+  const fetchMacros = useCallback(async () => {
+    setMacrosLoading(true)
+    try {
+      const { data } = await api.get('/reply-macros')
+      setMacros(data?.macros || data?.items || data || [])
+    } catch {
+      setMacros([])
+    }
+    setMacrosLoading(false)
+  }, [])
+
+  const insertMacro = (body: string) => {
+    // Substitute variables using contact context
+    let text = body
+    if (selectedThread?.contact) {
+      const c = selectedThread.contact
+      text = text.replace(/\{\{first_name\}\}/g, c.name?.split(' ')[0] || '')
+      text = text.replace(/\{\{last_name\}\}/g, c.name?.split(' ').slice(1).join(' ') || '')
+      text = text.replace(/\{\{company\}\}/g, c.company || '')
+      text = text.replace(/\{\{email\}\}/g, c.email || '')
+      text = text.replace(/\{\{name\}\}/g, c.name || '')
+    }
+    setReplyText(prev => prev + (prev ? '\n' : '') + text)
+    setShowMacros(false)
+  }
+
+  // Fetch AI reply draft
+  const fetchAiDraft = useCallback(async () => {
+    if (!selectedThreadId) return
+    setAiDraftLoading(true)
+    try {
+      const { data } = await api.get(`/inbox/threads/${selectedThreadId}/suggest-reply`)
+      setAiDraft({
+        body: data?.body_text || data?.body || data?.response || '',
+        confidence: data?.confidence || 'medium',
+        confidence_score: data?.confidence_score || 50,
+      })
+      setShowAiDraft(true)
+    } catch {
+      setAiDraft(null)
+    }
+    setAiDraftLoading(false)
+  }, [selectedThreadId])
+
+  // Auto-fetch AI draft when thread opens
+  useEffect(() => {
+    if (selectedThread && selectedThreadId) {
+      fetchAiDraft()
+    } else {
+      setAiDraft(null)
+      setShowAiDraft(false)
+    }
+  }, [selectedThreadId])
+
+  const handleApproveAndSend = async () => {
+    if (!aiDraft || !selectedThreadId) return
+    const threadMailboxId = selectedThread?.messages?.find(m => m.mailbox_id)?.mailbox_id
+      || threads.find(t => t.thread_id === selectedThreadId)?.mailbox_id
+    if (!threadMailboxId) return
+
+    setAiDraftSending(true)
+    try {
+      await inboxApi.reply({
+        thread_id: selectedThreadId,
+        mailbox_id: threadMailboxId,
+        body_html: `<p>${aiDraft.body.replace(/\n/g, '<br/>')}</p>`,
+        body_text: aiDraft.body,
+      })
+      setAiDraft(null)
+      setShowAiDraft(false)
+      const detail = await inboxApi.getThread(selectedThreadId)
+      setSelectedThread(detail)
+    } catch {
+      // silently fail
+    }
+    setAiDraftSending(false)
+  }
+
+  const handleEditDraft = () => {
+    if (aiDraft) {
+      setReplyText(aiDraft.body)
+      setShowAiDraft(false)
+    }
+  }
+
+  const handleDismissDraft = () => {
+    setShowAiDraft(false)
+    setAiDraft(null)
+  }
 
   // ─── Multi-select helpers ──────────────────────────────────────
   const toggleThreadSelect = (threadId: string, e: React.MouseEvent) => {
@@ -710,6 +813,51 @@ export default function InboxPage() {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* AI Reply Agent Panel */}
+              {showAiDraft && aiDraft && (
+                <div className="border-t border-gray-200 dark:border-gray-700 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10 px-5 py-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">AI Reply Draft</span>
+                    <span className={`ml-1 px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                      aiDraft.confidence === 'high' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
+                      aiDraft.confidence === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                      'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    }`}>
+                      {aiDraft.confidence.charAt(0).toUpperCase() + aiDraft.confidence.slice(1)} Confidence
+                    </span>
+                    <button onClick={handleDismissDraft} className="ml-auto p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700/30 p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                    {aiDraft.body}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={handleApproveAndSend}
+                      disabled={aiDraftSending}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {aiDraftSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      Approve & Send
+                    </button>
+                    <button
+                      onClick={handleEditDraft}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button
+                      onClick={handleDismissDraft}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-red-500 transition-colors"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Reply Composer */}
               <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
                 {replyError && (
@@ -729,6 +877,50 @@ export default function InboxPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
+                    {/* Reply Macros Button */}
+                    <div className="relative">
+                      <button
+                        onClick={() => { if (!showMacros) fetchMacros(); setShowMacros(!showMacros) }}
+                        className="p-2.5 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 transition-all group"
+                        title="Insert Macro"
+                      >
+                        <FileText className={`w-4 h-4 transition-colors ${showMacros ? 'text-blue-500' : 'text-gray-400 group-hover:text-blue-500'}`} />
+                      </button>
+                      {showMacros && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowMacros(false)} />
+                          <div className="absolute bottom-full right-0 mb-2 z-20 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+                              <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Reply Macros</span>
+                              <button onClick={() => setShowMacros(false)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
+                            </div>
+                            <div className="max-h-48 overflow-y-auto">
+                              {macrosLoading ? (
+                                <div className="p-4 text-center">
+                                  <Loader2 className="w-4 h-4 animate-spin mx-auto text-gray-400" />
+                                </div>
+                              ) : macros.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-gray-400">
+                                  No macros available
+                                </div>
+                              ) : (
+                                macros.map(macro => (
+                                  <button
+                                    key={macro.id}
+                                    onClick={() => insertMacro(macro.body)}
+                                    className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700/50 last:border-0"
+                                  >
+                                    <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{macro.name}</span>
+                                    <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-2">{macro.body}</p>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
                     <button onClick={handleSuggestReply} disabled={suggestingReply}
                       className="p-2.5 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:border-amber-300 disabled:opacity-50 transition-all group"
                       title="AI Suggest Reply">

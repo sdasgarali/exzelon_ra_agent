@@ -81,6 +81,9 @@ class SenderMailbox(Base):
     # SMTP relay rotation (JSON array of {host, port, ip})
     smtp_relay_config_json = Column(Text, nullable=True)
 
+    # Dedicated IP for sender IP separation/rotation (SISR)
+    dedicated_ip = Column(String(45), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

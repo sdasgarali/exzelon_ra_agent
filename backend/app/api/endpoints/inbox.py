@@ -517,3 +517,197 @@ def trigger_sync(
     from app.services.inbox_syncer import sync_inbox
     result = sync_inbox(db, tenant_id=tenant_id)
     return {"message": "Sync completed", "result": result}
+
+
+# ─── AI Reply Drafts ──────────────────────────────────────────────
+
+@router.get("/threads/{thread_id}/drafts")
+def list_drafts(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List AI reply drafts for a thread."""
+    from app.db.models.ai_reply_draft import AIReplyDraft
+
+    drafts_q = db.query(AIReplyDraft).filter(
+        AIReplyDraft.thread_id == thread_id,
+        AIReplyDraft.status.in_(["pending", "approved"]),
+        AIReplyDraft.is_archived == False,
+    )
+    drafts_q = tenant_filter(drafts_q, AIReplyDraft, tenant_id)
+    drafts = drafts_q.order_by(AIReplyDraft.created_at.desc()).all()
+
+    return {
+        "thread_id": thread_id,
+        "drafts": [
+            {
+                "draft_id": d.draft_id,
+                "thread_id": d.thread_id,
+                "subject": d.subject,
+                "body_html": d.body_html,
+                "body_text": d.body_text,
+                "intent_detected": d.intent_detected,
+                "confidence_score": d.confidence_score,
+                "ai_model_used": d.ai_model_used,
+                "status": d.status,
+                "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+                "mailbox_id": d.mailbox_id,
+                "campaign_id": d.campaign_id,
+                "contact_id": d.contact_id,
+            }
+            for d in drafts
+        ],
+        "count": len(drafts),
+    }
+
+
+@router.post("/threads/{thread_id}/drafts/{draft_id}/approve")
+def approve_draft(
+    thread_id: str,
+    draft_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Approve and send an AI reply draft."""
+    from app.db.models.ai_reply_draft import AIReplyDraft
+    from app.services.ai_reply_agent_service import _send_draft
+
+    draft_q = db.query(AIReplyDraft).filter(
+        AIReplyDraft.draft_id == draft_id,
+        AIReplyDraft.thread_id == thread_id,
+        AIReplyDraft.is_archived == False,
+    )
+    draft_q = tenant_filter(draft_q, AIReplyDraft, tenant_id)
+    draft = draft_q.first()
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft.status not in ("pending",):
+        raise HTTPException(status_code=400, detail=f"Draft is already {draft.status}")
+
+    # Send the draft
+    success = _send_draft(db, draft)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send draft reply")
+
+    draft.status = "approved"
+    draft.approved_by = user.user_id
+    draft.approved_at = datetime.utcnow()
+    draft.sent_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "message": "Draft approved and sent",
+        "draft_id": draft.draft_id,
+        "thread_id": thread_id,
+    }
+
+
+@router.post("/threads/{thread_id}/drafts/{draft_id}/reject")
+def reject_draft(
+    thread_id: str,
+    draft_id: int,
+    reason: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Reject an AI reply draft."""
+    from app.db.models.ai_reply_draft import AIReplyDraft
+
+    draft_q = db.query(AIReplyDraft).filter(
+        AIReplyDraft.draft_id == draft_id,
+        AIReplyDraft.thread_id == thread_id,
+        AIReplyDraft.is_archived == False,
+    )
+    draft_q = tenant_filter(draft_q, AIReplyDraft, tenant_id)
+    draft = draft_q.first()
+
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if draft.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Draft is already {draft.status}")
+
+    draft.status = "rejected"
+    draft.approved_by = user.user_id
+    draft.approved_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "message": "Draft rejected",
+        "draft_id": draft.draft_id,
+        "thread_id": thread_id,
+    }
+
+
+@router.post("/threads/{thread_id}/generate-draft")
+def generate_draft(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Manually trigger AI draft generation for a thread."""
+    from app.services.ai_reply_agent_service import generate_ai_reply_draft
+
+    # Find the latest received message in the thread
+    last_received_q = db.query(InboxMessage).filter(
+        InboxMessage.thread_id == thread_id,
+        InboxMessage.direction == MessageDirection.RECEIVED,
+    )
+    last_received_q = tenant_filter(last_received_q, InboxMessage, tenant_id)
+    last_received = last_received_q.order_by(InboxMessage.received_at.desc()).first()
+
+    if not last_received:
+        raise HTTPException(
+            status_code=404,
+            detail="No received message found in this thread",
+        )
+
+    # Look up contact and campaign
+    contact = None
+    campaign_obj = None
+    if last_received.contact_id:
+        from app.db.models.contact import ContactDetails as ContactModel
+        contact_q = db.query(ContactModel).filter(
+            ContactModel.contact_id == last_received.contact_id
+        )
+        contact_q = tenant_filter(contact_q, ContactModel, tenant_id)
+        contact = contact_q.first()
+    if last_received.campaign_id:
+        campaign_q = db.query(Campaign).filter(
+            Campaign.campaign_id == last_received.campaign_id
+        )
+        campaign_q = tenant_filter(campaign_q, Campaign, tenant_id)
+        campaign_obj = campaign_q.first()
+
+    draft = generate_ai_reply_draft(
+        db=db,
+        thread_id=thread_id,
+        received_message=last_received,
+        contact=contact,
+        campaign=campaign_obj,
+        tenant_id=tenant_id or 1,
+    )
+
+    if not draft:
+        return {
+            "message": "No draft generated (OOO or max replies reached)",
+            "thread_id": thread_id,
+        }
+
+    return {
+        "message": "AI draft generated",
+        "draft": {
+            "draft_id": draft.draft_id,
+            "subject": draft.subject,
+            "body_text": draft.body_text,
+            "intent_detected": draft.intent_detected,
+            "confidence_score": draft.confidence_score,
+            "status": draft.status,
+        },
+    }

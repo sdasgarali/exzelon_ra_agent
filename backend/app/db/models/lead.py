@@ -93,6 +93,9 @@ class LeadDetails(Base):
     lead_status = Column(Enum(LeadStatus, values_callable=lambda x: [e.value for e in x]), default=LeadStatus.NEW, nullable=False)
     skip_reason = Column(Text, nullable=True)
 
+    # Assignment
+    assigned_to = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+
     # Research analyst tracking
     ra_name = Column(String(100), nullable=True)
 

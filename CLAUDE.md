@@ -165,8 +165,8 @@ Domain reputation management subsystem:
 - **SenderMailbox** -- email accounts with daily limits, health scores, warmup status
 - **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
-- **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment
-- **SequenceStep** -- campaign steps (email/wait/condition) with delay, A/B variants, stats
+- **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment, slow ramp (enabled/increment/day), auto-pause thresholds (bounce/spam), AI auto-reply (enabled/delay/max), assignment mode (manual/round_robin/weighted)
+- **SequenceStep** -- campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats
 - **CampaignContact** -- contact enrollment tracking with current_step, next_send_at, status
 - **InboxMessage** -- unified inbox messages with thread_id, direction, category, sentiment
 - **Deal** -- CRM deals with value, probability, stage, contact/client associations
@@ -184,6 +184,13 @@ Domain reputation management subsystem:
 - **InvoiceLineItem** -- line items (subscription/addon/credit/tax/discount) within an invoice
 - **PaymentRecord** -- payment records against invoices (stripe/manual/bank_transfer/check/card), with status tracking
 - **LoginHistory** -- every login attempt (success/failure) with email, IP, user agent, failure reason (invalid_credentials/inactive/unverified/locked), multi-index for analytics
+- **ReplyMacro** -- quick reply templates for inbox (title, body, category, variable substitution, usage tracking)
+- **AIReplyDraft** -- AI Reply Agent drafts for HITL/Autopilot approval (thread_id, intent_detected, confidence_score, status: pending/approved/rejected/auto_sent)
+- **ObjectionTemplate** -- AI objection handling templates (objection_type, response, effectiveness_score, system vs user-created)
+- **CalendarBooking** -- calendar booking tracking (Calendly/Cal.com integration, scheduling, status tracking)
+- **CreditUsage** -- credit/usage metering per tenant (usage_type, credits_used, reference tracking)
+- **GoalTarget** -- KPI goal tracking (metric targets: leads/emails/deals/revenue, period tracking)
+- **NotificationEntry** -- notification center entries (category, priority, link, read status, per-user/broadcast)
 
 ### Additional Services (Phase 5 — "Beat Instantly" Features)
 
@@ -197,6 +204,21 @@ Domain reputation management subsystem:
 | CRM Sync Engine | `services/crm_sync_engine.py` | Bidirectional HubSpot/Salesforce sync (pull contacts, push deals) |
 | CRM Auto-Forward | `services/crm_auto_forward.py` | Auto-forward interested inbox replies to CRM |
 | IMAP Reader | `services/warmup/imap_reader.py` | Read emulation for warmup (marks peer emails as read via IMAP) |
+
+### Roadmap Phase Services (Instantly.ai Parity + Beyond)
+
+| Service | File | Purpose |
+|---------|------|---------|
+| AI Reply Agent | `services/ai_reply_agent_service.py` | HITL + Autopilot auto-reply (intent detection, AI draft generation, auto-send queue) |
+| Auto-Pause Monitor | `services/auto_pause_monitor.py` | Hourly campaign health check, auto-pause on bounce/spam threshold breach |
+| Forecast Engine | `services/forecast_engine.py` | AI-powered deal pipeline forecasting (win rate, weighted pipeline, monthly projections) |
+| Visitor Tracker | `services/visitor_tracker.py` | Website visitor tracking (JS pixel, page visit recording, visitor stats) |
+| Intent Data | `services/intent_data.py` | Buying intent scoring (hiring signals, recency, company size, industry, salary) |
+| Objection Handler | `services/objection_handler.py` | AI objection handling library (7 system templates, seed + CRUD) |
+| Lead Assigner | `services/lead_assigner.py` | Round-robin lead assignment across team members |
+| DFY Service | `services/dfy_service.py` | Done-For-You setup (domain suggestions, DNS instructions, warmup estimation) |
+| Credit Metering | `services/credit_metering.py` | Usage tracking and credit metering per tenant |
+| IP Rotation | `services/ip_rotation.py` | SISR — dedicated IP pool management and rotation for high-volume sending |
 
 ### Additional API Endpoints
 
@@ -218,6 +240,15 @@ Domain reputation management subsystem:
 | `/billing` | `api/endpoints/billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
 | `/activity` | `api/endpoints/activity_log.py` | Login history (paginated, filterable), 24h stats, auth audit events, active users, my-login-history, unlock user. Super admin only (except my-login-history) |
 | `/onboarding` | `api/endpoints/onboarding.py` | 6-step onboarding status (auto-detected from data), dismiss, reset (super admin). Per-user dismiss, tenant-filtered queries |
+| `/reply-macros` | `api/endpoints/reply_macros.py` | Reply macro CRUD + usage tracking for inbox quick templates |
+| `/notifications` | `api/endpoints/notifications.py` | Notification center (list, unread-count, mark-read, mark-all-read) |
+| `/calendar` | `api/endpoints/calendar.py` | Calendar booking CRUD + stats |
+| `/credits` | `api/endpoints/credits.py` | Credit usage tracking (usage list, summary, balance) |
+| `/goals` | `api/endpoints/goals.py` | Goal/KPI target CRUD + progress tracking |
+| `/visitors` | `api/endpoints/visitor_tracking.py` | Website visitor tracking (pixel.js, track endpoint, stats, sessions) |
+| `/sms` | `api/endpoints/sms.py` | SMS outreach via Twilio (send, status check) |
+| `/objections` | `api/endpoints/objections.py` | AI objection template CRUD + seed + use-counter |
+| `/dfy` | `api/endpoints/dfy.py` | Done-For-You setup (domain suggestions, DNS setup, warmup estimates) |
 
 ### User Onboarding System
 

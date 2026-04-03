@@ -36,6 +36,14 @@ class Tenant(Base):
     max_campaigns = Column(Integer, default=0, nullable=False)
     max_leads = Column(Integer, default=0, nullable=False)
 
+    # White-label branding
+    brand_name = Column(String(255), nullable=True)
+    brand_logo_url = Column(String(500), nullable=True)
+    brand_primary_color = Column(String(7), nullable=True)  # #hex
+    brand_secondary_color = Column(String(7), nullable=True)
+    custom_domain = Column(String(255), nullable=True)
+    agency_mode = Column(Boolean, default=False, nullable=False)
+
     # Billing
     monthly_price_cents = Column(Integer, default=0, nullable=False)
     billing_email = Column(String(255), nullable=True)

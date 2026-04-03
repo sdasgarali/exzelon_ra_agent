@@ -6,7 +6,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc
+from sqlalchemy import func, asc, desc, or_
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.api.deps.plan_limits import check_plan_limit
@@ -231,6 +231,124 @@ async def list_leads(
         "page_size": page_size,
         "pages": pages
     }
+
+
+@router.get("/lookalike")
+async def lookalike_search(
+    domain: str = Query(..., description="Reference company domain"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Find companies similar to the given domain based on industry, size, and location."""
+    # 1. Look up the reference company from ClientInfo by domain/website
+    ref_client = db.query(ClientInfo).filter(
+        (ClientInfo.domain == domain)
+        | (ClientInfo.website.ilike(f"%{domain}%"))
+    )
+    ref_client = tenant_filter(ref_client, ClientInfo, tenant_id)
+    ref = ref_client.first()
+
+    if not ref:
+        # Try matching by client_name containing the domain stem
+        domain_stem = domain.split(".")[0] if "." in domain else domain
+        ref_client2 = db.query(ClientInfo).filter(
+            ClientInfo.client_name.ilike(f"%{domain_stem}%")
+        )
+        ref_client2 = tenant_filter(ref_client2, ClientInfo, tenant_id)
+        ref = ref_client2.first()
+
+    if not ref:
+        return {
+            "reference": {"domain": domain, "found": False},
+            "similar": [],
+            "total": 0,
+        }
+
+    # 2. Extract matching attributes
+    ref_industry = ref.industry
+    ref_size = ref.company_size
+    ref_state = ref.location_state
+
+    # 3. Query similar clients (exclude the reference company)
+    similar_q = db.query(ClientInfo).filter(
+        ClientInfo.client_id != ref.client_id,
+        ClientInfo.is_archived == False,
+    )
+    similar_q = tenant_filter(similar_q, ClientInfo, tenant_id)
+
+    # Build similarity conditions: at least industry OR size should match
+    conditions = []
+    if ref_industry:
+        conditions.append(ClientInfo.industry == ref_industry)
+    if ref_size:
+        conditions.append(ClientInfo.company_size == ref_size)
+    if ref_state:
+        conditions.append(ClientInfo.location_state == ref_state)
+
+    if conditions:
+        similar_q = similar_q.filter(or_(*conditions))
+
+    similar_clients = similar_q.limit(limit * 2).all()  # Over-fetch for scoring
+
+    # 4. Score and rank by similarity
+    scored = []
+    for client in similar_clients:
+        score = 0
+        if ref_industry and client.industry == ref_industry:
+            score += 40
+        if ref_size and client.company_size == ref_size:
+            score += 30
+        if ref_state and client.location_state == ref_state:
+            score += 20
+        if ref.employee_count and client.employee_count:
+            # Similarity bonus for close employee count
+            ratio = min(ref.employee_count, client.employee_count) / max(ref.employee_count, client.employee_count, 1)
+            score += int(ratio * 10)
+
+        scored.append({
+            "client_id": client.client_id,
+            "client_name": client.client_name,
+            "domain": client.domain,
+            "website": client.website,
+            "industry": client.industry,
+            "company_size": client.company_size,
+            "location_state": client.location_state,
+            "employee_count": client.employee_count,
+            "similarity_score": score,
+        })
+
+    # Sort by score descending, take top N
+    scored.sort(key=lambda x: x["similarity_score"], reverse=True)
+    top_similar = scored[:limit]
+
+    return {
+        "reference": {
+            "domain": domain,
+            "found": True,
+            "client_id": ref.client_id,
+            "client_name": ref.client_name,
+            "industry": ref.industry,
+            "company_size": ref.company_size,
+            "location_state": ref.location_state,
+        },
+        "similar": top_similar,
+        "total": len(top_similar),
+    }
+
+
+@router.get("/intent-scores")
+async def lead_intent_scores(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get intent/buying signal scores for leads, sorted by score descending."""
+    from app.services.intent_data import enrich_leads_with_intent
+    results = enrich_leads_with_intent(db, tenant_id, limit)
+    return {"leads": results, "total": len(results)}
 
 
 @router.get("/stats", tags=["Leads"])

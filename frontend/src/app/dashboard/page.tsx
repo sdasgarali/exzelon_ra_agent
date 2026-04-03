@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi } from '@/lib/api'
+import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi, dealsApi } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -24,6 +25,8 @@ import {
   Inbox,
   FileEdit,
   ArrowRight,
+  Target,
+  DollarSign,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -139,11 +142,11 @@ function StatCard({
   trendLabel?: string
 }) {
   return (
-    <div className="card">
+    <div className="glass-card rounded-xl p-6">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
+          <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100">{value}</p>
           {trend && trendLabel && (
             <div className="flex items-center gap-1 mt-2">
               {trend === 'up' ? (
@@ -161,9 +164,79 @@ function StatCard({
             </div>
           )}
         </div>
-        <div className="w-12 h-12 rounded-lg bg-primary-100 flex items-center justify-center">
-          <Icon className="w-6 h-6 text-primary-600" />
+        <div className="w-12 h-12 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+          <Icon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
         </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Progress Ring Component ---
+
+function ProgressRing({
+  label,
+  value,
+  target,
+  icon: Icon,
+  color,
+}: {
+  label: string
+  value: number
+  target: number
+  icon: any
+  color: string
+}) {
+  const percentage = target > 0 ? Math.min((value / target) * 100, 100) : 0
+  const radius = 40
+  const circumference = 2 * Math.PI * radius
+  const strokeDashoffset = circumference - (percentage / 100) * circumference
+
+  const colorMap: Record<string, { stroke: string; bg: string; text: string }> = {
+    indigo: { stroke: 'stroke-indigo-500', bg: 'text-indigo-50 dark:text-indigo-950', text: 'text-indigo-600 dark:text-indigo-400' },
+    orange: { stroke: 'stroke-orange-500', bg: 'text-orange-50 dark:text-orange-950', text: 'text-orange-600 dark:text-orange-400' },
+    green: { stroke: 'stroke-green-500', bg: 'text-green-50 dark:text-green-950', text: 'text-green-600 dark:text-green-400' },
+    cyan: { stroke: 'stroke-cyan-500', bg: 'text-cyan-50 dark:text-cyan-950', text: 'text-cyan-600 dark:text-cyan-400' },
+  }
+  const colors = colorMap[color] || colorMap.indigo
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-24 h-24">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+          {/* Background circle */}
+          <circle
+            cx="50" cy="50" r={radius}
+            fill="none"
+            stroke="currentColor"
+            className="text-gray-200 dark:text-gray-700"
+            strokeWidth="8"
+          />
+          {/* Progress circle */}
+          <circle
+            cx="50" cy="50" r={radius}
+            fill="none"
+            className={colors.stroke}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+          />
+        </svg>
+        {/* Center content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={`text-sm font-bold ${colors.text}`}>{Math.round(percentage)}%</span>
+        </div>
+      </div>
+      <div className="text-center">
+        <div className="flex items-center gap-1 justify-center">
+          <Icon className={`w-3.5 h-3.5 ${colors.text}`} />
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        </div>
+        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+          {value.toLocaleString()} / {target.toLocaleString()}
+        </p>
       </div>
     </div>
   )
@@ -222,6 +295,24 @@ export default function DashboardPage() {
   const { data: onboardingStatus, refetch: refetchOnboarding } = useQuery({
     queryKey: ['onboarding-status'],
     queryFn: () => onboardingApi.getStatus(),
+  })
+
+  const { data: goalProgress } = useQuery({
+    queryKey: ['goal-progress'],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get('/goals/progress')
+        return data
+      } catch {
+        // Endpoint may not exist - return null to use defaults
+        return null
+      }
+    },
+  })
+
+  const { data: dealStats } = useQuery({
+    queryKey: ['deal-stats-dashboard'],
+    queryFn: () => dealsApi.stats().catch(() => null),
   })
 
   const showOnboarding = onboardingStatus?.should_show_onboarding &&
@@ -599,6 +690,43 @@ export default function DashboardPage() {
           icon={Mail}
         />
       </div>
+
+      {/* Goal Progress Rings */}
+      {kpis && (
+        <div className="card">
+          <h3 className="text-lg font-semibold mb-4">Goal Progress</h3>
+          <div className="flex items-center justify-around flex-wrap gap-6">
+            <ProgressRing
+              label="Leads Sourced"
+              value={kpis?.total_leads || 0}
+              target={goalProgress?.leads_target || 500}
+              icon={Target}
+              color="indigo"
+            />
+            <ProgressRing
+              label="Emails Sent"
+              value={kpis?.emails_sent || 0}
+              target={goalProgress?.emails_target || 1000}
+              icon={Mail}
+              color="orange"
+            />
+            <ProgressRing
+              label="Deals Won"
+              value={dealStats?.deals_won || 0}
+              target={goalProgress?.deals_target || 20}
+              icon={CheckCircle}
+              color="green"
+            />
+            <ProgressRing
+              label="Revenue"
+              value={dealStats?.total_won_value || 0}
+              target={goalProgress?.revenue_target || 50000}
+              icon={DollarSign}
+              color="cyan"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Performance Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

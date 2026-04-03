@@ -12,6 +12,9 @@ import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { useTheme } from '@/components/theme-provider'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useTour } from '@/hooks/use-tour'
+import { CopilotChat } from '@/components/copilot-chat'
+import { CommandPalette } from '@/components/command-palette'
+import { NotificationCenter } from '@/components/notification-center'
 import {
   LayoutDashboard,
   Users,
@@ -45,6 +48,7 @@ import {
   Receipt,
   ScrollText,
   HelpCircle,
+  Eye,
 } from 'lucide-react'
 
 const navigation = [
@@ -76,6 +80,7 @@ const navigation = [
 
   // Reporting & Monitoring
   { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
 
   // Administration
@@ -270,6 +275,21 @@ export default function DashboardLayout({
       </nav>
 
       <div ref={profileRef} className="p-4 border-t border-gray-700 relative">
+        {/* Notification bell + Cmd+K hint (desktop) */}
+        <div className="hidden lg:flex items-center gap-2 mb-3 px-2">
+          <div className="[&_button]:text-gray-400 [&_button]:hover:text-white [&_button:hover]:bg-gray-700">
+            <NotificationCenter />
+          </div>
+          <button
+            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
+            className="flex items-center gap-2 flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
+            title="Command Palette"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Search...</span>
+            <kbd className="ml-auto text-[10px] font-mono bg-gray-700 px-1 py-0.5 rounded">Ctrl+K</kbd>
+          </button>
+        </div>
         {/* Clickable user profile trigger */}
         <button
           onClick={() => setProfileOpen(!profileOpen)}
@@ -368,7 +388,8 @@ export default function DashboardLayout({
           >
             <Menu className="w-6 h-6" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">NeuraLeads</h1>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex-1">NeuraLeads</h1>
+          <NotificationCenter />
         </div>
         <main className="p-4 lg:p-8 dark:text-gray-100"><ErrorBoundary>{children}</ErrorBoundary></main>
       </div>
@@ -377,11 +398,17 @@ export default function DashboardLayout({
       <button
         data-tour="help-button"
         onClick={startTour}
-        className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition-colors"
+        className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition-colors"
         title="Replay guided tour"
       >
         <HelpCircle className="w-5 h-5" />
       </button>
+
+      {/* AI Copilot Chat Widget */}
+      <CopilotChat />
+
+      {/* Command Palette (Cmd+K / Ctrl+K) */}
+      <CommandPalette />
 
       {/* Keyboard shortcuts help dialog */}
       {helpOpen && (

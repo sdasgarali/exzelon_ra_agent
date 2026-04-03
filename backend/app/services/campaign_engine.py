@@ -178,10 +178,20 @@ def _execute_email_step(
         logger.warning("No available mailbox for campaign", campaign_id=campaign.campaign_id)
         return False
 
+    # Slow ramp: if enabled, calculate today's effective campaign limit
+    effective_limit = campaign.daily_limit or 30
+    if getattr(campaign, 'slow_ramp_enabled', False) and campaign.slow_ramp_enabled:
+        slow_ramp_increment = campaign.slow_ramp_increment or 2
+        slow_ramp_day = campaign.slow_ramp_current_day or 0
+        effective_limit = min(
+            slow_ramp_increment * (slow_ramp_day + 1),
+            campaign.daily_limit or 30,
+        )
+
     # Smart throttling: check hourly rate limit (daily_limit / 8 hours)
     max_hourly = max(mailbox.daily_send_limit // 8, 2)
     # Apply daily jitter: use 85-95% of actual limit
-    effective_daily = int(mailbox.daily_send_limit * random.uniform(0.85, 0.95))
+    effective_daily = int(min(mailbox.daily_send_limit, effective_limit) * random.uniform(0.85, 0.95))
     if mailbox.emails_sent_today >= effective_daily:
         logger.info("Mailbox hit jittered daily limit", mailbox=mailbox.email,
                      sent=mailbox.emails_sent_today, effective=effective_daily)

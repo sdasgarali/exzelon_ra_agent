@@ -1,8 +1,8 @@
-"""Analytics endpoints — team leaderboard, campaign comparison, revenue metrics."""
+"""Analytics endpoints — team leaderboard, campaign comparison, revenue metrics, engagement heatmap, forecast."""
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
+from sqlalchemy import func, case, extract
 from typing import Optional
 from pydantic import BaseModel, field_validator
 
@@ -491,3 +491,84 @@ def budget_status(
     from app.services.cost_tracker import get_budget_status as _get_budget_status
 
     return _get_budget_status(db, tenant_id=tenant_id)
+
+
+@router.get("/engagement-heatmap")
+def engagement_heatmap(
+    days: int = Query(30, ge=7, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Aggregate opens/replies by hour-of-day and day-of-week for heatmap visualization."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Query OutreachEvent for sent emails within the period
+    base_q = db.query(OutreachEvent).filter(
+        OutreachEvent.status == OutreachStatus.SENT,
+        OutreachEvent.sent_at >= cutoff,
+    )
+    base_q = tenant_filter(base_q, OutreachEvent, tenant_id)
+
+    # Group by day-of-week (0=Sunday) and hour for replies
+    reply_rows = db.query(
+        extract('dow', OutreachEvent.reply_detected_at).label("dow"),
+        extract('hour', OutreachEvent.reply_detected_at).label("hour"),
+        func.count(OutreachEvent.event_id).label("count"),
+    ).filter(
+        OutreachEvent.reply_detected_at.isnot(None),
+        OutreachEvent.reply_detected_at >= cutoff,
+    )
+    reply_rows = tenant_filter(reply_rows, OutreachEvent, tenant_id)
+    reply_rows = reply_rows.group_by("dow", "hour").all()
+
+    # Group by day-of-week and hour for sends (proxy for opens without dedicated tracking)
+    send_rows = db.query(
+        extract('dow', OutreachEvent.sent_at).label("dow"),
+        extract('hour', OutreachEvent.sent_at).label("hour"),
+        func.count(OutreachEvent.event_id).label("count"),
+    ).filter(
+        OutreachEvent.status == OutreachStatus.SENT,
+        OutreachEvent.sent_at >= cutoff,
+    )
+    send_rows = tenant_filter(send_rows, OutreachEvent, tenant_id)
+    send_rows = send_rows.group_by("dow", "hour").all()
+
+    # Build lookup dicts
+    reply_map = {}
+    for row in reply_rows:
+        key = (int(row.dow or 0), int(row.hour or 0))
+        reply_map[key] = int(row.count or 0)
+
+    send_map = {}
+    for row in send_rows:
+        key = (int(row.dow or 0), int(row.hour or 0))
+        send_map[key] = int(row.count or 0)
+
+    # Build full matrix: day 0-6 (Sun-Sat), hour 0-23
+    matrix = []
+    for day in range(7):
+        for hour in range(24):
+            opens = send_map.get((day, hour), 0)
+            replies = reply_map.get((day, hour), 0)
+            matrix.append({
+                "day": day,
+                "hour": hour,
+                "opens": opens,
+                "replies": replies,
+                "total": opens + replies,
+            })
+
+    return {"period_days": days, "heatmap": matrix}
+
+
+@router.get("/forecast")
+def pipeline_forecast(
+    months_ahead: int = Query(3, ge=1, le=12),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """AI-powered deal pipeline revenue forecast."""
+    from app.services.forecast_engine import generate_forecast
+    return generate_forecast(db, tenant_id=tenant_id, months_ahead=months_ahead)

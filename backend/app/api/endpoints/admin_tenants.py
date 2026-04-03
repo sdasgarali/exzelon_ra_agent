@@ -249,3 +249,104 @@ async def impersonate_tenant(
         "tenant_id": tenant_id,
         "expires_in": 7200,
     }
+
+
+# ─── White-Label Branding ─────────────────────────────────────────
+
+class BrandingUpdate(BaseModel):
+    brand_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_primary_color: Optional[str] = None  # #hex
+    brand_secondary_color: Optional[str] = None
+    custom_domain: Optional[str] = None
+    agency_mode: Optional[bool] = None
+
+
+@router.put("/{tenant_id}/branding")
+async def update_branding(
+    tenant_id: int,
+    data: BrandingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Update tenant branding for white-label. Super admin only."""
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    changes = {}
+
+    if data.brand_name is not None:
+        changes["brand_name"] = {"old": tenant.brand_name, "new": data.brand_name}
+        tenant.brand_name = data.brand_name
+    if data.brand_logo_url is not None:
+        changes["brand_logo_url"] = {"old": tenant.brand_logo_url, "new": data.brand_logo_url}
+        tenant.brand_logo_url = data.brand_logo_url
+    if data.brand_primary_color is not None:
+        # Validate hex color format
+        color = data.brand_primary_color
+        if color and not (color.startswith("#") and len(color) == 7):
+            raise HTTPException(status_code=400, detail="brand_primary_color must be in #RRGGBB format")
+        changes["brand_primary_color"] = {"old": tenant.brand_primary_color, "new": color}
+        tenant.brand_primary_color = color
+    if data.brand_secondary_color is not None:
+        color = data.brand_secondary_color
+        if color and not (color.startswith("#") and len(color) == 7):
+            raise HTTPException(status_code=400, detail="brand_secondary_color must be in #RRGGBB format")
+        changes["brand_secondary_color"] = {"old": tenant.brand_secondary_color, "new": color}
+        tenant.brand_secondary_color = color
+    if data.custom_domain is not None:
+        changes["custom_domain"] = {"old": tenant.custom_domain, "new": data.custom_domain}
+        tenant.custom_domain = data.custom_domain
+    if data.agency_mode is not None:
+        changes["agency_mode"] = {"old": tenant.agency_mode, "new": data.agency_mode}
+        tenant.agency_mode = data.agency_mode
+
+    if changes:
+        write_audit_log(
+            db,
+            tenant_id=tenant_id,
+            entity_type="tenant",
+            entity_id=tenant_id,
+            action="branding_update",
+            changed_by=current_user.email,
+            changed_fields=changes,
+        )
+
+    db.commit()
+    db.refresh(tenant)
+
+    return {
+        "message": "Branding updated",
+        "tenant_id": tenant.tenant_id,
+        "branding": {
+            "brand_name": tenant.brand_name,
+            "brand_logo_url": tenant.brand_logo_url,
+            "brand_primary_color": tenant.brand_primary_color,
+            "brand_secondary_color": tenant.brand_secondary_color,
+            "custom_domain": tenant.custom_domain,
+            "agency_mode": tenant.agency_mode,
+        },
+    }
+
+
+@router.get("/{tenant_id}/branding")
+async def get_branding(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Get tenant branding configuration. Super admin only."""
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    return {
+        "tenant_id": tenant.tenant_id,
+        "brand_name": tenant.brand_name,
+        "brand_logo_url": tenant.brand_logo_url,
+        "brand_primary_color": tenant.brand_primary_color,
+        "brand_secondary_color": tenant.brand_secondary_color,
+        "custom_domain": tenant.custom_domain,
+        "agency_mode": tenant.agency_mode,
+    }

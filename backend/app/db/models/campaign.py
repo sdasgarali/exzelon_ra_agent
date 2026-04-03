@@ -22,6 +22,9 @@ class StepType(str, PyEnum):
     EMAIL = "email"
     WAIT = "wait"
     CONDITION = "condition"
+    SMS = "sms"
+    LINKEDIN = "linkedin"
+    CALL = "call"
 
 
 class CampaignContactStatus(str, PyEnum):
@@ -74,6 +77,24 @@ class Campaign(Base):
 
     # Ownership
     created_by = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+
+    # Slow ramp
+    slow_ramp_enabled = Column(Boolean, default=False, nullable=False)
+    slow_ramp_increment = Column(Integer, default=2, nullable=False)  # emails/day/account increase
+    slow_ramp_current_day = Column(Integer, default=0, nullable=False)  # tracks day number since activation
+
+    # Auto-pause thresholds
+    bounce_threshold = Column(Integer, default=10, nullable=False)  # max bounce % before pause
+    spam_threshold = Column(Integer, default=5, nullable=False)  # max spam report % before pause
+    auto_pause_reason = Column(String(255), nullable=True)  # reason for auto-pause
+
+    # AI Reply Agent
+    auto_reply_enabled = Column(Boolean, default=False, nullable=False)
+    auto_reply_delay_minutes = Column(Integer, default=5, nullable=False)
+    max_auto_replies_per_thread = Column(Integer, default=3, nullable=False)
+
+    # Assignment mode
+    assignment_mode = Column(String(20), default='manual', nullable=False)  # manual/round_robin/weighted
 
     __table_args__ = (
         Index("idx_campaign_tenant", "tenant_id"),

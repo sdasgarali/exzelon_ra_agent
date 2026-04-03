@@ -46,6 +46,21 @@ body {
   }
 }
 
+/* Glassmorphism design tokens */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.dark .glass-card {
+  background: rgba(24, 24, 27, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
 /* Marketing site styles */
 .marketing-gradient-bg {
   background: linear-gradient(135deg, #0a0e27 0%, #111631 40%, #1a1f3d 100%);
