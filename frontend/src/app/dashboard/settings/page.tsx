@@ -1269,6 +1269,24 @@ export default function SettingsPage() {
                 <p className="text-sm text-gray-500 mb-3">
                   Select which job titles to include in lead searches. You can add custom titles below.
                 </p>
+                {/* "Any" checkbox */}
+                <label className="flex items-center gap-2 cursor-pointer mb-3 p-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={jobSourceConfig.target_job_titles.length === 1 && jobSourceConfig.target_job_titles[0] === '__ANY__'}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setJobSourceConfig({ ...jobSourceConfig, target_job_titles: ['__ANY__'] })
+                      } else {
+                        setJobSourceConfig({ ...jobSourceConfig, target_job_titles: DEFAULT_JOB_TITLES.slice(0, 16) })
+                      }
+                    }}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-gray-700">Any</span>
+                  <span className="text-xs text-gray-500">— Search all job titles, no title filtering</span>
+                </label>
+                {!(jobSourceConfig.target_job_titles.length === 1 && jobSourceConfig.target_job_titles[0] === '__ANY__') && (
                 <div className="border rounded-lg bg-gray-50">
                   {/* Header with Select All and count */}
                   <div className="px-3 py-2 border-b bg-gray-100 rounded-t-lg flex items-center justify-between">
@@ -1393,6 +1411,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
                 </div>
+                )}
                 {jobSourceConfig.target_job_titles.length === 0 && (
                   <p className="text-xs text-red-500 mt-1">Please select at least one job title for lead searches</p>
                 )}
@@ -1417,6 +1436,24 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-4">
               Select which industries to target for lead sourcing. IT/Tech industries are excluded by design.
             </p>
+            {/* "Any" checkbox */}
+            <label className="flex items-center gap-2 cursor-pointer mb-3 p-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-green-400 transition-colors">
+              <input
+                type="checkbox"
+                checked={jobSourceConfig.target_industries.length === 1 && jobSourceConfig.target_industries[0] === '__ANY__'}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setJobSourceConfig({ ...jobSourceConfig, target_industries: ['__ANY__'] })
+                  } else {
+                    setJobSourceConfig({ ...jobSourceConfig, target_industries: [...TARGET_INDUSTRIES] })
+                  }
+                }}
+                className="w-4 h-4 accent-green-600"
+              />
+              <span className="text-sm font-semibold text-gray-700">Any</span>
+              <span className="text-xs text-gray-500">— Search all industries, no industry filtering</span>
+            </label>
+            {!(jobSourceConfig.target_industries.length === 1 && jobSourceConfig.target_industries[0] === '__ANY__') && (
             <div className="border rounded-lg bg-gray-50">
               <div className="px-3 py-2 border-b bg-gray-100 rounded-t-lg">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -1457,6 +1494,7 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+            )}
           </div>
 
           {/* Company Size Preferences Card */}

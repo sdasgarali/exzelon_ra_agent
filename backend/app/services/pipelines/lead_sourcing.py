@@ -578,7 +578,15 @@ def run_lead_sourcing_pipeline(
         target_job_titles = get_tenant_setting(db, "target_job_titles", tenant_id=tenant_id, default=settings.TARGET_JOB_TITLES)
         exclude_keywords = exclude_it_keywords + exclude_staffing_keywords
 
-        logger.info(f"Pipeline config: {len(target_industries)} industries, {len(exclude_keywords)} exclusions, {len(target_job_titles)} job titles")
+        # "__ANY__" sentinel means skip filtering for that dimension
+        if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
+            target_job_titles = None
+            logger.info("Job titles set to 'Any' — no title filtering")
+        if isinstance(target_industries, list) and target_industries == ["__ANY__"]:
+            target_industries = None
+            logger.info("Industries set to 'Any' — no industry filtering")
+
+        logger.info(f"Pipeline config: {len(target_industries) if target_industries else 'Any'} industries, {len(exclude_keywords)} exclusions, {len(target_job_titles) if target_job_titles else 'Any'} job titles")
 
         # Get all configured adapters
         adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
