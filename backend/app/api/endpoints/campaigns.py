@@ -2,12 +2,13 @@
 import json
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.core.rate_limiter import limiter
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
@@ -564,7 +565,9 @@ def reorder_steps(
 # ─── Campaign Contacts ────────────────────────────────────────────
 
 @router.post("/{campaign_id}/contacts")
+@limiter.limit("20/hour")
 def enroll_contacts(
+    request: Request,
     campaign_id: int,
     data: ContactEnroll,
     db: Session = Depends(get_db),
@@ -800,7 +803,9 @@ def campaign_analytics(
 # ─── Duplicate ─────────────────────────────────────────────────────
 
 @router.post("/{campaign_id}/duplicate")
+@limiter.limit("10/hour")
 def duplicate_campaign(
+    request: Request,
     campaign_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),

@@ -62,7 +62,7 @@ docker-compose up api    # Backend only with dependencies
 - **Entry point**: `main.py` -- FastAPI app with lifespan handler that creates DB tables, seeds warmup profiles, starts APScheduler
 - **Config**: `core/config.py` -- Pydantic Settings loaded from `.env`; controls DB type (sqlite/mysql), provider selection, business rules
 - **API routes**: `api/endpoints/` -- all endpoints mounted under `/api/v1` via `api/router.py`
-- **Auth**: JWT tokens (7-day expiry, includes `tenant_id` + `plan`), Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Super admin bypasses all role checks and can impersonate tenants via `X-Tenant-ID` header. Dependencies in `api/deps/auth.py` (`get_current_tenant_id()` extracts tenant context). Multi-tenant: each user belongs to a tenant, email verification required for new signups.
+- **Auth**: JWT tokens (7-day expiry, includes `tenant_id` + `plan`), Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Password policy: min 8 chars, 1 uppercase, 1 digit, 1 special character. Account lockout: 5 failed attempts → 15 min lockout. Super admin bypasses all role checks and can impersonate tenants via `X-Tenant-ID` header. Dependencies in `api/deps/auth.py` (`get_current_tenant_id()` extracts tenant context). Multi-tenant: each user belongs to a tenant, email verification required for new signups.
 - **Database**: SQLAlchemy 2.0 ORM, models in `db/models/`, base class in `db/base.py`. Auto-creates tables on startup. MySQL (`exzelon_ra_agent` on localhost:3306) is the active database. SQLite used for testing.
 
 ### Adapter Pattern (`services/adapters/`)
@@ -234,6 +234,9 @@ Domain reputation management subsystem:
 | AI Schemas | `services/ai_schemas.py` | Pydantic structured output schemas for all AI tasks (ReplyClassification, DraftEmailResponse, SpamCheckResult, NextBestAction) + JSON parsing |
 | AI Audit Logger | `services/ai_audit_logger.py` | Logs every AI decision to automation_events (prompt hash, confidence, action taken, gating reason, tokens, latency) |
 | Campaign Safety | `services/campaign_safety.py` | Job idempotency guard, company-level contact cap (5/company), smart pause on reply, sequence fatigue detection (5 unanswered in 90d), cross-campaign contact dedup |
+| AI Resilience | `services/ai_resilience.py` | Retry with exponential backoff (3 attempts, 1s→2s→4s) + provider fallback chain (primary→secondary→rule-based) |
+| Rate Limiter | `core/rate_limiter.py` | Shared slowapi limiter — auth (5/min login, 5/hr signup), pipelines (5/hr run), email-preview (10/hr generate, 20/hr rewrite), billing (3/hr bulk), campaigns (20/hr enroll) |
+| Spam Checker | `services/spam_checker.py` | 106 trigger words + 6 regex patterns + link/image ratio detection (>2 links, any images, link-to-text ratio penalized) |
 
 ### Additional API Endpoints
 

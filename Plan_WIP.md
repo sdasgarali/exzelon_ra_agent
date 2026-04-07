@@ -1,9 +1,16 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 63: Enterprise Platform Audit & Tier 1 Hardening. Added warmup engine status banner (frontend+backend). Performed comprehensive enterprise audit (deliverability, AI, compliance, architecture). Implemented 6 Tier 1 critical modules: security headers middleware, per-domain send throttle, AI prompt injection defense, content fingerprint/similarity detection, AI structured output schemas + decision audit logging, campaign safety controls (idempotency, company caps, smart pause, sequence fatigue, cross-campaign dedup). Wrote 100 new tests across 7 test files. 704 total tests pass, coverage 39.28%. 9 new files, 4 modified files. Ready to commit.
+> Session 64: Tier 2 Enterprise Hardening. Pushed Tier 1 commit to remote. Implemented 4 Tier 2 items: (1) Password policy — added special character requirement, (2) Link/image ratio detection in spam checker, (3) AI model fallback chain + retry with exponential backoff (new ai_resilience.py + Groq adapter retry), (4) API rate limiting on 13 critical write endpoints across pipelines, email preview, billing, campaigns. Extracted shared rate limiter to core/rate_limiter.py. Wrote 32 new tests across 4 test files. 736 total tests pass, coverage 39.62%.
 
 ## Immediate TODO
+- [x] Tier 2 Enterprise Hardening (2026-04-07)
+  - Password policy: added special character requirement (!@#$%^&*... mandatory)
+  - Link/image ratio detection in spam_checker.py (>2 links flagged, any images penalized, link-to-text ratio)
+  - AI resilience: ai_resilience.py with retry_with_backoff() + call_ai_with_fallback() provider chain
+  - Groq adapter: built-in retry on 429/5xx/timeout with exponential backoff
+  - Rate limiting: shared core/rate_limiter.py, 13 endpoints protected (pipelines 5/hr, email-preview 10-20/hr, billing 3-10/hr, campaigns 10-20/hr)
+  - 32 new tests (4 test files), 736 total pass, coverage 39.62%
 - [x] Enterprise Platform Audit & Tier 1 Hardening (2026-04-07)
   - Warmup engine status banner (backend enhanced endpoint + frontend status component)
   - Security headers middleware (X-Frame-Options, CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)

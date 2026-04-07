@@ -11,7 +11,7 @@ class TestSignupFlow:
             mock_send.return_value = True
             resp = client.post("/api/v1/auth/signup", json={
                 "email": "new@startup.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "Jane Doe",
                 "company_name": "My Startup",
             })
@@ -25,13 +25,13 @@ class TestSignupFlow:
             mock_send.return_value = True
             client.post("/api/v1/auth/signup", json={
                 "email": "dup@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "User One",
                 "company_name": "Company A",
             })
             resp = client.post("/api/v1/auth/signup", json={
                 "email": "dup@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "User Two",
                 "company_name": "Company B",
             })
@@ -50,7 +50,7 @@ class TestSignupFlow:
     def test_signup_missing_company_name(self, client):
         resp = client.post("/api/v1/auth/signup", json={
             "email": "nocompany@test.com",
-            "password": "SecurePass123",
+            "password": "SecurePass123!",
             "full_name": "No Company User",
         })
         assert resp.status_code == 422
@@ -60,7 +60,7 @@ class TestSignupFlow:
             mock_send.return_value = True
             signup_resp = client.post("/api/v1/auth/signup", json={
                 "email": "verify@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "Verify User",
                 "company_name": "Verify Corp",
             })
@@ -84,14 +84,14 @@ class TestSignupFlow:
             mock_send.return_value = True
             client.post("/api/v1/auth/signup", json={
                 "email": "unverified@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "Unverified",
                 "company_name": "UV Corp",
             })
         # Try to login without verifying
         resp = client.post("/api/v1/auth/login", data={
             "username": "unverified@test.com",
-            "password": "SecurePass123",
+            "password": "SecurePass123!",
         })
         assert resp.status_code == 403
         assert "not verified" in resp.json()["detail"].lower()
@@ -108,7 +108,7 @@ class TestSignupFlow:
 
         user = User(
             email="verified@test.com",
-            password_hash=get_password_hash("SecurePass123"),
+            password_hash=get_password_hash("SecurePass123!"),
             full_name="Verified User",
             role=UserRole.ADMIN,
             tenant_id=tenant.tenant_id,
@@ -121,7 +121,7 @@ class TestSignupFlow:
         # Login
         resp = client.post("/api/v1/auth/login", data={
             "username": "verified@test.com",
-            "password": "SecurePass123",
+            "password": "SecurePass123!",
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -133,7 +133,7 @@ class TestSignupFlow:
         """Old /register endpoint should require authentication now."""
         resp = client.post("/api/v1/auth/register", json={
             "email": "admin-created@test.com",
-            "password": "SecurePass123",
+            "password": "SecurePass123!",
             "full_name": "Admin Created",
         })
         assert resp.status_code == 401
@@ -144,7 +144,7 @@ class TestSignupFlow:
             "/api/v1/auth/register",
             json={
                 "email": "tryrole@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "Role Injector",
                 "role": "admin",
             },
@@ -162,7 +162,7 @@ class TestResendVerification:
             mock_send.return_value = True
             client.post("/api/v1/auth/signup", json={
                 "email": "resend@test.com",
-                "password": "SecurePass123",
+                "password": "SecurePass123!",
                 "full_name": "Resend User",
                 "company_name": "Resend Corp",
             })

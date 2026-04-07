@@ -2,12 +2,13 @@
 import json
 import os
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from datetime import timezone
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.core.rate_limiter import limiter
 from app.db.models.user import User, UserRole
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.query_helpers import tenant_filter
@@ -313,7 +314,9 @@ async def cancel_job_run(
 
 
 @router.post("/lead-sourcing/run")
+@limiter.limit("5/hour")
 async def run_lead_sourcing(
+    request: Request,
     background_tasks: BackgroundTasks,
     sources: List[str] = Query(default=["linkedin", "indeed"]),
     db: Session = Depends(get_db),
@@ -337,7 +340,9 @@ async def run_lead_sourcing(
 
 
 @router.post("/lead-sourcing/upload")
+@limiter.limit("10/hour")
 async def upload_leads_file(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
@@ -369,9 +374,11 @@ async def upload_leads_file(
 
 
 @router.post("/contact-enrichment/run")
+@limiter.limit("5/hour")
 async def run_contact_enrichment(
+    request: Request,
     background_tasks: BackgroundTasks,
-    request: Optional[LeadIdsRequest] = Body(None),
+    body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -379,7 +386,7 @@ async def run_contact_enrichment(
     """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
 
-    lead_ids = request.lead_ids if request else None
+    lead_ids = body.lead_ids if body else None
 
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
@@ -396,7 +403,9 @@ async def run_contact_enrichment(
 
 
 @router.post("/email-validation/run")
+@limiter.limit("5/hour")
 async def run_email_validation(
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
@@ -422,9 +431,11 @@ async def run_email_validation(
 
 
 @router.post("/email-validation/run-selected")
+@limiter.limit("10/hour")
 async def run_email_validation_selected(
-    request: ContactIdsRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
+    body: ContactIdsRequest = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -433,7 +444,7 @@ async def run_email_validation_selected(
     from app.services.pipelines.email_validation import run_email_validation_pipeline
     from app.db.models.contact import ContactDetails
 
-    contact_ids = request.contact_ids
+    contact_ids = body.contact_ids
     if not contact_ids:
         raise HTTPException(status_code=400, detail="No contact IDs provided")
 
@@ -463,17 +474,19 @@ async def run_email_validation_selected(
 
 
 @router.post("/outreach/run")
+@limiter.limit("5/hour")
 async def run_outreach(
+    request: Request,
     background_tasks: BackgroundTasks,
     mode: str = Query("mailmerge", description="Send mode: mailmerge or send"),
     dry_run: bool = Query(True),
-    request: Optional[LeadIdsRequest] = Body(None),
+    body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
-    lead_ids = request.lead_ids if request else None
+    lead_ids = body.lead_ids if body else None
 
     if mode == "mailmerge":
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline

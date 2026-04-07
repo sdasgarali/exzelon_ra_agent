@@ -4,20 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
 from app.api.deps import get_db, get_current_active_user
 from app.api.deps.plan_limits import check_plan_limit
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.config import settings
+from app.core.rate_limiter import limiter
 from app.db.models.user import User, UserRole
 from app.db.models.login_history import LoginHistory
 from app.schemas.user import UserCreate, UserResponse, Token
 from app.schemas.tenant import SignupRequest, SignupResponse, VerifyResponse
 from app.services.audit_helper import write_audit_log, get_client_ip
-
-limiter = Limiter(key_func=get_remote_address, swallow_errors=True)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Lockout constants

@@ -1326,7 +1326,7 @@ app = FastAPI(
 )
 
 # Rate limiter
-from app.api.endpoints.auth import limiter
+from app.core.rate_limiter import limiter
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

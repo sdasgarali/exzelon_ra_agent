@@ -1,13 +1,14 @@
 """Email Preview & Approve API endpoints."""
 import json
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.core.rate_limiter import limiter
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
@@ -57,7 +58,9 @@ class SpamFixRequest(BaseModel):
 # ─── Endpoints ─────────────────────────────────────────────────────
 
 @router.post("/generate")
+@limiter.limit("10/hour")
 def generate_drafts(
+    request: Request,
     data: GenerateDraftsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -249,7 +252,9 @@ def send_draft(
 
 
 @router.post("/drafts/send-batch")
+@limiter.limit("5/hour")
 def send_batch_drafts(
+    request: Request,
     data: SendBatchRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -275,7 +280,9 @@ def send_batch_drafts(
 
 
 @router.post("/drafts/{draft_id}/ai-rewrite")
+@limiter.limit("20/hour")
 def ai_rewrite(
+    request: Request,
     draft_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),

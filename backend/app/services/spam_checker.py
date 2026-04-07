@@ -121,6 +121,46 @@ def check_spam_score(subject: str, body_html: str) -> Dict[str, Any]:
                 "points": points,
             })
 
+    # Check link/image ratio (cold email best practices)
+    link_count = len(re.findall(r'<a\s', body_html, re.IGNORECASE)) + len(
+        re.findall(r'https?://\S+', body_text))
+    image_count = len(re.findall(r'<img\s', body_html, re.IGNORECASE))
+    word_count = max(1, len(body_text.split()))
+
+    if link_count > 2:
+        pts = 8 * (link_count - 2)
+        total_points += pts
+        flagged.append({
+            "word": f"[ratio: {link_count} links]",
+            "severity": "high" if link_count > 4 else "medium",
+            "count": link_count,
+            "location": "body",
+            "points": pts,
+        })
+
+    if image_count > 0:
+        pts = 6 * image_count
+        total_points += pts
+        flagged.append({
+            "word": f"[ratio: {image_count} image(s)]",
+            "severity": "medium",
+            "count": image_count,
+            "location": "body",
+            "points": pts,
+        })
+
+    # High link-to-text ratio (>1 link per 50 words)
+    if word_count < 50 and link_count > 1:
+        pts = 10
+        total_points += pts
+        flagged.append({
+            "word": "[ratio: high link-to-text]",
+            "severity": "high",
+            "count": 1,
+            "location": "body",
+            "points": pts,
+        })
+
     # Normalize to 0-100 scale (cap at 100)
     score = min(100, total_points)
 

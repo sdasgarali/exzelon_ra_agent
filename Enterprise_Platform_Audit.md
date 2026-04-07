@@ -162,16 +162,16 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 
 ### TIER 2 — Important Enhancements (Near-term)
 
-11. Template entropy scoring
-12. Link/image ratio warnings
+11. ~~Template entropy scoring~~ ✅ (done in Tier 1 — content_fingerprint.py)
+12. ~~Link/image ratio warnings~~ ✅ DONE — spam_checker.py enhanced
 13. Recipient engagement throttling
-14. Cross-campaign contact dedup
-15. Sequence fatigue detection
-16. AI model fallback chain
-17. AI retry with backoff
+14. ~~Cross-campaign contact dedup~~ ✅ (done in Tier 1 — campaign_safety.py)
+15. ~~Sequence fatigue detection~~ ✅ (done in Tier 1 — campaign_safety.py)
+16. ~~AI model fallback chain~~ ✅ DONE — ai_resilience.py
+17. ~~AI retry with backoff~~ ✅ DONE — ai_resilience.py + groq.py
 18. AI cost tracking
-19. Password complexity enforcement
-20. API rate limiting on write endpoints
+19. ~~Password complexity enforcement~~ ✅ DONE — special char required
+20. ~~API rate limiting on write endpoints~~ ✅ DONE — 13 endpoints protected
 
 ### TIER 3 — Future Work
 

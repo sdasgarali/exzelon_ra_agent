@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.core.rate_limiter import limiter
 from app.db.query_helpers import tenant_filter, paginate
 from app.db.models.user import UserRole
 
@@ -156,7 +157,9 @@ def list_invoices(
 
 
 @router.post("/invoices/bulk-generate")
+@limiter.limit("3/hour")
 def bulk_generate(
+    request: Request,
     req: BulkGenerateRequest,
     db: Session = Depends(get_db),
     current_user=Depends(require_role([UserRole.SUPER_ADMIN])),
@@ -514,7 +517,9 @@ def my_invoice_pdf(
 
 
 @router.post("/my-invoices/{invoice_id}/pay")
+@limiter.limit("10/hour")
 def initiate_payment(
+    request: Request,
     invoice_id: int,
     req: PayRequest,
     db: Session = Depends(get_db),

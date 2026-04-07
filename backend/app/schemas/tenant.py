@@ -37,7 +37,7 @@ class TenantBrief(BaseModel):
 class SignupRequest(BaseModel):
     """Schema for self-service signup."""
     email: str = Field(..., description="User email address")
-    password: str = Field(..., min_length=8, description="Password (min 8 chars, 1 uppercase, 1 number)")
+    password: str = Field(..., min_length=8, description="Password (min 8 chars, 1 uppercase, 1 number, 1 special)")
     full_name: str = Field(..., min_length=1, max_length=255, description="Full name")
     company_name: str = Field(..., min_length=1, max_length=255, description="Company/organization name")
 
@@ -48,6 +48,9 @@ class SignupRequest(BaseModel):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.isdigit() for c in v):
             raise ValueError("Password must contain at least one number")
+        special_chars = set("!@#$%^&*()_+-=[]{}|;:',.<>?/~`")
+        if not any(c in special_chars for c in v):
+            raise ValueError("Password must contain at least one special character (!@#$%^&*...)")
         return v
 
     @staticmethod

@@ -55,28 +55,49 @@ class GroqAdapter(AIAdapter):
             return False
 
     def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000) -> str:
-        """Make API call to Groq."""
+        """Make API call to Groq with retry on transient failures."""
+        import time
+
         if not self.api_key:
             raise ValueError("Groq API key not configured")
 
-        with httpx.Client() as client:
-            response = client.post(
-                f"{self.BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens
-                },
-                timeout=60
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+        last_error = None
+        for attempt in range(3):
+            try:
+                with httpx.Client() as client:
+                    response = client.post(
+                        f"{self.BASE_URL}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens
+                        },
+                        timeout=60
+                    )
+                    # Retry on rate limit (429) or server errors (5xx)
+                    if response.status_code == 429 or response.status_code >= 500:
+                        last_error = httpx.HTTPStatusError(
+                            f"HTTP {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                        if attempt < 2:
+                            time.sleep(1.0 * (2 ** attempt))
+                            continue
+                    response.raise_for_status()
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                last_error = e
+                if attempt < 2:
+                    time.sleep(1.0 * (2 ** attempt))
+                    continue
+        raise last_error
 
     def research_company(
         self,
