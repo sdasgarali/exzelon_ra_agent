@@ -78,7 +78,7 @@ interface SchedulerJob {
   id: string; name: string; schedule: string; enabled: boolean; next_run: string | null;
 }
 interface SchedulerStatusData {
-  engine_running: boolean; master_enabled: boolean;
+  engine_running: boolean; independent?: boolean; warmup_operational?: boolean;
   total_jobs: number; enabled_jobs: number; jobs: SchedulerJob[];
 }
 
@@ -318,24 +318,28 @@ export default function WarmupEnginePage() {
           {/* engine status banner */}
           {schedulerStatus && (() => {
             const running = schedulerStatus.engine_running
-            const masterOn = schedulerStatus.master_enabled
-            const isOperational = running && masterOn
-            const isPaused = running && !masterOn
+            const isOperational = schedulerStatus.warmup_operational ?? (running && schedulerStatus.enabled_jobs > 0)
+            const isStopped = !running
             return (
-              <div className={`rounded-lg border p-4 ${isOperational ? 'bg-green-50 border-green-200' : isPaused ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+              <div className={`rounded-lg border p-4 ${isOperational ? 'bg-green-50 border-green-200' : isStopped ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="relative flex h-3 w-3">
                       {isOperational && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
-                      <span className={`relative inline-flex rounded-full h-3 w-3 ${isOperational ? 'bg-green-500' : isPaused ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                      <span className={`relative inline-flex rounded-full h-3 w-3 ${isOperational ? 'bg-green-500' : isStopped ? 'bg-red-500' : 'bg-yellow-500'}`} />
                     </span>
                     <div>
-                      <span className={`text-sm font-semibold ${isOperational ? 'text-green-800' : isPaused ? 'text-yellow-800' : 'text-red-800'}`}>
-                        {isOperational ? 'Warmup Engine Running' : isPaused ? 'Warmup Engine Paused (Master Toggle Off)' : 'Warmup Engine Stopped'}
+                      <span className={`text-sm font-semibold ${isOperational ? 'text-green-800' : isStopped ? 'text-red-800' : 'text-yellow-800'}`}>
+                        {isOperational ? 'Warmup Engine Running' : isStopped ? 'Warmup Engine Stopped' : 'Warmup Engine — All Jobs Disabled'}
                       </span>
                       <span className="text-xs text-gray-500 ml-3">
                         {schedulerStatus.enabled_jobs}/{schedulerStatus.total_jobs} jobs enabled
                       </span>
+                      {schedulerStatus.independent && (
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">
+                          Independent
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => setShowJobDetails(!showJobDetails)} className="text-xs text-gray-500 hover:text-gray-700 font-medium">

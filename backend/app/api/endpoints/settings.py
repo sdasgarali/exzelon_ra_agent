@@ -460,7 +460,7 @@ DEFAULT_SETTINGS = {
     "warmup_default_profile": {"value": "Standard", "type": "string", "description": "Default warmup profile name"},
 
     # Automation Control Center
-    "automation_master_enabled": {"value": True, "type": "boolean", "description": "Master switch — disables ALL scheduled automation when off"},
+    "automation_master_enabled": {"value": True, "type": "boolean", "description": "Master switch — disables non-warmup scheduled automation when off (Warmup Engine runs independently)"},
     "automation_chain_enrichment": {"value": False, "type": "boolean", "description": "Auto-chain: run contact enrichment after lead sourcing"},
     "automation_chain_validation": {"value": False, "type": "boolean", "description": "Auto-chain: run email validation after contact enrichment"},
     "automation_daily_assessment_enabled": {"value": True, "type": "boolean", "description": "Enable Daily Warmup Assessment job"},

@@ -98,6 +98,30 @@ def _is_job_enabled(job_id: str) -> bool:
         db.close()
 
 
+# Warmup jobs that must keep running regardless of master toggle
+WARMUP_JOB_IDS = {
+    "daily_assessment", "peer_warmup_cycle", "auto_reply_cycle",
+    "daily_count_reset", "dns_checks", "blacklist_checks",
+    "daily_log_snapshot", "auto_recovery_check", "imap_read_cycle",
+}
+
+
+def _is_warmup_job_enabled(job_id: str) -> bool:
+    """Check individual warmup job toggle only — bypasses master automation.
+
+    Warmup engine runs independently to keep mailbox health stable at all times.
+    """
+    db = _get_db()
+    try:
+        from app.core.settings_resolver import get_tenant_setting_bool
+        return get_tenant_setting_bool(db, f"automation_{job_id}_enabled", default=True)
+    except Exception as e:
+        logger.warning("Failed to check warmup job toggle, defaulting to enabled", job_id=job_id, error=str(e))
+        return True
+    finally:
+        db.close()
+
+
 def _get_active_tenant_ids():
     """Return list of active tenant IDs for per-tenant job iteration."""
     db = _get_db()
@@ -116,7 +140,7 @@ def _get_active_tenant_ids():
 
 
 def job_daily_assessment():
-    if not _is_job_enabled("daily_assessment"):
+    if not _is_warmup_job_enabled("daily_assessment"):
         logger.info("Job daily_assessment skipped (disabled)")
         return
     logger.info("Running daily warmup assessment")
@@ -132,7 +156,7 @@ def job_daily_assessment():
 
 
 def job_peer_warmup_cycle():
-    if not _is_job_enabled("peer_warmup_cycle"):
+    if not _is_warmup_job_enabled("peer_warmup_cycle"):
         logger.info("Job peer_warmup_cycle skipped (disabled)")
         return
     logger.info("Running peer warmup cycle")
@@ -149,7 +173,7 @@ def job_peer_warmup_cycle():
 
 
 def job_auto_reply_cycle():
-    if not _is_job_enabled("auto_reply_cycle"):
+    if not _is_warmup_job_enabled("auto_reply_cycle"):
         logger.info("Job auto_reply_cycle skipped (disabled)")
         return
     logger.info("Running auto-reply cycle")
@@ -166,7 +190,7 @@ def job_auto_reply_cycle():
 
 
 def job_daily_count_reset():
-    if not _is_job_enabled("daily_count_reset"):
+    if not _is_warmup_job_enabled("daily_count_reset"):
         logger.info("Job daily_count_reset skipped (disabled)")
         return
     from app.core.job_lock import advisory_lock
@@ -192,7 +216,7 @@ def job_daily_count_reset():
 
 
 def job_dns_checks():
-    if not _is_job_enabled("dns_checks"):
+    if not _is_warmup_job_enabled("dns_checks"):
         logger.info("Job dns_checks skipped (disabled)")
         return
     logger.info("Running DNS health checks")
@@ -216,7 +240,7 @@ def job_dns_checks():
 
 
 def job_blacklist_checks():
-    if not _is_job_enabled("blacklist_checks"):
+    if not _is_warmup_job_enabled("blacklist_checks"):
         logger.info("Job blacklist_checks skipped (disabled)")
         return
     logger.info("Running blacklist checks")
@@ -240,7 +264,7 @@ def job_blacklist_checks():
 
 
 def job_daily_log_snapshot():
-    if not _is_job_enabled("daily_log_snapshot"):
+    if not _is_warmup_job_enabled("daily_log_snapshot"):
         logger.info("Job daily_log_snapshot skipped (disabled)")
         return
     logger.info("Taking daily log snapshot")
@@ -288,7 +312,7 @@ def job_daily_log_snapshot():
 
 
 def job_auto_recovery_check():
-    if not _is_job_enabled("auto_recovery_check"):
+    if not _is_warmup_job_enabled("auto_recovery_check"):
         logger.info("Job auto_recovery_check skipped (disabled)")
         return
     logger.info("Running auto-recovery check")
@@ -561,7 +585,7 @@ def job_lead_scoring():
 
 
 def job_imap_read_cycle():
-    if not _is_job_enabled("imap_read_cycle"):
+    if not _is_warmup_job_enabled("imap_read_cycle"):
         logger.info("Job imap_read_cycle skipped (disabled)")
         return
     logger.info("Running IMAP read emulation cycle")

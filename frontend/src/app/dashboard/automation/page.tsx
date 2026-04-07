@@ -16,6 +16,7 @@ interface JobInfo {
   group: string
   schedule: string
   enabled: boolean
+  independent?: boolean
   next_run: string | null
 }
 
@@ -226,7 +227,7 @@ export default function AutomationControlCenter() {
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Master Automation</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {controls.master_enabled ? 'All enabled jobs are running on schedule' : 'All automation is paused — no jobs will execute'}
+                {controls.master_enabled ? 'All enabled jobs are running on schedule' : 'Non-warmup automation is paused — Warmup Engine continues running independently'}
               </p>
             </div>
           </div>
@@ -334,7 +335,7 @@ export default function AutomationControlCenter() {
       </div>
 
       {/* Job Groups */}
-      <div className={`space-y-3 ${masterOff ? 'opacity-50' : ''}`}>
+      <div className="space-y-3">
         {GROUP_ORDER.map(group => {
           const jobs = groupedJobs[group] || []
           if (jobs.length === 0) return null
@@ -342,9 +343,17 @@ export default function AutomationControlCenter() {
           const allEnabled = jobs.every(j => j.enabled)
           const noneEnabled = jobs.every(j => !j.enabled)
           const GroupIcon = GROUP_ICONS[group] || Zap
+          const isIndependentGroup = jobs.some(j => j.independent)
+          const isDisabledByMaster = masterOff && !isIndependentGroup
 
           return (
-            <div key={group} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div key={group} className={`bg-white dark:bg-gray-800 rounded-xl border overflow-hidden ${
+              isIndependentGroup
+                ? 'border-orange-200 dark:border-orange-800'
+                : isDisabledByMaster
+                  ? 'border-gray-200 dark:border-gray-700 opacity-50'
+                  : 'border-gray-200 dark:border-gray-700'
+            }`}>
               {/* Group Header */}
               <div
                 className="flex items-center justify-between px-5 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750"
@@ -354,20 +363,34 @@ export default function AutomationControlCenter() {
                   <button className="text-gray-400">
                     {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
-                  <GroupIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                  <GroupIcon className={`w-5 h-5 ${isIndependentGroup ? 'text-orange-500 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400'}`} />
                   <span className="font-medium text-gray-900 dark:text-gray-100">{group}</span>
                   <span className="text-xs text-gray-400">({jobs.filter(j => j.enabled).length}/{jobs.length} active)</span>
+                  {isIndependentGroup && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                      Always On
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => toggleGroupJobs(group, !allEnabled)}
-                    disabled={saving || masterOff}
+                    disabled={saving || isDisabledByMaster}
                     className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
                   >
                     {allEnabled ? 'Disable All' : noneEnabled ? 'Enable All' : 'Enable All'}
                   </button>
                 </div>
               </div>
+
+              {/* Group info banner for independent groups */}
+              {isIndependentGroup && expanded && (
+                <div className="mx-5 mb-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg border border-orange-100 dark:border-orange-900/30">
+                  <p className="text-xs text-orange-700 dark:text-orange-400">
+                    Warmup Engine runs independently of Master Automation to keep mailbox health stable at all times. Toggle individual jobs below.
+                  </p>
+                </div>
+              )}
 
               {/* Job Rows */}
               {expanded && (
@@ -393,7 +416,7 @@ export default function AutomationControlCenter() {
                       <Toggle
                         enabled={job.enabled}
                         onChange={(val) => updateControls({ jobs: { [job.id]: val } })}
-                        disabled={saving || masterOff}
+                        disabled={saving || isDisabledByMaster}
                         size="sm"
                       />
                     </div>

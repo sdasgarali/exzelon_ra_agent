@@ -19,16 +19,16 @@ router = APIRouter(prefix="/automation", tags=["automation"])
 # Metadata for all 17 scheduler jobs, grouped into 5 categories.
 
 JOB_REGISTRY = [
-    # Warmup Engine (9 jobs)
-    {"id": "daily_assessment", "name": "Daily Warmup Assessment", "group": "Warmup Engine", "schedule": "Daily 00:05 UTC"},
-    {"id": "peer_warmup_cycle", "name": "Peer Warmup Cycle", "group": "Warmup Engine", "schedule": "Hourly 9am-5pm UTC"},
-    {"id": "auto_reply_cycle", "name": "Auto Reply Cycle", "group": "Warmup Engine", "schedule": "Hourly :30 9am-5pm UTC"},
-    {"id": "daily_count_reset", "name": "Daily Count Reset", "group": "Warmup Engine", "schedule": "Daily 00:00 UTC"},
-    {"id": "dns_checks", "name": "DNS Health Checks", "group": "Warmup Engine", "schedule": "Every 12 hours"},
-    {"id": "blacklist_checks", "name": "Blacklist Checks", "group": "Warmup Engine", "schedule": "Every 12 hours"},
-    {"id": "daily_log_snapshot", "name": "Daily Log Snapshot", "group": "Warmup Engine", "schedule": "Daily 23:55 UTC"},
-    {"id": "auto_recovery_check", "name": "Auto Recovery Check", "group": "Warmup Engine", "schedule": "Daily 06:00 UTC"},
-    {"id": "imap_read_cycle", "name": "IMAP Read Emulation", "group": "Warmup Engine", "schedule": "Every 30 minutes"},
+    # Warmup Engine (9 jobs) — independent of master toggle, always running by default
+    {"id": "daily_assessment", "name": "Daily Warmup Assessment", "group": "Warmup Engine", "schedule": "Daily 00:05 UTC", "independent": True},
+    {"id": "peer_warmup_cycle", "name": "Peer Warmup Cycle", "group": "Warmup Engine", "schedule": "Hourly 9am-5pm UTC", "independent": True},
+    {"id": "auto_reply_cycle", "name": "Auto Reply Cycle", "group": "Warmup Engine", "schedule": "Hourly :30 9am-5pm UTC", "independent": True},
+    {"id": "daily_count_reset", "name": "Daily Count Reset", "group": "Warmup Engine", "schedule": "Daily 00:00 UTC", "independent": True},
+    {"id": "dns_checks", "name": "DNS Health Checks", "group": "Warmup Engine", "schedule": "Every 12 hours", "independent": True},
+    {"id": "blacklist_checks", "name": "Blacklist Checks", "group": "Warmup Engine", "schedule": "Every 12 hours", "independent": True},
+    {"id": "daily_log_snapshot", "name": "Daily Log Snapshot", "group": "Warmup Engine", "schedule": "Daily 23:55 UTC", "independent": True},
+    {"id": "auto_recovery_check", "name": "Auto Recovery Check", "group": "Warmup Engine", "schedule": "Daily 06:00 UTC", "independent": True},
+    {"id": "imap_read_cycle", "name": "IMAP Read Emulation", "group": "Warmup Engine", "schedule": "Every 30 minutes", "independent": True},
     # Lead Pipeline (1 job)
     {"id": "lead_sourcing_run", "name": "Scheduled Lead Sourcing", "group": "Lead Pipeline", "schedule": "6x daily (every 4h UTC)"},
     # Campaign & Outreach (3 jobs)
@@ -199,6 +199,7 @@ def get_controls(
             "group": reg["group"],
             "schedule": reg["schedule"],
             "enabled": enabled,
+            "independent": reg.get("independent", False),
             "next_run": next_runs.get(reg["id"]),
         })
 

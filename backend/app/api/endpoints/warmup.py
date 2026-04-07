@@ -921,13 +921,15 @@ async def get_scheduler_status_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
-    """Get warmup engine scheduler status with per-job enabled state and next run times."""
+    """Get warmup engine scheduler status with per-job enabled state and next run times.
+
+    Warmup engine is independent of master automation toggle — it only checks
+    individual job toggles so mailbox health is always maintained.
+    """
     from app.core.settings_resolver import get_tenant_setting_bool
 
     raw = get_scheduler_status()
     next_runs = {j["id"]: j["next_run"] for j in raw.get("jobs", [])}
-
-    master_enabled = get_tenant_setting_bool(db, "automation_master_enabled", default=True)
 
     WARMUP_JOBS = [
         {"id": "daily_assessment", "name": "Daily Warmup Assessment", "schedule": "Daily 00:05 UTC"},
@@ -952,9 +954,13 @@ async def get_scheduler_status_endpoint(
             "next_run": next_runs.get(reg["id"]),
         })
 
+    # Warmup is operational if scheduler is running and at least one warmup job is enabled
+    warmup_operational = raw.get("running", False) and any(j["enabled"] for j in jobs)
+
     return {
         "engine_running": raw.get("running", False),
-        "master_enabled": master_enabled,
+        "independent": True,
+        "warmup_operational": warmup_operational,
         "total_jobs": len(jobs),
         "enabled_jobs": sum(1 for j in jobs if j["enabled"]),
         "jobs": jobs,
