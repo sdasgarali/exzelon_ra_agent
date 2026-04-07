@@ -240,7 +240,7 @@ class JSearchAdapter(JobSourceAdapter):
         date_str = raw_data.get("job_posted_at_datetime_utc", "")
         try:
             posting_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
-        except:
+        except (ValueError, TypeError, AttributeError):
             posting_date = date.today()
 
         # Extract state from location

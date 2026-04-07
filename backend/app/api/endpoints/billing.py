@@ -230,8 +230,8 @@ def mark_paid(
             changed_by=current_user.email,
             notes=f"Marked paid via {req.payment_method}. Ref: {req.reference}",
         ))
-    except Exception:
-        pass
+    except Exception as e_audit:
+        logger.warning("Audit log failed for invoice_paid", error=str(e_audit))
 
     db.commit()
 
@@ -313,8 +313,8 @@ def override_amount(
             changed_by=current_user.email,
             notes=f"Amount changed from {old_total} to {invoice.total_cents}. Reason: {req.reason}",
         ))
-    except Exception:
-        pass
+    except Exception as e_audit:
+        logger.warning("Audit log failed for invoice_amount_overridden", error=str(e_audit))
 
     db.commit()
     return {"message": "Amount overridden", "invoice": _invoice_to_dict(invoice)}
@@ -348,8 +348,8 @@ def soft_delete_invoice(
             changed_by=current_user.email,
             notes=f"Invoice {invoice.invoice_number} soft-deleted",
         ))
-    except Exception:
-        pass
+    except Exception as e_audit:
+        logger.warning("Audit log failed for invoice_deleted", error=str(e_audit))
 
     db.commit()
     return {"message": f"Invoice {invoice.invoice_number} deleted"}
@@ -699,8 +699,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 changed_by="stripe_webhook",
                 notes=f"Paid via Stripe. Session: {session.get('id', '')}",
             ))
-        except Exception:
-            pass
+        except Exception as e_audit:
+            logger.warning("Audit log failed for stripe invoice_paid", error=str(e_audit))
 
         db.commit()
 

@@ -1,10 +1,13 @@
 """Campaign CRUD + management API endpoints."""
 import json
+import structlog
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+
+logger = structlog.get_logger()
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
@@ -298,6 +301,12 @@ def archive_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    from app.core.state_machine import validate_campaign_transition
+    if not validate_campaign_transition(campaign.status, CampaignStatus.ARCHIVED):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot archive campaign in '{campaign.status.value}' status",
+        )
     campaign.status = CampaignStatus.ARCHIVED
     campaign.is_archived = True
     db.commit()
@@ -318,6 +327,13 @@ def activate_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.core.state_machine import validate_campaign_transition
+    if not validate_campaign_transition(campaign.status, CampaignStatus.ACTIVE):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot activate campaign in '{campaign.status.value}' status",
+        )
 
     # Validate: must have at least one email step
     email_steps = db.query(SequenceStep).filter(
@@ -354,8 +370,9 @@ def activate_campaign(
             "campaign_id": campaign.campaign_id,
             "name": campaign.name,
         }, db)
-    except Exception:
-        pass
+    except Exception as e_wh:
+        logger.warning("Webhook dispatch failed for campaign.started",
+                       campaign_id=campaign.campaign_id, error=str(e_wh))
 
     return {"message": "Campaign activated", "status": "active"}
 
@@ -372,6 +389,12 @@ def pause_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    from app.core.state_machine import validate_campaign_transition
+    if not validate_campaign_transition(campaign.status, CampaignStatus.PAUSED):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot pause campaign in '{campaign.status.value}' status",
+        )
     campaign.status = CampaignStatus.PAUSED
     db.commit()
 
@@ -381,8 +404,9 @@ def pause_campaign(
             "campaign_id": campaign.campaign_id,
             "name": campaign.name,
         }, db)
-    except Exception:
-        pass
+    except Exception as e_wh:
+        logger.warning("Webhook dispatch failed for campaign.paused",
+                       campaign_id=campaign.campaign_id, error=str(e_wh))
 
     return {"message": "Campaign paused", "status": "paused"}
 
@@ -399,6 +423,12 @@ def resume_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    from app.core.state_machine import validate_campaign_transition
+    if not validate_campaign_transition(campaign.status, CampaignStatus.ACTIVE):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume campaign in '{campaign.status.value}' status",
+        )
     campaign.status = CampaignStatus.ACTIVE
     db.commit()
     return {"message": "Campaign resumed", "status": "active"}

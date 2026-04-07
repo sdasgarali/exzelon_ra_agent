@@ -1,9 +1,17 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 64: Tier 2 Enterprise Hardening. Pushed Tier 1 commit to remote. Implemented 4 Tier 2 items: (1) Password policy — added special character requirement, (2) Link/image ratio detection in spam checker, (3) AI model fallback chain + retry with exponential backoff (new ai_resilience.py + Groq adapter retry), (4) API rate limiting on 13 critical write endpoints across pipelines, email preview, billing, campaigns. Extracted shared rate limiter to core/rate_limiter.py. Wrote 32 new tests across 4 test files. 736 total tests pass, coverage 39.62%.
+> Session 65: P0 Architecture Fixes. Implemented 5 critical items from audit agents: (1) MySQL advisory locks on 7 scheduler jobs to prevent duplicate execution across workers, (2) 7 composite database indexes for hot-path queries, (3) Campaign status state machine with validated transitions, (4) N+1 query fix — batch-load campaigns and steps in campaign_engine.py, (5) ICP wizard json.loads crash fix + bare except cleanup in 4 files. 764 tests pass, coverage 39.73%.
 
 ## Immediate TODO
+- [x] P0 Architecture Fixes (2026-04-07)
+  - MySQL advisory locks: 7 critical scheduler jobs wrapped (campaign_processor, lead_sourcing, outreach_replies, daily_count_reset, inbox_sync, monthly_invoices, auto_enrollment) — prevents duplicate execution across 4 Uvicorn workers
+  - Composite indexes: 7 new indexes (outreach_events, campaign_contacts, contact_details, lead_details, inbox_messages, invoices)
+  - Campaign state machine: CAMPAIGN_STATUS_TRANSITIONS in state_machine.py, enforced on activate/pause/resume/archive endpoints
+  - N+1 fix: batch-load campaigns + steps in campaign_engine.py process_campaign_queue (eliminates ~100 queries per batch)
+  - ICP wizard crash fix: json.loads wrapped in try-catch
+  - Bare except fixes: indeed.py, jsearch.py → specific exceptions; campaigns.py, billing.py → logged warnings
+  - 28 new tests (3 test files), 764 total pass, coverage 39.73%
 - [x] Tier 2 Enterprise Hardening (2026-04-07)
   - Password policy: added special character requirement (!@#$%^&*... mandatory)
   - Link/image ratio detection in spam_checker.py (>2 links flagged, any images penalized, link-to-text ratio)

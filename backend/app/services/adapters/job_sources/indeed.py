@@ -143,7 +143,7 @@ class IndeedAdapter(JobSourceAdapter):
         date_str = raw_data.get("date", "")
         try:
             posting_date = datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S GMT").date()
-        except:
+        except (ValueError, TypeError, AttributeError):
             posting_date = date.today()
 
         # Extract state from location

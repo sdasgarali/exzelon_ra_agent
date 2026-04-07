@@ -63,11 +63,28 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
         CampaignContact.next_send_at <= now,
     ).limit(BATCH_SIZE).all()
 
+    # Pre-fetch all campaigns for this batch (eliminates N+1 query per contact)
+    batch_campaign_ids = list(set(cc.campaign_id for cc in due_contacts))
+    campaigns_map = {}
+    if batch_campaign_ids:
+        batch_campaigns = db.query(Campaign).filter(
+            Campaign.campaign_id.in_(batch_campaign_ids)
+        ).all()
+        campaigns_map = {c.campaign_id: c for c in batch_campaigns}
+
+    # Pre-fetch all relevant steps (eliminates N+1 step query per contact)
+    step_keys = list(set((cc.campaign_id, cc.current_step) for cc in due_contacts))
+    steps_map = {}
+    if step_keys and batch_campaign_ids:
+        all_steps = db.query(SequenceStep).filter(
+            SequenceStep.campaign_id.in_(batch_campaign_ids)
+        ).all()
+        for s in all_steps:
+            steps_map[(s.campaign_id, s.step_order)] = s
+
     for cc in due_contacts:
         try:
-            campaign = db.query(Campaign).filter(
-                Campaign.campaign_id == cc.campaign_id
-            ).first()
+            campaign = campaigns_map.get(cc.campaign_id)
             if not campaign:
                 continue
 
@@ -92,11 +109,8 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
             except Exception as e_reply:
                 logger.warning("Reply check failed, proceeding", error=str(e_reply))
 
-            # Get the step this contact is on
-            step = db.query(SequenceStep).filter(
-                SequenceStep.campaign_id == cc.campaign_id,
-                SequenceStep.step_order == cc.current_step,
-            ).first()
+            # Get the step this contact is on (from pre-fetched map)
+            step = steps_map.get((cc.campaign_id, cc.current_step))
 
             if not step:
                 # No more steps — mark completed

@@ -1,5 +1,6 @@
-"""Lead status state machine — defines allowed transitions."""
+"""Status state machines — defines allowed transitions for leads and campaigns."""
 from app.db.models.lead import LeadStatus
+from app.db.models.campaign import CampaignStatus
 
 # Allowed transitions: from_status -> set of allowed to_statuses
 LEAD_STATUS_TRANSITIONS: dict[LeadStatus, set[LeadStatus]] = {
@@ -80,4 +81,44 @@ def validate_transition(from_status: LeadStatus, to_status: LeadStatus) -> bool:
 def get_allowed_transitions(from_status: LeadStatus) -> list[str]:
     """Return list of allowed next statuses for a given status."""
     allowed = LEAD_STATUS_TRANSITIONS.get(from_status, set())
+    return sorted([s.value for s in allowed])
+
+
+# ── Campaign Status State Machine ──────────────────────────────────
+
+CAMPAIGN_STATUS_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
+    CampaignStatus.DRAFT: {
+        CampaignStatus.ACTIVE,
+        CampaignStatus.ARCHIVED,
+    },
+    CampaignStatus.ACTIVE: {
+        CampaignStatus.PAUSED,
+        CampaignStatus.COMPLETED,
+        CampaignStatus.ARCHIVED,
+    },
+    CampaignStatus.PAUSED: {
+        CampaignStatus.ACTIVE,
+        CampaignStatus.ARCHIVED,
+        CampaignStatus.COMPLETED,
+    },
+    CampaignStatus.COMPLETED: {
+        CampaignStatus.ARCHIVED,
+    },
+    CampaignStatus.ARCHIVED: set(),  # Terminal state — no transitions out
+}
+
+
+def validate_campaign_transition(
+    from_status: CampaignStatus, to_status: CampaignStatus
+) -> bool:
+    """Check if a campaign status transition is allowed."""
+    if from_status == to_status:
+        return True
+    allowed = CAMPAIGN_STATUS_TRANSITIONS.get(from_status, set())
+    return to_status in allowed
+
+
+def get_allowed_campaign_transitions(from_status: CampaignStatus) -> list[str]:
+    """Return list of allowed next campaign statuses."""
+    allowed = CAMPAIGN_STATUS_TRANSITIONS.get(from_status, set())
     return sorted([s.value for s in allowed])

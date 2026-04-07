@@ -166,22 +166,26 @@ def job_daily_count_reset():
     if not _is_job_enabled("daily_count_reset"):
         logger.info("Job daily_count_reset skipped (disabled)")
         return
-    logger.info("Resetting daily email counts")
-    db = _get_db()
-    try:
-        from app.db.models.sender_mailbox import SenderMailbox
-        db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0}, synchronize_session=False)
-        db.commit()
-        logger.info("Daily count reset complete")
-        # Reset campaign auto-enrollment daily counters
-        from app.db.models.campaign import Campaign
-        db.query(Campaign).update({Campaign.auto_enrolled_today: 0}, synchronize_session=False)
-        db.commit()
-        logger.info("Campaign auto-enrollment daily counters reset")
-    except Exception as e:
-        logger.error("Daily count reset failed", error=str(e))
-    finally:
-        db.close()
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("daily_count_reset") as acquired:
+        if not acquired:
+            return
+        logger.info("Resetting daily email counts")
+        db = _get_db()
+        try:
+            from app.db.models.sender_mailbox import SenderMailbox
+            db.query(SenderMailbox).update({SenderMailbox.emails_sent_today: 0}, synchronize_session=False)
+            db.commit()
+            logger.info("Daily count reset complete")
+            # Reset campaign auto-enrollment daily counters
+            from app.db.models.campaign import Campaign
+            db.query(Campaign).update({Campaign.auto_enrolled_today: 0}, synchronize_session=False)
+            db.commit()
+            logger.info("Campaign auto-enrollment daily counters reset")
+        except Exception as e:
+            logger.error("Daily count reset failed", error=str(e))
+        finally:
+            db.close()
 
 
 def job_dns_checks():
@@ -301,31 +305,43 @@ def job_check_outreach_replies():
     if not _is_job_enabled("check_outreach_replies"):
         logger.info("Job check_outreach_replies skipped (disabled)")
         return
-    logger.info("Running outreach reply check")
-    db = _get_db()
-    try:
-        from app.services.reply_tracker import check_all_mailbox_replies
-        result = check_all_mailbox_replies(db)
-        logger.info("Outreach reply check complete", result=result)
-        from app.services.automation_logger import log_automation_event
-        replies_found = result.get("replies_found", 0) if isinstance(result, dict) else 0
-        if replies_found > 0:
-            log_automation_event(db, "reply_detected", f"Detected {replies_found} new replies", details=result)
-    except Exception as e:
-        logger.error("Outreach reply check failed", error=str(e))
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("outreach_replies") as acquired:
+        if not acquired:
+            return
+        logger.info("Running outreach reply check")
+        db = _get_db()
         try:
+            from app.services.reply_tracker import check_all_mailbox_replies
+            result = check_all_mailbox_replies(db)
+            logger.info("Outreach reply check complete", result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "reply_detected", f"Reply check failed: {str(e)[:100]}", status="error")
-        except Exception:
-            pass
-    finally:
-        db.close()
+            replies_found = result.get("replies_found", 0) if isinstance(result, dict) else 0
+            if replies_found > 0:
+                log_automation_event(db, "reply_detected", f"Detected {replies_found} new replies", details=result)
+        except Exception as e:
+            logger.error("Outreach reply check failed", error=str(e))
+            try:
+                from app.services.automation_logger import log_automation_event
+                log_automation_event(db, "reply_detected", f"Reply check failed: {str(e)[:100]}", status="error")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
 
 def job_lead_sourcing_run():
     if not _is_job_enabled("lead_sourcing_run"):
         logger.info("Job lead_sourcing_run skipped (disabled)")
         return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("lead_sourcing") as acquired:
+        if not acquired:
+            return
+        _job_lead_sourcing_run_inner()
+
+
+def _job_lead_sourcing_run_inner():
     logger.info("Running scheduled lead sourcing pipeline")
     for tid in _get_active_tenant_ids():
         db = _get_db()
@@ -472,49 +488,57 @@ def job_campaign_processor():
     if not _is_job_enabled("campaign_processor"):
         logger.info("Job campaign_processor skipped (disabled)")
         return
-    logger.info("Running campaign sequence processor")
-    db = _get_db()
-    try:
-        from app.services.campaign_engine import process_campaign_queue
-        result = process_campaign_queue(db)
-        logger.info("Campaign processor complete", result=result)
-        from app.services.automation_logger import log_automation_event
-        log_automation_event(db, "campaign_send", f"Campaign processor ran", details=result)
-    except Exception as e:
-        logger.error("Campaign processor failed", error=str(e))
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("campaign_processor") as acquired:
+        if not acquired:
+            return
+        logger.info("Running campaign sequence processor")
+        db = _get_db()
         try:
+            from app.services.campaign_engine import process_campaign_queue
+            result = process_campaign_queue(db)
+            logger.info("Campaign processor complete", result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "campaign_send", f"Campaign processor failed: {str(e)[:100]}", status="error")
-        except Exception:
-            pass
-    finally:
-        db.close()
+            log_automation_event(db, "campaign_send", f"Campaign processor ran", details=result)
+        except Exception as e:
+            logger.error("Campaign processor failed", error=str(e))
+            try:
+                from app.services.automation_logger import log_automation_event
+                log_automation_event(db, "campaign_send", f"Campaign processor failed: {str(e)[:100]}", status="error")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
 
 def job_inbox_sync():
     if not _is_job_enabled("inbox_sync"):
         logger.info("Job inbox_sync skipped (disabled)")
         return
-    logger.info("Running inbox sync")
-    db = _get_db()
-    try:
-        from app.services.inbox_syncer import sync_inbox
-        result = sync_inbox(db)
-        logger.info("Inbox sync complete", result=result)
-        from app.services.automation_logger import log_automation_event
-        sent = result.get("sent_synced", 0)
-        replies = result.get("replies_synced", 0)
-        if sent > 0 or replies > 0:
-            log_automation_event(db, "inbox_sync", f"Inbox sync: {sent} sent, {replies} replies synced", details=result)
-    except Exception as e:
-        logger.error("Inbox sync failed", error=str(e))
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("inbox_sync") as acquired:
+        if not acquired:
+            return
+        logger.info("Running inbox sync")
+        db = _get_db()
         try:
+            from app.services.inbox_syncer import sync_inbox
+            result = sync_inbox(db)
+            logger.info("Inbox sync complete", result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "inbox_sync", f"Inbox sync failed: {str(e)[:100]}", status="error")
-        except Exception:
-            pass
-    finally:
-        db.close()
+            sent = result.get("sent_synced", 0)
+            replies = result.get("replies_synced", 0)
+            if sent > 0 or replies > 0:
+                log_automation_event(db, "inbox_sync", f"Inbox sync: {sent} sent, {replies} replies synced", details=result)
+        except Exception as e:
+            logger.error("Inbox sync failed", error=str(e))
+            try:
+                from app.services.automation_logger import log_automation_event
+                log_automation_event(db, "inbox_sync", f"Inbox sync failed: {str(e)[:100]}", status="error")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
 
 def job_lead_scoring():
@@ -572,25 +596,29 @@ def job_auto_enrollment():
     if not _is_job_enabled("auto_enrollment"):
         logger.info("Job auto_enrollment skipped (disabled)")
         return
-    logger.info("Running campaign auto-enrollment")
-    db = _get_db()
-    try:
-        from app.services.auto_enrollment import run_auto_enrollment
-        result = run_auto_enrollment(db)
-        logger.info("Auto-enrollment complete", result=result)
-        from app.services.automation_logger import log_automation_event
-        total = result.get("total_enrolled", 0)
-        if total > 0:
-            log_automation_event(db, "auto_enrollment", f"Auto-enrollment: {total} contacts enrolled", details=result)
-    except Exception as e:
-        logger.error("Auto-enrollment failed", error=str(e))
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("auto_enrollment") as acquired:
+        if not acquired:
+            return
+        logger.info("Running campaign auto-enrollment")
+        db = _get_db()
         try:
+            from app.services.auto_enrollment import run_auto_enrollment
+            result = run_auto_enrollment(db)
+            logger.info("Auto-enrollment complete", result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "auto_enrollment", f"Auto-enrollment failed: {str(e)[:100]}", status="error")
-        except Exception:
-            pass
-    finally:
-        db.close()
+            total = result.get("total_enrolled", 0)
+            if total > 0:
+                log_automation_event(db, "auto_enrollment", f"Auto-enrollment: {total} contacts enrolled", details=result)
+        except Exception as e:
+            logger.error("Auto-enrollment failed", error=str(e))
+            try:
+                from app.services.automation_logger import log_automation_event
+                log_automation_event(db, "auto_enrollment", f"Auto-enrollment failed: {str(e)[:100]}", status="error")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
 
 def job_daily_cost_aggregation():
@@ -689,6 +717,14 @@ def job_generate_monthly_invoices():
     if not _is_job_enabled("monthly_invoices"):
         logger.info("Job monthly_invoices skipped (disabled)")
         return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("monthly_invoices") as acquired:
+        if not acquired:
+            return
+        _job_generate_monthly_invoices_inner()
+
+
+def _job_generate_monthly_invoices_inner():
     logger.info("Running monthly invoice generation")
     db = _get_db()
     try:

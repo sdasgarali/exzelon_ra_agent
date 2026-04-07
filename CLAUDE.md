@@ -237,6 +237,8 @@ Domain reputation management subsystem:
 | AI Resilience | `services/ai_resilience.py` | Retry with exponential backoff (3 attempts, 1s→2s→4s) + provider fallback chain (primary→secondary→rule-based) |
 | Rate Limiter | `core/rate_limiter.py` | Shared slowapi limiter — auth (5/min login, 5/hr signup), pipelines (5/hr run), email-preview (10/hr generate, 20/hr rewrite), billing (3/hr bulk), campaigns (20/hr enroll) |
 | Spam Checker | `services/spam_checker.py` | 106 trigger words + 6 regex patterns + link/image ratio detection (>2 links, any images, link-to-text ratio penalized) |
+| Job Lock | `core/job_lock.py` | MySQL advisory lock (`GET_LOCK`/`RELEASE_LOCK`) context manager — prevents duplicate job execution across Uvicorn workers. Used by 7 scheduler jobs: campaign_processor, lead_sourcing, outreach_replies, daily_count_reset, inbox_sync, monthly_invoices, auto_enrollment |
+| State Machine | `core/state_machine.py` | Lead + Campaign status transition validation. `CAMPAIGN_STATUS_TRANSITIONS`: draft→active/archived, active→paused/completed/archived, paused→active/archived/completed, completed→archived, archived=terminal |
 
 ### Additional API Endpoints
 

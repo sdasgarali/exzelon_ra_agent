@@ -62,7 +62,12 @@ Return ONLY the JSON object, no markdown or other text."""
     elif "```" in text:
         text = text.split("```")[1].split("```")[0]
 
-    result = json.loads(text.strip())
+    try:
+        result = json.loads(text.strip())
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning("AI ICP response not valid JSON, falling back to rule-based",
+                       error=str(e), raw_text=text[:200])
+        raise ValueError(f"AI returned invalid JSON: {e}")
 
     # Validate required fields
     for field in ["industries", "job_titles", "states", "company_sizes", "rationale"]:

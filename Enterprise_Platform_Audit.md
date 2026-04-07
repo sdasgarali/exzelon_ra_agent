@@ -109,11 +109,11 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 
 | Area | Current State | Target State | Severity | Status |
 |------|--------------|-------------|----------|--------|
-| Job idempotency | NOT idempotent | Add idempotency keys/guards | HIGH | TO BUILD |
-| Job concurrency | No locking | Advisory locks or Redis locks | HIGH | TO BUILD |
+| Job idempotency | ~~NOT idempotent~~ ✅ | Idempotency guards in campaign_safety.py | HIGH | DONE |
+| Job concurrency | ~~No locking~~ ✅ | MySQL advisory locks on 7 critical jobs | HIGH | DONE |
 | Dead letter handling | MISSING | Failed jobs logged + retryable | MEDIUM | TO BUILD |
 | Event-driven architecture | Polling-based | Keep (adequate for scale) | LOW | FUTURE |
-| State machine validation | Ad-hoc status changes | Explicit transition validation | MEDIUM | TO BUILD |
+| State machine validation | ~~Ad-hoc status changes~~ ✅ | Campaign state machine in state_machine.py | MEDIUM | DONE |
 | Redis utilization | Configured but unused | Rate limiting, caching, locks | HIGH | TO BUILD |
 | Migration strategy | Ad-hoc ALTER TABLE in main.py | Alembic (future) | MEDIUM | FUTURE |
 | Feature flags | MISSING | Settings-based feature toggles | LOW | TO BUILD |
@@ -138,7 +138,7 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 | Area | Current State | Target State | Severity | Status |
 |------|--------------|-------------|----------|--------|
 | Test coverage | 43% backend, 58 frontend tests | 60%+ backend, component tests | MEDIUM | TO IMPROVE |
-| Error handling | Many bare except:pass blocks | Structured error handling | HIGH | TO FIX |
+| Error handling | ~~Many bare except:pass blocks~~ ✅ | Structured error handling | HIGH | DONE |
 | Type safety | 109 `any` types in frontend | Proper types from api.ts types | MEDIUM | TO FIX |
 | Logging | structlog JSON (good) | Keep | Low | EXISTS |
 | Database indexes | Mostly present | Audit for missing hot-path indexes | LOW | TO AUDIT |

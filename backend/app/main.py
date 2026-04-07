@@ -1214,6 +1214,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for preview_mode: {e}")
 
+    # Migration: add composite indexes for hot-path queries
+    try:
+        from sqlalchemy import text as sa_text_idx
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                composite_indexes = [
+                    ("idx_oe_campaign_status", "outreach_events", "(campaign_id, status)"),
+                    ("idx_cc_campaign_status_send", "campaign_contacts", "(campaign_id, status, next_send_at)"),
+                    ("idx_cd_tenant_client", "contact_details", "(tenant_id, client_name(191))"),
+                    ("idx_ld_tenant_status", "lead_details", "(tenant_id, lead_status)"),
+                    ("idx_im_tenant_thread", "inbox_messages", "(tenant_id, thread_id)"),
+                    ("idx_oe_contact_sent", "outreach_events", "(contact_id, sent_at)"),
+                    ("idx_inv_status_due", "invoices", "(status, due_date)"),
+                ]
+                for idx_name, table, cols in composite_indexes:
+                    try:
+                        conn.execute(sa_text_idx(
+                            f"CREATE INDEX {idx_name} ON {table} {cols}"
+                        ))
+                        conn.commit()
+                        logger.info(f"Migration: added composite index {idx_name}")
+                    except Exception:
+                        pass  # Index already exists
+    except Exception as e:
+        logger.warning(f"Migration check for composite indexes: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()
