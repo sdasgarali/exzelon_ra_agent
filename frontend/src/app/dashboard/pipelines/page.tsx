@@ -281,7 +281,8 @@ export default function PipelinesPage() {
   // Run pipeline with selected leads
   const handleRunWithSelectedLeads = async (runAll: boolean) => {
     if (runAll) {
-      // Show "Run for All" confirmation
+      // Hide lead selector first so confirmation dialog is visible
+      setShowLeadSelector(false)
       setShowRunAllLeadsConfirm(true)
       return
     }
@@ -382,6 +383,8 @@ export default function PipelinesPage() {
   // Run email validation with selected contacts
   const handleRunWithSelectedContacts = async (runAll: boolean) => {
     if (runAll) {
+      // Hide contact selector first so confirmation dialog is visible
+      setShowContactSelector(false)
       setShowRunAllContactsConfirm(true)
       return
     }
@@ -935,7 +938,7 @@ export default function PipelinesPage() {
       {/* "Run for All Leads" Confirmation */}
       <ConfirmDialog
         open={showRunAllLeadsConfirm}
-        onClose={() => setShowRunAllLeadsConfirm(false)}
+        onClose={() => { setShowRunAllLeadsConfirm(false); setShowLeadSelector(true) }}
         title={`Run ${selectorPipeline === 'contact-enrichment' ? 'Contact Enrichment' : 'Outreach'} for ALL leads?`}
         message={`This will process all ${selectorTotal} available leads. API credits may be consumed. Are you sure you want to continue?`}
         confirmLabel="Run for All"
@@ -946,7 +949,7 @@ export default function PipelinesPage() {
       {/* "Run for All Contacts" Confirmation */}
       <ConfirmDialog
         open={showRunAllContactsConfirm}
-        onClose={() => setShowRunAllContactsConfirm(false)}
+        onClose={() => { setShowRunAllContactsConfirm(false); setShowContactSelector(true) }}
         title="Run Email Validation for ALL contacts?"
         message={`This will validate all ${contactSelectorTotal} contacts with unvalidated emails. API credits will be consumed. Are you sure?`}
         confirmLabel="Validate All"
