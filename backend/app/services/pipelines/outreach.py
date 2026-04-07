@@ -687,6 +687,15 @@ def run_outreach_send_pipeline(
                     skip_reasons["not_eligible"] += 1
                 continue
 
+            # Per-recipient-domain daily throttle
+            from app.services.domain_throttle import check_domain_throttle
+            domain_allowed, domain_reason = check_domain_throttle(db, contact.email, tenant_id or 1)
+            if not domain_allowed:
+                counters["skipped"] += 1
+                skip_reasons["not_eligible"] += 1
+                logger.info("Domain throttle blocked send", email=contact.email, reason=domain_reason)
+                continue
+
             # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
             sending_mailbox = db.query(SenderMailbox).filter(
                 SenderMailbox.is_active == True,
@@ -920,6 +929,14 @@ def run_outreach_for_lead(
             if not eligible:
                 counters["skipped"] += 1
                 logger.debug("Contact skipped", email=contact.email, reason=reason)
+                continue
+
+            # Per-recipient-domain daily throttle
+            from app.services.domain_throttle import check_domain_throttle
+            domain_allowed, domain_reason = check_domain_throttle(db, contact.email, tenant_id or 1)
+            if not domain_allowed:
+                counters["skipped"] += 1
+                logger.info("Domain throttle blocked lead outreach", email=contact.email, reason=domain_reason)
                 continue
 
             # Get candidate mailboxes (Cold Ready or Active, under limit, successful connection)

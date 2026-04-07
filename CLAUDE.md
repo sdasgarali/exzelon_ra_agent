@@ -223,6 +223,18 @@ Domain reputation management subsystem:
 | IP Rotation | `services/ip_rotation.py` | SISR — dedicated IP pool management and rotation for high-volume sending |
 | Email Preview | `services/email_preview_service.py` | Draft generation (campaign/pipeline/broadcast), AI rewriting, composite deliverability scoring (DNS+spam+blacklist+reputation), spam word detection with AI replacement suggestions, approval workflow, batch send |
 
+### Enterprise Safety & AI Governance Services
+
+| Service | File | Purpose |
+|---------|------|---------|
+| Security Headers | `middleware/security_headers.py` | X-Frame-Options, CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy on all responses |
+| Domain Throttle | `services/domain_throttle.py` | Per-recipient-domain daily send caps (gmail.com: 30/day, general: 50/day, configurable via settings) |
+| AI Safety | `services/ai_safety.py` | Prompt injection defense — sanitize inbound email content, strip injection patterns, delimiter wrapping |
+| Content Fingerprint | `services/content_fingerprint.py` | Jaccard similarity on word-level 3-shingles to detect near-identical emails, Shannon entropy scoring for content variability |
+| AI Schemas | `services/ai_schemas.py` | Pydantic structured output schemas for all AI tasks (ReplyClassification, DraftEmailResponse, SpamCheckResult, NextBestAction) + JSON parsing |
+| AI Audit Logger | `services/ai_audit_logger.py` | Logs every AI decision to automation_events (prompt hash, confidence, action taken, gating reason, tokens, latency) |
+| Campaign Safety | `services/campaign_safety.py` | Job idempotency guard, company-level contact cap (5/company), smart pause on reply, sequence fatigue detection (5 unanswered in 90d), cross-campaign contact dedup |
+
 ### Additional API Endpoints
 
 | Prefix | File | Purpose |

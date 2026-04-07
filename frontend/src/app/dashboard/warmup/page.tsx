@@ -74,6 +74,14 @@ interface WarmupEmailDetail extends WarmupEmailRecord {
 }
 interface WarmupEmailList { items: WarmupEmailRecord[]; total: number; page: number; limit: number }
 
+interface SchedulerJob {
+  id: string; name: string; schedule: string; enabled: boolean; next_run: string | null;
+}
+interface SchedulerStatusData {
+  engine_running: boolean; master_enabled: boolean;
+  total_jobs: number; enabled_jobs: number; jobs: SchedulerJob[];
+}
+
 type TabId = 'overview' | 'analytics' | 'emails' | 'dns' | 'profiles' | 'alerts' | 'settings'
 
 /* helpers */
@@ -118,6 +126,8 @@ export default function WarmupEnginePage() {
   const [newProfile, setNewProfile] = useState({ name: '', description: '', config_json: '{{}}' })
   const [exportFormat, setExportFormat] = useState('csv')
   const [exportDays, setExportDays] = useState(30)
+  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusData | null>(null)
+  const [showJobDetails, setShowJobDetails] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -143,6 +153,7 @@ export default function WarmupEnginePage() {
       setStatus(s); setConfig(c); setEditConfig({ ...c }); setSchedule(sc)
       if (perms.warmup) setWarmupPermission(perms.warmup)
       try { const u = await warmupApi.getUnreadCount(); setUnreadCount(typeof u === 'number' ? u : u?.count ?? 0) } catch {}
+      try { const ss = await warmupApi.getSchedulerStatus(); setSchedulerStatus(ss) } catch {}
     } catch (e: any) { if (e.code !== 'ERR_CANCELED') { setError(e?.response?.data?.detail || 'Failed to load warmup data') } }
     finally { setLoading(false) }
   }
@@ -303,6 +314,54 @@ export default function WarmupEnginePage() {
               {canWrite && <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>}
             </div>
           </div>
+
+          {/* engine status banner */}
+          {schedulerStatus && (() => {
+            const running = schedulerStatus.engine_running
+            const masterOn = schedulerStatus.master_enabled
+            const isOperational = running && masterOn
+            const isPaused = running && !masterOn
+            return (
+              <div className={`rounded-lg border p-4 ${isOperational ? 'bg-green-50 border-green-200' : isPaused ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="relative flex h-3 w-3">
+                      {isOperational && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
+                      <span className={`relative inline-flex rounded-full h-3 w-3 ${isOperational ? 'bg-green-500' : isPaused ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                    </span>
+                    <div>
+                      <span className={`text-sm font-semibold ${isOperational ? 'text-green-800' : isPaused ? 'text-yellow-800' : 'text-red-800'}`}>
+                        {isOperational ? 'Warmup Engine Running' : isPaused ? 'Warmup Engine Paused (Master Toggle Off)' : 'Warmup Engine Stopped'}
+                      </span>
+                      <span className="text-xs text-gray-500 ml-3">
+                        {schedulerStatus.enabled_jobs}/{schedulerStatus.total_jobs} jobs enabled
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowJobDetails(!showJobDetails)} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+                    {showJobDetails ? 'Hide Jobs' : 'Show Jobs'}
+                  </button>
+                </div>
+                {showJobDetails && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {schedulerStatus.jobs.map(job => (
+                      <div key={job.id} className={`flex items-center gap-2 px-3 py-2 rounded text-xs ${job.enabled ? 'bg-white/70' : 'bg-gray-100/70 opacity-60'}`}>
+                        <span className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${job.enabled ? 'bg-green-400' : 'bg-gray-400'}`} />
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-700 truncate">{job.name}</div>
+                          <div className="text-gray-400">
+                            {job.schedule}
+                            {job.enabled && job.next_run && <> &middot; Next: {new Date(job.next_run).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
+                            {!job.enabled && <> &middot; Disabled</>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* stats cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

@@ -921,6 +921,41 @@ async def get_scheduler_status_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
 ):
-    """Get the current warmup scheduler status."""
-    status = get_scheduler_status()
-    return status
+    """Get warmup engine scheduler status with per-job enabled state and next run times."""
+    from app.core.settings_resolver import get_tenant_setting_bool
+
+    raw = get_scheduler_status()
+    next_runs = {j["id"]: j["next_run"] for j in raw.get("jobs", [])}
+
+    master_enabled = get_tenant_setting_bool(db, "automation_master_enabled", default=True)
+
+    WARMUP_JOBS = [
+        {"id": "daily_assessment", "name": "Daily Warmup Assessment", "schedule": "Daily 00:05 UTC"},
+        {"id": "peer_warmup_cycle", "name": "Peer Warmup Cycle", "schedule": "Hourly 9am-5pm UTC"},
+        {"id": "auto_reply_cycle", "name": "Auto Reply Cycle", "schedule": "Hourly :30 9am-5pm UTC"},
+        {"id": "daily_count_reset", "name": "Daily Count Reset", "schedule": "Daily 00:00 UTC"},
+        {"id": "dns_checks", "name": "DNS Health Checks", "schedule": "Every 12 hours"},
+        {"id": "blacklist_checks", "name": "Blacklist Checks", "schedule": "Every 12 hours"},
+        {"id": "daily_log_snapshot", "name": "Daily Log Snapshot", "schedule": "Daily 23:55 UTC"},
+        {"id": "auto_recovery_check", "name": "Auto Recovery Check", "schedule": "Daily 06:00 UTC"},
+        {"id": "imap_read_cycle", "name": "IMAP Read Emulation", "schedule": "Every 30 minutes"},
+    ]
+
+    jobs = []
+    for reg in WARMUP_JOBS:
+        enabled = get_tenant_setting_bool(db, f"automation_{reg['id']}_enabled", default=True)
+        jobs.append({
+            "id": reg["id"],
+            "name": reg["name"],
+            "schedule": reg["schedule"],
+            "enabled": enabled,
+            "next_run": next_runs.get(reg["id"]),
+        })
+
+    return {
+        "engine_running": raw.get("running", False),
+        "master_enabled": master_enabled,
+        "total_jobs": len(jobs),
+        "enabled_jobs": sum(1 for j in jobs if j["enabled"]),
+        "jobs": jobs,
+    }

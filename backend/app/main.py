@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.db.base import engine, Base
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 structlog.configure(
     processors=[
@@ -1346,6 +1347,9 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
     expose_headers=["Content-Disposition"],
 )
+
+# Security headers (runs after CORS so CORS headers are already set)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

@@ -16,6 +16,7 @@ from app.db.models.ai_reply_draft import AIReplyDraft
 from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.db.models.campaign import Campaign
 from app.db.models.contact import ContactDetails
+from app.services.ai_safety import sanitize_email_for_ai, build_safe_ai_prompt
 
 logger = structlog.get_logger()
 
@@ -41,7 +42,9 @@ INTENT_CATEGORIES = {
 
 def detect_intent(text: str) -> tuple:
     """Detect intent from reply text. Returns (intent, confidence)."""
-    text_lower = text.lower()
+    # Sanitize to strip injection patterns / HTML before keyword matching
+    sanitized = sanitize_email_for_ai(text, max_length=2000)
+    text_lower = sanitized.lower()
     scores = {}
     for intent, keywords in INTENT_CATEGORIES.items():
         score = sum(1 for kw in keywords if kw in text_lower)
@@ -65,8 +68,9 @@ def generate_ai_reply_draft(
     tenant_id: int,
 ) -> Optional[AIReplyDraft]:
     """Generate an AI reply draft for a received message."""
-    # Detect intent
+    # Detect intent (sanitization happens inside detect_intent)
     body_text = received_message.body_text or ""
+    sanitized_body = sanitize_email_for_ai(body_text)
     intent, confidence = detect_intent(body_text)
 
     # Skip OOO -- no reply needed
@@ -113,14 +117,17 @@ def generate_ai_reply_draft(
 
         campaign_context = f"Campaign: {campaign.name}" if campaign else ""
 
-        prompt = (
+        user_content = (
             "You are replying to a cold email response. "
             "Generate a professional, concise reply.\n\n"
             f"Detected intent: {intent} (confidence: {confidence}%)\n"
             f"{contact_context}\n"
             f"{campaign_context}\n\n"
-            f"Their message:\n{body_text[:500]}\n\n"
-            "Guidelines:\n"
+            "Their message:\n"
+        )
+
+        guidelines = (
+            "\n\nGuidelines:\n"
             "- If interested: Acknowledge interest, suggest next steps "
             "(meeting/call), be enthusiastic but professional\n"
             "- If objection: Address the concern respectfully, provide "
@@ -132,16 +139,14 @@ def generate_ai_reply_draft(
             "- Sign off with just a first name"
         )
 
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You write professional cold email replies. "
-                    "Be concise, warm, and action-oriented."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ]
+        messages = build_safe_ai_prompt(
+            system_prompt=(
+                "You write professional cold email replies. "
+                "Be concise, warm, and action-oriented."
+            ),
+            user_content=user_content + guidelines,
+            sanitized_email=sanitized_body,
+        )
 
         reply_text = adapter._call_api(messages, max_tokens=300)
 
@@ -170,12 +175,53 @@ def generate_ai_reply_draft(
             received_message, contact, campaign, tenant_id,
         )
 
-    # Determine auto-send timing
+    # Determine auto-send timing — gated by confidence threshold
     auto_send_at = None
     status = "pending"
     if campaign and hasattr(campaign, "auto_reply_enabled") and campaign.auto_reply_enabled:
-        delay = getattr(campaign, "auto_reply_delay_minutes", 5) or 5
-        auto_send_at = datetime.utcnow() + timedelta(minutes=delay)
+        # Only auto-send if confidence is high enough (default: 70%)
+        min_auto_confidence = 70
+        try:
+            from app.core.settings_resolver import get_tenant_setting
+            min_auto_confidence = int(get_tenant_setting(
+                db, "ai_auto_reply_min_confidence",
+                tenant_id=tenant_id, default=70,
+            ))
+        except Exception:
+            pass
+
+        if confidence >= min_auto_confidence:
+            delay = getattr(campaign, "auto_reply_delay_minutes", 5) or 5
+            auto_send_at = datetime.utcnow() + timedelta(minutes=delay)
+        else:
+            logger.info(
+                "auto_reply_gated_low_confidence",
+                confidence=confidence,
+                threshold=min_auto_confidence,
+                thread_id=thread_id,
+            )
+
+    # Log AI decision for audit trail
+    try:
+        from app.services.ai_audit_logger import log_ai_decision
+        log_ai_decision(
+            db,
+            tenant_id=tenant_id,
+            decision_type="reply_classification",
+            prompt_preview=body_text[:200],
+            parsed_result={"intent": intent, "confidence": confidence},
+            confidence=confidence,
+            action_taken="auto_reply_queued" if auto_send_at else "draft_pending_review",
+            action_gated=auto_send_at is None and bool(
+                campaign and hasattr(campaign, "auto_reply_enabled") and campaign.auto_reply_enabled
+            ),
+            gate_reason=f"confidence {confidence}% < {min_auto_confidence}%" if auto_send_at is None else "",
+            contact_id=contact.contact_id if contact else None,
+            campaign_id=campaign.campaign_id if campaign else None,
+            thread_id=thread_id,
+        )
+    except Exception as e_audit:
+        logger.warning("AI audit logging failed", error=str(e_audit))
 
     # Build subject
     subject = received_message.subject or ""

@@ -71,6 +71,27 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
             if not campaign:
                 continue
 
+            # --- Safety: idempotency guard (prevent duplicate sends on restart) ---
+            try:
+                from app.services.campaign_safety import check_already_processed
+                if check_already_processed(db, cc):
+                    results["skipped"] += 1
+                    results["processed"] += 1
+                    continue
+            except Exception as e_idem:
+                logger.warning("Idempotency check failed, proceeding", error=str(e_idem))
+
+            # --- Safety: smart pause on reply ---
+            try:
+                from app.services.campaign_safety import check_reply_received, pause_contact_on_reply
+                if check_reply_received(db, cc.contact_id, cc.campaign_id):
+                    pause_contact_on_reply(db, cc)
+                    results["skipped"] += 1
+                    results["processed"] += 1
+                    continue
+            except Exception as e_reply:
+                logger.warning("Reply check failed, proceeding", error=str(e_reply))
+
             # Get the step this contact is on
             step = db.query(SequenceStep).filter(
                 SequenceStep.campaign_id == cc.campaign_id,
@@ -182,6 +203,48 @@ def _execute_email_step(
         _advance_to_next_step(cc, step, campaign, db)
         return False
 
+    # --- Safety: company-level contact cap ---
+    try:
+        from app.services.campaign_safety import check_company_contact_cap
+        from app.core.settings_resolver import get_tenant_setting
+        max_company = int(get_tenant_setting(
+            db, "max_contacts_per_company_all_campaigns",
+            tenant_id=campaign.tenant_id, default=5,
+        ))
+        allowed, cap_reason = check_company_contact_cap(
+            db, contact, campaign.tenant_id, max_per_company=max_company,
+        )
+        if not allowed:
+            logger.info("Company cap skip", contact_id=cc.contact_id, reason=cap_reason)
+            _advance_to_next_step(cc, step, campaign, db)
+            return False
+    except Exception as e_cap:
+        logger.warning("Company cap check failed, proceeding", error=str(e_cap))
+
+    # --- Safety: sequence fatigue detection ---
+    try:
+        from app.services.campaign_safety import check_sequence_fatigue
+        should_send, fatigue_reason = check_sequence_fatigue(
+            db, cc.contact_id, campaign.tenant_id,
+        )
+        if not should_send:
+            logger.info("Fatigue skip", contact_id=cc.contact_id, reason=fatigue_reason)
+            cc.status = CampaignContactStatus.COMPLETED
+            cc.next_send_at = None
+            return False
+    except Exception as e_fat:
+        logger.warning("Fatigue check failed, proceeding", error=str(e_fat))
+
+    # --- Safety: per-domain send cap ---
+    try:
+        from app.services.domain_throttle import check_domain_throttle
+        domain_ok, domain_reason = check_domain_throttle(db, contact.email, campaign.tenant_id)
+        if not domain_ok:
+            logger.info("Domain throttle skip", contact_id=cc.contact_id, reason=domain_reason)
+            return False
+    except Exception as e_dom:
+        logger.warning("Domain throttle check failed, proceeding", error=str(e_dom))
+
     # Select mailbox (health-aware scoring)
     mailbox = _select_mailbox(campaign, db)
     if not mailbox:
@@ -205,6 +268,14 @@ def _execute_email_step(
     if mailbox.emails_sent_today >= effective_daily:
         logger.info("Mailbox hit jittered daily limit", mailbox=mailbox.email,
                      sent=mailbox.emails_sent_today, effective=effective_daily)
+        return False
+
+    # Per-recipient-domain daily throttle
+    from app.services.domain_throttle import check_domain_throttle
+    domain_allowed, domain_reason = check_domain_throttle(db, contact.email, campaign.tenant_id)
+    if not domain_allowed:
+        logger.info("Domain throttle blocked campaign send",
+                     contact_id=cc.contact_id, reason=domain_reason)
         return False
 
     # Resolve A/B variant
@@ -279,6 +350,27 @@ def _execute_email_step(
             subject = subject.replace(ph, val)
             body_html = body_html.replace(ph, val)
             body_text = body_text.replace(ph, val)
+
+    # Content uniqueness check (monitoring-only -- log but don't block)
+    try:
+        from app.services.content_fingerprint import check_content_uniqueness
+        uniqueness = check_content_uniqueness(
+            db=db,
+            body_html=body_html,
+            campaign_id=campaign.campaign_id,
+            tenant_id=campaign.tenant_id,
+        )
+        if not uniqueness["unique"]:
+            logger.warning(
+                "content_similarity_high",
+                campaign_id=campaign.campaign_id,
+                contact_id=cc.contact_id,
+                max_similarity=uniqueness["max_similarity"],
+                similar_event_id=uniqueness["similar_event_id"],
+                warning=uniqueness["warning"],
+            )
+    except Exception as e_fp:
+        logger.warning("content_fingerprint_check_failed", error=str(e_fp))
 
     # Create outreach event
     event = OutreachEvent(

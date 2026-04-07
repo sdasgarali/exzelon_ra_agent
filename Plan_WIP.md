@@ -1,9 +1,20 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 62: Implemented AI Email Preview & Approve workflow (8 phases). Created OutreachDraft model, email_preview_service.py (draft generation, AI rewriting, deliverability scoring, spam checker with AI suggestions), 13 API endpoints, 3-panel Email Preview dashboard page, campaign preview_mode toggle, pipeline "preview before send" checkbox, nav integration. 16 files changed (12 modified, 4 new). Migration: preview_mode column on campaigns + outreach_drafts table. 604 tests pass, frontend builds clean. Committed 7617770, deployed to VPS.
+> Session 63: Enterprise Platform Audit & Tier 1 Hardening. Added warmup engine status banner (frontend+backend). Performed comprehensive enterprise audit (deliverability, AI, compliance, architecture). Implemented 6 Tier 1 critical modules: security headers middleware, per-domain send throttle, AI prompt injection defense, content fingerprint/similarity detection, AI structured output schemas + decision audit logging, campaign safety controls (idempotency, company caps, smart pause, sequence fatigue, cross-campaign dedup). Wrote 100 new tests across 7 test files. 704 total tests pass, coverage 39.28%. 9 new files, 4 modified files. Ready to commit.
 
 ## Immediate TODO
+- [x] Enterprise Platform Audit & Tier 1 Hardening (2026-04-07)
+  - Warmup engine status banner (backend enhanced endpoint + frontend status component)
+  - Security headers middleware (X-Frame-Options, CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+  - Per-domain send throttle (gmail.com: 30/day, general: 50/day, configurable via settings)
+  - AI prompt injection defense (sanitize inbound email content, delimiter wrapping, pattern removal)
+  - Content fingerprint guard (Jaccard similarity on word-level 3-shingles, Shannon entropy scoring)
+  - AI structured output schemas (Pydantic models for all AI tasks + JSON parsing + prompt helpers)
+  - AI decision audit logging (every AI call → automation_events with confidence, tokens, latency)
+  - Campaign safety controls: job idempotency, company-level contact cap (5/company), smart pause on reply, sequence fatigue (5 unanswered in 90d), cross-campaign dedup
+  - Confidence-gated auto-reply (default 70% threshold, configurable)
+  - 100 new tests (7 test files), 704 total tests pass, coverage 39.28%
 - [x] AI Email Preview & Approve workflow with deliverability scoring and spam checker (2026-04-03)
   - Phase 1: OutreachDraft DB model + Campaign preview_mode column + migration
   - Phase 2: email_preview_service.py — draft generation (campaign/pipeline/broadcast), AI rewriting, composite deliverability score (DNS+spam+blacklist+reputation), spam word detection with AI replacement suggestions
