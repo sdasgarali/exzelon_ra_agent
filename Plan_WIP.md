@@ -1,9 +1,16 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 66: Compliance hardening — deployed Tier 1+2+P0 to VPS, then implemented 4 compliance fixes: (1) JWT refresh tokens — 30-min access + 7-day refresh, silent frontend refresh, POST /auth/refresh endpoint, (2) Hardcoded seed passwords → env vars (SEED_EXZELON_PASSWORD, SEED_NEURAFORZ_PASSWORD, SEED_MEDEOAN_PASSWORD), (3) Retention purge scheduled (daily 4:30 AM UTC), (4) AI cost tracking — all 4 adapters now capture input/output tokens in _last_usage. 771 tests pass, coverage 39.75%.
+> Session 67: AI Sales Agent Layer — implemented 10-module autonomous AI package under services/ai_sales_agent/ (orchestrator, policy engine, scoring engine, reply intelligence, send decision, prompt registry, context builder, draft intelligence, learning engine). Wired into campaign_engine.py (orchestrate_send gates outbound), ai_reply_agent_service.py (orchestrate_reply enriches intent detection + policy gating), inbox_syncer.py (learning engine records reply outcomes). 61 new unit tests, 832 total pass, 41% coverage. Committed: 2426288. Next: deploy to VPS.
 
 ## Immediate TODO
+- [x] AI Sales Agent Layer (2026-04-07)
+  - 10-module package: orchestrator, policy_engine, scoring_engine, reply_intelligence, send_decision, prompt_registry, agent_context, draft_intelligence, learning_engine, send_decision
+  - 3 new Pydantic schemas: SendDecision, PersonalizationPlan, InteractionSummary
+  - Wired into campaign_engine.py (orchestrate_send after domain throttle), ai_reply_agent_service.py (orchestrate_reply replaces detect_intent), inbox_syncer.py (record_send_outcome on reply)
+  - All integrations wrapped in try/except for graceful degradation
+  - 61 unit tests (6 test files), 832 total pass, 41% coverage
+  - Committed: 2426288
 - [x] Compliance Hardening (2026-04-07)
   - JWT refresh tokens: 30-min access token + 7-day refresh token, silent refresh interceptor in frontend, POST /auth/refresh endpoint, Token schema updated
   - Hardcoded seed passwords moved to env vars: SEED_EXZELON_PASSWORD, SEED_NEURAFORZ_PASSWORD, SEED_MEDEOAN_PASSWORD (with fallback defaults)

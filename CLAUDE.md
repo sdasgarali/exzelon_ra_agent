@@ -102,6 +102,20 @@ Centralized reply management:
 - AI reply suggestions from conversation context
 - Category labels: interested, not_interested, ooo, question, referral, do_not_contact
 
+### AI Sales Agent (`services/ai_sales_agent/`)
+
+Autonomous, policy-constrained AI layer governing all outbound sends and reply handling:
+- **Orchestrator** (`orchestrator.py`) -- Two entry points: `orchestrate_send()` (gates outbound emails), `orchestrate_reply()` (classifies inbound + determines next action). Wired into `campaign_engine.py` and `ai_reply_agent_service.py`.
+- **Policy Engine** (`policy_engine.py`) -- Deterministic rules: send policy (INVALID_EMAIL, UNSUBSCRIBED, INACTIVE, NEGATIVE_REPLY), reply policy (LOW_CONFIDENCE, DESTRUCTIVE_ACTION), content policy (spam score, similarity, length). 15 configurable defaults, per-tenant overrides via settings.
+- **Scoring Engine** (`scoring_engine.py`) -- Lead scoring (hiring signals, company size, industry, salary, web presence), engagement scoring (replies, clicks, opens → cold/warm/hot/dead), composite score (40% lead + 40% engagement + 20% priority).
+- **Reply Intelligence** (`reply_intelligence.py`) -- 2-tier classification: LLM first (via `ai_resilience.call_ai_with_fallback`) → keyword fallback. Intent categories: interested, objection, question, ooo, unsubscribe. Next-best-action planner (rule-based).
+- **Send Decision** (`send_decision.py`) -- Combines policy + content + scoring into structured go/no-go decision with reason codes.
+- **Prompt Registry** (`prompt_registry.py`) -- Named, versioned prompt templates (reply_classification, reply_draft, next_best_action, personalization_plan) replacing inline strings.
+- **Context Builder** (`agent_context.py`) -- Aggregates contact, lead, company, campaign, history, scores into unified context dict.
+- **Draft Intelligence** (`draft_intelligence.py`) -- Personalization planning per step number (angle, tone, hooks, CTA type).
+- **Learning Engine** (`learning_engine.py`) -- Records send outcomes to automation_events, queries campaign performance stats. Wired into `inbox_syncer.py`.
+- **Schemas** -- `SendDecision`, `PersonalizationPlan`, `InteractionSummary` in `ai_schemas.py`
+
 ### CRM Deal Pipeline (`api/endpoints/deals.py`)
 
 Kanban-style deal tracking:
