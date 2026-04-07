@@ -1,9 +1,29 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 67: AI Sales Agent Layer — implemented 10-module autonomous AI package under services/ai_sales_agent/ (orchestrator, policy engine, scoring engine, reply intelligence, send decision, prompt registry, context builder, draft intelligence, learning engine). Wired into campaign_engine.py (orchestrate_send gates outbound), ai_reply_agent_service.py (orchestrate_reply enriches intent detection + policy gating), inbox_syncer.py (learning engine records reply outcomes). 61 new unit tests, 832 total pass, 41% coverage. Committed: 2426288. Next: deploy to VPS.
+> Session 69: Contact Enrichment API Optimization — waterfall stop-on-success in adapter loop (skip remaining adapters once enough contacts found), CreditsExhaustedError base exception with per-adapter 402/429 detection, pre-run /pipelines/contact-enrichment/estimate endpoint, frontend estimate-aware confirmation dialog. 832 tests pass, 41% coverage.
 
 ## Immediate TODO
+- [x] Contact Enrichment API Optimization (2026-04-07)
+  - Waterfall stop-on-success: adapter loop skips remaining providers once `len(contacts) >= needed`
+  - Each subsequent adapter receives `remaining_needed` (not full `needed`) as limit
+  - `CreditsExhaustedError` base class in `base.py` with `adapter_name` attribute
+  - Apollo's `ApolloCreditsExhaustedError` now inherits from `CreditsExhaustedError` (backwards-compatible)
+  - HTTP 402/429 detection added to 5 adapters: RocketReach, Hunter.io, PDL, Snov.io, Proxycurl
+  - Non-Apollo `CreditsExhaustedError` logs warning and continues to next adapter (doesn't stop pipeline)
+  - `waterfall_skipped` counter tracked per-adapter and in top-level counters
+  - `GET /pipelines/contact-enrichment/estimate` endpoint — read-only, returns leads eligible, cache vs API split, min/max API calls, provider list
+  - Frontend: `pipelinesApi.estimateContactEnrichment()`, "Run for All Leads" fetches estimate before showing confirmation dialog with API call breakdown
+  - 11 files changed, 832 tests pass, 41% coverage
+- [x] Warmup Engine Independence (2026-04-07)
+  - 9 warmup jobs bypass master automation toggle, only respect individual per-job toggles
+  - Added _is_warmup_job_enabled() in scheduler.py (bypasses master check)
+  - JOB_REGISTRY: all warmup jobs marked `independent: True`
+  - Warmup status API returns `warmup_operational` instead of `master_enabled`
+  - Frontend: "Always On" badge, orange border, info banner on Automation Control Center
+  - Warmup page: Independent badge, warmup_operational-based status display
+  - 6 files changed, 832 tests pass, 41% coverage
+  - Committed: fec9931
 - [x] AI Sales Agent Layer (2026-04-07)
   - 10-module package: orchestrator, policy_engine, scoring_engine, reply_intelligence, send_decision, prompt_registry, agent_context, draft_intelligence, learning_engine, send_decision
   - 3 new Pydantic schemas: SendDecision, PersonalizationPlan, InteractionSummary

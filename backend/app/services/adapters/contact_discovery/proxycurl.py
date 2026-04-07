@@ -7,7 +7,7 @@ Pricing: Free: 10 credits (one-time) | Paid: $0.01/call (pay-per-use)
 """
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import ContactDiscoveryAdapter
+from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
 
@@ -82,6 +82,11 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
                     params=params,
                     timeout=30,
                 )
+                if response.status_code in (402, 429):
+                    raise CreditsExhaustedError(
+                        f"Proxycurl API returned {response.status_code}",
+                        adapter_name="proxycurl",
+                    )
 
                 if response.status_code == 404:
                     return []  # Company not found

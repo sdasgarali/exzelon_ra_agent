@@ -2,16 +2,18 @@
 from typing import List, Dict, Any, Optional
 import httpx
 import structlog
-from app.services.adapters.base import ContactDiscoveryAdapter
+from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
 
 logger = structlog.get_logger()
 
 
-class ApolloCreditsExhaustedError(RuntimeError):
+class ApolloCreditsExhaustedError(CreditsExhaustedError):
     """Raised when Apollo API credits are exhausted."""
-    pass
+
+    def __init__(self, message: str = "Apollo credits exhausted"):
+        super().__init__(message, adapter_name="apollo")
 
 
 class ApolloAdapter(ContactDiscoveryAdapter):

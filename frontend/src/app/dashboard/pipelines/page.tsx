@@ -73,6 +73,18 @@ export default function PipelinesPage() {
   const [showRunAllLeadsConfirm, setShowRunAllLeadsConfirm] = useState(false)
   const [showRunAllContactsConfirm, setShowRunAllContactsConfirm] = useState(false)
 
+  // Contact enrichment estimate
+  const [enrichmentEstimate, setEnrichmentEstimate] = useState<{
+    total_leads_eligible: number
+    from_company_cache: number
+    needs_api_calls: number
+    estimated_api_calls_min: number
+    estimated_api_calls_max: number
+    configured_providers: string[]
+    max_contacts_per_job: number
+  } | null>(null)
+  const [estimateLoading, setEstimateLoading] = useState(false)
+
   // Lead selector popup state
   const [showLeadSelector, setShowLeadSelector] = useState(false)
   const [selectorPipeline, setSelectorPipeline] = useState<'contact-enrichment' | 'outreach'>('contact-enrichment')
@@ -283,6 +295,18 @@ export default function PipelinesPage() {
     if (runAll) {
       // Hide lead selector first so confirmation dialog is visible
       setShowLeadSelector(false)
+      // Fetch estimate for contact enrichment before showing confirmation
+      if (selectorPipeline === 'contact-enrichment') {
+        setEstimateLoading(true)
+        try {
+          const est = await pipelinesApi.estimateContactEnrichment()
+          setEnrichmentEstimate(est)
+        } catch {
+          setEnrichmentEstimate(null)
+        } finally {
+          setEstimateLoading(false)
+        }
+      }
       setShowRunAllLeadsConfirm(true)
       return
     }
@@ -938,12 +962,18 @@ export default function PipelinesPage() {
       {/* "Run for All Leads" Confirmation */}
       <ConfirmDialog
         open={showRunAllLeadsConfirm}
-        onClose={() => { setShowRunAllLeadsConfirm(false); setShowLeadSelector(true) }}
+        onClose={() => { setShowRunAllLeadsConfirm(false); setEnrichmentEstimate(null); setShowLeadSelector(true) }}
         title={`Run ${selectorPipeline === 'contact-enrichment' ? 'Contact Enrichment' : 'Outreach'} for ALL leads?`}
-        message={`This will process all ${selectorTotal} available leads. API credits may be consumed. Are you sure you want to continue?`}
+        message={
+          selectorPipeline === 'contact-enrichment' && enrichmentEstimate
+            ? `${enrichmentEstimate.total_leads_eligible} leads in batch — ${enrichmentEstimate.from_company_cache} from cache (0 API calls), ${enrichmentEstimate.needs_api_calls} need API enrichment (~${enrichmentEstimate.estimated_api_calls_min}–${enrichmentEstimate.estimated_api_calls_max} API calls).\n\nProviders: ${enrichmentEstimate.configured_providers.join(', ')}\nMax contacts per job: ${enrichmentEstimate.max_contacts_per_job}`
+            : selectorPipeline === 'contact-enrichment' && estimateLoading
+              ? 'Calculating API usage estimate...'
+              : `This will process all ${selectorTotal} available leads. API credits may be consumed. Are you sure you want to continue?`
+        }
         confirmLabel="Run for All"
         variant="warning"
-        onConfirm={confirmRunAllLeads}
+        onConfirm={() => { setEnrichmentEstimate(null); confirmRunAllLeads() }}
       />
 
       {/* "Run for All Contacts" Confirmation */}

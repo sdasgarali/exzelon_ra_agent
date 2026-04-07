@@ -13,6 +13,7 @@ from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 from app.services.adapters.contact_discovery.mock import MockContactDiscoveryAdapter
+from app.services.adapters.base import CreditsExhaustedError
 from app.services.adapters.contact_discovery.apollo import ApolloAdapter, ApolloCreditsExhaustedError
 from app.services.adapters.contact_discovery.seamless import SeamlessAdapter
 from app.services.pipelines.cancel_helper import check_cancel
@@ -217,7 +218,7 @@ def run_contact_enrichment_pipeline(
         run_id: Optional pre-created job run ID
     """
     db = SessionLocal()
-    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0}
+    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0}
     lead_results = []
     auto_enriched_companies = set()
     adapter_stats: Dict[str, Dict[str, int]] = {}  # per-adapter call/result tracking
@@ -319,16 +320,24 @@ def run_contact_enrichment_pipeline(
 
                 needed = max_contacts_per_job - existing_count
                 contacts = []
+                adapters_used_for_lead = []
                 for adapter_name, adapter in adapters:
                     if adapter_name not in adapter_stats:
-                        adapter_stats[adapter_name] = {"calls": 0, "contacts_returned": 0, "no_results": 0, "errors": 0}
+                        adapter_stats[adapter_name] = {"calls": 0, "contacts_returned": 0, "no_results": 0, "errors": 0, "waterfall_skipped": 0}
+                    # Waterfall: skip remaining adapters once we have enough
+                    remaining_needed = needed - len(contacts)
+                    if remaining_needed <= 0:
+                        adapter_stats[adapter_name]["waterfall_skipped"] = adapter_stats[adapter_name].get("waterfall_skipped", 0) + 1
+                        counters["waterfall_skipped"] += 1
+                        continue
                     try:
                         adapter_stats[adapter_name]["calls"] += 1
+                        adapters_used_for_lead.append(adapter_name)
                         result = adapter.search_contacts(
                             company_name=lead.client_name,
                             job_title=lead.job_title,
                             state=lead.state,
-                            limit=needed
+                            limit=remaining_needed
                         )
                         for c in result:
                             c["source"] = c.get("source", adapter_name)
@@ -341,6 +350,11 @@ def run_contact_enrichment_pipeline(
                         adapter_stats[adapter_name]["errors"] += 1
                         adapter_errors[adapter_name] = "Apollo credits exhausted"
                         raise
+                    except CreditsExhaustedError as e:
+                        logger.warning(f"Adapter {adapter_name} credits exhausted, skipping to next: {e}")
+                        adapter_stats[adapter_name]["errors"] += 1
+                        adapter_errors[adapter_name] = str(e)[:200]
+                        continue
                     except Exception as e:
                         logger.error(f"Adapter {adapter_name} failed for {lead.client_name}: {e}")
                         adapter_stats[adapter_name]["errors"] += 1
@@ -357,7 +371,7 @@ def run_contact_enrichment_pipeline(
 
                 if not contacts:
                     counters["skipped"] += 1
-                    adapter_names = ", ".join(a[0] for a in adapters)
+                    adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
                     lead_results.append({
                         "lead_id": lead.lead_id, "client_name": lead.client_name,
                         "status": "skipped", "contacts_found": 0, "contacts_reused": reused,
@@ -418,7 +432,7 @@ def run_contact_enrichment_pipeline(
                     lead.lead_status = LeadStatus.ENRICHED
                     counters["leads_enriched"] += 1
 
-                adapter_names = ", ".join(a[0] for a in adapters)
+                adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
                 lead_results.append({
                     "lead_id": lead.lead_id, "client_name": lead.client_name,
                     "status": "enriched", "contacts_found": contacts_added,

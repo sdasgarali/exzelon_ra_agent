@@ -7,7 +7,7 @@ Pricing: Free: 100 requests/month | Paid: $0.01/match (pay-per-use)
 """
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import ContactDiscoveryAdapter
+from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
 
@@ -114,6 +114,11 @@ class PDLAdapter(ContactDiscoveryAdapter):
                     },
                     timeout=30,
                 )
+                if response.status_code in (402, 429):
+                    raise CreditsExhaustedError(
+                        f"PDL API returned {response.status_code}",
+                        adapter_name="pdl",
+                    )
                 response.raise_for_status()
                 data = response.json()
 

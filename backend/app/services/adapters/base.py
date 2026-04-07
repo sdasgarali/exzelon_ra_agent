@@ -14,6 +14,18 @@ class RateLimitError(RuntimeError):
         self.partial_results = partial_results or []
 
 
+class CreditsExhaustedError(RuntimeError):
+    """Raised when a contact discovery adapter's API credits are exhausted.
+
+    The waterfall loop catches this to skip to the next adapter.
+    Apollo's subclass re-raises to stop the entire pipeline.
+    """
+
+    def __init__(self, message: str = "API credits exhausted", adapter_name: str = "unknown"):
+        super().__init__(message)
+        self.adapter_name = adapter_name
+
+
 class BaseAdapter(ABC):
     """Base class for all adapters."""
 

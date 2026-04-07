@@ -7,7 +7,7 @@ Pricing: Free: 50 credits/month | Paid: from $39/month
 """
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import ContactDiscoveryAdapter
+from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
 
@@ -97,6 +97,11 @@ class SnovioAdapter(ContactDiscoveryAdapter):
                     params=params,
                     timeout=30,
                 )
+                if response.status_code in (402, 429):
+                    raise CreditsExhaustedError(
+                        f"Snov.io API returned {response.status_code}",
+                        adapter_name="snovio",
+                    )
                 response.raise_for_status()
                 data = response.json()
 

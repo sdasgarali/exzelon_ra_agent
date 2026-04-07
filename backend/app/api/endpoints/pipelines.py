@@ -373,6 +373,84 @@ async def upload_leads_file(
     return result
 
 
+@router.get("/contact-enrichment/estimate")
+async def estimate_contact_enrichment(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Estimate API calls for a contact enrichment run (read-only, no side effects)."""
+    from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+    from app.core.config import settings as app_settings
+    from app.services.pipelines.contact_enrichment import get_contact_discovery_adapters
+
+    max_contacts = app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+
+    # Same lead selection query as the actual pipeline
+    q = db.query(LeadDetails).filter(
+        LeadDetails.first_name.is_(None),
+        LeadDetails.lead_status == LeadStatus.NEW,
+        LeadDetails.is_archived == False,
+    )
+    if tenant_id is not None:
+        q = q.filter(LeadDetails.tenant_id == tenant_id)
+    leads = q.limit(100).all()
+    total_leads = len(leads)
+
+    # Count how many can be satisfied from company cache vs need API
+    from_cache = 0
+    needs_api = 0
+    for lead in leads:
+        # Count existing contacts linked to this lead
+        existing = db.query(ContactDetails).filter(
+            ContactDetails.lead_id == lead.lead_id
+        ).count()
+        if existing >= max_contacts:
+            from_cache += 1
+            continue
+        # Check reusable contacts at the same company
+        existing_cids = set()
+        for row in db.query(LeadContactAssociation).filter(
+            LeadContactAssociation.lead_id == lead.lead_id
+        ).with_entities(LeadContactAssociation.contact_id).all():
+            existing_cids.add(row[0])
+        for c in db.query(ContactDetails).filter(
+            ContactDetails.lead_id == lead.lead_id
+        ).with_entities(ContactDetails.contact_id).all():
+            existing_cids.add(c[0])
+
+        reusable_q = db.query(ContactDetails).filter(
+            ContactDetails.client_name == lead.client_name,
+        )
+        if existing_cids:
+            reusable_q = reusable_q.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
+        reusable_count = reusable_q.limit(max_contacts - existing).count()
+
+        if existing + reusable_count >= max_contacts:
+            from_cache += 1
+        else:
+            needs_api += 1
+
+    # Get configured providers
+    adapters = get_contact_discovery_adapters(db, tenant_id=tenant_id)
+    provider_names = [a[0] for a in adapters]
+    num_providers = len(provider_names)
+
+    # Estimate: min = needs_api * 1 (first adapter succeeds), max = needs_api * num_providers
+    return {
+        "total_leads_eligible": total_leads,
+        "batch_size": 100,
+        "from_company_cache": from_cache,
+        "needs_api_calls": needs_api,
+        "estimated_api_calls_min": needs_api,
+        "estimated_api_calls_max": needs_api * max(num_providers, 1),
+        "configured_providers": provider_names,
+        "max_contacts_per_job": max_contacts,
+    }
+
+
 @router.post("/contact-enrichment/run")
 @limiter.limit("5/hour")
 async def run_contact_enrichment(

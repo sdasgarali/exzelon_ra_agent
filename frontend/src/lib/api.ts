@@ -338,6 +338,10 @@ export const pipelinesApi = {
       leadIds ? { lead_ids: leadIds } : undefined)
     return response.data
   },
+  estimateContactEnrichment: async () => {
+    const response = await api.get('/pipelines/contact-enrichment/estimate')
+    return response.data
+  },
   runEmailValidation: async () => {
     const response = await api.post('/pipelines/email-validation/run')
     return response.data

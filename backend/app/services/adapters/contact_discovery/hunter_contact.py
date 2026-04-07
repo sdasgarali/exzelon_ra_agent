@@ -7,7 +7,7 @@ Pricing: Free: 25 requests/month | Paid: from $49/month
 """
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import ContactDiscoveryAdapter
+from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
 
@@ -76,6 +76,11 @@ class HunterContactAdapter(ContactDiscoveryAdapter):
                     params=params,
                     timeout=30,
                 )
+                if response.status_code in (402, 429):
+                    raise CreditsExhaustedError(
+                        f"Hunter.io API returned {response.status_code}",
+                        adapter_name="hunter_contact",
+                    )
                 response.raise_for_status()
                 data = response.json()
 
