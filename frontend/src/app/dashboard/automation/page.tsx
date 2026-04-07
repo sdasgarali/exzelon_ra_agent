@@ -246,10 +246,10 @@ export default function AutomationControlCenter() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Pipeline Auto-Chain</h2>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          When enabled, completing one pipeline stage automatically triggers the next.
+          Each stage runs independently after Lead Sourcing. Toggle any step ON/OFF without affecting the others.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Step 1: Lead Sourcing (always runs) */}
+          {/* Step 1: Lead Sourcing (always runs when master is on) */}
           <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
             <Search className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Lead Sourcing</span>
@@ -278,59 +278,58 @@ export default function AutomationControlCenter() {
             </span>
           </div>
 
-          {/* Arrow + toggle: validation */}
+          {/* Arrow + toggle: validation (independent — does NOT require enrichment) */}
           <div className="flex items-center gap-1">
             <span className="text-gray-400">→</span>
             <Toggle
               enabled={controls.chain_validation}
               onChange={(val) => updateControls({ chain_validation: val })}
-              disabled={saving || masterOff || !controls.chain_enrichment}
+              disabled={saving || masterOff}
               size="sm"
             />
           </div>
 
           {/* Step 3: Email Validation */}
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-            controls.chain_validation && controls.chain_enrichment
+            controls.chain_validation
               ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
               : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
           }`}>
-            <CheckCircle2 className={`w-4 h-4 ${
-              controls.chain_validation && controls.chain_enrichment ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'
-            }`} />
-            <span className={`text-sm font-medium ${
-              controls.chain_validation && controls.chain_enrichment ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400'
-            }`}>
+            <CheckCircle2 className={`w-4 h-4 ${controls.chain_validation ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} />
+            <span className={`text-sm font-medium ${controls.chain_validation ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400'}`}>
               Email Validation
             </span>
           </div>
 
-          {/* Arrow + toggle: enrollment */}
+          {/* Arrow + toggle: enrollment (independent — does NOT require validation) */}
           <div className="flex items-center gap-1">
             <span className="text-gray-400">→</span>
             <Toggle
               enabled={controls.chain_enrollment}
               onChange={(val) => updateControls({ chain_enrollment: val })}
-              disabled={saving || masterOff || !controls.chain_enrichment || !controls.chain_validation}
+              disabled={saving || masterOff}
               size="sm"
             />
           </div>
 
           {/* Step 4: Campaign Enrollment */}
           <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-            controls.chain_enrollment && controls.chain_validation && controls.chain_enrichment
+            controls.chain_enrollment
               ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
               : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
           }`}>
-            <Users className={`w-4 h-4 ${
-              controls.chain_enrollment && controls.chain_validation && controls.chain_enrichment ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'
-            }`} />
-            <span className={`text-sm font-medium ${
-              controls.chain_enrollment && controls.chain_validation && controls.chain_enrichment ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400'
-            }`}>
+            <Users className={`w-4 h-4 ${controls.chain_enrollment ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} />
+            <span className={`text-sm font-medium ${controls.chain_enrollment ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400'}`}>
               Campaign Enrollment
             </span>
           </div>
+        </div>
+
+        {/* Info: steps are independent */}
+        <div className="mt-3 px-3 py-2 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/30">
+          <p className="text-xs text-blue-700 dark:text-blue-400">
+            Each step can be toggled independently. For example, you can skip Email Validation and still run Contact Enrichment and Campaign Enrollment.
+          </p>
         </div>
       </div>
 

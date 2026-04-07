@@ -398,86 +398,86 @@ def _job_lead_sourcing_run_inner():
 
 
 def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
-    """Auto-chain: lead sourcing → contact enrichment → email validation."""
+    """Auto-chain: each step runs independently based on its own toggle.
+
+    Steps can be enabled/disabled individually — skipping one step does not
+    block subsequent steps.  Each pipeline function processes whatever
+    qualifying data exists in the DB, not just data from the prior step.
+    """
     from app.services.automation_logger import log_automation_event
     from app.core.settings_resolver import get_tenant_setting_bool
 
     if leads_inserted <= 0:
         return
 
-    # Chain step 1: enrichment
-    if not get_tenant_setting_bool(db, "automation_chain_enrichment", tenant_id=tenant_id, default=False):
-        return
+    # Step 1: Contact Enrichment (independent toggle)
+    if get_tenant_setting_bool(db, "automation_chain_enrichment", tenant_id=tenant_id, default=False):
+        logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted, tenant_id=tenant_id)
+        try:
+            from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
+            enrich_result = run_contact_enrichment_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
+            contacts_found = enrich_result.get("contacts_found", 0) if isinstance(enrich_result, dict) else 0
+            logger.info("Auto-chain: enrichment complete", contacts_found=contacts_found)
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain enrichment: {contacts_found} contacts found",
+                details=enrich_result, source="auto_chain",
+            )
+        except Exception as e:
+            logger.error("Auto-chain enrichment failed", error=str(e))
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain enrichment failed: {str(e)[:100]}",
+                status="error", source="auto_chain",
+            )
+    else:
+        logger.info("Auto-chain: contact enrichment skipped (disabled by user)")
 
-    logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted, tenant_id=tenant_id)
-    try:
-        from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
-        enrich_result = run_contact_enrichment_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
-        contacts_found = enrich_result.get("contacts_found", 0) if isinstance(enrich_result, dict) else 0
-        logger.info("Auto-chain: enrichment complete", contacts_found=contacts_found)
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain enrichment: {contacts_found} contacts found",
-            details=enrich_result, source="auto_chain",
-        )
-    except Exception as e:
-        logger.error("Auto-chain enrichment failed", error=str(e))
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain enrichment failed: {str(e)[:100]}",
-            status="error", source="auto_chain",
-        )
-        return
+    # Step 2: Email Validation (independent toggle — processes all unvalidated contacts)
+    if get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
+        logger.info("Auto-chain: starting email validation", tenant_id=tenant_id)
+        try:
+            from app.services.pipelines.email_validation import run_email_validation_pipeline
+            valid_result = run_email_validation_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
+            validated = valid_result.get("validated", 0) if isinstance(valid_result, dict) else 0
+            logger.info("Auto-chain: validation complete", validated=validated)
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain validation: {validated} emails validated",
+                details=valid_result, source="auto_chain",
+            )
+        except Exception as e:
+            logger.error("Auto-chain validation failed", error=str(e))
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain validation failed: {str(e)[:100]}",
+                status="error", source="auto_chain",
+            )
+    else:
+        logger.info("Auto-chain: email validation skipped (disabled by user)")
 
-    # Chain step 2: validation
-    if contacts_found <= 0:
-        return
-    if not get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
-        return
-
-    logger.info("Auto-chain: starting email validation", contacts_found=contacts_found, tenant_id=tenant_id)
-    try:
-        from app.services.pipelines.email_validation import run_email_validation_pipeline
-        valid_result = run_email_validation_pipeline(triggered_by="auto_chain", tenant_id=tenant_id)
-        validated = valid_result.get("validated", 0) if isinstance(valid_result, dict) else 0
-        logger.info("Auto-chain: validation complete", validated=validated)
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain validation: {validated} emails validated",
-            details=valid_result, source="auto_chain",
-        )
-    except Exception as e:
-        logger.error("Auto-chain validation failed", error=str(e))
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain validation failed: {str(e)[:100]}",
-            status="error", source="auto_chain",
-        )
-
-    # Chain step 3: enrollment
-    if validated <= 0:
-        return
-    if not get_tenant_setting_bool(db, "automation_chain_enrollment", tenant_id=tenant_id, default=False):
-        return
-
-    logger.info("Auto-chain: starting campaign auto-enrollment", validated=validated, tenant_id=tenant_id)
-    try:
-        from app.services.auto_enrollment import run_auto_enrollment
-        enroll_result = run_auto_enrollment(db)
-        total_enrolled = enroll_result.get("total_enrolled", 0)
-        logger.info("Auto-chain: enrollment complete", total_enrolled=total_enrolled)
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain enrollment: {total_enrolled} contacts enrolled",
-            details=enroll_result, source="auto_chain",
-        )
-    except Exception as e:
-        logger.error("Auto-chain enrollment failed", error=str(e))
-        log_automation_event(
-            db, "auto_chain",
-            f"Auto-chain enrollment failed: {str(e)[:100]}",
-            status="error", source="auto_chain",
-        )
+    # Step 3: Campaign Enrollment (independent toggle — processes all validated contacts)
+    if get_tenant_setting_bool(db, "automation_chain_enrollment", tenant_id=tenant_id, default=False):
+        logger.info("Auto-chain: starting campaign auto-enrollment", tenant_id=tenant_id)
+        try:
+            from app.services.auto_enrollment import run_auto_enrollment
+            enroll_result = run_auto_enrollment(db)
+            total_enrolled = enroll_result.get("total_enrolled", 0)
+            logger.info("Auto-chain: enrollment complete", total_enrolled=total_enrolled)
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain enrollment: {total_enrolled} contacts enrolled",
+                details=enroll_result, source="auto_chain",
+            )
+        except Exception as e:
+            logger.error("Auto-chain enrollment failed", error=str(e))
+            log_automation_event(
+                db, "auto_chain",
+                f"Auto-chain enrollment failed: {str(e)[:100]}",
+                status="error", source="auto_chain",
+            )
+    else:
+        logger.info("Auto-chain: campaign enrollment skipped (disabled by user)")
 
 
 def job_daily_backup():
