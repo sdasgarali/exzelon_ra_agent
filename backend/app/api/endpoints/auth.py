@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_active_user
 from app.api.deps.plan_limits import check_plan_limit
-from app.core.security import verify_password, get_password_hash, create_access_token
+from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_access_token
 from app.core.config import settings
 from app.core.rate_limiter import limiter
 from app.db.models.user import User, UserRole
@@ -117,9 +117,14 @@ async def login(
         data=token_data,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    refresh_token = create_refresh_token(
+        data=token_data,
+        expires_delta=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
+    )
 
     return Token(
         access_token=access_token,
+        refresh_token=refresh_token,
         user=UserResponse.model_validate(user)
     )
 
@@ -261,6 +266,59 @@ async def register(
 async def get_me(current_user: User = Depends(get_current_active_user)):
     """Get current authenticated user."""
     return UserResponse.model_validate(current_user)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    data: RefreshRequest,
+    db: Session = Depends(get_db),
+):
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    payload = decode_access_token(data.refresh_token)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    token_data = {
+        "sub": user.email,
+        "role": user.role.value if user.role else None,
+        "tenant_id": user.tenant_id,
+        "plan": user.tenant.plan.value if user.tenant else None,
+    }
+    new_access = create_access_token(
+        data=token_data,
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    new_refresh = create_refresh_token(
+        data=token_data,
+        expires_delta=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES),
+    )
+
+    return Token(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        user=UserResponse.model_validate(user),
+    )
 
 
 @router.post("/logout")

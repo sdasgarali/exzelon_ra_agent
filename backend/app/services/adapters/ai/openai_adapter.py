@@ -33,6 +33,7 @@ class OpenAIAdapter(AIAdapter):
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or getattr(settings, 'OPENAI_API_KEY', None)
         self.model = model or self.DEFAULT_MODEL
+        self._last_usage = {"input_tokens": 0, "output_tokens": 0}
 
     def test_connection(self) -> bool:
         """Test connection to OpenAI API."""
@@ -74,6 +75,11 @@ class OpenAIAdapter(AIAdapter):
             )
             response.raise_for_status()
             data = response.json()
+            usage = data.get("usage", {})
+            self._last_usage = {
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+            }
             return data["choices"][0]["message"]["content"]
 
     def research_company(

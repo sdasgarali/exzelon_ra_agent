@@ -42,26 +42,79 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 errors + clean up pending requests
+// Silent refresh state — prevents concurrent refresh attempts
+let isRefreshing = false
+let failedQueue: Array<{ resolve: (token: string) => void; reject: (err: unknown) => void }> = []
+
+function processQueue(error: unknown, token: string | null) {
+  failedQueue.forEach((p) => {
+    if (token) p.resolve(token)
+    else p.reject(error)
+  })
+  failedQueue = []
+}
+
+// Handle 401 errors + silent token refresh + clean up pending requests
 api.interceptors.response.use(
   (response) => {
     const key = getRequestKey(response.config)
     pendingRequests.delete(key)
     return response
   },
-  (error) => {
+  async (error) => {
     if (error.config) {
       const key = getRequestKey(error.config)
       pendingRequests.delete(key)
     }
-    if (error.response?.status === 401) {
-      // Don't redirect if we're already on the login page or the request was a login attempt
-      const isLoginRequest = error.config?.url?.includes('/auth/login')
-      if (!isLoginRequest) {
-        useAuthStore.getState().logout()
-        window.location.href = '/login'
+
+    const originalRequest = error.config
+    const isLoginRequest = originalRequest?.url?.includes('/auth/login')
+    const isRefreshRequest = originalRequest?.url?.includes('/auth/refresh')
+
+    if (error.response?.status === 401 && !isLoginRequest && !isRefreshRequest && !originalRequest._retry) {
+      const { refreshToken } = useAuthStore.getState()
+
+      if (refreshToken) {
+        if (isRefreshing) {
+          // Queue this request until refresh completes
+          return new Promise((resolve, reject) => {
+            failedQueue.push({
+              resolve: (newToken: string) => {
+                originalRequest.headers.Authorization = `Bearer ${newToken}`
+                originalRequest._retry = true
+                resolve(api(originalRequest))
+              },
+              reject,
+            })
+          })
+        }
+
+        isRefreshing = true
+        try {
+          const resp = await axios.post(`${API_URL}/auth/refresh`, { refresh_token: refreshToken })
+          const { access_token, refresh_token: newRefresh, user } = resp.data
+          useAuthStore.getState().setAuth(access_token, user, newRefresh)
+          processQueue(null, access_token)
+
+          // Retry original request with new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`
+          originalRequest._retry = true
+          return api(originalRequest)
+        } catch (refreshError) {
+          processQueue(refreshError, null)
+          useAuthStore.getState().logout()
+          window.location.href = '/login'
+          return Promise.reject(refreshError)
+        } finally {
+          isRefreshing = false
+        }
       }
+
+      // No refresh token — redirect to login
+      useAuthStore.getState().logout()
+      window.location.href = '/login'
     }
+
     return Promise.reject(error)
   }
 )

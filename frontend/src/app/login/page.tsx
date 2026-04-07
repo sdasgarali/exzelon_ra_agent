@@ -33,7 +33,7 @@ function LoginContent() {
 
     try {
       const response = await authApi.login(formData.email, formData.password)
-      setAuth(response.access_token, response.user)
+      setAuth(response.access_token, response.user, response.refresh_token)
       router.push('/dashboard')
     } catch (err: any) {
       setError(err.response?.data?.detail || 'An error occurred')

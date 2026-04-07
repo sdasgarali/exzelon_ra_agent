@@ -74,7 +74,7 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 |------|--------------|-------------|----------|--------|
 | Security headers | ZERO | Full set: HSTS, CSP, X-Frame, X-Content-Type, Referrer-Policy | CRITICAL | TO BUILD |
 | Prompt injection defense | NONE | Sanitize email content before AI input | CRITICAL | TO BUILD |
-| Token refresh | Missing (7-day access token) | Add refresh token endpoint | HIGH | TO BUILD |
+| Token refresh | ~~Missing~~ ✅ | 30-min access + 7-day refresh + POST /auth/refresh + silent frontend refresh | HIGH | DONE |
 | API rate limiting | Login endpoint only | All write endpoints | HIGH | TO BUILD |
 | Suppression enforcement | In check_send_eligibility | Keep | Low | EXISTS |
 | Do-not-contact | Via SuppressionList | Keep | Low | EXISTS |
@@ -83,9 +83,9 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 | Audit logs | Automation events + login history | + AI decision logging | MEDIUM | TO ENHANCE |
 | Kill switch | Master automation toggle | + per-campaign emergency stop | LOW | EXISTS |
 | Legal disclaimers | Unsubscribe footer only | + configurable footer text | LOW | TO ENHANCE |
-| Retention policies | MISSING | Configurable data retention | MEDIUM | TO BUILD |
+| Retention policies | ~~MISSING~~ ✅ | retention.py + scheduled daily purge at 4:30 AM UTC | MEDIUM | DONE |
 | Secret management | .env files, no vault | Keep (acceptable for current scale) | LOW | EXISTS |
-| Password policy | No complexity enforcement | Min 8 chars, uppercase, number | MEDIUM | TO BUILD |
+| Password policy | ~~No complexity~~ ✅ | Min 8 chars, uppercase, number, special char | MEDIUM | DONE |
 | CORS | Configured but permissive | Restrict to known origins only | MEDIUM | TO TIGHTEN |
 
 ### C. AI & Agent Design
@@ -100,7 +100,7 @@ Two-service architecture: FastAPI backend (Python 3.11) + Next.js 14 frontend. M
 | Model fallback | None (single provider) | Chain: primary → secondary → rule-based | HIGH | TO BUILD |
 | Retry strategy | None | 2 retries with exponential backoff | MEDIUM | TO BUILD |
 | AI decision logging | MISSING | Log prompt, response, decision, action | CRITICAL | TO BUILD |
-| Cost tracking | MISSING | Track tokens/cost per AI call | MEDIUM | TO BUILD |
+| Cost tracking | ~~MISSING~~ ✅ | All 4 adapters capture _last_usage (input/output tokens) | MEDIUM | DONE |
 | Prompt injection defense | MISSING | Sanitize + instruct model to ignore | CRITICAL | TO BUILD |
 | Human-in-the-loop gates | Preview mode + reply drafts | + risk-score gating | MEDIUM | TO ENHANCE |
 | Eval framework | MISSING | Offline eval for reply classification | LOW | FUTURE |

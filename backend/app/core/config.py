@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = ""
     ENCRYPTION_KEY: str = ""
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 30 minutes (short-lived)
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     CORS_ORIGINS: str = ""  # Comma-separated allowed origins
 
     # Server

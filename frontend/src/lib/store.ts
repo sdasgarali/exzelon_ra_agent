@@ -27,9 +27,11 @@ interface Impersonation {
 
 interface AuthState {
   token: string | null
+  refreshToken: string | null
   user: User | null
   impersonation: Impersonation | null
-  setAuth: (token: string, user: User) => void
+  setAuth: (token: string, user: User, refreshToken?: string) => void
+  setTokens: (token: string, refreshToken: string) => void
   logout: () => void
   isAuthenticated: () => boolean
   isSuperAdmin: () => boolean
@@ -43,15 +45,22 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       token: null,
+      refreshToken: null,
       user: null,
       impersonation: null,
-      setAuth: (token: string, user: User) => set({
+      setAuth: (token: string, user: User, refreshToken?: string) => set({
         token,
+        refreshToken: refreshToken || null,
         user,
         impersonation: null,
       }),
+      setTokens: (token: string, refreshToken: string) => set({
+        token,
+        refreshToken,
+      }),
       logout: () => set({
         token: null,
+        refreshToken: null,
         user: null,
         impersonation: null,
       }),

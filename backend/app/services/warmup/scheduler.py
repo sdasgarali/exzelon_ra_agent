@@ -51,6 +51,9 @@ def init_scheduler():
 
         _scheduler.add_job(job_cleanup_stale_tenants, CronTrigger(hour=3, minute=0), id="cleanup_stale_tenants", name="Cleanup Stale Tenants", replace_existing=True)
 
+        # Data retention — purge soft-deleted records older than DATA_RETENTION_DAYS
+        _scheduler.add_job(job_retention_purge, CronTrigger(hour=4, minute=30), id="retention_purge", name="Data Retention Purge", replace_existing=True)
+
         # Billing & Invoicing jobs
         _scheduler.add_job(job_generate_monthly_invoices, CronTrigger(day=1, hour=2, minute=0), id="monthly_invoices", name="Monthly Invoice Generation", replace_existing=True)
         _scheduler.add_job(job_check_overdue_invoices, CronTrigger(hour=6, minute=0), id="overdue_check", name="Overdue Invoice Check", replace_existing=True)
@@ -833,6 +836,19 @@ def job_send_overdue_reminders():
         logger.error("Overdue reminder sending failed", error=str(e))
     finally:
         db.close()
+
+
+def job_retention_purge():
+    """Purge archived records older than DATA_RETENTION_DAYS. Daily at 4:30 AM UTC."""
+    if not _is_job_enabled("retention_purge"):
+        logger.info("Job retention_purge skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("retention_purge") as acquired:
+        if not acquired:
+            return
+        from app.services.retention import purge_archived_records
+        purge_archived_records()
 
 
 def get_scheduler_status() -> dict:

@@ -1,9 +1,16 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 65: P0 Architecture Fixes. Implemented 5 critical items from audit agents: (1) MySQL advisory locks on 7 scheduler jobs to prevent duplicate execution across workers, (2) 7 composite database indexes for hot-path queries, (3) Campaign status state machine with validated transitions, (4) N+1 query fix — batch-load campaigns and steps in campaign_engine.py, (5) ICP wizard json.loads crash fix + bare except cleanup in 4 files. 764 tests pass, coverage 39.73%.
+> Session 66: Compliance hardening — deployed Tier 1+2+P0 to VPS, then implemented 4 compliance fixes: (1) JWT refresh tokens — 30-min access + 7-day refresh, silent frontend refresh, POST /auth/refresh endpoint, (2) Hardcoded seed passwords → env vars (SEED_EXZELON_PASSWORD, SEED_NEURAFORZ_PASSWORD, SEED_MEDEOAN_PASSWORD), (3) Retention purge scheduled (daily 4:30 AM UTC), (4) AI cost tracking — all 4 adapters now capture input/output tokens in _last_usage. 771 tests pass, coverage 39.75%.
 
 ## Immediate TODO
+- [x] Compliance Hardening (2026-04-07)
+  - JWT refresh tokens: 30-min access token + 7-day refresh token, silent refresh interceptor in frontend, POST /auth/refresh endpoint, Token schema updated
+  - Hardcoded seed passwords moved to env vars: SEED_EXZELON_PASSWORD, SEED_NEURAFORZ_PASSWORD, SEED_MEDEOAN_PASSWORD (with fallback defaults)
+  - Retention purge scheduled: job_retention_purge daily at 4:30 AM UTC via scheduler + advisory lock
+  - AI cost tracking: All 4 adapters (Groq, OpenAI, Anthropic, Gemini) now extract token usage from API responses into _last_usage dict
+  - VPS deployed: 3 commits (Tier 1 + Tier 2 + P0) deployed to production
+  - 7 new integration tests for refresh token, 771 total tests pass, coverage 39.75%
 - [x] P0 Architecture Fixes (2026-04-07)
   - MySQL advisory locks: 7 critical scheduler jobs wrapped (campaign_processor, lead_sourcing, outreach_replies, daily_count_reset, inbox_sync, monthly_invoices, auto_enrollment) — prevents duplicate execution across 4 Uvicorn workers
   - Composite indexes: 7 new indexes (outreach_events, campaign_contacts, contact_details, lead_details, inbox_messages, invoices)

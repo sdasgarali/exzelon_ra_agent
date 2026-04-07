@@ -32,6 +32,7 @@ class GeminiAdapter(AIAdapter):
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or getattr(settings, 'GEMINI_API_KEY', None)
         self.model = model or self.DEFAULT_MODEL
+        self._last_usage = {"input_tokens": 0, "output_tokens": 0}
 
     def test_connection(self) -> bool:
         """Test connection to Gemini API."""
@@ -80,6 +81,11 @@ class GeminiAdapter(AIAdapter):
             )
             response.raise_for_status()
             data = response.json()
+            usage_meta = data.get("usageMetadata", {})
+            self._last_usage = {
+                "input_tokens": usage_meta.get("promptTokenCount", 0),
+                "output_tokens": usage_meta.get("candidatesTokenCount", 0),
+            }
             return data["candidates"][0]["content"]["parts"][0]["text"]
 
     def research_company(

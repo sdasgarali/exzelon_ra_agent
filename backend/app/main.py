@@ -687,7 +687,9 @@ async def lifespan(app: FastAPI):
                 result = conn.execute(sa_text_mt("SELECT user_id FROM users WHERE email = 'admin@exzelon.com'"))
                 if result.fetchone() is None:
                     from app.core.security import get_password_hash
-                    hashed = get_password_hash("ExzelonAdmin#2026")
+                    import os as _os_seed
+                    _seed_pw = _os_seed.environ.get("SEED_EXZELON_PASSWORD", "ExzelonAdmin#2026")
+                    hashed = get_password_hash(_seed_pw)
                     conn.execute(sa_text_mt(
                         "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified) "
                         "VALUES ('admin@exzelon.com', :pw, 'Exzelon Admin', 'admin', 1, 1, 1)"
@@ -733,7 +735,9 @@ async def lifespan(app: FastAPI):
                     nf_tid = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'neuraforz'")).scalar()
                     if nf_tid:
                         from app.core.security import get_password_hash as _nf_hash
-                        hashed_nf = _nf_hash("Admin@nz")
+                        import os as _os_nf
+                        _nf_pw = _os_nf.environ.get("SEED_NEURAFORZ_PASSWORD", "Admin@nz")
+                        hashed_nf = _nf_hash(_nf_pw)
                         conn.execute(sa_text_mt(
                             "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified, created_at, updated_at, is_archived) "
                             "VALUES ('admin@neuraforz.com', :pw, 'Neuraforz Admin', 'admin', 1, :tid, 1, NOW(), NOW(), 0)"
@@ -781,7 +785,9 @@ async def lifespan(app: FastAPI):
                     md_tid = conn.execute(sa_text_mt("SELECT tenant_id FROM tenants WHERE slug = 'medeoan'")).scalar()
                     if md_tid:
                         from app.core.security import get_password_hash as _md_hash
-                        hashed_md = _md_hash("Admin@mn")
+                        import os as _os_md
+                        _md_pw = _os_md.environ.get("SEED_MEDEOAN_PASSWORD", "Admin@mn")
+                        hashed_md = _md_hash(_md_pw)
                         conn.execute(sa_text_mt(
                             "INSERT INTO users (email, password_hash, full_name, role, is_active, tenant_id, is_verified, created_at, updated_at, is_archived) "
                             "VALUES ('admin@medeoan.com', :pw, 'Medeoan Admin', 'admin', 1, :tid, 1, NOW(), NOW(), 0)"
