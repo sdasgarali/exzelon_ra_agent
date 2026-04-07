@@ -68,10 +68,25 @@ def generate_ai_reply_draft(
     tenant_id: int,
 ) -> Optional[AIReplyDraft]:
     """Generate an AI reply draft for a received message."""
-    # Detect intent (sanitization happens inside detect_intent)
+    # Detect intent — try AI Sales Agent orchestrator first, fall back to local detect_intent
     body_text = received_message.body_text or ""
     sanitized_body = sanitize_email_for_ai(body_text)
-    intent, confidence = detect_intent(body_text)
+    orchestrator_result = None
+    try:
+        from app.services.ai_sales_agent.orchestrator import orchestrate_reply
+        orchestrator_result = orchestrate_reply(
+            db=db,
+            email_body=body_text,
+            contact=contact,
+            campaign=campaign,
+            tenant_id=tenant_id,
+        )
+        intent = orchestrator_result.get("intent", "unknown")
+        confidence = orchestrator_result.get("confidence", 30)
+    except Exception as e_orch:
+        logger.warning("AI orchestrator reply failed, using local detect_intent", error=str(e_orch))
+        intent, confidence = detect_intent(body_text)
+        orchestrator_result = None
 
     # Skip OOO -- no reply needed
     if intent == "ooo":
@@ -175,10 +190,16 @@ def generate_ai_reply_draft(
             received_message, contact, campaign, tenant_id,
         )
 
-    # Determine auto-send timing — gated by confidence threshold
+    # Determine auto-send timing — gated by confidence threshold + AI policy
     auto_send_at = None
     status = "pending"
-    if campaign and hasattr(campaign, "auto_reply_enabled") and campaign.auto_reply_enabled:
+
+    # AI Sales Agent policy override: if orchestrator says no auto-send, respect it
+    _orchestrator_allows_auto = True
+    if orchestrator_result and "policy_result" in orchestrator_result:
+        _orchestrator_allows_auto = orchestrator_result["policy_result"].get("auto_send_allowed", True)
+
+    if campaign and hasattr(campaign, "auto_reply_enabled") and campaign.auto_reply_enabled and _orchestrator_allows_auto:
         # Only auto-send if confidence is high enough (default: 70%)
         min_auto_confidence = 70
         try:

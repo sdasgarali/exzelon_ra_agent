@@ -115,6 +115,37 @@ class NextBestAction(BaseModel):
     requires_human_approval: bool = Field(default=True)
 
 
+class SendDecision(BaseModel):
+    """Schema for structured send/no-send decisions."""
+    should_send: bool = Field(default=False)
+    reason_codes: List[str] = Field(default_factory=list, description="e.g. ['DOMAIN_THROTTLED', 'LOW_ENGAGEMENT']")
+    confidence: int = Field(ge=0, le=100, default=0)
+    mailbox_id: Optional[int] = Field(default=None)
+    delay_minutes: int = Field(ge=0, default=0, description="Suggested delay before sending")
+    reasoning: str = Field(default="")
+
+
+class PersonalizationPlan(BaseModel):
+    """Schema for AI-generated personalization strategy."""
+    angle: str = Field(default="hiring_need", description="primary/follow_up/break_up/value_add")
+    tone: str = Field(default="professional", description="professional/casual/urgent/consultative")
+    hooks: List[str] = Field(default_factory=list, description="Personalization hooks to use")
+    avoid: List[str] = Field(default_factory=list, description="Topics/phrases to avoid")
+    max_words: int = Field(default=120, ge=30, le=300)
+    include_cta: bool = Field(default=True)
+    cta_type: str = Field(default="soft", description="soft/direct/calendar/none")
+
+
+class InteractionSummary(BaseModel):
+    """Schema for summarizing contact interaction history."""
+    total_emails_sent: int = Field(ge=0, default=0)
+    total_replies: int = Field(ge=0, default=0)
+    last_intent: Optional[str] = Field(default=None)
+    engagement_level: str = Field(default="cold", description="cold/warm/hot/dead")
+    key_objections: List[str] = Field(default_factory=list)
+    recommended_approach: str = Field(default="")
+
+
 # ---------------------------------------------------------------------------
 # JSON Parsing & Validation
 # ---------------------------------------------------------------------------

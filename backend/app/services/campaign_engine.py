@@ -259,6 +259,29 @@ def _execute_email_step(
     except Exception as e_dom:
         logger.warning("Domain throttle check failed, proceeding", error=str(e_dom))
 
+    # --- AI Sales Agent: orchestrate send decision ---
+    try:
+        from app.services.ai_sales_agent.orchestrator import orchestrate_send
+        ai_decision = orchestrate_send(
+            db=db,
+            contact=contact,
+            lead=contact_lead,
+            campaign=campaign,
+            tenant_id=campaign.tenant_id,
+            step_number=cc.current_step,
+        )
+        if not ai_decision.get("should_send", True):
+            logger.info(
+                "ai_agent_blocked_send",
+                contact_id=cc.contact_id,
+                reason_codes=ai_decision.get("reason_codes", []),
+                confidence=ai_decision.get("confidence", 0),
+            )
+            _advance_to_next_step(cc, step, campaign, db)
+            return False
+    except Exception as e_ai:
+        logger.warning("AI send decision failed, proceeding with send", error=str(e_ai))
+
     # Select mailbox (health-aware scoring)
     mailbox = _select_mailbox(campaign, db)
     if not mailbox:

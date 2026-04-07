@@ -172,6 +172,25 @@ def sync_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
             db.add(reply_msg)
             results["replies_synced"] += 1
 
+            # AI Sales Agent: record reply outcome for learning engine
+            try:
+                from app.services.ai_sales_agent.learning_engine import record_send_outcome
+                _reply_tenant = (contact.tenant_id if contact and hasattr(contact, 'tenant_id') else None) or 1
+                record_send_outcome(
+                    db=db,
+                    tenant_id=_reply_tenant,
+                    contact_id=event.contact_id,
+                    campaign_id=event.campaign_id,
+                    outcome="reply_received",
+                    details={
+                        "category": reply_msg.category,
+                        "sentiment": reply_msg.sentiment,
+                        "reply_subject": event.reply_subject,
+                    },
+                )
+            except Exception as e_learn:
+                logger.warning("AI learning engine record failed", error=str(e_learn))
+
             # Deal automation: auto-create deal on interested reply + log activity
             try:
                 from app.services.deal_automation import (
