@@ -95,14 +95,14 @@ interface MailboxStats {
   total_replies: number
 }
 
-const WARMUP_STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  warming_up: { label: 'Warming Up', color: 'bg-yellow-100 text-yellow-800' },
-  cold_ready: { label: 'Cold Ready', color: 'bg-green-100 text-green-800' },
-  active: { label: 'Active', color: 'bg-blue-100 text-blue-800' },
-  paused: { label: 'Paused', color: 'bg-gray-100 text-gray-800' },
-  inactive: { label: 'Inactive', color: 'bg-gray-100 text-gray-600' },
-  blacklisted: { label: 'Blacklisted', color: 'bg-red-100 text-red-800' },
-  recovering: { label: 'Recovering', color: 'bg-orange-100 text-orange-800' },
+const WARMUP_STATUS_LABELS: Record<string, { label: string; color: string; tooltip: string }> = {
+  inactive: { label: 'Inactive', color: 'bg-gray-100 text-gray-600', tooltip: 'Mailbox created but warmup has not started yet. Will auto-start on next assessment.' },
+  warming_up: { label: 'Warming Up', color: 'bg-yellow-100 text-yellow-800', tooltip: 'Warmup in progress — gradually increasing send volume over 30 days across 4 phases.' },
+  cold_ready: { label: 'Cold Ready', color: 'bg-green-100 text-green-800', tooltip: 'Warmup complete. Monitoring health for 7+ days before promoting to Active.' },
+  active: { label: 'Active', color: 'bg-blue-100 text-blue-800', tooltip: 'Fully warmed up and ready for production sending. Health score 80+.' },
+  paused: { label: 'Paused', color: 'bg-gray-100 text-gray-800', tooltip: 'Auto-paused due to high bounce rate (>5%) or complaint rate (>0.3%). Needs investigation.' },
+  blacklisted: { label: 'Blacklisted', color: 'bg-red-100 text-red-800', tooltip: 'Domain or IP found on email blacklists. Sending is blocked until resolved.' },
+  recovering: { label: 'Recovering', color: 'bg-orange-100 text-orange-800', tooltip: 'Previously paused, now recovering with reduced send volume.' },
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -856,7 +856,7 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('provider')}>
                 Provider <SortIcon column="provider" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('warmup_status')}>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('warmup_status')} title="Warmup lifecycle: Inactive → Warming Up (30 days) → Cold Ready → Active. Managed automatically by the warmup engine.">
                 Status <SortIcon column="warmup_status" />
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('emails_sent_today')}>
@@ -865,11 +865,11 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('total_emails_sent')}>
                 Total Sent <SortIcon column="total_emails_sent" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bounce %</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reply %</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Complaint %</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Engagement</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Weighted health score (0-100): 35% bounce rate + 25% reply rate + 25% complaint rate + 15% account age. Grades: A+ (90+), A (80+), B (60+), C (40+), D (&lt;40).">Health</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Percentage of sent emails that bounced. Auto-pauses warmup if bounce rate exceeds 5%.">Bounce %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Percentage of sent emails that received a reply. Higher is better — indicates good sender reputation.">Reply %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Percentage of sent emails marked as spam by recipients. Auto-pauses warmup if complaint rate exceeds 0.3%.">Complaint %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Engagement tier based on recipient interactions: Hot (60%+ — replies &amp; clicks), Warm (30%+ — some signals), Cold (10%+ — minimal activity), Dead (&lt;10% — no engagement or all bounced).">Engagement</th>
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('connection_status')}>
                 Connection <SortIcon column="connection_status" />
               </th>
@@ -903,7 +903,7 @@ export default function MailboxesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
-                  <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`}>
+                  <span className={`text-xs px-2 py-1 rounded-full cursor-help ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`} title={WARMUP_STATUS_LABELS[mailbox.warmup_status]?.tooltip || ''}>
                     {WARMUP_STATUS_LABELS[mailbox.warmup_status]?.label || mailbox.warmup_status}
                   </span>
                 </td>
@@ -958,7 +958,13 @@ export default function MailboxesPage() {
                     const rate = mailboxHealthMap[mailbox.mailbox_id].engagement_rate
                     const tier = rate >= 0.6 ? 'hot' : rate >= 0.3 ? 'warm' : rate >= 0.1 ? 'cold' : 'dead'
                     const tierColors: Record<string, string> = { hot: 'bg-red-100 text-red-700', warm: 'bg-orange-100 text-orange-700', cold: 'bg-blue-100 text-blue-700', dead: 'bg-gray-100 text-gray-500' }
-                    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${tierColors[tier]}`}>{tier}</span>
+                    const tierTooltips: Record<string, string> = {
+                      hot: `Hot (${(rate * 100).toFixed(0)}%) — Strong engagement: replies and clicks detected`,
+                      warm: `Warm (${(rate * 100).toFixed(0)}%) — Moderate engagement: some interaction signals`,
+                      cold: `Cold (${(rate * 100).toFixed(0)}%) — Low engagement: minimal recipient activity`,
+                      dead: `Dead (${(rate * 100).toFixed(0)}%) — No engagement: all bounced or no interactions`,
+                    }
+                    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium cursor-help ${tierColors[tier]}`} title={tierTooltips[tier]}>{tier}</span>
                   })() : <span className="text-gray-400">-</span>}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -1119,7 +1125,7 @@ export default function MailboxesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
-                  <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
+                  <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600" title={WARMUP_STATUS_LABELS[formData.warmup_status]?.tooltip || ''}>
                     <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[formData.warmup_status]?.color || 'bg-gray-100'}`}>
                       {WARMUP_STATUS_LABELS[formData.warmup_status]?.label || formData.warmup_status}
                     </span>
