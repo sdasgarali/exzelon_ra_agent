@@ -399,6 +399,14 @@ export const pipelinesApi = {
     })
     return response.data
   },
+  getFeatureStatus: async () => {
+    const response = await api.get('/pipelines/feature-status')
+    return response.data
+  },
+  getBusinessRules: async () => {
+    const response = await api.get('/pipelines/business-rules')
+    return response.data
+  },
 }
 
 // Settings API
@@ -1189,6 +1197,14 @@ export const tenantsApi = {
   },
   impersonate: async (id: number) => {
     const response = await api.post(`/admin/tenants/${id}/impersonate`)
+    return response.data
+  },
+  getFeatures: async (id: number) => {
+    const response = await api.get(`/admin/tenants/${id}/features`)
+    return response.data
+  },
+  updateFeatures: async (id: number, data: { feature_email_validation_enabled?: boolean; feature_campaigns_enabled?: boolean }) => {
+    const response = await api.put(`/admin/tenants/${id}/features`, data)
     return response.data
   },
 }

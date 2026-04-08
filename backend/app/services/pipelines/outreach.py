@@ -525,7 +525,7 @@ STEPS:
 COMPLIANCE NOTES:
 - Always include unsubscribe link
 - Include company mailing address: {settings.company_address if hasattr(settings, 'company_address') else 'Configure in settings'}
-- Do not send to same contact within {settings.COOLDOWN_DAYS} days
+- Do not send to same contact within {biz_rules['cooldown_days']} days
 """
 
         guide_path = os.path.join(settings.EXPORT_PATH, f"mailmerge_guide_{timestamp}.txt")

@@ -875,7 +875,8 @@ def send_batch(batch_id: str, db: Session, tenant_id: int) -> Dict[str, Any]:
         if result.get("status") == "sent":
             sent += 1
             # Throttle between sends
-            delay = random.randint(45, 180)
+            from app.core.config import settings as app_cfg
+            delay = random.randint(app_cfg.SEND_DELAY_MIN_SEC, app_cfg.SEND_DELAY_MAX_SEC)
             time.sleep(delay)
         else:
             errors += 1

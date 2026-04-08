@@ -322,6 +322,10 @@ def activate_campaign(
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    from app.core.settings_resolver import get_tenant_setting_bool
+    if not get_tenant_setting_bool(db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True):
+        raise HTTPException(status_code=403, detail="Campaign execution is disabled for your organization")
+
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")

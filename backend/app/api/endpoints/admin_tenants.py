@@ -17,6 +17,7 @@ from app.api.deps.auth import get_current_active_user, require_role, UserRole
 from app.core.security import create_access_token
 from app.core.config import settings
 from app.services.audit_helper import write_audit_log
+from app.core.settings_resolver import get_tenant_setting_bool, set_tenant_setting
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
 
@@ -327,6 +328,99 @@ async def update_branding(
             "custom_domain": tenant.custom_domain,
             "agency_mode": tenant.agency_mode,
         },
+    }
+
+
+class FeatureFlagsUpdate(BaseModel):
+    feature_email_validation_enabled: Optional[bool] = None
+    feature_campaigns_enabled: Optional[bool] = None
+
+
+@router.get("/{tenant_id}/features")
+async def get_tenant_features(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Get feature flags for a tenant. Super admin only."""
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    return {
+        "tenant_id": tenant_id,
+        "feature_email_validation_enabled": get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_campaigns_enabled": get_tenant_setting_bool(
+            db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        ),
+    }
+
+
+@router.put("/{tenant_id}/features")
+async def update_tenant_features(
+    tenant_id: int,
+    data: FeatureFlagsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Update feature flags for a tenant. Super admin only."""
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    changes = {}
+    if data.feature_email_validation_enabled is not None:
+        old_val = get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+        )
+        set_tenant_setting(
+            db, "feature_email_validation_enabled",
+            data.feature_email_validation_enabled,
+            tenant_id=tenant_id,
+            updated_by=current_user.email,
+        )
+        changes["feature_email_validation_enabled"] = {
+            "old": old_val, "new": data.feature_email_validation_enabled,
+        }
+
+    if data.feature_campaigns_enabled is not None:
+        old_val = get_tenant_setting_bool(
+            db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        )
+        set_tenant_setting(
+            db, "feature_campaigns_enabled",
+            data.feature_campaigns_enabled,
+            tenant_id=tenant_id,
+            updated_by=current_user.email,
+        )
+        changes["feature_campaigns_enabled"] = {
+            "old": old_val, "new": data.feature_campaigns_enabled,
+        }
+
+    if changes:
+        write_audit_log(
+            db,
+            tenant_id=tenant_id,
+            entity_type="tenant",
+            entity_id=tenant_id,
+            action="feature_flags_update",
+            changed_by=current_user.email,
+            changed_fields=changes,
+        )
+
+    db.commit()
+
+    return {
+        "message": "Feature flags updated",
+        "tenant_id": tenant_id,
+        "feature_email_validation_enabled": get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_campaigns_enabled": get_tenant_setting_bool(
+            db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        ),
     }
 
 

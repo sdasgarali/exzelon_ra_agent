@@ -1,9 +1,27 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 69: Contact Enrichment API Optimization — waterfall stop-on-success in adapter loop (skip remaining adapters once enough contacts found), CreditsExhaustedError base exception with per-adapter 402/429 detection, pre-run /pipelines/contact-enrichment/estimate endpoint, frontend estimate-aware confirmation dialog. 832 tests pass, 41% coverage.
+> Session 71: Settings/Config Integrity Audit — Found & fixed 13 inconsistencies where business rules were hardcoded (config.py) instead of read from DB settings. Pipelines page now shows dynamic values from API. Campaign engine, contact enrichment, lead sourcing, leads endpoint, pipelines endpoint, retention service all now read from DB settings. Added 6 new configurable settings (data_retention_days, domain_daily_limit_default/major, max_contacts_per_company_all_campaigns, send_delay_min/max_sec) to Settings page. Fixed warmup engine "Stopped" false alarm caused by multi-worker file lock (75% chance of hitting non-scheduler worker). MIN_SALARY_THRESHOLD reconciled to 40000. 831 tests pass, 40% coverage.
 
 ## Immediate TODO
+- [x] Settings/Config Integrity Audit & Fix (2026-04-07)
+  - 13 inconsistencies found and fixed: hardcoded values → DB settings reads
+  - Pipelines page: dynamic business rules from `GET /pipelines/business-rules`
+  - Campaign engine: `resolve_business_rules()` → `check_send_eligibility()` with DB values
+  - Contact enrichment, lead sourcing, leads/pipelines endpoints: `max_contacts` from DB
+  - Outreach guide text: uses `biz_rules['cooldown_days']` not `config.COOLDOWN_DAYS`
+  - Retention service: reads `data_retention_days` from DB
+  - Send delay: uses `config.SEND_DELAY_MIN_SEC/MAX_SEC` not hardcoded literals
+  - 6 new settings added to SETTINGS_TAB_MAP, DEFAULT_SETTINGS, and Settings page UI
+  - MIN_SALARY_THRESHOLD config.py changed 30000→40000 to match seed/settings
+  - Warmup Engine "Stopped" fix: `_is_scheduler_running_in_another_worker()` check via file lock probe
+  - 12 files changed, 831 tests pass, 40% coverage
+- [x] Per-Tenant Feature Disable: Email Validation & Campaigns (2026-04-07)
+  - Setting keys: `feature_email_validation_enabled`, `feature_campaigns_enabled` (default `true`)
+  - Backend: GET/PUT `/admin/tenants/{id}/features`, guards on validation/campaign endpoints, campaign engine skips disabled tenants, auto-chain respects flag
+  - Frontend: toggles in tenant edit modal, disabled card on pipelines page, warning banner + blocked activate on campaigns page
+  - GET `/pipelines/feature-status` for current tenant
+  - 9 files changed, 832 tests pass, 41% coverage
 - [x] Contact Enrichment API Optimization (2026-04-07)
   - Waterfall stop-on-success: adapter loop skips remaining providers once `len(contacts) >= needed`
   - Each subsequent adapter receives `remaining_needed` (not full `needed`) as limit

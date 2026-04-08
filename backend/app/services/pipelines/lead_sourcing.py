@@ -465,7 +465,7 @@ def _job_quality_score(job: Dict[str, Any]) -> int:
     return score
 
 
-def _auto_enrich_new_leads(db, leads) -> int:
+def _auto_enrich_new_leads(db, leads, tenant_id=None) -> int:
     """Auto-enrich newly sourced leads if their company already has contacts cached.
 
     For each new lead that has no contact info (first_name is None), check if the
@@ -477,8 +477,10 @@ def _auto_enrich_new_leads(db, leads) -> int:
     from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
     from app.services.pipelines.contact_enrichment import _reuse_existing_contacts, _update_lead_from_contacts
+    from app.core.settings_resolver import get_tenant_setting
 
-    max_contacts = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+    max_contacts = int(_mc) if _mc is not None else settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
     auto_enriched = 0
     checked_companies = {}  # company_name -> has_contacts (bool)
 
@@ -753,7 +755,7 @@ def run_lead_sourcing_pipeline(
         db.commit()
 
         # Auto-enrich newly inserted leads from existing company contacts
-        auto_enriched = _auto_enrich_new_leads(db, newly_inserted_leads)
+        auto_enriched = _auto_enrich_new_leads(db, newly_inserted_leads, tenant_id=tenant_id)
         counters["auto_enriched"] = auto_enriched
         if auto_enriched > 0:
             db.commit()

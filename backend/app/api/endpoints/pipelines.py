@@ -384,9 +384,11 @@ async def estimate_contact_enrichment(
     from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
     from app.core.config import settings as app_settings
+    from app.core.settings_resolver import get_tenant_setting
     from app.services.pipelines.contact_enrichment import get_contact_discovery_adapters
 
-    max_contacts = app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+    max_contacts = int(_mc) if _mc is not None else app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
     # Same lead selection query as the actual pipeline
     q = db.query(LeadDetails).filter(
@@ -480,6 +482,39 @@ async def run_contact_enrichment(
     }
 
 
+@router.get("/feature-status")
+async def get_feature_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get feature flags for the current tenant."""
+    from app.core.settings_resolver import get_tenant_setting_bool
+    return {
+        "email_validation_enabled": get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+        ),
+        "campaigns_enabled": get_tenant_setting_bool(
+            db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        ),
+    }
+
+
+@router.get("/business-rules")
+async def get_business_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get resolved business rules for the current tenant (read from DB settings)."""
+    from app.services.pipelines.outreach import resolve_business_rules
+    from app.core.settings_resolver import get_tenant_setting
+    rules = resolve_business_rules(db, tenant_id=tenant_id)
+    bounce_target = get_tenant_setting(db, "warmup_bounce_rate_good", tenant_id=tenant_id, default="2.0")
+    rules["warmup_bounce_rate_good"] = float(bounce_target)
+    return rules
+
+
 @router.post("/email-validation/run")
 @limiter.limit("5/hour")
 async def run_email_validation(
@@ -490,6 +525,10 @@ async def run_email_validation(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation pipeline."""
+    from app.core.settings_resolver import get_tenant_setting_bool
+    if not get_tenant_setting_bool(db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True):
+        raise HTTPException(status_code=403, detail="Email validation is disabled for your organization")
+
     from app.services.pipelines.email_validation import run_email_validation_pipeline
 
     background_tasks.add_task(
@@ -519,6 +558,10 @@ async def run_email_validation_selected(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation for selected contact IDs."""
+    from app.core.settings_resolver import get_tenant_setting_bool
+    if not get_tenant_setting_bool(db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True):
+        raise HTTPException(status_code=403, detail="Email validation is disabled for your organization")
+
     from app.services.pipelines.email_validation import run_email_validation_pipeline
     from app.db.models.contact import ContactDetails
 

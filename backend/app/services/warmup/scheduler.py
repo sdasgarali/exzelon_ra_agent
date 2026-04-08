@@ -434,7 +434,10 @@ def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
         logger.info("Auto-chain: contact enrichment skipped (disabled by user)")
 
     # Step 2: Email Validation (independent toggle — processes all unvalidated contacts)
-    if get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
+    # Skip if feature is disabled for this tenant
+    if not get_tenant_setting_bool(db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True):
+        logger.info("Auto-chain: email validation skipped (feature disabled for tenant)", tenant_id=tenant_id)
+    elif get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
         logger.info("Auto-chain: starting email validation", tenant_id=tenant_id)
         try:
             from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -875,10 +878,38 @@ def job_retention_purge():
         purge_archived_records()
 
 
+def _is_scheduler_running_in_another_worker() -> bool:
+    """Check if another uvicorn worker owns the scheduler lock."""
+    import sys
+    if sys.platform == "win32":
+        return False
+    try:
+        import fcntl
+        lock_path = "/tmp/exzelon-scheduler.lock"
+        fd = open(lock_path, "r")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Lock acquired — no other worker holds it, so scheduler is NOT running
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            fd.close()
+            return False
+        except OSError:
+            # Lock held by another process — scheduler IS running there
+            fd.close()
+            return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
+
+
 def get_scheduler_status() -> dict:
-    if not _scheduler:
-        return {"running": False, "jobs": []}
-    jobs = []
-    for job in _scheduler.get_jobs():
-        jobs.append({"id": job.id, "name": job.name, "next_run": str(job.next_run_time) if job.next_run_time else None})
-    return {"running": _scheduler.running, "jobs": jobs}
+    if _scheduler:
+        jobs = []
+        for job in _scheduler.get_jobs():
+            jobs.append({"id": job.id, "name": job.name, "next_run": str(job.next_run_time) if job.next_run_time else None})
+        return {"running": _scheduler.running, "jobs": jobs}
+
+    # This worker doesn't own the scheduler — check if another worker does
+    running_elsewhere = _is_scheduler_running_in_another_worker()
+    return {"running": running_elsewhere, "jobs": []}

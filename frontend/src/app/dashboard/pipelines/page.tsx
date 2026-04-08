@@ -64,6 +64,8 @@ export default function PipelinesPage() {
   const [emailValidationRunning, setEmailValidationRunning] = useState(false)
   const [outreachRunning, setOutreachRunning] = useState(false)
   const [outreachPreviewMode, setOutreachPreviewMode] = useState(false)
+  const [featureStatus, setFeatureStatus] = useState<{ email_validation_enabled: boolean; campaigns_enabled: boolean }>({ email_validation_enabled: true, campaigns_enabled: true })
+  const [businessRules, setBusinessRules] = useState<{ cooldown_days: number; max_contacts_per_company_job: number; daily_send_limit: number; warmup_bounce_rate_good: number }>({ cooldown_days: 10, max_contacts_per_company_job: 4, daily_send_limit: 30, warmup_bounce_rate_good: 2.0 })
   const [pipelineFilter, setPipelineFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const RUNS_PER_PAGE = 20
@@ -144,6 +146,14 @@ export default function PipelinesPage() {
     const init = async () => {
       setLoading(true)
       await fetchData()
+      try {
+        const [fs, br] = await Promise.all([
+          pipelinesApi.getFeatureStatus(),
+          pipelinesApi.getBusinessRules(),
+        ])
+        setFeatureStatus(fs)
+        setBusinessRules(br)
+      } catch { /* ignore — defaults to safe values */ }
       setLoading(false)
     }
     init()
@@ -708,16 +718,29 @@ export default function PipelinesPage() {
         </div>
 
         {/* Email Validation */}
-        <div className="card p-4 border-t-4 border-cyan-500">
-          <h4 className="font-semibold text-gray-800 mb-2">Email Validation</h4>
+        <div className={`card p-4 border-t-4 ${featureStatus.email_validation_enabled ? 'border-cyan-500' : 'border-gray-300 opacity-60'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-semibold text-gray-800">Email Validation</h4>
+            {!featureStatus.email_validation_enabled && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                Disabled by admin
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500 mb-4">Validate email addresses using ZeroBounce/MillionVerifier</p>
           <button
             onClick={() => openContactSelector()}
-            disabled={emailValidationRunning}
-            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${emailValidationRunning ? 'bg-cyan-400 animate-pulse cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-700'}`}
+            disabled={emailValidationRunning || !featureStatus.email_validation_enabled}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
+              !featureStatus.email_validation_enabled
+                ? 'bg-gray-400 cursor-not-allowed'
+                : emailValidationRunning
+                  ? 'bg-cyan-400 animate-pulse cursor-not-allowed'
+                  : 'bg-cyan-600 hover:bg-cyan-700'
+            }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            {emailValidationRunning ? 'Running...' : 'Run Pipeline'}
+            {!featureStatus.email_validation_enabled ? 'Disabled' : emailValidationRunning ? 'Running...' : 'Run Pipeline'}
           </button>
         </div>
 
@@ -751,19 +774,19 @@ export default function PipelinesPage() {
         <div className="grid grid-cols-4 gap-4 text-sm text-yellow-700">
           <div>
             <span className="font-medium">Bounce Rate Target:</span>
-            <span className="ml-1">&lt; 2%</span>
+            <span className="ml-1">&lt; {businessRules.warmup_bounce_rate_good}%</span>
           </div>
           <div>
             <span className="font-medium">Cooldown Period:</span>
-            <span className="ml-1">10 days</span>
+            <span className="ml-1">{businessRules.cooldown_days} days</span>
           </div>
           <div>
             <span className="font-medium">Max per Company/Job:</span>
-            <span className="ml-1">4 contacts</span>
+            <span className="ml-1">{businessRules.max_contacts_per_company_job} contacts</span>
           </div>
           <div>
             <span className="font-medium">Daily Send Limit:</span>
-            <span className="ml-1">30 emails</span>
+            <span className="ml-1">{businessRules.daily_send_limit} emails</span>
           </div>
         </div>
       </div>

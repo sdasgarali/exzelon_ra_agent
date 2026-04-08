@@ -944,7 +944,9 @@ async def preview_bulk_enrichment(
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
     from app.core.config import settings as app_settings
-    max_contacts = app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    from app.core.settings_resolver import get_tenant_setting
+    _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+    max_contacts = int(_mc) if _mc is not None else app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
     previews = []
     summary = {

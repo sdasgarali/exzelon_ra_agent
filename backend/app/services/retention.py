@@ -10,14 +10,18 @@ logger = structlog.get_logger()
 
 
 def purge_archived_records():
-    """Purge archived records older than DATA_RETENTION_DAYS.
+    """Purge archived records older than data_retention_days setting.
 
     This runs as a scheduled job. Only removes records that have been
     archived (soft-deleted) for longer than the retention period.
+    Reads from DB settings table, falls back to config.py DATA_RETENTION_DAYS.
     """
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(days=settings.DATA_RETENTION_DAYS)
+        from app.core.settings_resolver import get_tenant_setting
+        _rd = get_tenant_setting(db, "data_retention_days", default=None)
+        retention_days = int(_rd) if _rd is not None else settings.DATA_RETENTION_DAYS
+        cutoff = datetime.utcnow() - timedelta(days=retention_days)
 
         # Purge old archived leads
         leads_deleted = db.query(LeadDetails).filter(
@@ -38,7 +42,7 @@ def purge_archived_records():
                 "Purged archived records",
                 leads=leads_deleted,
                 contacts=contacts_deleted,
-                retention_days=settings.DATA_RETENTION_DAYS
+                retention_days=retention_days,
             )
     except Exception as e:
         db.rollback()

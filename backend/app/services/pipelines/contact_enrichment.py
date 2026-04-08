@@ -247,7 +247,9 @@ def run_contact_enrichment_pipeline(
         if not adapters:
             raise RuntimeError("No contact discovery adapters configured. Add API keys in Settings page.")
 
-        max_contacts_per_job = settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+        from app.core.settings_resolver import get_tenant_setting
+        _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+        max_contacts_per_job = int(_mc) if _mc is not None else settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
 
         if lead_ids:
             q = db.query(LeadDetails).filter(

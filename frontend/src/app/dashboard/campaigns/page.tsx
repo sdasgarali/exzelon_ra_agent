@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi } from '@/lib/api'
+import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
-  FileSearch, Loader2,
+  FileSearch, Loader2, AlertTriangle,
 } from 'lucide-react'
 
 type TabView = 'list' | 'detail'
@@ -107,6 +107,7 @@ export default function CampaignsPage() {
 
   const [mailboxes, setMailboxes] = useState<any[]>([])
   const [selectedMailboxIds, setSelectedMailboxIds] = useState<number[]>([])
+  const [campaignsEnabled, setCampaignsEnabled] = useState(true)
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true)
@@ -125,6 +126,13 @@ export default function CampaignsPage() {
   }, [page, search, statusFilter])
 
   useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
+
+  // Fetch feature status on mount
+  useEffect(() => {
+    pipelinesApi.getFeatureStatus()
+      .then(fs => setCampaignsEnabled(fs.campaigns_enabled ?? true))
+      .catch(() => { /* defaults to enabled */ })
+  }, [])
 
   const openDetail = async (campaign: Campaign) => {
     setSelectedCampaign(campaign)
@@ -403,6 +411,14 @@ export default function CampaignsPage() {
           </button>
         </div>
 
+        {/* Feature disabled banner */}
+        {!campaignsEnabled && (
+          <div className="flex items-center gap-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg text-sm">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span>Campaign execution is disabled for your organization. Contact your administrator to enable it.</span>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
@@ -465,9 +481,9 @@ export default function CampaignsPage() {
                           </button>
                           {actionMenu === c.campaign_id && (
                             <div className="absolute right-0 top-8 z-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg w-40">
-                              {c.status === 'draft' && <button onClick={() => handleAction('activate', c.campaign_id)} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"><Play className="w-3 h-3" /> Activate</button>}
+                              {c.status === 'draft' && <button onClick={() => handleAction('activate', c.campaign_id)} disabled={!campaignsEnabled} className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${!campaignsEnabled ? 'opacity-50 cursor-not-allowed text-gray-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}><Play className="w-3 h-3" /> Activate</button>}
                               {c.status === 'active' && <button onClick={() => handleAction('pause', c.campaign_id)} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"><Pause className="w-3 h-3" /> Pause</button>}
-                              {c.status === 'paused' && <button onClick={() => handleAction('resume', c.campaign_id)} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"><Play className="w-3 h-3" /> Resume</button>}
+                              {c.status === 'paused' && <button onClick={() => handleAction('resume', c.campaign_id)} disabled={!campaignsEnabled} className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${!campaignsEnabled ? 'opacity-50 cursor-not-allowed text-gray-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}><Play className="w-3 h-3" /> Resume</button>}
                               <button onClick={() => handleAction('duplicate', c.campaign_id)} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"><Copy className="w-3 h-3" /> Duplicate</button>
                               <button onClick={() => handleAction('delete', c.campaign_id)} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-red-600 flex items-center gap-2"><Trash2 className="w-3 h-3" /> Delete</button>
                             </div>
@@ -585,7 +601,7 @@ export default function CampaignsPage() {
         </div>
         <div className="flex gap-2">
           {selectedCampaign?.status === 'draft' && (
-            <button onClick={() => handleAction('activate', selectedCampaign.campaign_id)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
+            <button onClick={() => handleAction('activate', selectedCampaign.campaign_id)} disabled={!campaignsEnabled} className={`px-4 py-2 text-white rounded-lg flex items-center gap-2 ${!campaignsEnabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`} title={!campaignsEnabled ? 'Campaign execution is disabled for your organization' : ''}>
               <Play className="w-4 h-4" /> Activate
             </button>
           )}
@@ -595,7 +611,7 @@ export default function CampaignsPage() {
             </button>
           )}
           {selectedCampaign?.status === 'paused' && (
-            <button onClick={() => handleAction('resume', selectedCampaign.campaign_id)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
+            <button onClick={() => handleAction('resume', selectedCampaign.campaign_id)} disabled={!campaignsEnabled} className={`px-4 py-2 text-white rounded-lg flex items-center gap-2 ${!campaignsEnabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`} title={!campaignsEnabled ? 'Campaign execution is disabled for your organization' : ''}>
               <Play className="w-4 h-4" /> Resume
             </button>
           )}

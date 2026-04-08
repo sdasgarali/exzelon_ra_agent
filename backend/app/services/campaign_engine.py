@@ -45,6 +45,21 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     if not active_campaigns:
         return results
 
+    # Filter out campaigns whose tenant has campaigns disabled
+    from app.core.settings_resolver import get_tenant_setting_bool
+    tenant_ids = set(c.tenant_id for c in active_campaigns)
+    disabled_tenants = set()
+    for tid in tenant_ids:
+        if not get_tenant_setting_bool(db, "feature_campaigns_enabled", tenant_id=tid, default=True):
+            disabled_tenants.add(tid)
+    if disabled_tenants:
+        skipped_count = sum(1 for c in active_campaigns if c.tenant_id in disabled_tenants)
+        logger.info("Skipping campaigns for disabled tenants",
+                     disabled_tenants=list(disabled_tenants), skipped_campaigns=skipped_count)
+        active_campaigns = [c for c in active_campaigns if c.tenant_id not in disabled_tenants]
+        if not active_campaigns:
+            return results
+
     campaign_ids = [c.campaign_id for c in active_campaigns]
 
     # Check send window per campaign
@@ -209,8 +224,10 @@ def _execute_email_step(
             LeadDetails.lead_id == _lead_id
         ).first()
 
-    # Check eligibility (suppression, validation, etc.)
-    eligible, reason = check_send_eligibility(db, contact)
+    # Check eligibility (suppression, validation, etc.) — resolve from DB settings
+    from app.services.pipelines.outreach import resolve_business_rules
+    biz_rules = resolve_business_rules(db, tenant_id=campaign.tenant_id)
+    eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
     if not eligible:
         logger.info("Campaign contact not eligible", contact_id=cc.contact_id, reason=reason)
         # Don't remove from campaign — just skip this step and advance
@@ -494,8 +511,9 @@ def _execute_email_step(
         # Advance to next step
         _advance_to_next_step(cc, step, campaign, db)
 
-        # Smart throttling: random delay between sends (45-180 seconds)
-        delay_sec = random.randint(45, 180)
+        # Smart throttling: random delay between sends
+        from app.core.config import settings as app_cfg
+        delay_sec = random.randint(app_cfg.SEND_DELAY_MIN_SEC, app_cfg.SEND_DELAY_MAX_SEC)
         time.sleep(delay_sec)
 
         return True

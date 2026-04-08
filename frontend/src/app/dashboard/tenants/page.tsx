@@ -62,6 +62,10 @@ export default function TenantManagementPage() {
     max_campaigns: 5,
     max_leads: 5000,
   })
+  const [editFeatures, setEditFeatures] = useState({
+    feature_email_validation_enabled: true,
+    feature_campaigns_enabled: true,
+  })
   const [editSaving, setEditSaving] = useState(false)
 
   // Deactivate confirmation
@@ -124,7 +128,10 @@ export default function TenantManagementPage() {
 
   const handleOpenEdit = async (tenantId: number) => {
     try {
-      const data = await tenantsApi.get(tenantId)
+      const [data, features] = await Promise.all([
+        tenantsApi.get(tenantId),
+        tenantsApi.getFeatures(tenantId),
+      ])
       setEditTenant(data)
       setEditForm({
         name: data.name,
@@ -136,6 +143,10 @@ export default function TenantManagementPage() {
         max_campaigns: data.max_campaigns,
         max_leads: data.max_leads,
       })
+      setEditFeatures({
+        feature_email_validation_enabled: features.feature_email_validation_enabled ?? true,
+        feature_campaigns_enabled: features.feature_campaigns_enabled ?? true,
+      })
       setEditOpen(true)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load tenant for editing')
@@ -146,7 +157,10 @@ export default function TenantManagementPage() {
     if (!editTenant) return
     try {
       setEditSaving(true)
-      await tenantsApi.update(editTenant.tenant_id, editForm)
+      await Promise.all([
+        tenantsApi.update(editTenant.tenant_id, editForm),
+        tenantsApi.updateFeatures(editTenant.tenant_id, editFeatures),
+      ])
       setSuccess(`Tenant "${editForm.name}" updated successfully`)
       setEditOpen(false)
       fetchTenants()
@@ -469,6 +483,36 @@ export default function TenantManagementPage() {
                   />
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Feature Flags</h4>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editFeatures.feature_email_validation_enabled}
+                  onChange={(e) => setEditFeatures({ ...editFeatures, feature_email_validation_enabled: e.target.checked })}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Email Validation</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to run email validation pipelines</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editFeatures.feature_campaigns_enabled}
+                  onChange={(e) => setEditFeatures({ ...editFeatures, feature_campaigns_enabled: e.target.checked })}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Campaign Execution</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to activate and run campaigns</p>
+                </div>
+              </label>
             </div>
           </div>
 

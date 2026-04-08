@@ -101,6 +101,12 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'category_regular_threshold': 'business_rules',
     'category_occasional_threshold': 'business_rules',
     'backup_retention_days': 'business_rules',
+    'data_retention_days': 'business_rules',
+    'domain_daily_limit_default': 'business_rules',
+    'domain_daily_limit_major_providers': 'business_rules',
+    'max_contacts_per_company_all_campaigns': 'business_rules',
+    'send_delay_min_sec': 'business_rules',
+    'send_delay_max_sec': 'business_rules',
     # Deal Automation
     'deal_auto_create_on_interested': 'business_rules',
     'deal_auto_advance_stages': 'business_rules',
@@ -149,6 +155,12 @@ DEFAULT_SETTINGS = {
     "catch_all_policy": {"value": "exclude", "type": "string", "description": "Policy for catch-all emails"},
     "unsubscribe_footer": {"value": True, "type": "boolean", "description": "Include unsubscribe footer"},
     "company_address": {"value": "123 Business St, City, State 12345", "type": "string", "description": "Company mailing address for footer"},
+    "data_retention_days": {"value": 180, "type": "integer", "description": "Days to keep archived records before permanent deletion"},
+    "domain_daily_limit_default": {"value": 50, "type": "integer", "description": "Max emails per day to any single recipient domain"},
+    "domain_daily_limit_major_providers": {"value": 30, "type": "integer", "description": "Max emails per day to major providers (Gmail, Outlook, Yahoo)"},
+    "max_contacts_per_company_all_campaigns": {"value": 5, "type": "integer", "description": "Max contacts per company across all active campaigns"},
+    "send_delay_min_sec": {"value": 45, "type": "integer", "description": "Minimum delay (seconds) between outbound emails"},
+    "send_delay_max_sec": {"value": 180, "type": "integer", "description": "Maximum delay (seconds) between outbound emails"},
 
     # New Job Source API Keys
     "theirstack_api_key": {"value": "", "type": "string", "description": "TheirStack API key (Free: 100 req/mo | Paid: from $49/mo)"},

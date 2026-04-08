@@ -102,6 +102,12 @@ interface BusinessRules {
   category_window_days: number
   category_regular_threshold: number
   category_occasional_threshold: number
+  data_retention_days: number
+  domain_daily_limit_default: number
+  domain_daily_limit_major_providers: number
+  max_contacts_per_company_all_campaigns: number
+  send_delay_min_sec: number
+  send_delay_max_sec: number
 }
 
 const US_STATES = [
@@ -188,6 +194,9 @@ const SETTING_TAB_MAP: Record<string, string> = {
   catch_all_policy: 'business_rules', unsubscribe_footer: 'business_rules',
   company_address: 'business_rules', category_window_days: 'business_rules',
   category_regular_threshold: 'business_rules', category_occasional_threshold: 'business_rules',
+  data_retention_days: 'business_rules', domain_daily_limit_default: 'business_rules',
+  domain_daily_limit_major_providers: 'business_rules', max_contacts_per_company_all_campaigns: 'business_rules',
+  send_delay_min_sec: 'business_rules', send_delay_max_sec: 'business_rules',
 }
 
 export default function SettingsPage() {
@@ -315,6 +324,12 @@ export default function SettingsPage() {
     category_window_days: 90,
     category_regular_threshold: 3,
     category_occasional_threshold: 0,
+    data_retention_days: 180,
+    domain_daily_limit_default: 50,
+    domain_daily_limit_major_providers: 30,
+    max_contacts_per_company_all_campaigns: 5,
+    send_delay_min_sec: 45,
+    send_delay_max_sec: 180,
   })
 
   // Test results
@@ -485,6 +500,12 @@ export default function SettingsPage() {
         category_window_days: settingsMap.category_window_days ?? 90,
         category_regular_threshold: settingsMap.category_regular_threshold ?? 3,
         category_occasional_threshold: settingsMap.category_occasional_threshold ?? 0,
+        data_retention_days: settingsMap.data_retention_days ?? 180,
+        domain_daily_limit_default: settingsMap.domain_daily_limit_default ?? 50,
+        domain_daily_limit_major_providers: settingsMap.domain_daily_limit_major_providers ?? 30,
+        max_contacts_per_company_all_campaigns: settingsMap.max_contacts_per_company_all_campaigns ?? 5,
+        send_delay_min_sec: settingsMap.send_delay_min_sec ?? 45,
+        send_delay_max_sec: settingsMap.send_delay_max_sec ?? 180,
       }))
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
@@ -600,6 +621,12 @@ export default function SettingsPage() {
           saveSetting('category_window_days', businessRules.category_window_days, 'integer'),
           saveSetting('category_regular_threshold', businessRules.category_regular_threshold, 'integer'),
           saveSetting('category_occasional_threshold', businessRules.category_occasional_threshold, 'integer'),
+          saveSetting('data_retention_days', businessRules.data_retention_days, 'integer'),
+          saveSetting('domain_daily_limit_default', businessRules.domain_daily_limit_default, 'integer'),
+          saveSetting('domain_daily_limit_major_providers', businessRules.domain_daily_limit_major_providers, 'integer'),
+          saveSetting('max_contacts_per_company_all_campaigns', businessRules.max_contacts_per_company_all_campaigns, 'integer'),
+          saveSetting('send_delay_min_sec', businessRules.send_delay_min_sec, 'integer'),
+          saveSetting('send_delay_max_sec', businessRules.send_delay_max_sec, 'integer'),
         ])
       }
 
@@ -2786,8 +2813,83 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Advanced Delivery & Safety */}
+          <div className="border-t border-gray-200 pt-6 mt-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Delivery & Safety</h3>
+            <div className="grid grid-cols-3 gap-6">
+              <div>
+                <label className="label">Domain Daily Limit (General)</label>
+                <input
+                  type="number"
+                  value={businessRules.domain_daily_limit_default}
+                  onChange={(e) => setBusinessRules({ ...businessRules, domain_daily_limit_default: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Max emails/day to any single recipient domain</p>
+              </div>
+              <div>
+                <label className="label">Domain Daily Limit (Major Providers)</label>
+                <input
+                  type="number"
+                  value={businessRules.domain_daily_limit_major_providers}
+                  onChange={(e) => setBusinessRules({ ...businessRules, domain_daily_limit_major_providers: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Gmail, Outlook, Yahoo — stricter limit</p>
+              </div>
+              <div>
+                <label className="label">Max Contacts/Company (All Campaigns)</label>
+                <input
+                  type="number"
+                  value={businessRules.max_contacts_per_company_all_campaigns}
+                  onChange={(e) => setBusinessRules({ ...businessRules, max_contacts_per_company_all_campaigns: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Cross-campaign cap per company</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-6 mt-4">
+              <div>
+                <label className="label">Send Delay Min (seconds)</label>
+                <input
+                  type="number"
+                  value={businessRules.send_delay_min_sec}
+                  onChange={(e) => setBusinessRules({ ...businessRules, send_delay_min_sec: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Minimum random delay between outbound emails</p>
+              </div>
+              <div>
+                <label className="label">Send Delay Max (seconds)</label>
+                <input
+                  type="number"
+                  value={businessRules.send_delay_max_sec}
+                  onChange={(e) => setBusinessRules({ ...businessRules, send_delay_max_sec: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Maximum random delay between outbound emails</p>
+              </div>
+              <div>
+                <label className="label">Data Retention (days)</label>
+                <input
+                  type="number"
+                  value={businessRules.data_retention_days}
+                  onChange={(e) => setBusinessRules({ ...businessRules, data_retention_days: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Archived records purged after this many days</p>
+              </div>
+            </div>
+          </div>
+
           {canWriteTab('business') && (
-            <div className="flex justify-end">
+            <div className="flex justify-end mt-6">
               <button onClick={() => saveAllSettings('business')} disabled={saving} className="btn-primary">
                 {saving ? 'Saving...' : 'Save Business Rules'}
               </button>
