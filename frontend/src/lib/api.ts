@@ -497,6 +497,10 @@ export const mailboxesApi = {
     })
     return response.data
   },
+  getDetail: async (id: number) => {
+    const response = await api.get(`/mailboxes/${id}/detail`)
+    return response.data
+  },
   oauthInitiate: async (mailboxId?: number, email?: string) => {
     const response = await api.get('/mailboxes/oauth/initiate', {
       params: { mailbox_id: mailboxId, email }

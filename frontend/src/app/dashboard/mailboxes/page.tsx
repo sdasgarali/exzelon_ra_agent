@@ -21,6 +21,8 @@ interface Mailbox {
   daily_send_limit: number
   emails_sent_today: number
   total_emails_sent: number
+  warmup_emails_sent: number
+  outreach_emails_sent: number
   last_sent_at: string | null
   bounce_count: number
   reply_count: number
@@ -186,6 +188,28 @@ export default function MailboxesPage() {
   const [wizardSubmitting, setWizardSubmitting] = useState(false)
   const [wizardTestResult, setWizardTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [showSmtpRefTable, setShowSmtpRefTable] = useState(false)
+
+  // Detail modal state
+  const [detailMailboxId, setDetailMailboxId] = useState<number | null>(null)
+  const [detailData, setDetailData] = useState<any>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailTab, setDetailTab] = useState<'overview' | 'campaigns' | 'warmup' | 'settings'>('overview')
+
+  const fetchMailboxDetail = async (id: number) => {
+    setDetailMailboxId(id)
+    setDetailLoading(true)
+    setDetailTab('overview')
+    setDetailData(null)
+    try {
+      const data = await mailboxesApi.getDetail(id)
+      setDetailData(data)
+    } catch (error: any) {
+      toast('error', error.response?.data?.detail || 'Failed to load mailbox detail')
+      setDetailMailboxId(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   // Handle OAuth callback (query params ?code=...&state=...)
   useEffect(() => {
@@ -862,8 +886,8 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('emails_sent_today')}>
                 Today <SortIcon column="emails_sent_today" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('total_emails_sent')}>
-                Total Sent <SortIcon column="total_emails_sent" />
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('total_emails_sent')} title="Outreach emails only (excludes warmup). Warmup count shown below.">
+                Outreach <SortIcon column="total_emails_sent" />
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Weighted health score (0-100): 35% bounce rate + 25% reply rate + 25% complaint rate + 15% account age. Grades: A+ (90+), A (80+), B (60+), C (40+), D (&lt;40).">Health</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase" title="Percentage of sent emails that bounced. Auto-pauses warmup if bounce rate exceeds 5%.">Bounce %</th>
@@ -878,8 +902,8 @@ export default function MailboxesPage() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredMailboxes.map((mailbox) => (
-              <tr key={mailbox.mailbox_id} className={`${!mailbox.is_active ? 'bg-gray-50' : ''} ${selectedIds.has(mailbox.mailbox_id) ? 'bg-blue-50' : ''}`}>
-                <td className="px-4 py-4">
+              <tr key={mailbox.mailbox_id} className={`${!mailbox.is_active ? 'bg-gray-50' : ''} ${selectedIds.has(mailbox.mailbox_id) ? 'bg-blue-50' : ''} hover:bg-gray-50 cursor-pointer`} onClick={() => fetchMailboxDetail(mailbox.mailbox_id)}>
+                <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" checked={selectedIds.has(mailbox.mailbox_id)} onChange={() => toggleSelect(mailbox.mailbox_id)} className="h-4 w-4 text-blue-600 border-gray-300 rounded cursor-pointer" />
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
@@ -913,7 +937,12 @@ export default function MailboxesPage() {
                     <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(100, (mailbox.emails_sent_today / mailbox.daily_send_limit) * 100)}%` }} />
                   </div>
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{mailbox.total_emails_sent}</td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">{mailbox.outreach_emails_sent}</div>
+                  {mailbox.warmup_emails_sent > 0 && (
+                    <div className="text-xs text-gray-400">{mailbox.warmup_emails_sent} warmup</div>
+                  )}
+                </td>
                 {/* Health Score + Grade */}
                 <td className="px-4 py-4 whitespace-nowrap">
                   {mailboxHealthMap[mailbox.mailbox_id] ? (() => {
@@ -1001,7 +1030,7 @@ export default function MailboxesPage() {
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Not Tested</span>
                   )}
                 </td>
-                <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2" onClick={(e) => e.stopPropagation()}>
                   {showArchived ? (
                     /* Archived view: Super Admin gets Restore + Permanent Delete */
                     isSuperAdmin ? (
@@ -1027,7 +1056,7 @@ export default function MailboxesPage() {
             ))}
             {filteredMailboxes.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={13} className="px-6 py-8 text-center text-gray-500">
                   {hasActiveFilters ? 'No mailboxes match your filters.' : 'No mailboxes found. Click "Add Mailbox" to create one.'}
                 </td>
               </tr>
@@ -1200,6 +1229,335 @@ export default function MailboxesPage() {
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Update Mailbox</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Mailbox Detail Modal ===== */}
+      {detailMailboxId !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {detailData?.mailbox?.email || 'Mailbox Detail'}
+                </h2>
+                {detailData?.mailbox?.display_name && (
+                  <p className="text-sm text-gray-500">{detailData.mailbox.display_name}</p>
+                )}
+              </div>
+              <button onClick={() => { setDetailMailboxId(null); setDetailData(null) }} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b px-6">
+              {(['overview', 'campaigns', 'warmup', 'settings'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setDetailTab(tab)}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px capitalize ${
+                    detailTab === tab
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-5">
+              {detailLoading ? (
+                <div className="flex items-center justify-center h-48">
+                  <div className="text-gray-500">Loading detail...</div>
+                </div>
+              ) : detailData ? (
+                <>
+                  {/* ── Tab: Overview ── */}
+                  {detailTab === 'overview' && (() => {
+                    const mb = detailData.mailbox
+                    const os = detailData.outreach_stats
+                    const health = mailboxHealthMap[mb.mailbox_id]
+                    const quotaPct = mb.daily_send_limit > 0 ? Math.min(100, (mb.emails_sent_today / mb.daily_send_limit) * 100) : 0
+                    const quotaColor = quotaPct >= 90 ? 'bg-red-500' : quotaPct >= 70 ? 'bg-yellow-500' : 'bg-green-500'
+                    return (
+                      <div className="space-y-5">
+                        {/* Stat cards */}
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="bg-blue-50 rounded-lg p-4">
+                            <div className="text-2xl font-bold text-blue-700">{mb.outreach_emails_sent}</div>
+                            <div className="text-xs text-blue-600 mt-1">Outreach Emails</div>
+                          </div>
+                          <div className="bg-purple-50 rounded-lg p-4">
+                            <div className="text-2xl font-bold text-purple-700">{mb.warmup_emails_sent}</div>
+                            <div className="text-xs text-purple-600 mt-1">Warmup Emails</div>
+                          </div>
+                          <div className="bg-green-50 rounded-lg p-4">
+                            <div className="text-2xl font-bold text-green-700">
+                              {os.sent > 0 ? ((os.replied / os.sent) * 100).toFixed(1) : '0.0'}%
+                            </div>
+                            <div className="text-xs text-green-600 mt-1">Reply Rate</div>
+                          </div>
+                        </div>
+
+                        {/* Daily Quota */}
+                        <div className="bg-white border rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-medium text-gray-700">Daily Quota</span>
+                            <span className="text-sm text-gray-500">{mb.emails_sent_today} / {mb.daily_send_limit}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div className={`${quotaColor} h-3 rounded-full transition-all`} style={{ width: `${quotaPct}%` }} />
+                          </div>
+                        </div>
+
+                        {/* Deliverability Health */}
+                        {health && (
+                          <div className="bg-white border rounded-lg p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Deliverability Health</h4>
+                            <div className="grid grid-cols-4 gap-3 text-center">
+                              <div>
+                                <div className="text-lg font-bold text-gray-900">{health.health_score}</div>
+                                <div className="text-xs text-gray-500">Health Score</div>
+                              </div>
+                              <div>
+                                <div className={`text-lg font-bold ${health.bounce_rate_pct > 5 ? 'text-red-600' : 'text-gray-900'}`}>{health.bounce_rate_pct}%</div>
+                                <div className="text-xs text-gray-500">Bounce Rate</div>
+                              </div>
+                              <div>
+                                <div className={`text-lg font-bold ${health.complaint_rate_pct > 0.3 ? 'text-red-600' : 'text-gray-900'}`}>{health.complaint_rate_pct}%</div>
+                                <div className="text-xs text-gray-500">Complaint Rate</div>
+                              </div>
+                              <div>
+                                <div className="text-lg font-bold text-gray-900">{(health.engagement_rate * 100).toFixed(0)}%</div>
+                                <div className="text-xs text-gray-500">Engagement</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Outreach Breakdown */}
+                        <div className="bg-white border rounded-lg p-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Outreach Breakdown</h4>
+                          <div className="grid grid-cols-4 gap-3 text-center">
+                            <div>
+                              <div className="text-lg font-bold text-gray-900">{os.sent}</div>
+                              <div className="text-xs text-gray-500">Sent</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-bold text-green-600">{os.replied}</div>
+                              <div className="text-xs text-gray-500">Replied</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-bold text-red-600">{os.bounced}</div>
+                              <div className="text-xs text-gray-500">Bounced</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-bold text-gray-400">{os.skipped}</div>
+                              <div className="text-xs text-gray-500">Skipped</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* ── Tab: Campaigns ── */}
+                  {detailTab === 'campaigns' && (
+                    <div className="space-y-3">
+                      {detailData.campaigns.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">No campaigns using this mailbox yet</div>
+                      ) : (
+                        detailData.campaigns.map((c: any) => {
+                          const statusColors: Record<string, string> = {
+                            active: 'bg-green-100 text-green-800',
+                            draft: 'bg-gray-100 text-gray-600',
+                            paused: 'bg-yellow-100 text-yellow-800',
+                            completed: 'bg-blue-100 text-blue-800',
+                            archived: 'bg-gray-100 text-gray-500',
+                          }
+                          return (
+                            <div key={c.campaign_id} className="border rounded-lg p-4 hover:bg-gray-50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium text-gray-900">{c.name}</div>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${statusColors[c.status] || 'bg-gray-100'}`}>
+                                    {c.status}
+                                  </span>
+                                </div>
+                                <div className="text-right text-sm">
+                                  <div className="text-gray-900">{c.total_sent} sent</div>
+                                  <div className="text-green-600">{c.total_replied} replied</div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Tab: Warmup ── */}
+                  {detailTab === 'warmup' && (() => {
+                    const mb = detailData.mailbox
+                    return (
+                      <div className="space-y-4">
+                        {/* Warmup summary */}
+                        <div className="bg-white border rounded-lg p-4">
+                          <div className="grid grid-cols-4 gap-3 text-center">
+                            <div>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${WARMUP_STATUS_LABELS[mb.warmup_status]?.color || 'bg-gray-100'}`}>
+                                {WARMUP_STATUS_LABELS[mb.warmup_status]?.label || mb.warmup_status}
+                              </span>
+                              <div className="text-xs text-gray-500 mt-1">Status</div>
+                            </div>
+                            <div>
+                              <div className="text-lg font-bold text-gray-900">{mb.warmup_days_completed}</div>
+                              <div className="text-xs text-gray-500">Days Done</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{mb.warmup_started_at ? new Date(mb.warmup_started_at).toLocaleDateString() : '-'}</div>
+                              <div className="text-xs text-gray-500">Started</div>
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{mb.warmup_completed_at ? new Date(mb.warmup_completed_at).toLocaleDateString() : '-'}</div>
+                              <div className="text-xs text-gray-500">Completed</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Daily log table */}
+                        {detailData.warmup_logs.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">No warmup logs in the last 30 days</div>
+                        ) : (
+                          <div className="border rounded-lg overflow-hidden">
+                            <table className="min-w-full text-xs">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Date</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Day</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Phase</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Sent</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Received</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Opens</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Replies</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Bounces</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-600">Health</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {detailData.warmup_logs.map((log: any, i: number) => (
+                                  <tr key={i} className="hover:bg-gray-50">
+                                    <td className="px-3 py-2 text-gray-800">{log.log_date}</td>
+                                    <td className="px-3 py-2 text-gray-600">{log.warmup_day}</td>
+                                    <td className="px-3 py-2 text-gray-600">{log.phase}</td>
+                                    <td className="px-3 py-2 text-gray-800">{log.emails_sent}</td>
+                                    <td className="px-3 py-2 text-gray-600">{log.emails_received}</td>
+                                    <td className="px-3 py-2 text-gray-600">{log.opens}</td>
+                                    <td className="px-3 py-2 text-green-600">{log.replies}</td>
+                                    <td className="px-3 py-2 text-red-600">{log.bounces}</td>
+                                    <td className="px-3 py-2">
+                                      <span className={`font-medium ${log.health_score >= 80 ? 'text-green-600' : log.health_score >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                        {log.health_score}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* ── Tab: Settings (read-only) ── */}
+                  {detailTab === 'settings' && (() => {
+                    const mb = detailData.mailbox
+                    let sigPreview: any = null
+                    if (mb.email_signature_json) {
+                      try { sigPreview = JSON.parse(mb.email_signature_json) } catch {}
+                    }
+                    return (
+                      <div className="space-y-4">
+                        {/* Connection */}
+                        <div className="bg-white border rounded-lg p-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Connection</h4>
+                          <div className="grid grid-cols-2 gap-y-2 text-sm">
+                            <div className="text-gray-500">Provider</div>
+                            <div className="text-gray-900">{PROVIDER_LABELS[mb.provider] || mb.provider}</div>
+                            <div className="text-gray-500">Auth Method</div>
+                            <div className="text-gray-900">{mb.auth_method === 'oauth2' ? 'OAuth2' : 'Password'}{mb.oauth_connected ? ' (Connected)' : ''}</div>
+                            <div className="text-gray-500">SMTP</div>
+                            <div className="text-gray-900 font-mono text-xs">{mb.smtp_host || '-'}:{mb.smtp_port}</div>
+                            <div className="text-gray-500">IMAP</div>
+                            <div className="text-gray-900 font-mono text-xs">{mb.imap_host || '-'}:{mb.imap_port}</div>
+                            <div className="text-gray-500">Daily Limit</div>
+                            <div className="text-gray-900">{mb.daily_send_limit}</div>
+                            <div className="text-gray-500">Connection Status</div>
+                            <div>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                mb.connection_status === 'successful' ? 'bg-green-100 text-green-800' :
+                                mb.connection_status === 'failed' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-500'
+                              }`}>
+                                {mb.connection_status || 'untested'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Email Signature */}
+                        {sigPreview && Object.values(sigPreview).some((v: any) => v) && (
+                          <div className="bg-white border rounded-lg p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-3">Email Signature</h4>
+                            <div className="border rounded-lg p-3 bg-gray-50">
+                              <div style={{ borderTop: '1px solid #cccccc', paddingTop: '10px', fontFamily: 'Arial, sans-serif' }}>
+                                {sigPreview.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigPreview.sender_name}</div>}
+                                {sigPreview.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigPreview.title}</div>}
+                                {sigPreview.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigPreview.company}</div>}
+                                {(sigPreview.phone || sigPreview.email) && (
+                                  <div style={{ fontSize: '12px', color: '#666666' }}>{[sigPreview.phone, sigPreview.email].filter(Boolean).join(' | ')}</div>
+                                )}
+                                {sigPreview.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigPreview.website}</span></div>}
+                                {sigPreview.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigPreview.address}</div>}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Notes */}
+                        {mb.notes && (
+                          <div className="bg-white border rounded-lg p-4">
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Notes</h4>
+                            <p className="text-sm text-gray-600">{mb.notes}</p>
+                          </div>
+                        )}
+
+                        {/* Metadata */}
+                        <div className="bg-white border rounded-lg p-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Metadata</h4>
+                          <div className="grid grid-cols-2 gap-y-2 text-sm">
+                            <div className="text-gray-500">Mailbox ID</div>
+                            <div className="text-gray-900 font-mono">{mb.mailbox_id}</div>
+                            <div className="text-gray-500">Created</div>
+                            <div className="text-gray-900">{new Date(mb.created_at).toLocaleString()}</div>
+                            <div className="text-gray-500">Updated</div>
+                            <div className="text-gray-900">{new Date(mb.updated_at).toLocaleString()}</div>
+                            <div className="text-gray-500">Last Sent</div>
+                            <div className="text-gray-900">{mb.last_sent_at ? new Date(mb.last_sent_at).toLocaleString() : 'Never'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       )}

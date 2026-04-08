@@ -72,6 +72,8 @@ class SenderMailboxResponse(SenderMailboxBase):
     is_active: bool
     emails_sent_today: int
     total_emails_sent: int
+    warmup_emails_sent: int = 0
+    outreach_emails_sent: int = 0
     last_sent_at: Optional[datetime] = None
     bounce_count: int
     reply_count: int

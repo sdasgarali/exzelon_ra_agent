@@ -166,6 +166,8 @@ async def oauth_callback(
 
 def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
     """Convert mailbox model to response schema."""
+    warmup_sent = mailbox.warmup_emails_sent or 0
+    outreach_sent = max(0, (mailbox.total_emails_sent or 0) - warmup_sent)
     return SenderMailboxResponse(
         mailbox_id=mailbox.mailbox_id,
         email=mailbox.email,
@@ -180,6 +182,8 @@ def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
         daily_send_limit=mailbox.daily_send_limit,
         emails_sent_today=mailbox.emails_sent_today,
         total_emails_sent=mailbox.total_emails_sent,
+        warmup_emails_sent=warmup_sent,
+        outreach_emails_sent=outreach_sent,
         last_sent_at=mailbox.last_sent_at,
         bounce_count=mailbox.bounce_count,
         reply_count=mailbox.reply_count,
@@ -314,6 +318,123 @@ async def get_mailbox(
             detail="Mailbox not found"
         )
     return mailbox_to_response(mailbox)
+
+
+@router.get("/{mailbox_id}/detail")
+async def get_mailbox_detail(
+    mailbox_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get detailed mailbox info: stats, campaigns, warmup logs."""
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from app.db.models.campaign import Campaign
+    from app.db.models.warmup_daily_log import WarmupDailyLog
+    from datetime import timedelta
+    import json as _json
+
+    # Verify mailbox exists and belongs to tenant
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = query.first()
+    if not mailbox:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mailbox not found")
+
+    # --- Outreach stats ---
+    outreach_rows = (
+        db.query(OutreachEvent.status, func.count(OutreachEvent.event_id))
+        .filter(OutreachEvent.sender_mailbox_id == mailbox_id)
+        .group_by(OutreachEvent.status)
+        .all()
+    )
+    status_counts = {s: c for s, c in outreach_rows}
+    sent_count = status_counts.get(OutreachStatus.SENT, 0) if OutreachStatus.SENT in status_counts else status_counts.get("sent", 0)
+    replied_count = status_counts.get(OutreachStatus.REPLIED, 0) if OutreachStatus.REPLIED in status_counts else status_counts.get("replied", 0)
+    bounced_count = status_counts.get(OutreachStatus.BOUNCED, 0) if OutreachStatus.BOUNCED in status_counts else status_counts.get("bounced", 0)
+    skipped_count = status_counts.get(OutreachStatus.SKIPPED, 0) if OutreachStatus.SKIPPED in status_counts else status_counts.get("skipped", 0)
+    total_outreach = sent_count + replied_count + bounced_count + skipped_count
+
+    outreach_stats = {
+        "total": total_outreach,
+        "sent": sent_count,
+        "replied": replied_count,
+        "bounced": bounced_count,
+        "skipped": skipped_count,
+    }
+
+    # --- Campaigns using this mailbox ---
+    campaigns_list = []
+    try:
+        campaign_query = db.query(Campaign).filter(Campaign.mailbox_ids_json.isnot(None))
+        if tenant_id is not None:
+            campaign_query = campaign_query.filter(Campaign.tenant_id == tenant_id)
+        all_campaigns = campaign_query.all()
+
+        for c in all_campaigns:
+            try:
+                ids = _json.loads(c.mailbox_ids_json) if c.mailbox_ids_json else []
+                if mailbox_id in ids:
+                    # Get outreach stats for this campaign + mailbox
+                    c_stats = (
+                        db.query(OutreachEvent.status, func.count(OutreachEvent.event_id))
+                        .filter(
+                            OutreachEvent.campaign_id == c.campaign_id,
+                            OutreachEvent.sender_mailbox_id == mailbox_id,
+                        )
+                        .group_by(OutreachEvent.status)
+                        .all()
+                    )
+                    c_counts = {s: cnt for s, cnt in c_stats}
+                    c_sent = c_counts.get(OutreachStatus.SENT, 0) if OutreachStatus.SENT in c_counts else c_counts.get("sent", 0)
+                    c_replied = c_counts.get(OutreachStatus.REPLIED, 0) if OutreachStatus.REPLIED in c_counts else c_counts.get("replied", 0)
+                    campaigns_list.append({
+                        "campaign_id": c.campaign_id,
+                        "name": c.name,
+                        "status": c.status.value if hasattr(c.status, 'value') else str(c.status),
+                        "total_sent": c_sent + c_replied,
+                        "total_replied": c_replied,
+                    })
+            except (ValueError, TypeError):
+                continue
+    except Exception as e:
+        logger.warning("Failed to load campaigns for mailbox detail", error=str(e))
+
+    # --- Warmup logs (last 30 days) ---
+    warmup_logs = []
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        logs = (
+            db.query(WarmupDailyLog)
+            .filter(
+                WarmupDailyLog.mailbox_id == mailbox_id,
+                WarmupDailyLog.log_date >= cutoff.date(),
+            )
+            .order_by(WarmupDailyLog.log_date.desc())
+            .all()
+        )
+        for log in logs:
+            warmup_logs.append({
+                "log_date": str(log.log_date),
+                "warmup_day": log.warmup_day,
+                "phase": log.phase,
+                "emails_sent": log.emails_sent,
+                "emails_received": log.emails_received,
+                "opens": log.opens,
+                "replies": log.replies,
+                "bounces": log.bounces,
+                "health_score": round(log.health_score, 1) if log.health_score else 0.0,
+            })
+    except Exception as e:
+        logger.warning("Failed to load warmup logs for mailbox detail", error=str(e))
+
+    return {
+        "mailbox": mailbox_to_response(mailbox),
+        "outreach_stats": outreach_stats,
+        "campaigns": campaigns_list,
+        "warmup_logs": warmup_logs,
+    }
 
 
 @router.post("", response_model=SenderMailboxResponse)
