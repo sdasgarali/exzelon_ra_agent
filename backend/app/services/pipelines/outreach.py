@@ -269,12 +269,16 @@ def render_signature_html(sig_json: str) -> str:
         + '</div>'
     )
 
-def get_active_template(db):
-    """Get the currently active email template, if any."""
-    from app.db.models.email_template import EmailTemplate, TemplateStatus
-    return db.query(EmailTemplate).filter(
-        EmailTemplate.status == TemplateStatus.ACTIVE
-    ).first()
+def get_active_template(db, category: str = "outreach", tenant_id: Optional[int] = None):
+    """Get the currently active email template for a given category, if any."""
+    from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
+    query = db.query(EmailTemplate).filter(
+        EmailTemplate.status == TemplateStatus.ACTIVE,
+        EmailTemplate.category == category,
+    )
+    if tenant_id:
+        query = query.filter(EmailTemplate.tenant_id == tenant_id)
+    return query.first()
 
 
 def generate_unsub_footer(tracking_id: str, base_url: str = "") -> Dict[str, str]:
@@ -683,7 +687,7 @@ def run_outreach_send_pipeline(
         ).all()
 
         # Get active email template
-        active_template = get_active_template(db)
+        active_template = get_active_template(db, category="outreach", tenant_id=tenant_id)
         used_template_id = active_template.template_id if active_template else None
 
         sent_count = 0
@@ -941,7 +945,7 @@ def run_outreach_for_lead(
             return {"message": "No contacts found for this lead", **counters}
 
         # Get active email template
-        active_template = get_active_template(db)
+        active_template = get_active_template(db, category="outreach", tenant_id=tenant_id)
         used_template_id = active_template.template_id if active_template else None
 
         for contact in contacts:

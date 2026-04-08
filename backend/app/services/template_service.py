@@ -1,7 +1,7 @@
 """Email template business logic service."""
 import html
 from sqlalchemy.orm import Session
-from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
 
 
 def preview_template(db: Session, template_id: int) -> dict | None:
@@ -60,6 +60,7 @@ def duplicate_template(db: Session, template_id: int) -> EmailTemplate | None:
         body_html=template.body_html,
         body_text=template.body_text,
         status=TemplateStatus.INACTIVE,
+        category=template.category,
         is_default=False,
         description=template.description,
     )

@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from app.db.models.email_template import TemplateStatus
+from app.db.models.email_template import TemplateStatus, TemplateCategory
 
 
 class EmailTemplateCreate(BaseModel):
@@ -13,6 +13,7 @@ class EmailTemplateCreate(BaseModel):
     body_text: Optional[str] = None
     description: Optional[str] = None
     status: TemplateStatus = TemplateStatus.INACTIVE
+    category: TemplateCategory = TemplateCategory.OUTREACH
 
 
 class EmailTemplateUpdate(BaseModel):
@@ -23,6 +24,7 @@ class EmailTemplateUpdate(BaseModel):
     body_text: Optional[str] = None
     description: Optional[str] = None
     status: Optional[TemplateStatus] = None
+    category: Optional[TemplateCategory] = None
 
 
 class EmailTemplateResponse(BaseModel):
@@ -33,6 +35,7 @@ class EmailTemplateResponse(BaseModel):
     body_html: str
     body_text: Optional[str] = None
     status: TemplateStatus
+    category: TemplateCategory = TemplateCategory.OUTREACH
     is_default: bool
     description: Optional[str] = None
     is_archived: bool = False
@@ -47,4 +50,6 @@ class EmailTemplateListResponse(BaseModel):
     """Schema for listing email templates."""
     items: List[EmailTemplateResponse]
     total: int
-    active_template_id: Optional[int] = None
+    active_template_id: Optional[int] = None  # kept for backward compat
+    active_outreach_template_id: Optional[int] = None
+    active_followup_template_id: Optional[int] = None

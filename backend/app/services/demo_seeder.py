@@ -8,7 +8,7 @@ from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.contact import ContactDetails
 from app.db.models.client import ClientInfo
 from app.db.models.campaign import Campaign, CampaignStatus
-from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
 from app.db.models.deal import Deal, DealStage
 
 logger = structlog.get_logger()
@@ -132,6 +132,7 @@ def seed_demo_data(tenant_id: int, db: Session) -> dict:
                 body_html="Hi {{first_name}},<br><br>I noticed {{company}} is hiring for a {{title}} role. I help companies find top talent faster.<br><br>Would you be open to a quick 15-minute call this week?<br><br>Best,<br>{{sender_name}}",
                 body_text="Hi {{first_name}},\n\nI noticed {{company}} is hiring for a {{title}} role. I help companies find top talent faster.\n\nWould you be open to a quick 15-minute call this week?\n\nBest,\n{{sender_name}}",
                 status=TemplateStatus.ACTIVE,
+                category=TemplateCategory.OUTREACH,
             ),
             EmailTemplate(
                 tenant_id=tenant_id,
@@ -139,7 +140,8 @@ def seed_demo_data(tenant_id: int, db: Session) -> dict:
                 subject="Re: {{title}} position",
                 body_html="Hi {{first_name}},<br><br>Just following up on my previous email about the {{title}} opportunity at {{company}}.<br><br>I have several qualified candidates who could be a great fit. Would you have 10 minutes to discuss?<br><br>Best regards,<br>{{sender_name}}",
                 body_text="Hi {{first_name}},\n\nJust following up on my previous email about the {{title}} opportunity at {{company}}.\n\nI have several qualified candidates who could be a great fit. Would you have 10 minutes to discuss?\n\nBest regards,\n{{sender_name}}",
-                status=TemplateStatus.INACTIVE,
+                status=TemplateStatus.ACTIVE,
+                category=TemplateCategory.FOLLOWUP,
             ),
         ]
         for t in templates:

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, DragEvent } from 'react'
 import DOMPurify from 'dompurify'
 import { templatesApi } from '@/lib/api'
 import {
@@ -13,7 +13,10 @@ import {
   FileEdit,
   Info,
   Zap,
+  GripVertical,
 } from 'lucide-react'
+
+type TemplateCategory = 'outreach' | 'followup'
 
 interface EmailTemplate {
   template_id: number
@@ -22,6 +25,7 @@ interface EmailTemplate {
   body_html: string
   body_text: string | null
   status: 'active' | 'inactive'
+  category: TemplateCategory
   is_default: boolean
   description: string | null
   created_at: string
@@ -35,6 +39,7 @@ interface TemplateForm {
   body_text: string
   description: string
   status: 'active' | 'inactive'
+  category: TemplateCategory
 }
 
 const emptyForm: TemplateForm = {
@@ -44,11 +49,24 @@ const emptyForm: TemplateForm = {
   body_text: '',
   description: '',
   status: 'inactive',
+  category: 'outreach',
 }
+
+const PLACEHOLDERS = [
+  { tag: '{{contact_first_name}}', label: 'Recipient first name' },
+  { tag: '{{sender_first_name}}', label: 'Sender first name' },
+  { tag: '{{job_title}}', label: 'Job title from lead' },
+  { tag: '{{job_location}}', label: 'Job location' },
+  { tag: '{{company_name}}', label: 'Company name' },
+  { tag: '{{signature}}', label: 'Mailbox email signature' },
+  { tag: '{{logo_url}}', label: 'Company logo URL' },
+  { tag: '{{unsubscribe_link}}', label: 'Unsubscribe link' },
+]
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
-  const [activeTemplateId, setActiveTemplateId] = useState<number | null>(null)
+  const [activeOutreachId, setActiveOutreachId] = useState<number | null>(null)
+  const [activeFollowupId, setActiveFollowupId] = useState<number | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -58,6 +76,12 @@ export default function TemplatesPage() {
   const [form, setForm] = useState<TemplateForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [dragOverField, setDragOverField] = useState<string | null>(null)
+
+  // Refs for drop targets
+  const subjectRef = useRef<HTMLInputElement>(null)
+  const bodyHtmlRef = useRef<HTMLTextAreaElement>(null)
+  const bodyTextRef = useRef<HTMLTextAreaElement>(null)
 
   const fetchTemplates = async () => {
     try {
@@ -65,7 +89,8 @@ export default function TemplatesPage() {
       setError('')
       const data = await templatesApi.list(showArchived ? { show_archived: true } : {})
       setTemplates(data.items || [])
-      setActiveTemplateId(data.active_template_id)
+      setActiveOutreachId(data.active_outreach_template_id ?? data.active_template_id ?? null)
+      setActiveFollowupId(data.active_followup_template_id ?? null)
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
         setError(err.response?.data?.detail || 'Failed to load templates')
@@ -95,6 +120,7 @@ export default function TemplatesPage() {
       body_text: template.body_text || '',
       description: template.description || '',
       status: template.status,
+      category: template.category || 'outreach',
     })
     setShowModal(true)
     setError('')
@@ -108,7 +134,6 @@ export default function TemplatesPage() {
     setSaving(true)
     setError('')
     try {
-      // Never send status via create/edit — use the Activate button instead
       const { status: _status, ...payload } = form
       if (editingId) {
         await templatesApi.update(editingId, payload)
@@ -153,7 +178,61 @@ export default function TemplatesPage() {
     }
   }
 
-  const activeTemplate = templates.find((t) => t.template_id === activeTemplateId)
+  // --- Drag & Drop helpers ---
+  const handleDragStart = (e: DragEvent, tag: string) => {
+    e.dataTransfer.setData('text/plain', tag)
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+
+  const insertAtCursor = (
+    ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
+    fieldKey: keyof TemplateForm,
+    tag: string,
+  ) => {
+    const el = ref.current
+    if (!el) {
+      setForm((prev) => ({ ...prev, [fieldKey]: prev[fieldKey] + tag }))
+      return
+    }
+    const start = el.selectionStart ?? el.value.length
+    const end = el.selectionEnd ?? start
+    const before = el.value.slice(0, start)
+    const after = el.value.slice(end)
+    const newVal = before + tag + after
+    setForm((prev) => ({ ...prev, [fieldKey]: newVal }))
+    // Restore cursor after React re-render
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + tag.length
+      el.setSelectionRange(pos, pos)
+    })
+  }
+
+  const handleDropOnField = (
+    e: DragEvent,
+    ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
+    fieldKey: keyof TemplateForm,
+  ) => {
+    e.preventDefault()
+    setDragOverField(null)
+    const tag = e.dataTransfer.getData('text/plain')
+    if (!tag) return
+    insertAtCursor(ref, fieldKey, tag)
+  }
+
+  const handleDragOverField = (e: DragEvent, fieldName: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOverField(fieldName)
+  }
+
+  const handleClickPlaceholder = (tag: string) => {
+    // Insert into the body_html field by default (most common target)
+    insertAtCursor(bodyHtmlRef, 'body_html', tag)
+  }
+
+  const activeOutreach = templates.find((t) => t.template_id === activeOutreachId)
+  const activeFollowup = templates.find((t) => t.template_id === activeFollowupId)
 
   if (loading) {
     return (
@@ -170,20 +249,31 @@ export default function TemplatesPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Email Templates</h1>
           <p className="text-gray-500 mt-1">
-            Manage email templates for outreach campaigns. Only one template can be active at a time.
+            Manage email templates for outreach campaigns. One template can be active per category.
           </p>
         </div>
-        <button
-          onClick={handleCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Create Template
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Show Archived</span>
+          </label>
+          <button
+            onClick={handleCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Template
+          </button>
+        </div>
       </div>
 
       {/* Error banner */}
-      {error && (
+      {error && !showModal && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{error}</span>
           <button onClick={() => setError('')}>
@@ -192,15 +282,29 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* Active Template Card */}
-      {activeTemplate && (
-        <div className="border-2 border-green-400 bg-green-50 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <h3 className="font-semibold text-green-800">Active Template</h3>
-          </div>
-          <p className="text-green-900 font-medium">{activeTemplate.name}</p>
-          <p className="text-green-700 text-sm mt-1">Subject: {activeTemplate.subject}</p>
+      {/* Active Template Cards — side by side */}
+      {(activeOutreach || activeFollowup) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {activeOutreach && (
+            <div className="border-2 border-green-400 bg-green-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <h3 className="font-semibold text-green-800">Active Outreach Template</h3>
+              </div>
+              <p className="text-green-900 font-medium">{activeOutreach.name}</p>
+              <p className="text-green-700 text-sm mt-1">Subject: {activeOutreach.subject}</p>
+            </div>
+          )}
+          {activeFollowup && (
+            <div className="border-2 border-blue-400 bg-blue-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="w-5 h-5 text-blue-600" />
+                <h3 className="font-semibold text-blue-800">Active Follow-up Template</h3>
+              </div>
+              <p className="text-blue-900 font-medium">{activeFollowup.name}</p>
+              <p className="text-blue-700 text-sm mt-1">Subject: {activeFollowup.subject}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -211,6 +315,9 @@ export default function TemplatesPage() {
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Name
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Category
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Subject
@@ -229,7 +336,7 @@ export default function TemplatesPage() {
           <tbody className="bg-white divide-y divide-gray-200">
             {templates.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                   No templates yet. Create your first template to get started.
                 </td>
               </tr>
@@ -246,6 +353,17 @@ export default function TemplatesPage() {
                         )}
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        template.category === 'followup'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-purple-100 text-purple-800'
+                      }`}
+                    >
+                      {template.category === 'followup' ? 'Follow-up' : 'Outreach'}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900 max-w-xs truncate">{template.subject}</div>
@@ -307,11 +425,12 @@ export default function TemplatesPage() {
         </table>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Create/Edit Modal — Two-column layout with placeholder panel */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b">
+          <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal header */}
+            <div className="flex items-center justify-between p-6 border-b shrink-0">
               <h2 className="text-lg font-semibold">
                 {editingId ? 'Edit Template' : 'Create Template'}
               </h2>
@@ -320,99 +439,140 @@ export default function TemplatesPage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., Free Candidate Preview"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line *</label>
-                <input
-                  type="text"
-                  value={form.subject}
-                  onChange={(e) => setForm({ ...form, subject: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., Free candidate preview for {{job_title}} position"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <input
-                  type="text"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Brief description of when to use this template"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HTML Body *</label>
-                <textarea
-                  value={form.body_html}
-                  onChange={(e) => setForm({ ...form, body_html: e.target.value })}
-                  rows={12}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="<p>Hi {{contact_first_name}},</p>..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Plain Text Body</label>
-                <textarea
-                  value={form.body_text}
-                  onChange={(e) => setForm({ ...form, body_text: e.target.value })}
-                  rows={6}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Hi {{contact_first_name}},..."
-                />
-              </div>
-
-              {/* Placeholder reference */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
+            {/* Modal body — two columns */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* Left: Placeholder panel */}
+              <div className="w-56 shrink-0 bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto">
+                <div className="flex items-center gap-2 mb-3">
                   <Info className="w-4 h-4 text-blue-600" />
-                  <h4 className="text-sm font-medium text-blue-800">Available Placeholders</h4>
+                  <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Placeholders</h4>
                 </div>
-                <div className="flex items-center gap-4 mb-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm font-medium text-gray-700">Show Archived</span>
-          </label>
-      </div>
+                <p className="text-xs text-gray-500 mb-3">Drag into any field or click to insert into HTML body.</p>
+                <div className="space-y-1.5">
+                  {PLACEHOLDERS.map(({ tag, label }) => (
+                    <div
+                      key={tag}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, tag)}
+                      onClick={() => handleClickPlaceholder(tag)}
+                      className="flex items-center gap-2 px-2.5 py-2 bg-white border border-gray-200 rounded-md cursor-grab active:cursor-grabbing hover:border-blue-400 hover:bg-blue-50 transition-colors group select-none"
+                      title={`Drag or click to insert ${tag}`}
+                    >
+                      <GripVertical className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-mono text-blue-700 truncate">{tag}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{label}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-      <div className="grid grid-cols-2 gap-1 text-xs text-blue-700">
-                  <div><code>{'{{contact_first_name}}'}</code> — Recipient first name</div>
-                  <div><code>{'{{sender_first_name}}'}</code> — Sender first name</div>
-                  <div><code>{'{{job_title}}'}</code> — Job title from lead</div>
-                  <div><code>{'{{job_location}}'}</code> — Job location</div>
-                  <div><code>{'{{company_name}}'}</code> — Company name</div>
-                  <div><code>{'{{signature}}'}</code> — Mailbox email signature</div>
-                  <div><code>{'{{logo_url}}'}</code> — Company logo URL</div>
+              {/* Right: Form fields */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                    {error}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
+                    <input
+                      type="text"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="e.g., Free Candidate Preview"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                    <select
+                      value={form.category}
+                      onChange={(e) => setForm({ ...form, category: e.target.value as TemplateCategory })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="outreach">Outreach</option>
+                      <option value="followup">Follow-up</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Subject Line *</label>
+                  <input
+                    ref={subjectRef}
+                    type="text"
+                    value={form.subject}
+                    onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                    onDrop={(e) => handleDropOnField(e, subjectRef, 'subject')}
+                    onDragOver={(e) => handleDragOverField(e, 'subject')}
+                    onDragLeave={() => setDragOverField(null)}
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                      dragOverField === 'subject'
+                        ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200'
+                        : 'border-gray-300'
+                    }`}
+                    placeholder="e.g., Free candidate preview for {{job_title}} position"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Brief description of when to use this template"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HTML Body *</label>
+                  <textarea
+                    ref={bodyHtmlRef}
+                    value={form.body_html}
+                    onChange={(e) => setForm({ ...form, body_html: e.target.value })}
+                    onDrop={(e) => handleDropOnField(e, bodyHtmlRef, 'body_html')}
+                    onDragOver={(e) => handleDragOverField(e, 'body_html')}
+                    onDragLeave={() => setDragOverField(null)}
+                    rows={12}
+                    className={`w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                      dragOverField === 'body_html'
+                        ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200'
+                        : 'border-gray-300'
+                    }`}
+                    placeholder="<p>Hi {{contact_first_name}},</p>..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Plain Text Body</label>
+                  <textarea
+                    ref={bodyTextRef}
+                    value={form.body_text}
+                    onChange={(e) => setForm({ ...form, body_text: e.target.value })}
+                    onDrop={(e) => handleDropOnField(e, bodyTextRef, 'body_text')}
+                    onDragOver={(e) => handleDragOverField(e, 'body_text')}
+                    onDragLeave={() => setDragOverField(null)}
+                    rows={6}
+                    className={`w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
+                      dragOverField === 'body_text'
+                        ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200'
+                        : 'border-gray-300'
+                    }`}
+                    placeholder="Hi {{contact_first_name}},..."
+                  />
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
+            {/* Modal footer */}
+            <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50 shrink-0">
               <button
                 onClick={() => setShowModal(false)}
                 className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100"

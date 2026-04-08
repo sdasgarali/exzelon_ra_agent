@@ -267,7 +267,7 @@ def generate_pipeline_drafts(
         ContactDetails.tenant_id == tenant_id,
     ).limit(limit * 3).all()  # over-fetch to account for ineligible
 
-    active_template = get_active_template(db)
+    active_template = get_active_template(db, category="outreach", tenant_id=tenant_id)
 
     for contact in contacts:
         if drafts_created >= limit:

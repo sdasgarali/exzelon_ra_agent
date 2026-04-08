@@ -353,11 +353,11 @@ async def get_dashboard_stats(
         SenderMailbox.warmup_status, func.count(SenderMailbox.mailbox_id)
     ).group_by(SenderMailbox.warmup_status).all()
 
-    # Templates (no tenant_id yet — Phase 3)
-    total_templates = db.query(EmailTemplate).with_entities(
+    # Templates (tenant-scoped)
+    total_templates = tenant_filter(db.query(EmailTemplate), EmailTemplate, tenant_id).with_entities(
         func.count(EmailTemplate.template_id)
     ).scalar() or 0
-    active_templates = db.query(EmailTemplate).filter(
+    active_templates = tenant_filter(db.query(EmailTemplate), EmailTemplate, tenant_id).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE
     ).with_entities(func.count(EmailTemplate.template_id)).scalar() or 0
 

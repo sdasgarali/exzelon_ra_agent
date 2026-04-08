@@ -16,7 +16,7 @@ from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
 from app.db.models.warmup_profile import WarmupProfile
 from app.db.models.dns_check_result import DNSCheckResult
 from app.db.models.blacklist_check_result import BlacklistCheckResult
-from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
 from app.db.models.campaign import Campaign, SequenceStep, CampaignContact, CampaignStatus, StepType, CampaignContactStatus
 from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.db.models.webhook import Webhook, WebhookDelivery
@@ -72,6 +72,7 @@ __all__ = [
     "BlacklistCheckResult",
     "EmailTemplate",
     "TemplateStatus",
+    "TemplateCategory",
     "Campaign",
     "SequenceStep",
     "CampaignContact",

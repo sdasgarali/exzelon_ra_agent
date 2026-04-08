@@ -10,6 +10,12 @@ class TemplateStatus(str, PyEnum):
     INACTIVE = "inactive"
 
 
+class TemplateCategory(str, PyEnum):
+    """Email template category."""
+    OUTREACH = "outreach"
+    FOLLOWUP = "followup"
+
+
 class EmailTemplate(Base):
     """Email template model for managing outreach email templates."""
 
@@ -22,11 +28,13 @@ class EmailTemplate(Base):
     body_html = Column(Text, nullable=False)
     body_text = Column(Text, nullable=True)
     status = Column(Enum(TemplateStatus, values_callable=lambda x: [e.value for e in x]), default=TemplateStatus.INACTIVE, nullable=False)
+    category = Column(Enum(TemplateCategory, values_callable=lambda x: [e.value for e in x]), default=TemplateCategory.OUTREACH, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     description = Column(Text, nullable=True)
 
     __table_args__ = (
         Index("idx_template_tenant", "tenant_id"),
+        Index("idx_template_tenant_category_status", "tenant_id", "category", "status"),
     )
 
     def __repr__(self) -> str:

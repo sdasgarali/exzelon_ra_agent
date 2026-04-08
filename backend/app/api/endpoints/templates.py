@@ -1,12 +1,12 @@
 """Email template management endpoints."""
 import html
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
-from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
 from app.schemas.email_template import (
     EmailTemplateCreate,
     EmailTemplateUpdate,
@@ -33,26 +33,42 @@ async def list_templates(
     else:
         query = query.filter(EmailTemplate.is_archived == False)
     templates = query.order_by(EmailTemplate.created_at.desc()).all()
-    active = next((t for t in templates if t.status == TemplateStatus.ACTIVE), None)
+
+    # Find active template per category
+    active_outreach = next(
+        (t for t in templates if t.status == TemplateStatus.ACTIVE and t.category == TemplateCategory.OUTREACH), None
+    )
+    active_followup = next(
+        (t for t in templates if t.status == TemplateStatus.ACTIVE and t.category == TemplateCategory.FOLLOWUP), None
+    )
+    # Backward compat: active_template_id = first active found (outreach preferred)
+    active_any = active_outreach or active_followup
+
     return EmailTemplateListResponse(
         items=[EmailTemplateResponse.model_validate(t) for t in templates],
         total=len(templates),
-        active_template_id=active.template_id if active else None,
+        active_template_id=active_any.template_id if active_any else None,
+        active_outreach_template_id=active_outreach.template_id if active_outreach else None,
+        active_followup_template_id=active_followup.template_id if active_followup else None,
     )
 
 
 @router.get("/active", response_model=Optional[EmailTemplateResponse])
 async def get_active_template(
+    category: Optional[TemplateCategory] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get the currently active email template. Always scoped to one tenant."""
+    """Get the currently active email template. Optionally filter by category."""
     effective_tenant = tenant_id or current_user.tenant_id or 1
-    template = db.query(EmailTemplate).filter(
+    query = db.query(EmailTemplate).filter(
         EmailTemplate.tenant_id == effective_tenant,
         EmailTemplate.status == TemplateStatus.ACTIVE,
-    ).first()
+    )
+    if category:
+        query = query.filter(EmailTemplate.category == category)
+    template = query.first()
     if not template:
         return None
     return EmailTemplateResponse.model_validate(template)
@@ -93,11 +109,12 @@ async def create_template(
     """Create a new email template."""
     effective_tenant = tenant_id or 1
 
-    # If creating as active, deactivate all others in the same tenant
+    # If creating as active, deactivate others in the SAME CATEGORY
     if template_in.status == TemplateStatus.ACTIVE:
         db.query(EmailTemplate).filter(
             EmailTemplate.tenant_id == effective_tenant,
             EmailTemplate.status == TemplateStatus.ACTIVE,
+            EmailTemplate.category == template_in.category,
         ).update({"status": TemplateStatus.INACTIVE})
 
     template = EmailTemplate(**template_in.model_dump())
@@ -135,11 +152,14 @@ async def update_template(
 
     update_data = template_in.model_dump(exclude_unset=True)
 
-    # If setting to active, deactivate all others in the same tenant
+    # If setting to active, deactivate others in the SAME CATEGORY
     if update_data.get("status") == TemplateStatus.ACTIVE:
+        # Use the new category if being changed, otherwise the existing one
+        effective_category = update_data.get("category", template.category)
         db.query(EmailTemplate).filter(
             EmailTemplate.tenant_id == template.tenant_id,
             EmailTemplate.status == TemplateStatus.ACTIVE,
+            EmailTemplate.category == effective_category,
             EmailTemplate.template_id != template_id,
         ).update({"status": TemplateStatus.INACTIVE})
 
@@ -193,7 +213,7 @@ async def activate_template(
     current_user: User = Depends(require_role([UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Activate a template (deactivates all others)."""
+    """Activate a template (deactivates others in the same category)."""
     template = db.query(EmailTemplate).filter(
         EmailTemplate.template_id == template_id
     ).first()
@@ -210,10 +230,11 @@ async def activate_template(
             detail="Template not found",
         )
 
-    # Deactivate all others in the same tenant as the target template
+    # Deactivate others in the SAME CATEGORY within the same tenant
     db.query(EmailTemplate).filter(
         EmailTemplate.tenant_id == template.tenant_id,
         EmailTemplate.status == TemplateStatus.ACTIVE,
+        EmailTemplate.category == template.category,
     ).update({"status": TemplateStatus.INACTIVE})
 
     template.status = TemplateStatus.ACTIVE
@@ -306,6 +327,7 @@ async def duplicate_template(
         body_html=template.body_html,
         body_text=template.body_text,
         status=TemplateStatus.INACTIVE,
+        category=template.category,
         is_default=False,
         description=template.description,
         tenant_id=tenant_id or 1,

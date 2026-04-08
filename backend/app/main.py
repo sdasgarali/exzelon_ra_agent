@@ -99,13 +99,21 @@ def _seed_warmup_profiles():
 
 
 def _seed_default_email_template():
-    """Seed the default Exzelon outreach email template if none exists."""
+    """Seed the default Exzelon outreach and follow-up email templates if none exist."""
     from app.db.base import SessionLocal
-    from app.db.models.email_template import EmailTemplate, TemplateStatus
+    from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
     db = SessionLocal()
     try:
-        existing = db.query(EmailTemplate).filter(EmailTemplate.is_default == True).first()
+        existing = db.query(EmailTemplate).filter(
+            EmailTemplate.is_default == True,
+            EmailTemplate.category == TemplateCategory.OUTREACH,
+        ).first()
         if existing:
+            # Backfill category on existing default if it's missing/null
+            if not existing.category or existing.category != TemplateCategory.OUTREACH:
+                existing.category = TemplateCategory.OUTREACH
+                db.commit()
+            _seed_default_followup_template(db)
             return
 
         default_subject = "Free candidate preview for {{job_title}} position"
@@ -178,15 +186,89 @@ def _seed_default_email_template():
             body_text=default_body_text,
             status=TemplateStatus.ACTIVE,
             is_default=True,
+            category=TemplateCategory.OUTREACH,
             description="Default Exzelon Consulting outreach template with free candidate preview offer.",
         )
         db.add(template)
         db.commit()
         logger.info("Seeded default email template")
+
+        # Seed the follow-up template after outreach
+        _seed_default_followup_template(db)
+
     except Exception as e:
         logger.error("Failed to seed default email template", error=str(e))
     finally:
         db.close()
+
+
+def _seed_default_followup_template(db):
+    """Seed the default Exzelon follow-up email template if none exists."""
+    from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
+    try:
+        existing_followup = db.query(EmailTemplate).filter(
+            EmailTemplate.is_default == True,
+            EmailTemplate.category == TemplateCategory.FOLLOWUP,
+        ).first()
+        if existing_followup:
+            return
+
+        followup_subject = "Following up — {{job_title}} at {{company_name}}"
+
+        followup_body_html = (
+            '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">\n'
+            '  <p>Hi {{contact_first_name}},</p>\n'
+            '  \n'
+            '  <p>I wanted to follow up on my previous email about the <strong>{{job_title}}</strong> opening at <strong>{{company_name}}</strong>.</p>\n'
+            '  \n'
+            '  <p>I understand you\'re busy, so I\'ll keep this brief — we have several pre-screened candidates ready for your review. No commitment needed to see their profiles.</p>\n'
+            '  \n'
+            '  <p>Would a quick 10-minute call work this week? Happy to work around your schedule.</p>\n'
+            '  \n'
+            '  <p>Best regards,</p>\n'
+            '  \n'
+            '  {{signature}}\n'
+            '  \n'
+            '  <div style="margin-top: 20px; text-align: left;">\n'
+            '    <img src="{{logo_url}}" alt="Exzelon Consulting Inc." style="max-width: 150px; height: auto;" />\n'
+            '  </div>\n'
+            '  \n'
+            '  <hr style="border: none; border-top: 1px solid #eee; margin-top: 20px;" />\n'
+            '  <p style="font-size: 11px; color: #999;">{{unsubscribe_link}}</p>\n'
+            '</div>'
+        )
+
+        followup_body_text = (
+            "Hi {{contact_first_name}},\n"
+            "\n"
+            "I wanted to follow up on my previous email about the {{job_title}} opening at {{company_name}}.\n"
+            "\n"
+            "I understand you're busy, so I'll keep this brief -- we have several pre-screened candidates ready for your review. No commitment needed to see their profiles.\n"
+            "\n"
+            "Would a quick 10-minute call work this week? Happy to work around your schedule.\n"
+            "\n"
+            "Best regards,\n"
+            "{{sender_first_name}}\n"
+            "\n"
+            "{{unsubscribe_link}}"
+        )
+
+        template = EmailTemplate(
+            tenant_id=1,
+            name="Exzelon Default Follow-up",
+            subject=followup_subject,
+            body_html=followup_body_html,
+            body_text=followup_body_text,
+            status=TemplateStatus.ACTIVE,
+            is_default=True,
+            category=TemplateCategory.FOLLOWUP,
+            description="Default Exzelon Consulting follow-up template for second touch.",
+        )
+        db.add(template)
+        db.commit()
+        logger.info("Seeded default follow-up email template")
+    except Exception as e:
+        logger.error("Failed to seed default follow-up template", error=str(e))
 
 
 def _seed_deal_stages():
@@ -1245,6 +1327,29 @@ async def lifespan(app: FastAPI):
                         pass  # Index already exists
     except Exception as e:
         logger.warning(f"Migration check for composite indexes: {e}")
+
+    # Migration: add category column to email_templates
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as sa_text_tmpl_cat
+            cols = [r[0].lower() for r in conn.execute(sa_text_tmpl_cat("SHOW COLUMNS FROM email_templates")).fetchall()]
+            if "category" not in cols:
+                conn.execute(sa_text_tmpl_cat(
+                    "ALTER TABLE email_templates ADD COLUMN category VARCHAR(20) NOT NULL DEFAULT 'outreach'"
+                ))
+                conn.commit()
+                logger.info("Migration: added category column to email_templates")
+            # Add composite index for per-category active lookup
+            try:
+                conn.execute(sa_text_tmpl_cat(
+                    "CREATE INDEX idx_template_tenant_category_status ON email_templates (tenant_id, category, status)"
+                ))
+                conn.commit()
+                logger.info("Migration: added idx_template_tenant_category_status index")
+            except Exception:
+                pass  # Index already exists
+    except Exception as e:
+        logger.warning(f"Migration check for email_templates category: {e}")
 
     _seed_warmup_profiles()
     _seed_default_email_template()
