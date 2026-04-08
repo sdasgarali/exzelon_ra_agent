@@ -545,14 +545,6 @@ export default function MailboxesPage() {
     })
   }
 
-  const handleStatusChange = async (id: number, newStatus: string) => {
-    try {
-      await mailboxesApi.updateStatus(id, newStatus)
-      fetchData()
-    } catch (error: any) {
-      toast('error', error.response?.data?.detail || 'Failed to update status')
-    }
-  }
 
   const resetForm = () => {
     setFormData({
@@ -622,7 +614,6 @@ export default function MailboxesPage() {
       const hasSig = Object.values(sigData).some(v => v.trim() !== '')
       const sigJson = hasSig ? JSON.stringify(sigData) : ''
       await mailboxesApi.update(createdMailboxId, {
-        warmup_status: formData.warmup_status,
         daily_send_limit: formData.daily_send_limit,
         is_active: formData.is_active,
         notes: formData.notes,
@@ -912,18 +903,9 @@ export default function MailboxesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
-                  <select
-                    value={mailbox.warmup_status}
-                    onChange={(e) => handleStatusChange(mailbox.mailbox_id, e.target.value)}
-                    className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`}
-                  >
-                    <option value="warming_up">Warming Up</option>
-                    <option value="cold_ready">Cold Ready</option>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="blacklisted">Blacklisted</option>
-                  </select>
+                  <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`}>
+                    {WARMUP_STATUS_LABELS[mailbox.warmup_status]?.label || mailbox.warmup_status}
+                  </span>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">{mailbox.emails_sent_today} / {mailbox.daily_send_limit}</div>
@@ -1137,13 +1119,12 @@ export default function MailboxesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
-                  <select value={formData.warmup_status} onChange={(e) => setFormData({ ...formData, warmup_status: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
-                    <option value="warming_up">Warming Up</option>
-                    <option value="cold_ready">Cold Ready</option>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
+                    <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[formData.warmup_status]?.color || 'bg-gray-100'}`}>
+                      {WARMUP_STATUS_LABELS[formData.warmup_status]?.label || formData.warmup_status}
+                    </span>
+                    <span className="text-xs text-gray-400 ml-2">Managed by warmup engine</span>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
@@ -1668,13 +1649,10 @@ export default function MailboxesPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
-                      <select value={formData.warmup_status} onChange={(e) => setFormData({ ...formData, warmup_status: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
-                        <option value="warming_up">Warming Up</option>
-                        <option value="cold_ready">Cold Ready</option>
-                        <option value="active">Active</option>
-                        <option value="paused">Paused</option>
-                        <option value="inactive">Inactive</option>
-                      </select>
+                      <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
+                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">Inactive</span>
+                        <span className="text-xs text-gray-400 ml-2">Auto-starts after connection</span>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
