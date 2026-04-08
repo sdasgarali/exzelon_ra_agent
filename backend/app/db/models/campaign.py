@@ -99,6 +99,15 @@ class Campaign(Base):
     # Preview & Approve mode — when True, generates drafts instead of sending
     preview_mode = Column(Boolean, default=False, nullable=False)
 
+    # Future scheduling — activate campaign at a specific date/time
+    scheduled_send_at = Column(DateTime, nullable=True)
+
+    # Sending speed control: relaxed (120-300s delay), normal (30-90s), aggressive (5-15s)
+    sending_speed = Column(String(20), default='normal', nullable=False)
+
+    # Campaign health score (0-100, recalculated by scheduler)
+    health_score = Column(Integer, nullable=True)
+
     __table_args__ = (
         Index("idx_campaign_tenant", "tenant_id"),
         Index("idx_campaign_status", "status"),

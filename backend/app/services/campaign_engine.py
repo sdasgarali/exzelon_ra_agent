@@ -36,6 +36,20 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     now = datetime.utcnow()
     results = {"processed": 0, "sent": 0, "skipped": 0, "errors": 0, "conditions_evaluated": 0}
 
+    # Auto-activate scheduled campaigns whose send time has arrived
+    scheduled = db.query(Campaign).filter(
+        Campaign.status == CampaignStatus.DRAFT,
+        Campaign.scheduled_send_at.isnot(None),
+        Campaign.scheduled_send_at <= now,
+        Campaign.is_archived == False,
+    ).all()
+    for sc in scheduled:
+        sc.status = CampaignStatus.ACTIVE
+        sc.scheduled_send_at = None
+        logger.info("campaign_auto_activated", campaign_id=sc.campaign_id, name=sc.name)
+    if scheduled:
+        db.commit()
+
     # Get active campaigns
     active_campaigns = db.query(Campaign).filter(
         Campaign.status == CampaignStatus.ACTIVE,
@@ -177,16 +191,26 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
 
 
 def _is_within_send_window(campaign: Campaign, now: datetime) -> bool:
-    """Check if current UTC time falls within campaign's send window."""
+    """Check if current time (in campaign's timezone) falls within send window."""
     try:
-        current_time = now.strftime("%H:%M")
+        from zoneinfo import ZoneInfo
+
+        # Convert UTC now to the campaign's timezone
+        tz_name = campaign.timezone or "UTC"
+        try:
+            tz = ZoneInfo(tz_name)
+        except (KeyError, Exception):
+            tz = ZoneInfo("UTC")
+
+        local_now = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+        current_time = local_now.strftime("%H:%M")
         start = campaign.send_window_start or "09:00"
         end = campaign.send_window_end or "17:00"
 
-        # Check day of week
+        # Check day of week in campaign's local timezone
         days_json = campaign.send_days_json or '["mon","tue","wed","thu","fri"]'
         send_days = json.loads(days_json)
-        day_abbr = now.strftime("%a").lower()[:3]
+        day_abbr = local_now.strftime("%a").lower()[:3]
         if day_abbr not in send_days:
             return False
 
@@ -376,6 +400,13 @@ def _execute_email_step(
     db.add(event)
     db.flush()
 
+    # Inject tracking pixel for open tracking
+    try:
+        from app.services.warmup.tracking import inject_tracking
+        body_html = inject_tracking(body_html, event.tracking_id, db, tenant_id=campaign.tenant_id)
+    except Exception as e_track:
+        logger.warning("Failed to inject tracking pixel", error=str(e_track))
+
     # Add unsubscribe footer
     unsub_footer = generate_unsub_footer(event.tracking_id)
     if "unsub/" not in body_html:
@@ -445,9 +476,15 @@ def _execute_email_step(
         # Advance to next step
         _advance_to_next_step(cc, step, campaign, db)
 
-        # Smart throttling: random delay between sends
-        from app.core.config import settings as app_cfg
-        delay_sec = random.randint(app_cfg.SEND_DELAY_MIN_SEC, app_cfg.SEND_DELAY_MAX_SEC)
+        # Smart throttling: delay based on campaign sending_speed setting
+        speed = getattr(campaign, 'sending_speed', 'normal') or 'normal'
+        speed_ranges = {
+            'relaxed': (120, 300),
+            'normal': (30, 90),
+            'aggressive': (5, 15),
+        }
+        min_delay, max_delay = speed_ranges.get(speed, (30, 90))
+        delay_sec = random.randint(min_delay, max_delay)
         time.sleep(delay_sec)
 
         return True
@@ -599,15 +636,16 @@ def _evaluate_condition(
         if condition_type == "replied":
             condition_met = prev_event.reply_detected_at is not None
         elif condition_type == "opened":
-            # Check tracking — opens are recorded separately
-            from app.db.models.warmup_email import WarmupEmail
-            # For outreach, opens are tracked via tracking pixel
-            # We check if reply_detected_at or any open event exists
-            condition_met = prev_event.reply_detected_at is not None
+            # Check actual pixel-based open tracking on OutreachEvent
+            condition_met = prev_event.opened_at is not None
+        elif condition_type == "clicked":
+            # Check actual link click tracking on OutreachEvent
+            condition_met = prev_event.clicked_at is not None
         elif condition_type == "no_action":
-            # True if no reply within window and window has passed
+            # True if no reply AND no open within window and window has passed
             condition_met = (
                 prev_event.reply_detected_at is None and
+                prev_event.opened_at is None and
                 now > window_end
             )
 

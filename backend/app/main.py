@@ -1351,6 +1351,54 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for email_templates category: {e}")
 
+    # Migration: add scheduled_send_at, sending_speed, health_score to campaigns
+    try:
+        from sqlalchemy import text as sa_text_camp_new, inspect as sa_inspect_camp_new
+        with engine.connect() as conn:
+            inspector_cn = sa_inspect_camp_new(engine)
+            camp_cols_new = [c["name"] for c in inspector_cn.get_columns("campaigns")]
+            if "scheduled_send_at" not in camp_cols_new:
+                conn.execute(sa_text_camp_new(
+                    "ALTER TABLE campaigns ADD COLUMN scheduled_send_at DATETIME NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: added scheduled_send_at column to campaigns")
+            if "sending_speed" not in camp_cols_new:
+                conn.execute(sa_text_camp_new(
+                    "ALTER TABLE campaigns ADD COLUMN sending_speed VARCHAR(20) NOT NULL DEFAULT 'normal'"
+                ))
+                conn.commit()
+                logger.info("Migration: added sending_speed column to campaigns")
+            if "health_score" not in camp_cols_new:
+                conn.execute(sa_text_camp_new(
+                    "ALTER TABLE campaigns ADD COLUMN health_score INT NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: added health_score column to campaigns")
+    except Exception as e:
+        logger.warning(f"Migration check for campaign new columns: {e}")
+
+    # Migration: add opened_at, clicked_at to outreach_events
+    try:
+        from sqlalchemy import text as sa_text_oe_track, inspect as sa_inspect_oe_track
+        with engine.connect() as conn:
+            inspector_oe = sa_inspect_oe_track(engine)
+            oe_cols = [c["name"] for c in inspector_oe.get_columns("outreach_events")]
+            if "opened_at" not in oe_cols:
+                conn.execute(sa_text_oe_track(
+                    "ALTER TABLE outreach_events ADD COLUMN opened_at DATETIME NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: added opened_at column to outreach_events")
+            if "clicked_at" not in oe_cols:
+                conn.execute(sa_text_oe_track(
+                    "ALTER TABLE outreach_events ADD COLUMN clicked_at DATETIME NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: added clicked_at column to outreach_events")
+    except Exception as e:
+        logger.warning(f"Migration check for outreach_events tracking columns: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

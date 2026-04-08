@@ -47,6 +47,8 @@ class CampaignCreate(BaseModel):
     daily_limit: int = 30
     enrollment_rules: Optional[EnrollmentRules] = None
     preview_mode: bool = False
+    scheduled_send_at: Optional[str] = None  # ISO datetime for future send
+    sending_speed: str = "normal"  # relaxed/normal/aggressive
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -59,6 +61,8 @@ class CampaignUpdate(BaseModel):
     daily_limit: Optional[int] = None
     enrollment_rules: Optional[EnrollmentRules] = None
     preview_mode: Optional[bool] = None
+    scheduled_send_at: Optional[str] = None  # ISO datetime for future send
+    sending_speed: Optional[str] = None  # relaxed/normal/aggressive
 
 class StepCreate(BaseModel):
     step_type: str  # email/wait/condition
@@ -126,6 +130,17 @@ def _campaign_to_dict(c: Campaign, include_steps: bool = False, db: Session = No
         "enrollment_rules": json.loads(c.enrollment_rules_json) if c.enrollment_rules_json else None,
         "auto_enrolled_today": c.auto_enrolled_today or 0,
         "preview_mode": getattr(c, 'preview_mode', False) or False,
+        "scheduled_send_at": c.scheduled_send_at.isoformat() if getattr(c, 'scheduled_send_at', None) else None,
+        "sending_speed": getattr(c, 'sending_speed', 'normal') or 'normal',
+        "health_score": getattr(c, 'health_score', None),
+        "slow_ramp_enabled": getattr(c, 'slow_ramp_enabled', False) or False,
+        "slow_ramp_increment": getattr(c, 'slow_ramp_increment', 2) or 2,
+        "slow_ramp_current_day": getattr(c, 'slow_ramp_current_day', 0) or 0,
+        "bounce_threshold": getattr(c, 'bounce_threshold', 10),
+        "spam_threshold": getattr(c, 'spam_threshold', 5),
+        "auto_pause_reason": getattr(c, 'auto_pause_reason', None),
+        "auto_reply_enabled": getattr(c, 'auto_reply_enabled', False) or False,
+        "assignment_mode": getattr(c, 'assignment_mode', 'manual') or 'manual',
     }
     if include_steps and db:
         steps = db.query(SequenceStep).filter(
@@ -227,7 +242,14 @@ def create_campaign(
         created_by=user.user_id,
         tenant_id=tenant_id or 1,
         preview_mode=data.preview_mode,
+        sending_speed=data.sending_speed if data.sending_speed in ('relaxed', 'normal', 'aggressive') else 'normal',
     )
+    if data.scheduled_send_at:
+        from datetime import datetime as dt
+        try:
+            campaign.scheduled_send_at = dt.fromisoformat(data.scheduled_send_at.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            pass
     db.add(campaign)
     db.commit()
     db.refresh(campaign)
@@ -283,6 +305,14 @@ def update_campaign(
         campaign.enrollment_rules_json = json.dumps(data.enrollment_rules.model_dump())
     if data.preview_mode is not None:
         campaign.preview_mode = data.preview_mode
+    if data.sending_speed is not None and data.sending_speed in ('relaxed', 'normal', 'aggressive'):
+        campaign.sending_speed = data.sending_speed
+    if data.scheduled_send_at is not None:
+        from datetime import datetime as dt
+        try:
+            campaign.scheduled_send_at = dt.fromisoformat(data.scheduled_send_at.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            campaign.scheduled_send_at = None
 
     db.commit()
     db.refresh(campaign)
@@ -747,10 +777,13 @@ def trigger_auto_enroll(
 @router.get("/{campaign_id}/analytics")
 def campaign_analytics(
     campaign_id: int,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
+    """Campaign analytics with optional date range filter (YYYY-MM-DD)."""
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -758,8 +791,23 @@ def campaign_analytics(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from datetime import datetime as dt
 
-    # Overall stats
+    # Parse date range
+    start_dt = None
+    end_dt = None
+    if date_from:
+        try:
+            start_dt = dt.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_from must be YYYY-MM-DD")
+    if date_to:
+        try:
+            end_dt = dt.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_to must be YYYY-MM-DD")
+
+    # Overall stats — contact-level (not date-filtered, contacts are cumulative)
     total_contacts = db.query(CampaignContact).filter(
         CampaignContact.campaign_id == campaign_id
     ).count()
@@ -785,17 +833,41 @@ def campaign_analytics(
         SequenceStep.campaign_id == campaign_id
     ).order_by(SequenceStep.step_order).all()
 
+    # Build base event query with optional date filter
+    def _event_query():
+        q = db.query(OutreachEvent).filter(OutreachEvent.campaign_id == campaign_id)
+        if start_dt:
+            q = q.filter(OutreachEvent.sent_at >= start_dt)
+        if end_dt:
+            q = q.filter(OutreachEvent.sent_at <= end_dt)
+        return q
+
+    # Calculate overall opened/clicked
+    total_sent_events = _event_query().filter(
+        OutreachEvent.status == OutreachStatus.SENT,
+    ).count()
+    total_opened_events = _event_query().filter(
+        OutreachEvent.opened_at.isnot(None),
+    ).count()
+    total_clicked_events = _event_query().filter(
+        OutreachEvent.clicked_at.isnot(None),
+    ).count()
+
     step_analytics = []
     for step in steps:
-        sent = db.query(OutreachEvent).filter(
-            OutreachEvent.step_id == step.step_id,
-            OutreachEvent.status == OutreachStatus.SENT,
-        ).count()
+        def _step_query(step_id=step.step_id):
+            q = db.query(OutreachEvent).filter(OutreachEvent.step_id == step_id)
+            if start_dt:
+                q = q.filter(OutreachEvent.sent_at >= start_dt)
+            if end_dt:
+                q = q.filter(OutreachEvent.sent_at <= end_dt)
+            return q
 
-        step_replied = db.query(OutreachEvent).filter(
-            OutreachEvent.step_id == step.step_id,
-            OutreachEvent.reply_detected_at.isnot(None),
-        ).count()
+        sent = _step_query().filter(OutreachEvent.status == OutreachStatus.SENT).count()
+        step_opened = _step_query().filter(OutreachEvent.opened_at.isnot(None)).count()
+        step_clicked = _step_query().filter(OutreachEvent.clicked_at.isnot(None)).count()
+        step_replied = _step_query().filter(OutreachEvent.reply_detected_at.isnot(None)).count()
+        step_bounced = _step_query().filter(OutreachEvent.status == OutreachStatus.BOUNCED).count()
 
         step_analytics.append({
             "step_id": step.step_id,
@@ -803,8 +875,14 @@ def campaign_analytics(
             "step_type": step.step_type.value if step.step_type else "email",
             "subject": step.subject,
             "sent": sent,
+            "opened": step_opened,
+            "open_rate": round(step_opened / sent * 100, 1) if sent > 0 else 0,
+            "clicked": step_clicked,
+            "click_rate": round(step_clicked / sent * 100, 1) if sent > 0 else 0,
             "replied": step_replied,
             "reply_rate": round(step_replied / sent * 100, 1) if sent > 0 else 0,
+            "bounced": step_bounced,
+            "bounce_rate": round(step_bounced / sent * 100, 1) if sent > 0 else 0,
         })
 
     # Funnel: contacts at each step
@@ -826,12 +904,274 @@ def campaign_analytics(
             "total_contacts": total_contacts,
             "active": active,
             "completed": completed,
+            "total_sent": total_sent_events,
+            "total_opened": total_opened_events,
+            "open_rate": round(total_opened_events / total_sent_events * 100, 1) if total_sent_events > 0 else 0,
+            "total_clicked": total_clicked_events,
+            "click_rate": round(total_clicked_events / total_sent_events * 100, 1) if total_sent_events > 0 else 0,
             "replied": replied,
+            "reply_rate": round(replied / total_contacts * 100, 1) if total_contacts > 0 else 0,
             "bounced": bounced,
+            "bounce_rate": round(bounced / total_contacts * 100, 1) if total_contacts > 0 else 0,
         },
         "steps": step_analytics,
         "funnel": funnel,
+        "date_range": {"from": date_from, "to": date_to},
     }
+
+
+# ─── Daily Trend & CSV Export ────────────────────────────────────
+
+@router.get("/{campaign_id}/analytics/daily")
+def campaign_daily_analytics(
+    campaign_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get daily send/open/reply/bounce trend for a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from datetime import datetime as dt, timedelta
+    from sqlalchemy import func, cast, Date
+
+    start = dt.utcnow() - timedelta(days=days)
+    daily_data = []
+
+    for i in range(days):
+        day = start + timedelta(days=i)
+        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day.replace(hour=23, minute=59, second=59)
+
+        base_q = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.sent_at >= day_start,
+            OutreachEvent.sent_at <= day_end,
+        )
+
+        sent = base_q.filter(OutreachEvent.status == OutreachStatus.SENT).count()
+        opened = base_q.filter(OutreachEvent.opened_at.isnot(None)).count()
+        clicked = base_q.filter(OutreachEvent.clicked_at.isnot(None)).count()
+        replied = base_q.filter(OutreachEvent.reply_detected_at.isnot(None)).count()
+        bounced = base_q.filter(OutreachEvent.status == OutreachStatus.BOUNCED).count()
+
+        if sent > 0 or opened > 0 or replied > 0:
+            daily_data.append({
+                "date": day.strftime("%Y-%m-%d"),
+                "sent": sent,
+                "opened": opened,
+                "clicked": clicked,
+                "replied": replied,
+                "bounced": bounced,
+            })
+
+    return {"campaign_id": campaign_id, "days": days, "daily": daily_data}
+
+
+@router.get("/{campaign_id}/analytics/export")
+def export_campaign_analytics_csv(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Export campaign analytics as CSV."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from app.db.models.contact import ContactDetails
+    import csv
+    import io
+
+    events = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.status == OutreachStatus.SENT,
+    ).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "event_id", "contact_id", "contact_email", "contact_name",
+        "step_id", "variant_index", "subject", "sent_at",
+        "opened_at", "clicked_at", "replied_at", "status",
+    ])
+
+    for ev in events:
+        contact = db.query(ContactDetails).filter(
+            ContactDetails.contact_id == ev.contact_id
+        ).first()
+        writer.writerow([
+            ev.event_id,
+            ev.contact_id,
+            contact.email if contact else "",
+            f"{contact.first_name} {contact.last_name}" if contact else "",
+            ev.step_id,
+            ev.variant_index,
+            ev.subject or "",
+            ev.sent_at.isoformat() if ev.sent_at else "",
+            ev.opened_at.isoformat() if ev.opened_at else "",
+            ev.clicked_at.isoformat() if ev.clicked_at else "",
+            ev.reply_detected_at.isoformat() if ev.reply_detected_at else "",
+            ev.status.value if ev.status else "",
+        ])
+
+    from starlette.responses import StreamingResponse
+    output.seek(0)
+    filename = f"campaign_{campaign_id}_analytics.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ─── Campaign Health Score ────────────────────────────────────────
+
+@router.get("/{campaign_id}/health")
+def get_campaign_health(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get detailed health score breakdown for a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.services.campaign_health import calculate_campaign_health
+    return calculate_campaign_health(campaign_id, db)
+
+
+# ─── Campaign Comparison ─────────────────────────────────────────
+
+@router.post("/compare")
+def compare_campaigns(
+    request: Request,
+    body: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Compare multiple campaigns side-by-side. Body: {"campaign_ids": [1, 2, 3]}"""
+    campaign_ids = body.get("campaign_ids", [])
+    if not campaign_ids or len(campaign_ids) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least 2 campaign_ids")
+    if len(campaign_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 campaigns for comparison")
+
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+
+    comparisons = []
+    for cid in campaign_ids:
+        campaign = db.query(Campaign).filter(Campaign.campaign_id == cid).first()
+        if not campaign:
+            continue
+        if tenant_id is not None and campaign.tenant_id != tenant_id:
+            continue
+
+        total_sent = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == cid,
+            OutreachEvent.status == OutreachStatus.SENT,
+        ).count()
+        total_opened = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == cid,
+            OutreachEvent.opened_at.isnot(None),
+        ).count()
+        total_clicked = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == cid,
+            OutreachEvent.clicked_at.isnot(None),
+        ).count()
+        total_replied = db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == cid,
+            CampaignContact.status == CampaignContactStatus.REPLIED,
+        ).count()
+        total_bounced = db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == cid,
+            CampaignContact.status == CampaignContactStatus.BOUNCED,
+        ).count()
+        total_contacts = db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == cid,
+        ).count()
+
+        steps_count = db.query(SequenceStep).filter(
+            SequenceStep.campaign_id == cid,
+        ).count()
+
+        comparisons.append({
+            "campaign_id": cid,
+            "name": campaign.name,
+            "status": campaign.status.value if campaign.status else "draft",
+            "total_contacts": total_contacts,
+            "total_sent": total_sent,
+            "total_opened": total_opened,
+            "open_rate": round(total_opened / total_sent * 100, 1) if total_sent > 0 else 0,
+            "total_clicked": total_clicked,
+            "click_rate": round(total_clicked / total_sent * 100, 1) if total_sent > 0 else 0,
+            "total_replied": total_replied,
+            "reply_rate": round(total_replied / total_contacts * 100, 1) if total_contacts > 0 else 0,
+            "total_bounced": total_bounced,
+            "bounce_rate": round(total_bounced / total_contacts * 100, 1) if total_contacts > 0 else 0,
+            "steps_count": steps_count,
+            "daily_limit": campaign.daily_limit,
+            "created_at": campaign.created_at.isoformat() if hasattr(campaign, 'created_at') and campaign.created_at else None,
+        })
+
+    return {"campaigns": comparisons, "count": len(comparisons)}
+
+
+# ─── A/B Test Stats & Auto-Optimize ──────────────────────────────
+
+@router.get("/{campaign_id}/steps/{step_id}/ab-stats")
+def get_ab_test_stats(
+    campaign_id: int,
+    step_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR, UserRole.VIEWER])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get A/B test variant statistics for a step."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.services.ab_optimizer import get_variant_stats
+    stats = get_variant_stats(step_id, db)
+    return {"step_id": step_id, "variants": stats}
+
+
+@router.post("/{campaign_id}/steps/{step_id}/ab-optimize")
+def trigger_ab_optimize(
+    campaign_id: int,
+    step_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Manually trigger A/B test optimization for a step."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.services.ab_optimizer import auto_optimize
+    result = auto_optimize(step_id, db)
+    return result
 
 
 # ─── Duplicate ─────────────────────────────────────────────────────

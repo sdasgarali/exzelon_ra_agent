@@ -181,6 +181,18 @@ export interface Campaign {
   is_archived: boolean;
   enrollment_rules: Record<string, any> | null;
   auto_enrolled_today: number;
+  health_score: number | null;
+  sending_speed: 'relaxed' | 'normal' | 'aggressive';
+  scheduled_send_at: string | null;
+  slow_ramp_enabled: boolean;
+  slow_ramp_increment: number;
+  slow_ramp_current_day: number;
+  bounce_threshold: number;
+  spam_threshold: number;
+  auto_pause_reason: string | null;
+  ai_auto_reply_enabled: boolean;
+  assignment_mode: string;
+  preview_mode: boolean;
   steps?: SequenceStep[];
 }
 

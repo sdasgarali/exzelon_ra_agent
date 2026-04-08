@@ -50,6 +50,10 @@ class OutreachEvent(Base):
     # Unsubscribe tracking
     tracking_id = Column(String(64), default=lambda: str(uuid.uuid4()), unique=True, index=True, nullable=True)
 
+    # Open/click tracking
+    opened_at = Column(DateTime, nullable=True)
+    clicked_at = Column(DateTime, nullable=True)
+
     # Reply content storage
     reply_subject = Column(String(500), nullable=True)
     reply_body = Column(Text, nullable=True)

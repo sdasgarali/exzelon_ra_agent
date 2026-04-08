@@ -54,6 +54,16 @@ def init_scheduler():
         # Data retention — purge soft-deleted records older than DATA_RETENTION_DAYS
         _scheduler.add_job(job_retention_purge, CronTrigger(hour=4, minute=30), id="retention_purge", name="Data Retention Purge", replace_existing=True)
 
+        # Campaign health score recalculation (daily at 4:45 AM UTC)
+        _scheduler.add_job(job_campaign_health_scores, CronTrigger(hour=4, minute=45), id="campaign_health_scores", name="Campaign Health Scores", replace_existing=True)
+
+        # A/B test auto-optimization (daily at 5 AM UTC)
+        _scheduler.add_job(job_ab_optimize, CronTrigger(hour=5, minute=0), id="ab_optimize", name="A/B Test Auto-Optimize", replace_existing=True)
+
+        # Campaign slow-ramp day increment + auto-pause health check
+        _scheduler.add_job(job_slow_ramp_increment, CronTrigger(hour=0, minute=10), id="slow_ramp_increment", name="Slow Ramp Day Increment", replace_existing=True)
+        _scheduler.add_job(job_auto_pause_check, CronTrigger(hour="*/1"), id="auto_pause_check", name="Campaign Auto-Pause Check", replace_existing=True)
+
         # Billing & Invoicing jobs
         _scheduler.add_job(job_generate_monthly_invoices, CronTrigger(day=1, hour=2, minute=0), id="monthly_invoices", name="Monthly Invoice Generation", replace_existing=True)
         _scheduler.add_job(job_check_overdue_invoices, CronTrigger(hour=6, minute=0), id="overdue_check", name="Overdue Invoice Check", replace_existing=True)
@@ -861,6 +871,83 @@ def job_send_overdue_reminders():
             logger.info("Overdue reminders sent", count=sent)
     except Exception as e:
         logger.error("Overdue reminder sending failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_campaign_health_scores():
+    """Recalculate campaign health scores for all active campaigns. Daily at 4:45 AM UTC."""
+    if not _is_job_enabled("campaign_health_scores"):
+        logger.info("Job campaign_health_scores skipped (disabled)")
+        return
+    logger.info("Running campaign health score recalculation")
+    db = _get_db()
+    try:
+        from app.services.campaign_health import recalculate_all_health_scores
+        result = recalculate_all_health_scores(db)
+        logger.info("Campaign health scores complete", result=result)
+    except Exception as e:
+        logger.error("Campaign health scores failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_ab_optimize():
+    """Run A/B test auto-optimization across all active campaigns. Daily at 5 AM UTC."""
+    if not _is_job_enabled("ab_optimize"):
+        logger.info("Job ab_optimize skipped (disabled)")
+        return
+    logger.info("Running A/B test auto-optimization")
+    db = _get_db()
+    try:
+        from app.services.ab_optimizer import auto_optimize_all_campaigns
+        result = auto_optimize_all_campaigns(db)
+        logger.info("A/B optimization complete", result=result)
+    except Exception as e:
+        logger.error("A/B optimization failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_slow_ramp_increment():
+    """Increment slow_ramp_current_day for active campaigns with slow ramp. Daily at 00:10 UTC."""
+    if not _is_job_enabled("slow_ramp_increment"):
+        logger.info("Job slow_ramp_increment skipped (disabled)")
+        return
+    logger.info("Running slow ramp day increment")
+    db = _get_db()
+    try:
+        from app.db.models.campaign import Campaign, CampaignStatus
+        campaigns = db.query(Campaign).filter(
+            Campaign.status == CampaignStatus.ACTIVE,
+            Campaign.slow_ramp_enabled == True,
+        ).all()
+        updated = 0
+        for c in campaigns:
+            c.slow_ramp_current_day = (c.slow_ramp_current_day or 0) + 1
+            updated += 1
+        if updated:
+            db.commit()
+        logger.info("Slow ramp increment complete", updated=updated)
+    except Exception as e:
+        logger.error("Slow ramp increment failed", error=str(e))
+    finally:
+        db.close()
+
+
+def job_auto_pause_check():
+    """Hourly campaign health check — auto-pause on bounce/spam threshold breach."""
+    if not _is_job_enabled("auto_pause_check"):
+        logger.info("Job auto_pause_check skipped (disabled)")
+        return
+    logger.info("Running campaign auto-pause health check")
+    db = _get_db()
+    try:
+        from app.services.auto_pause_monitor import check_campaign_health
+        result = check_campaign_health(db)
+        logger.info("Auto-pause check complete", result=result)
+    except Exception as e:
+        logger.error("Auto-pause check failed", error=str(e))
     finally:
         db.close()
 

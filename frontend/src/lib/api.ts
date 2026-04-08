@@ -815,8 +815,35 @@ export const campaignsApi = {
     return response.data
   },
   // Analytics
-  analytics: async (id: number) => {
-    const response = await api.get(`/campaigns/${id}/analytics`)
+  analytics: async (id: number, dateFrom?: string, dateTo?: string) => {
+    const params: Record<string, string> = {}
+    if (dateFrom) params.date_from = dateFrom
+    if (dateTo) params.date_to = dateTo
+    const response = await api.get(`/campaigns/${id}/analytics`, { params })
+    return response.data
+  },
+  dailyAnalytics: async (id: number, days = 30) => {
+    const response = await api.get(`/campaigns/${id}/analytics/daily`, { params: { days } })
+    return response.data
+  },
+  exportCsv: async (id: number) => {
+    const response = await api.get(`/campaigns/${id}/analytics/export`, { responseType: 'blob' })
+    return response.data
+  },
+  health: async (id: number) => {
+    const response = await api.get(`/campaigns/${id}/health`)
+    return response.data
+  },
+  compare: async (campaignIds: number[]) => {
+    const response = await api.post('/campaigns/compare', { campaign_ids: campaignIds })
+    return response.data
+  },
+  abStats: async (campaignId: number, stepId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/steps/${stepId}/ab-stats`)
+    return response.data
+  },
+  abOptimize: async (campaignId: number, stepId: number) => {
+    const response = await api.post(`/campaigns/${campaignId}/steps/${stepId}/ab-optimize`)
     return response.data
   },
   abResults: async (campaignId: number, stepId: number) => {

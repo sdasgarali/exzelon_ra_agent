@@ -77,10 +77,18 @@ export default function CampaignsPage() {
     send_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
     daily_limit: 30,
     preview_mode: false,
+    scheduled_send_at: '',
+    sending_speed: 'normal',
   })
   const [actionMenu, setActionMenu] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [analytics, setAnalytics] = useState<any>(null)
+  const [analyticsDateFrom, setAnalyticsDateFrom] = useState('')
+  const [analyticsDateTo, setAnalyticsDateTo] = useState('')
+  const [showCompareModal, setShowCompareModal] = useState(false)
+  const [compareIds, setCompareIds] = useState<number[]>([])
+  const [compareData, setCompareData] = useState<any>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
 
   // Auto-enrollment rules state
   const [enrollmentRules, setEnrollmentRules] = useState({
@@ -201,11 +209,33 @@ export default function CampaignsPage() {
     } catch { /* ignore */ }
   }
 
-  const loadAnalytics = async (id: number) => {
+  const loadAnalytics = async (id: number, dateFrom?: string, dateTo?: string) => {
     try {
-      const data = await campaignsApi.analytics(id)
+      const data = await campaignsApi.analytics(id, dateFrom || undefined, dateTo || undefined)
       setAnalytics(data)
     } catch { setAnalytics(null) }
+  }
+
+  const handleExportCsv = async (id: number) => {
+    try {
+      const blob = await campaignsApi.exportCsv(id)
+      const url = window.URL.createObjectURL(new Blob([blob]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `campaign_${id}_analytics.csv`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch { /* ignore */ }
+  }
+
+  const handleCompare = async () => {
+    if (compareIds.length < 2) return
+    setCompareLoading(true)
+    try {
+      const data = await campaignsApi.compare(compareIds)
+      setCompareData(data)
+    } catch { /* ignore */ }
+    setCompareLoading(false)
   }
 
   const handleCreate = async () => {
@@ -217,7 +247,7 @@ export default function CampaignsPage() {
       }
       const created = await campaignsApi.create(payload)
       setShowCreateModal(false)
-      setCampaignForm({ name: '', description: '', timezone: 'US/Eastern', send_window_start: '09:00', send_window_end: '17:00', send_days: ['mon','tue','wed','thu','fri'], daily_limit: 30, preview_mode: false })
+      setCampaignForm({ name: '', description: '', timezone: 'US/Eastern', send_window_start: '09:00', send_window_end: '17:00', send_days: ['mon','tue','wed','thu','fri'], daily_limit: 30, preview_mode: false, scheduled_send_at: '', sending_speed: 'normal' })
       setSelectedMailboxIds([])
       await fetchCampaigns()
       openDetail(created)
@@ -484,6 +514,7 @@ export default function CampaignsPage() {
                   <th className="text-right px-4 py-3 font-medium">Sent</th>
                   <th className="text-right px-4 py-3 font-medium">Open %</th>
                   <th className="text-right px-4 py-3 font-medium">Reply %</th>
+                  <th className="text-right px-4 py-3 font-medium">Health</th>
                   <th className="text-right px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
@@ -504,6 +535,17 @@ export default function CampaignsPage() {
                       <td className="px-4 py-3 text-right">{c.total_sent}</td>
                       <td className="px-4 py-3 text-right">{openRate}%</td>
                       <td className="px-4 py-3 text-right">{replyRate}%</td>
+                      <td className="px-4 py-3 text-right">
+                        {c.health_score != null ? (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            c.health_score >= 80 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                            c.health_score >= 50 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                            'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                          }`}>{c.health_score}</span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="relative inline-block">
                           <button onClick={() => setActionMenu(actionMenu === c.campaign_id ? null : c.campaign_id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
@@ -581,6 +623,30 @@ export default function CampaignsPage() {
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${campaignForm.preview_mode ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
+                </div>
+                {/* Sending Speed */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Sending Speed</label>
+                  <select
+                    value={campaignForm.sending_speed}
+                    onChange={e => setCampaignForm(f => ({ ...f, sending_speed: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                  >
+                    <option value="relaxed">Relaxed (2-5 min delay)</option>
+                    <option value="normal">Normal (30-90s delay)</option>
+                    <option value="aggressive">Aggressive (5-15s delay)</option>
+                  </select>
+                </div>
+                {/* Schedule for Future */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Schedule Send <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <input
+                    type="datetime-local"
+                    value={campaignForm.scheduled_send_at}
+                    onChange={e => setCampaignForm(f => ({ ...f, scheduled_send_at: e.target.value }))}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Campaign will auto-activate at this time</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Mailboxes</label>
@@ -799,50 +865,222 @@ export default function CampaignsPage() {
       {/* Analytics Tab */}
       {detailTab === 'analytics' && (
         <div className="space-y-4">
+          {/* Date Range + Actions Bar */}
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="date"
+              value={analyticsDateFrom}
+              onChange={e => setAnalyticsDateFrom(e.target.value)}
+              className="px-3 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600"
+            />
+            <span className="text-gray-400 text-sm">to</span>
+            <input
+              type="date"
+              value={analyticsDateTo}
+              onChange={e => setAnalyticsDateTo(e.target.value)}
+              className="px-3 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600"
+            />
+            <button
+              onClick={() => selectedCampaign && loadAnalytics(selectedCampaign.campaign_id, analyticsDateFrom, analyticsDateTo)}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            >
+              Apply
+            </button>
+            {(analyticsDateFrom || analyticsDateTo) && (
+              <button
+                onClick={() => { setAnalyticsDateFrom(''); setAnalyticsDateTo(''); selectedCampaign && loadAnalytics(selectedCampaign.campaign_id) }}
+                className="text-sm text-gray-500 hover:text-gray-700 underline"
+              >
+                Clear
+              </button>
+            )}
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={() => selectedCampaign && handleExportCsv(selectedCampaign.campaign_id)}
+                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                title="Export CSV"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={() => setShowCompareModal(true)}
+                className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+                title="Compare Campaigns"
+              >
+                Compare
+              </button>
+            </div>
+          </div>
+
+          {/* Health Score Badge */}
+          {selectedCampaign && selectedCampaign.health_score != null && (
+            <div className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <span className="text-sm text-gray-500">Health Score</span>
+              <span className={`text-lg font-bold ${
+                selectedCampaign.health_score >= 70 ? 'text-green-600' :
+                selectedCampaign.health_score >= 40 ? 'text-yellow-600' : 'text-red-600'
+              }`}>
+                {selectedCampaign.health_score}/100
+              </span>
+              <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                <div
+                  className={`h-full rounded-full ${
+                    selectedCampaign.health_score >= 70 ? 'bg-green-500' :
+                    selectedCampaign.health_score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${selectedCampaign.health_score}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {!analytics ? (
             <div className="p-8 text-center text-gray-500">Loading analytics...</div>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {/* Stat Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
                 {[
-                  { label: 'Total Sent', value: analytics.overall?.total_sent || 0 },
-                  { label: 'Opened', value: analytics.overall?.total_opened || 0 },
-                  { label: 'Replied', value: analytics.overall?.total_replied || 0 },
-                  { label: 'Bounced', value: analytics.overall?.total_bounced || 0 },
+                  { label: 'Sent', value: analytics.overall?.total_sent || 0, color: 'text-blue-600' },
+                  { label: 'Opened', value: analytics.overall?.total_opened || 0, sub: `${analytics.overall?.open_rate || 0}%`, color: 'text-purple-600' },
+                  { label: 'Clicked', value: analytics.overall?.total_clicked || 0, sub: `${analytics.overall?.click_rate || 0}%`, color: 'text-cyan-600' },
+                  { label: 'Replied', value: analytics.overall?.replied || 0, sub: `${analytics.overall?.reply_rate || 0}%`, color: 'text-green-600' },
+                  { label: 'Bounced', value: analytics.overall?.bounced || 0, sub: `${analytics.overall?.bounce_rate || 0}%`, color: 'text-red-600' },
+                  { label: 'Active', value: analytics.overall?.active || 0, color: 'text-gray-600' },
                 ].map(s => (
-                  <div key={s.label} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <p className="text-sm text-gray-500">{s.label}</p>
-                    <p className="text-2xl font-bold mt-1">{s.value}</p>
+                  <div key={s.label} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                    <p className="text-xs text-gray-500">{s.label}</p>
+                    <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
+                    {s.sub && <p className="text-xs text-gray-400 mt-0.5">{s.sub}</p>}
                   </div>
                 ))}
               </div>
-              {analytics.per_step && analytics.per_step.length > 0 && (
+
+              {/* Per-Step Metrics */}
+              {analytics.steps && analytics.steps.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                   <h3 className="px-4 py-3 font-medium border-b border-gray-200 dark:border-gray-700">Per-Step Metrics</h3>
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-900/50">
-                      <tr>
-                        <th className="text-left px-4 py-2">Step</th>
-                        <th className="text-right px-4 py-2">Sent</th>
-                        <th className="text-right px-4 py-2">Open %</th>
-                        <th className="text-right px-4 py-2">Reply %</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {analytics.per_step.map((s: any, i: number) => (
-                        <tr key={i}>
-                          <td className="px-4 py-2">Step {s.step_order}</td>
-                          <td className="px-4 py-2 text-right">{s.sent}</td>
-                          <td className="px-4 py-2 text-right">{s.open_rate?.toFixed(1) || '0.0'}%</td>
-                          <td className="px-4 py-2 text-right">{s.reply_rate?.toFixed(1) || '0.0'}%</td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-900/50">
+                        <tr>
+                          <th className="text-left px-4 py-2">Step</th>
+                          <th className="text-left px-4 py-2">Subject</th>
+                          <th className="text-right px-3 py-2">Sent</th>
+                          <th className="text-right px-3 py-2">Open %</th>
+                          <th className="text-right px-3 py-2">Click %</th>
+                          <th className="text-right px-3 py-2">Reply %</th>
+                          <th className="text-right px-3 py-2">Bounce %</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {analytics.steps.map((s: any, i: number) => (
+                          <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                            <td className="px-4 py-2 font-medium">Step {s.step_order}</td>
+                            <td className="px-4 py-2 truncate max-w-48 text-gray-500" title={s.subject}>{s.subject || '—'}</td>
+                            <td className="px-3 py-2 text-right">{s.sent}</td>
+                            <td className="px-3 py-2 text-right">{s.open_rate?.toFixed(1) || '0.0'}%</td>
+                            <td className="px-3 py-2 text-right">{s.click_rate?.toFixed(1) || '0.0'}%</td>
+                            <td className="px-3 py-2 text-right font-medium text-green-600">{s.reply_rate?.toFixed(1) || '0.0'}%</td>
+                            <td className="px-3 py-2 text-right text-red-500">{s.bounce_rate?.toFixed(1) || '0.0'}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Funnel */}
+              {analytics.funnel && analytics.funnel.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <h3 className="font-medium mb-3">Contact Funnel</h3>
+                  <div className="flex items-end gap-2 h-32">
+                    {analytics.funnel.map((f: any, i: number) => {
+                      const maxContacts = Math.max(...analytics.funnel.map((x: any) => x.contacts_at_step), 1)
+                      const height = Math.max(8, (f.contacts_at_step / maxContacts) * 100)
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-xs font-medium">{f.contacts_at_step}</span>
+                          <div
+                            className="w-full bg-blue-500 rounded-t"
+                            style={{ height: `${height}%` }}
+                            title={`Step ${f.step_order}: ${f.contacts_at_step} contacts`}
+                          />
+                          <span className="text-xs text-gray-400">S{f.step_order}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Compare Modal */}
+      {showCompareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Compare Campaigns</h2>
+              <button onClick={() => { setShowCompareModal(false); setCompareData(null); setCompareIds([]) }} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+
+            {/* Select campaigns */}
+            <div className="mb-4">
+              <p className="text-sm text-gray-500 mb-2">Select 2-10 campaigns to compare:</p>
+              <div className="max-h-40 overflow-y-auto border rounded-lg divide-y dark:border-gray-700 dark:divide-gray-700">
+                {campaigns.map(c => (
+                  <label key={c.campaign_id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={compareIds.includes(c.campaign_id)}
+                      onChange={() => setCompareIds(prev => prev.includes(c.campaign_id) ? prev.filter(id => id !== c.campaign_id) : [...prev, c.campaign_id])}
+                    />
+                    <span className={`px-2 py-0.5 rounded text-xs ${statusColors[c.status] || ''}`}>{c.status}</span>
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={handleCompare}
+                disabled={compareIds.length < 2 || compareLoading}
+                className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {compareLoading ? 'Comparing...' : `Compare ${compareIds.length} Campaigns`}
+              </button>
+            </div>
+
+            {/* Comparison Table */}
+            {compareData && compareData.campaigns && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-900/50">
+                    <tr>
+                      <th className="text-left px-3 py-2">Metric</th>
+                      {compareData.campaigns.map((c: any) => (
+                        <th key={c.campaign_id} className="text-right px-3 py-2 max-w-32 truncate" title={c.name}>{c.name}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {['total_contacts', 'total_sent', 'open_rate', 'click_rate', 'reply_rate', 'bounce_rate'].map(metric => (
+                      <tr key={metric}>
+                        <td className="px-3 py-2 font-medium capitalize">{metric.replace(/_/g, ' ')}</td>
+                        {compareData.campaigns.map((c: any) => (
+                          <td key={c.campaign_id} className="px-3 py-2 text-right">
+                            {metric.includes('rate') ? `${c[metric]}%` : c[metric]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
