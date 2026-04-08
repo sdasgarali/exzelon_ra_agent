@@ -203,7 +203,7 @@ def _execute_email_step(
 ) -> bool:
     """Send an email for this step to the contact. Returns True if sent."""
     from app.services.pipelines.outreach import (
-        check_send_eligibility, send_outreach_email,
+        send_outreach_email,
         render_signature_html, generate_unsub_footer,
     )
     from app.services.spintax import process_spintax
@@ -224,80 +224,21 @@ def _execute_email_step(
             LeadDetails.lead_id == _lead_id
         ).first()
 
-    # Check eligibility (suppression, validation, etc.) — resolve from DB settings
-    from app.services.pipelines.outreach import resolve_business_rules
-    biz_rules = resolve_business_rules(db, tenant_id=campaign.tenant_id)
-    eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
-    if not eligible:
-        logger.info("Campaign contact not eligible", contact_id=cc.contact_id, reason=reason)
-        # Don't remove from campaign — just skip this step and advance
-        _advance_to_next_step(cc, step, campaign, db)
-        return False
-
-    # --- Safety: company-level contact cap ---
-    try:
-        from app.services.campaign_safety import check_company_contact_cap
-        from app.core.settings_resolver import get_tenant_setting
-        max_company = int(get_tenant_setting(
-            db, "max_contacts_per_company_all_campaigns",
-            tenant_id=campaign.tenant_id, default=5,
-        ))
-        allowed, cap_reason = check_company_contact_cap(
-            db, contact, campaign.tenant_id, max_per_company=max_company,
-        )
-        if not allowed:
-            logger.info("Company cap skip", contact_id=cc.contact_id, reason=cap_reason)
-            _advance_to_next_step(cc, step, campaign, db)
-            return False
-    except Exception as e_cap:
-        logger.warning("Company cap check failed, proceeding", error=str(e_cap))
-
-    # --- Safety: sequence fatigue detection ---
-    try:
-        from app.services.campaign_safety import check_sequence_fatigue
-        should_send, fatigue_reason = check_sequence_fatigue(
-            db, cc.contact_id, campaign.tenant_id,
-        )
-        if not should_send:
-            logger.info("Fatigue skip", contact_id=cc.contact_id, reason=fatigue_reason)
+    # --- Unified Send Gate: all safety checks in one call ---
+    from app.services.send_gate import unified_send_gate
+    gate = unified_send_gate(
+        db=db, contact=contact, tenant_id=campaign.tenant_id,
+        lead=contact_lead, campaign=campaign, step_number=cc.current_step,
+    )
+    if not gate.allowed:
+        logger.info("send_gate_blocked", contact_id=cc.contact_id,
+                     code=gate.reason_code, message=gate.reason_message)
+        if gate.reason_code == "SEQUENCE_FATIGUE":
             cc.status = CampaignContactStatus.COMPLETED
             cc.next_send_at = None
-            return False
-    except Exception as e_fat:
-        logger.warning("Fatigue check failed, proceeding", error=str(e_fat))
-
-    # --- Safety: per-domain send cap ---
-    try:
-        from app.services.domain_throttle import check_domain_throttle
-        domain_ok, domain_reason = check_domain_throttle(db, contact.email, campaign.tenant_id)
-        if not domain_ok:
-            logger.info("Domain throttle skip", contact_id=cc.contact_id, reason=domain_reason)
-            return False
-    except Exception as e_dom:
-        logger.warning("Domain throttle check failed, proceeding", error=str(e_dom))
-
-    # --- AI Sales Agent: orchestrate send decision ---
-    try:
-        from app.services.ai_sales_agent.orchestrator import orchestrate_send
-        ai_decision = orchestrate_send(
-            db=db,
-            contact=contact,
-            lead=contact_lead,
-            campaign=campaign,
-            tenant_id=campaign.tenant_id,
-            step_number=cc.current_step,
-        )
-        if not ai_decision.get("should_send", True):
-            logger.info(
-                "ai_agent_blocked_send",
-                contact_id=cc.contact_id,
-                reason_codes=ai_decision.get("reason_codes", []),
-                confidence=ai_decision.get("confidence", 0),
-            )
+        else:
             _advance_to_next_step(cc, step, campaign, db)
-            return False
-    except Exception as e_ai:
-        logger.warning("AI send decision failed, proceeding with send", error=str(e_ai))
+        return False
 
     # Select mailbox (health-aware scoring)
     mailbox = _select_mailbox(campaign, db)
@@ -324,14 +265,6 @@ def _execute_email_step(
                      sent=mailbox.emails_sent_today, effective=effective_daily)
         return False
 
-    # Per-recipient-domain daily throttle
-    from app.services.domain_throttle import check_domain_throttle
-    domain_allowed, domain_reason = check_domain_throttle(db, contact.email, campaign.tenant_id)
-    if not domain_allowed:
-        logger.info("Domain throttle blocked campaign send",
-                     contact_id=cc.contact_id, reason=domain_reason)
-        return False
-
     # Resolve A/B variant
     subject = step.subject or ""
     body_html = step.body_html or ""
@@ -343,10 +276,11 @@ def _execute_email_step(
             cc, step, db
         )
 
-    # Apply spintax
-    subject = process_spintax(subject, seed=cc.contact_id)
-    body_html = process_spintax(body_html, seed=cc.contact_id)
-    body_text = process_spintax(body_text, seed=cc.contact_id)
+    # Apply spintax — campaign_id mixed in so same contact gets different
+    # variants across campaigns (Gap 12: campaign-aware seeding)
+    subject = process_spintax(subject, seed=cc.contact_id, campaign_id=campaign.campaign_id)
+    body_html = process_spintax(body_html, seed=cc.contact_id, campaign_id=campaign.campaign_id)
+    body_text = process_spintax(body_text, seed=cc.contact_id, campaign_id=campaign.campaign_id)
 
     # Render signature
     signature_html = ""

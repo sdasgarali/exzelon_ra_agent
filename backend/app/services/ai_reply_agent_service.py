@@ -417,6 +417,22 @@ def _send_draft(db: Session, draft: AIReplyDraft) -> bool:
 
         to_email = last_received.from_email
 
+        # --- Unified Send Gate (is_reply=True skips cooldown/fatigue) ---
+        contact = (
+            db.query(ContactDetails).filter(
+                ContactDetails.contact_id == draft.contact_id
+            ).first() if draft.contact_id else None
+        )
+        if contact:
+            from app.services.send_gate import unified_send_gate
+            gate = unified_send_gate(
+                db=db, contact=contact, tenant_id=draft.tenant_id, is_reply=True,
+            )
+            if not gate.allowed:
+                logger.info("send_gate_blocked_reply", draft_id=draft.draft_id,
+                            code=gate.reason_code)
+                return False
+
         from app.services.pipelines.outreach import send_outreach_email
 
         result = send_outreach_email(

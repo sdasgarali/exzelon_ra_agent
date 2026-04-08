@@ -200,8 +200,29 @@ def send_outreach_email(
 
         return {"success": True, "message_id": msg["Message-ID"], "error": None}
     except Exception as e:
-        logger.error("SMTP send failed", sender=sender_mailbox.email, to=to_email, error=str(e))
-        return {"success": False, "message_id": None, "error": str(e)}
+        error_str = str(e)
+        logger.error("SMTP send failed", sender=sender_mailbox.email, to=to_email, error=error_str)
+
+        # --- Gap 1: Real-time bounce parsing + auto-suppression ---
+        try:
+            from app.services.bounce_handler import handle_bounce
+            _bounce_db = db if (db and not _own_db) else SessionLocal()
+            try:
+                handle_bounce(
+                    db=_bounce_db,
+                    email=to_email,
+                    error_msg=error_str,
+                    mailbox_id=sender_mailbox.mailbox_id,
+                    tenant_id=getattr(sender_mailbox, "tenant_id", 1),
+                )
+                _bounce_db.commit()
+            finally:
+                if db is None or _own_db:
+                    _bounce_db.close()
+        except Exception as bounce_err:
+            logger.warning("bounce_handler_failed", error=str(bounce_err))
+
+        return {"success": False, "message_id": None, "error": error_str}
 
 
 
@@ -324,8 +345,13 @@ def resolve_business_rules(db, tenant_id: Optional[int] = None) -> dict:
 
 
 def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional[dict] = None) -> tuple[bool, str]:
-    """
-    Check if a contact is eligible for outreach.
+    """Check if a contact is eligible for outreach.
+
+    .. deprecated::
+        Use :func:`app.services.send_gate.unified_send_gate` for all send
+        paths.  This function is kept for non-send eligibility checks
+        (e.g., mail-merge export filtering) where backward compatibility
+        is needed.
 
     Args:
         business_rules: Pre-resolved dict with cooldown_days, max_contacts_per_company_job.
@@ -676,24 +702,18 @@ def run_outreach_send_pipeline(
             if sent_count >= remaining_limit:
                 break
 
-            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
-            if not eligible:
+            # Unified Send Gate: all safety checks in one call
+            from app.services.send_gate import unified_send_gate
+            gate = unified_send_gate(db=db, contact=contact, tenant_id=tenant_id or 1)
+            if not gate.allowed:
                 counters["skipped"] += 1
-                if "cooldown" in reason.lower():
+                code_lower = gate.reason_code.lower()
+                if "cooldown" in code_lower:
                     skip_reasons["cooldown"] += 1
-                elif "limit" in reason.lower():
+                elif "limit" in code_lower or "cap" in code_lower or "throttle" in code_lower:
                     skip_reasons["daily_limit"] += 1
                 else:
                     skip_reasons["not_eligible"] += 1
-                continue
-
-            # Per-recipient-domain daily throttle
-            from app.services.domain_throttle import check_domain_throttle
-            domain_allowed, domain_reason = check_domain_throttle(db, contact.email, tenant_id or 1)
-            if not domain_allowed:
-                counters["skipped"] += 1
-                skip_reasons["not_eligible"] += 1
-                logger.info("Domain throttle blocked send", email=contact.email, reason=domain_reason)
                 continue
 
             # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
@@ -925,18 +945,15 @@ def run_outreach_for_lead(
         used_template_id = active_template.template_id if active_template else None
 
         for contact in contacts:
-            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
-            if not eligible:
+            # Unified Send Gate: all safety checks in one call
+            from app.services.send_gate import unified_send_gate
+            gate = unified_send_gate(
+                db=db, contact=contact, tenant_id=tenant_id or 1, lead=lead,
+            )
+            if not gate.allowed:
                 counters["skipped"] += 1
-                logger.debug("Contact skipped", email=contact.email, reason=reason)
-                continue
-
-            # Per-recipient-domain daily throttle
-            from app.services.domain_throttle import check_domain_throttle
-            domain_allowed, domain_reason = check_domain_throttle(db, contact.email, tenant_id or 1)
-            if not domain_allowed:
-                counters["skipped"] += 1
-                logger.info("Domain throttle blocked lead outreach", email=contact.email, reason=domain_reason)
+                logger.debug("Contact skipped by send_gate",
+                             email=contact.email, code=gate.reason_code)
                 continue
 
             # Get candidate mailboxes (Cold Ready or Active, under limit, successful connection)

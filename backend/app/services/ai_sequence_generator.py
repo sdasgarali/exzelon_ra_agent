@@ -84,6 +84,15 @@ Rules:
 - Plain, direct, human-sounding
 - CTA should be easy and low-pressure
 
+Anti-AI-Detection (critical — emails WILL be flagged if you ignore these):
+- Write as if a busy sales rep typed this on their phone between meetings
+- Vary sentence length — mix very short (3-5 words) with longer sentences
+- Include one natural imperfection per email (a dash, ellipsis, or parenthetical aside)
+- NEVER start with "I hope this email finds you well" or "I wanted to reach out"
+- Use first-person observations: "I noticed", "I saw that", "Something caught my eye"
+- Contractions are fine but don't use them consistently — mix "I'm" and "I am" naturally
+- Avoid uniform sentence length — humans write in bursts
+
 Return ONLY a JSON array, no markdown or other text."""
 
     # Call the adapter using the appropriate method for each adapter type

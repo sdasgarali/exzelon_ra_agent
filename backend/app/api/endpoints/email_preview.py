@@ -246,6 +246,11 @@ def send_draft(
     """Send a single approved draft."""
     from app.services.email_preview_service import send_single_draft
     result = send_single_draft(draft_id, db, tenant_id or 1)
+    if result.get("blocked"):
+        raise HTTPException(409, detail={
+            "message": result["error"],
+            "reason_code": result.get("reason_code", "BLOCKED"),
+        })
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result

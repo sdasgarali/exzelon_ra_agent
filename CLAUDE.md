@@ -253,6 +253,7 @@ Domain reputation management subsystem:
 | Spam Checker | `services/spam_checker.py` | 106 trigger words + 6 regex patterns + link/image ratio detection (>2 links, any images, link-to-text ratio penalized) |
 | Job Lock | `core/job_lock.py` | MySQL advisory lock (`GET_LOCK`/`RELEASE_LOCK`) context manager — prevents duplicate job execution across Uvicorn workers. Used by 7 scheduler jobs: campaign_processor, lead_sourcing, outreach_replies, daily_count_reset, inbox_sync, monthly_invoices, auto_enrollment |
 | State Machine | `core/state_machine.py` | Lead + Campaign status transition validation. `CAMPAIGN_STATUS_TRANSITIONS`: draft→active/archived, active→paused/completed/archived, paused→active/archived/completed, completed→archived, archived=terminal |
+| **Send Gate** | `services/send_gate.py` | Centralized send safety — `unified_send_gate()` runs 10 ordered checks before any email send. All 4 send paths (Campaign Engine, Pipeline Outreach, Email Preview, AI Reply Agent) call this gate. Returns structured `SendGateResult` with machine-readable `reason_code` and user-friendly `reason_message`. Checks: contact status → suppression → email validation → contact+lead cooldown (cross-channel) → contact cooldown → per-lead contact limit → company cap → sequence fatigue → domain throttle → AI orchestrator. `is_reply=True` skips cooldown/fatigue/AI. `dry_run=True` skips domain throttle/AI. Old `check_send_eligibility()` in `outreach.py` deprecated (kept for mail-merge CSV export only). |
 
 ### Additional API Endpoints
 

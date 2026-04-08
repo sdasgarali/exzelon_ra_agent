@@ -62,13 +62,24 @@ CTA STYLE — prefer these patterns:
 - If useful, I can share a few relevant candidate profiles for review.
 - If hiring is active for these roles, happy to send a few matched candidates.
 
+ANTI-AI-DETECTION (critical — your email WILL be flagged if you ignore these):
+- Write as if you're a busy sales rep typing on your phone between meetings.
+- Vary sentence length — mix very short (3-5 words) with longer sentences.
+- Include one natural imperfection per email (a dash, ellipsis, or parenthetical aside).
+- NEVER start with "I hope this email finds you well" or "I wanted to reach out" — these are AI red flags.
+- Use first-person observations: "I noticed", "I saw that", "Something caught my eye".
+- Contractions are fine but don't use them consistently — mix "I'm" and "I am" naturally.
+- Keep it under 120 words. Shorter = more human.
+- Avoid uniform sentence length — humans write in bursts (some short, some long).
+
 QUALITY CHECK before responding:
 - Does it sound like a real human wrote it?
 - Is it direct, practical, ownership-driven?
 - Is it relevant to the prospect's hiring need?
 - Is it concise but still useful?
 - Does it avoid spammy recruiter language?
-- Is the CTA easy?"""
+- Is the CTA easy?
+- Would an AI detector flag this? If yes, rewrite."""
 
 
 def build_outreach_user_prompt(

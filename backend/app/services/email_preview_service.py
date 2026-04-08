@@ -592,7 +592,23 @@ def calculate_deliverability_score(
             "bounce_rate": reputation_data.get("bounce_rate", 0),
             "is_blacklisted": reputation_data.get("is_blacklisted", False),
         },
+        "rendering": _get_rendering_warnings(body_html),
     }
+
+
+def _get_rendering_warnings(body_html: str) -> Dict[str, Any]:
+    """Run rendering checker and return warnings (Gap 11)."""
+    try:
+        from app.services.rendering_checker import check_rendering
+        result = check_rendering(body_html)
+        return {
+            "score": result.get("score", 100),
+            "warnings": result.get("warnings", []),
+            "stats": result.get("stats", {}),
+        }
+    except Exception as e:
+        logger.warning("rendering_check_failed", error=str(e))
+        return {"score": 100, "warnings": [], "stats": {}}
 
 
 # ─── Spam Check + AI Suggestions ─────────────────────────────────
@@ -787,6 +803,16 @@ def send_single_draft(draft_id: int, db: Session, tenant_id: int) -> Dict[str, A
     ).first()
     if not contact:
         return {"error": "Contact not found"}
+
+    # --- Unified Send Gate ---
+    from app.services.send_gate import unified_send_gate
+    lead = (
+        db.query(LeadDetails).filter(LeadDetails.lead_id == draft.lead_id).first()
+        if draft.lead_id else None
+    )
+    gate = unified_send_gate(db=db, contact=contact, tenant_id=tenant_id, lead=lead)
+    if not gate.allowed:
+        return {"error": gate.reason_message, "reason_code": gate.reason_code, "blocked": True}
 
     # Create outreach event
     event = OutreachEvent(

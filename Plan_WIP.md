@@ -1,9 +1,18 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 71: Settings/Config Integrity Audit — Found & fixed 13 inconsistencies where business rules were hardcoded (config.py) instead of read from DB settings. Pipelines page now shows dynamic values from API. Campaign engine, contact enrichment, lead sourcing, leads endpoint, pipelines endpoint, retention service all now read from DB settings. Added 6 new configurable settings (data_retention_days, domain_daily_limit_default/major, max_contacts_per_company_all_campaigns, send_delay_min/max_sec) to Settings page. Fixed warmup engine "Stopped" false alarm caused by multi-worker file lock (75% chance of hitting non-scheduler worker). MIN_SALARY_THRESHOLD reconciled to 40000. 831 tests pass, 40% coverage.
+> Session 72: Centralized Send Gate — Created `services/send_gate.py` with `unified_send_gate()` that all 4 email-sending paths must call. 10 ordered checks (contact status → suppression → email validation → contact+lead cooldown → contact cooldown → per-lead limit → company cap → fatigue → domain throttle → AI orchestrator). Wired into campaign_engine.py (replaced 5 scattered blocks), outreach.py (2 functions), email_preview_service.py, ai_reply_agent_service.py. Added 409 handling in email_preview endpoint + frontend error banner. Deprecated check_send_eligibility(). 27 new unit tests + 858 total tests pass. Frontend build clean.
 
 ## Immediate TODO
+- [x] Centralized Send Gate (2026-04-07)
+  - Created `services/send_gate.py` — `unified_send_gate()` with 10 ordered safety checks
+  - Wired into all 4 send paths: campaign_engine, outreach.py (2 funcs), email_preview_service, ai_reply_agent_service
+  - New cross-channel contact+lead cooldown (check 4): prevents duplicate sends to same contact+lead across channels
+  - is_reply=True skips cooldown/fatigue/AI; dry_run=True skips throttle/AI
+  - Frontend: 409 error handling with error banner in email-preview page
+  - Deprecated `check_send_eligibility()` (kept for mail-merge CSV export)
+  - 27 new unit tests in `test_send_gate.py`, 858 total tests pass, frontend build clean
+  - 7 files changed + 1 new file + 1 new test file
 - [x] Settings/Config Integrity Audit & Fix (2026-04-07)
   - 13 inconsistencies found and fixed: hardcoded values → DB settings reads
   - Pipelines page: dynamic business rules from `GET /pipelines/business-rules`

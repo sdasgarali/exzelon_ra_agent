@@ -2,6 +2,10 @@
 
 Supports nested spintax: {Hello|Hi {there|friend}} → "Hello" or "Hi there" or "Hi friend"
 Uses contact_id as seed for deterministic per-contact variation.
+
+Gap 12 enhancement: campaign_id can be mixed into the seed so the same
+contact gets different spintax variants across different campaigns,
+preventing identical emails from being sent to the same recipient.
 """
 import re
 import random
@@ -11,12 +15,18 @@ import random
 _SPINTAX_PATTERN = re.compile(r"\{([^{}]+)\}")
 
 
-def process_spintax(text: str, seed: int | None = None) -> str:
+def process_spintax(
+    text: str,
+    seed: int | None = None,
+    campaign_id: int | None = None,
+) -> str:
     """Process spintax patterns in text, resolving from innermost out.
 
     Args:
         text: Text containing {option1|option2|option3} patterns.
         seed: Optional seed for deterministic randomness (use contact_id).
+        campaign_id: Optional campaign ID to mix into seed so the same
+            contact gets different variants across different campaigns.
 
     Returns:
         Text with all spintax patterns resolved to one random option.
@@ -24,7 +34,15 @@ def process_spintax(text: str, seed: int | None = None) -> str:
     if not text or "{" not in text:
         return text
 
-    rng = random.Random(seed)
+    # Mix campaign_id into seed for cross-campaign variation
+    effective_seed = seed
+    if seed is not None and campaign_id is not None:
+        # Combine contact_id and campaign_id into a single seed
+        # Using a simple hash-like combination that produces different
+        # but deterministic results per campaign
+        effective_seed = seed * 31 + campaign_id
+
+    rng = random.Random(effective_seed)
 
     # Resolve innermost patterns first, repeat until no patterns remain
     max_iterations = 50  # safety limit for deeply nested spintax

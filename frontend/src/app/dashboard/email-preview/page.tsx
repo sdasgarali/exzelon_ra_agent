@@ -146,6 +146,7 @@ export default function EmailPreviewPage() {
   // Batch actions
   const [approvingAll, setApprovingAll] = useState(false)
   const [sendingBatch, setSendingBatch] = useState(false)
+  const [sendError, setSendError] = useState('')
 
   // Stats
   const pendingCount = drafts.filter(d => d.status === 'pending').length
@@ -255,13 +256,21 @@ export default function EmailPreviewPage() {
 
   const handleSend = async (draftId: number) => {
     setSending(true)
+    setSendError('')
     try {
       await emailPreviewApi.sendDraft(draftId)
       await fetchDrafts()
       if (selectedDraft?.draft_id === draftId) {
         setSelectedDraft(prev => prev ? { ...prev, status: 'sent' } : null)
       }
-    } catch (err) { console.error(err) }
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        const detail = err.response.data?.detail
+        setSendError(detail?.message || 'Send blocked by safety checks')
+      } else {
+        console.error(err)
+      }
+    }
     finally { setSending(false) }
   }
 
@@ -654,6 +663,17 @@ export default function EmailPreviewPage() {
                   </>
                 )}
               </div>
+
+              {/* Send gate error banner */}
+              {sendError && (
+                <div className="mx-4 mt-2 p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">{sendError}</div>
+                  <button onClick={() => setSendError('')} className="text-red-400 hover:text-red-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">

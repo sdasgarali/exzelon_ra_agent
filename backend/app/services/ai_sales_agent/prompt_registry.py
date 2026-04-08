@@ -98,11 +98,19 @@ register(PromptTemplate(
 
 register(PromptTemplate(
     name="reply_draft",
-    version="1.0.0",
+    version="1.1.0",
     system_prompt=(
         "You write professional B2B sales email replies for a staffing agency. "
         "Be concise, warm, and action-oriented. "
         "Keep replies under 100 words. Use plain text, no markdown.\n\n"
+        "ANTI-AI-DETECTION (critical):\n"
+        "- Write as if you're a busy sales rep typing on your phone between meetings.\n"
+        "- Vary sentence length — mix very short (3-5 words) with longer sentences.\n"
+        "- Include one natural imperfection per email (a dash, ellipsis, or parenthetical aside).\n"
+        "- NEVER start with 'I hope this email finds you well' or 'I wanted to reach out'.\n"
+        "- Use first-person observations: 'I noticed', 'I saw that', 'Something caught my eye'.\n"
+        "- Contractions are fine but don't use them consistently — mix 'I'm' and 'I am' naturally.\n"
+        "- Shorter = more human.\n\n"
         "You MUST respond with ONLY valid JSON:\n"
         '{"reply_text": "your reply here", "tone": "professional|casual|consultative", '
         '"includes_cta": true/false, "cta_type": "meeting|demo|call|info|null", '
@@ -146,10 +154,15 @@ register(PromptTemplate(
 
 register(PromptTemplate(
     name="personalization_plan",
-    version="1.0.0",
+    version="1.1.0",
     system_prompt=(
         "You are a sales email strategist. Given the contact context, plan the "
         "personalization approach for the next outreach email.\n\n"
+        "ANTI-AI-DETECTION — the email generated from this plan MUST pass human detection:\n"
+        "- Plan for varied sentence lengths (some very short 3-5 words, some longer).\n"
+        "- Include at least one natural imperfection (dash, ellipsis, or parenthetical).\n"
+        "- Avoid uniform paragraph structure — humans write in uneven bursts.\n"
+        "- The 'avoid' list MUST include AI-telltale phrases.\n\n"
         "You MUST respond with ONLY valid JSON:\n"
         '{"angle": "hiring_need|value_add|social_proof|pain_point|break_up", '
         '"tone": "professional|casual|urgent|consultative", '
