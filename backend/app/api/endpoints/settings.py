@@ -140,6 +140,10 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'automation_cost_analysis_enabled': 'automation',
     # Cost Tracking Budget
     'cost_monthly_budget_total': 'business_rules',
+    # Deliverability
+    'complaint_rate_threshold': 'deliverability',
+    'sequence_fatigue_window_days': 'deliverability',
+    'sequence_fatigue_max_unanswered': 'deliverability',
 }
 
 # Default settings for seed data

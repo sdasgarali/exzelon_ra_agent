@@ -503,3 +503,85 @@ export interface BillingStats {
   overdue_count: number;
   mrr_cents: number;
 }
+
+// ─── Deliverability Intelligence ──────────────────────────────────
+
+export interface DeliverabilityHealthSummary {
+  avg_health_score: number;
+  total_mailboxes: number;
+  dns_issues_count: number;
+  avg_bounce_rate: number;
+  avg_complaint_rate: number;
+  bounce_trend: 'up' | 'down' | 'stable';
+  send_gate_blocks_today: number;
+}
+
+export interface MailboxHealthDetail {
+  health_score: number;
+  health_grade: string;
+  bounce_rate_pct: number;
+  reply_rate_pct: number;
+  complaint_rate_pct: number;
+  engagement_rate: number;
+  is_healthy: boolean;
+  isp: string;
+  isp_name: string;
+}
+
+export interface GateCheckResult {
+  name: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface SendGateResult {
+  allowed: boolean;
+  reason_code: string;
+  reason_message: string;
+  checks: GateCheckResult[];
+}
+
+export interface RenderingWarning {
+  severity: 'high' | 'medium' | 'low';
+  message: string;
+  client: string;
+}
+
+export interface RenderingCheckResult {
+  warnings: RenderingWarning[];
+  stats: Record<string, number>;
+  score: number;
+}
+
+export interface HumanizeResult {
+  subject: string;
+  body_html: string;
+  body_text: string;
+  modifications: string[];
+  burstiness_before: number;
+  burstiness_after: number;
+}
+
+export interface SpintaxPreviewResult {
+  variants: string[];
+  total_variants: number;
+  errors: string[];
+}
+
+export interface SpamReduceResult {
+  before_score: number;
+  before_grade: string;
+  after_score: number;
+  after_grade: string;
+  delta: number;
+  new_subject: string;
+  new_body_html: string;
+}
+
+export interface EngagementScore {
+  score: number;
+  tier: 'hot' | 'warm' | 'cold' | 'dead';
+  signals: Record<string, number>;
+  total_sent: number;
+  last_engagement_at: string | null;
+}

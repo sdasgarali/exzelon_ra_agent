@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { warmupApi, settingsApi } from '@/lib/api'
+import { warmupApi, settingsApi, deliverabilityApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
+  LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 
@@ -128,6 +128,7 @@ export default function WarmupEnginePage() {
   const [exportDays, setExportDays] = useState(30)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusData | null>(null)
   const [showJobDetails, setShowJobDetails] = useState(false)
+  const [ispProfiles, setIspProfiles] = useState<Record<string, any> | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -154,6 +155,7 @@ export default function WarmupEnginePage() {
       if (perms.warmup) setWarmupPermission(perms.warmup)
       try { const u = await warmupApi.getUnreadCount(); setUnreadCount(typeof u === 'number' ? u : u?.count ?? 0) } catch {}
       try { const ss = await warmupApi.getSchedulerStatus(); setSchedulerStatus(ss) } catch {}
+      try { const ip = await deliverabilityApi.ispProfiles(); setIspProfiles(ip.profiles || null) } catch {}
     } catch (e: any) { if (e.code !== 'ERR_CANCELED') { setError(e?.response?.data?.detail || 'Failed to load warmup data') } }
     finally { setLoading(false) }
   }
@@ -376,6 +378,65 @@ export default function WarmupEnginePage() {
             <div className="bg-white rounded-lg shadow p-4 border-l-4" style={{ borderColor: status.avg_health_score >= 80 ? '#22c55e' : status.avg_health_score >= 60 ? '#eab308' : '#ef4444' }}><div className="text-xs text-gray-500 uppercase tracking-wide">Avg Health</div><div className={`text-2xl font-bold mt-1 ${hText(status.avg_health_score)}`}>{status.avg_health_score?.toFixed(1)}</div></div>
             <div className={`bg-white rounded-lg shadow p-4 border-l-4 ${status.dns_issues_count > 0 ? 'border-red-400' : 'border-green-400'}`}><div className="text-xs text-gray-500 uppercase tracking-wide">DNS Issues</div><div className={`text-2xl font-bold mt-1 ${status.dns_issues_count > 0 ? 'text-red-600' : 'text-green-600'}`}>{status.dns_issues_count}</div></div>
           </div>
+
+          {/* ISP Breakdown */}
+          {ispProfiles && status?.mailboxes && status.mailboxes.length > 0 && (() => {
+            const ispDomains: Record<string, string[]> = {}
+            for (const [isp, profile] of Object.entries(ispProfiles)) {
+              ispDomains[isp] = (profile as any).domains || []
+            }
+            const classify = (email: string): string => {
+              const domain = email.split('@')[1]?.toLowerCase() || ''
+              for (const [isp, domains] of Object.entries(ispDomains)) {
+                if ((domains as string[]).some(d => domain === d || domain.endsWith('.' + d))) return isp
+              }
+              return 'other'
+            }
+            const counts: Record<string, number> = {}
+            for (const mb of status.mailboxes) {
+              const isp = classify(mb.email || '')
+              counts[isp] = (counts[isp] || 0) + 1
+            }
+            const chartData = Object.entries(counts).map(([name, value]) => ({
+              name: (ispProfiles[name] as any)?.name || name.charAt(0).toUpperCase() + name.slice(1),
+              value,
+              strategy: (ispProfiles[name] as any)?.strategy || '',
+              replyRate: (ispProfiles[name] as any)?.recommended_reply_rate || 0,
+            }))
+            const COLORS = ['#3b82f6', '#ef4444', '#8b5cf6', '#6b7280']
+            return (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">ISP Breakdown</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex justify-center">
+                    <ResponsiveContainer width={220} height={220}>
+                      <PieChart>
+                        <Pie data={chartData} cx="50%" cy="50%" outerRadius={80} dataKey="value" nameKey="name" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                          {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-xs text-gray-500 uppercase"><th className="pb-2">ISP</th><th className="pb-2">Count</th><th className="pb-2">Strategy</th><th className="pb-2">Reply Rate</th></tr></thead>
+                      <tbody>
+                        {chartData.map((row, i) => (
+                          <tr key={i} className="border-t border-gray-100">
+                            <td className="py-2 font-medium flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />{row.name}</td>
+                            <td className="py-2">{row.value}</td>
+                            <td className="py-2 text-xs text-gray-500 max-w-[150px] truncate">{row.strategy}</td>
+                            <td className="py-2">{(row.replyRate * 100).toFixed(0)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* mailbox table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">

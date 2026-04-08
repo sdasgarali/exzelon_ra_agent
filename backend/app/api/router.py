@@ -9,7 +9,7 @@ from app.api.endpoints import (
     icp_wizard, sequence_generator, crm_sync, deal_tasks, spam_check,
     admin_tenants, billing, activity_log, onboarding,
     reply_macros, notifications, calendar, credits, goals, visitor_tracking,
-    sms, objections, dfy, email_preview,
+    sms, objections, dfy, email_preview, deliverability,
 )
 
 api_router = APIRouter()
@@ -64,3 +64,5 @@ api_router.include_router(objections.router)
 api_router.include_router(dfy.router)
 # Email Preview & Approve
 api_router.include_router(email_preview.router)
+# Deliverability Intelligence
+api_router.include_router(deliverability.router)

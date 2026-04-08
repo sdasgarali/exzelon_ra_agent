@@ -164,6 +164,7 @@ const TAB_PERM_MAP: Record<string, string> = {
   validation: 'validation',
   outreach: 'outreach',
   business: 'business_rules',
+  deliverability: 'deliverability',
 }
 
 // Setting key to tab mapping (for All Settings filtering)
@@ -332,6 +333,17 @@ export default function SettingsPage() {
     send_delay_max_sec: 180,
   })
 
+  // Deliverability settings
+  const [delivConfig, setDelivConfig] = useState({
+    complaint_rate_threshold: 0.003,
+    domain_daily_limit_default: 50,
+    domain_daily_limit_major_providers: 30,
+    cooldown_days: 10,
+    max_contacts_per_company_all_campaigns: 5,
+    sequence_fatigue_window_days: 90,
+    sequence_fatigue_max_unanswered: 5,
+  })
+
   // Test results
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
@@ -346,7 +358,7 @@ export default function SettingsPage() {
       setPermissionsLoaded(true)
 
       // Set initial active tab to the first accessible tab
-      const tabOrder = ['jobfilters', 'jobsourceapis', 'ai', 'contacts', 'validation', 'outreach', 'business']
+      const tabOrder = ['jobfilters', 'jobsourceapis', 'ai', 'contacts', 'validation', 'outreach', 'business', 'deliverability']
       const firstAccessible = tabOrder.find(tabId => {
         const permKey = TAB_PERM_MAP[tabId]
         return perms[permKey] && perms[permKey] !== 'no_access'
@@ -357,7 +369,7 @@ export default function SettingsPage() {
       await fetchSettings()
     } catch {
       // If permissions endpoint fails, default to super_admin-like access for backwards compat
-      const defaultPerms = { job_filters: 'full', job_source_apis: 'full', ai_llm: 'full', contacts: 'full', validation: 'full', outreach: 'full', business_rules: 'full' }
+      const defaultPerms = { job_filters: 'full', job_source_apis: 'full', ai_llm: 'full', contacts: 'full', validation: 'full', outreach: 'full', business_rules: 'full', deliverability: 'full' }
       setTabPermissions(defaultPerms)
       setPermissionsLoaded(true)
       setActiveTab('jobfilters')
@@ -507,6 +519,16 @@ export default function SettingsPage() {
         send_delay_min_sec: settingsMap.send_delay_min_sec ?? 45,
         send_delay_max_sec: settingsMap.send_delay_max_sec ?? 180,
       }))
+      // Deliverability settings
+      setDelivConfig({
+        complaint_rate_threshold: settingsMap.complaint_rate_threshold ?? 0.003,
+        domain_daily_limit_default: settingsMap.domain_daily_limit_default ?? 50,
+        domain_daily_limit_major_providers: settingsMap.domain_daily_limit_major_providers ?? 30,
+        cooldown_days: settingsMap.cooldown_days ?? 10,
+        max_contacts_per_company_all_campaigns: settingsMap.max_contacts_per_company_all_campaigns ?? 5,
+        sequence_fatigue_window_days: settingsMap.sequence_fatigue_window_days ?? 90,
+        sequence_fatigue_max_unanswered: settingsMap.sequence_fatigue_max_unanswered ?? 5,
+      })
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
         setError(err.response?.data?.detail || 'Failed to fetch settings')
@@ -628,6 +650,16 @@ export default function SettingsPage() {
           saveSetting('send_delay_min_sec', businessRules.send_delay_min_sec, 'integer'),
           saveSetting('send_delay_max_sec', businessRules.send_delay_max_sec, 'integer'),
         ])
+      } else if (configType === 'deliverability') {
+        await Promise.all([
+          saveSetting('complaint_rate_threshold', delivConfig.complaint_rate_threshold, 'float'),
+          saveSetting('domain_daily_limit_default', delivConfig.domain_daily_limit_default, 'integer'),
+          saveSetting('domain_daily_limit_major_providers', delivConfig.domain_daily_limit_major_providers, 'integer'),
+          saveSetting('cooldown_days', delivConfig.cooldown_days, 'integer'),
+          saveSetting('max_contacts_per_company_all_campaigns', delivConfig.max_contacts_per_company_all_campaigns, 'integer'),
+          saveSetting('sequence_fatigue_window_days', delivConfig.sequence_fatigue_window_days, 'integer'),
+          saveSetting('sequence_fatigue_max_unanswered', delivConfig.sequence_fatigue_max_unanswered, 'integer'),
+        ])
       }
 
       setSuccess('Settings saved successfully!')
@@ -730,6 +762,7 @@ export default function SettingsPage() {
             { id: 'validation', label: '5. Validation', color: 'cyan' },
             { id: 'outreach', label: '6. Outreach', color: 'orange' },
             { id: 'business', label: '7. Business Rules', color: 'gray' },
+            { id: 'deliverability', label: '8. Deliverability', color: 'teal' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -2898,7 +2931,127 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 8: All Settings */}
+      {/* Tab 8: Deliverability */}
+      {activeTab === 'deliverability' && (
+        <fieldset disabled={!canWriteTab('deliverability')} className="space-y-6">
+          {!canWriteTab('deliverability') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+              <span className="w-3 h-3 bg-teal-500 rounded-full mr-2"></span>
+              Deliverability & Safety
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">Configure email deliverability thresholds and safety controls</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="label">Complaint Rate Threshold</label>
+                <input
+                  type="number"
+                  value={delivConfig.complaint_rate_threshold}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, complaint_rate_threshold: parseFloat(e.target.value) || 0 })}
+                  className="input"
+                  step="0.001"
+                  min="0.001"
+                  max="0.01"
+                />
+                <p className="text-xs text-gray-500 mt-1">Auto-pause mailbox above this rate (0.003 = 0.3%)</p>
+              </div>
+
+              <div>
+                <label className="label">Domain Daily Limit (General)</label>
+                <input
+                  type="number"
+                  value={delivConfig.domain_daily_limit_default}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, domain_daily_limit_default: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                  max="500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Max emails/day to any single recipient domain</p>
+              </div>
+
+              <div>
+                <label className="label">Domain Daily Limit (Major Providers)</label>
+                <input
+                  type="number"
+                  value={delivConfig.domain_daily_limit_major_providers}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, domain_daily_limit_major_providers: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                  max="200"
+                />
+                <p className="text-xs text-gray-500 mt-1">Max emails/day to Gmail/Outlook/Yahoo</p>
+              </div>
+
+              <div>
+                <label className="label">Send Cooldown Days</label>
+                <input
+                  type="number"
+                  value={delivConfig.cooldown_days}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, cooldown_days: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                  max="90"
+                />
+                <p className="text-xs text-gray-500 mt-1">Days between emails to same contact</p>
+              </div>
+
+              <div>
+                <label className="label">Company Contact Cap</label>
+                <input
+                  type="number"
+                  value={delivConfig.max_contacts_per_company_all_campaigns}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, max_contacts_per_company_all_campaigns: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                  max="50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Max contacts to email at same company</p>
+              </div>
+
+              <div>
+                <label className="label">Sequence Fatigue Window (Days)</label>
+                <input
+                  type="number"
+                  value={delivConfig.sequence_fatigue_window_days}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, sequence_fatigue_window_days: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="7"
+                  max="365"
+                />
+                <p className="text-xs text-gray-500 mt-1">Days to look back for unanswered emails</p>
+              </div>
+
+              <div>
+                <label className="label">Sequence Fatigue Max Unanswered</label>
+                <input
+                  type="number"
+                  value={delivConfig.sequence_fatigue_max_unanswered}
+                  onChange={(e) => setDelivConfig({ ...delivConfig, sequence_fatigue_max_unanswered: parseInt(e.target.value) || 0 })}
+                  className="input"
+                  min="1"
+                  max="20"
+                />
+                <p className="text-xs text-gray-500 mt-1">Max unanswered emails before auto-stopping</p>
+              </div>
+            </div>
+          </div>
+
+          {canWriteTab('deliverability') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('deliverability')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save Deliverability Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
+      )}
+
+      {/* Tab 9: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
           {!isSuperAdmin && (

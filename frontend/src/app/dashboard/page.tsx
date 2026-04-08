@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi, dealsApi } from '@/lib/api'
+import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi, dealsApi, deliverabilityApi } from '@/lib/api'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
@@ -27,6 +27,8 @@ import {
   ArrowRight,
   Target,
   DollarSign,
+  Shield,
+  AlertCircle,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -313,6 +315,11 @@ export default function DashboardPage() {
   const { data: dealStats } = useQuery({
     queryKey: ['deal-stats-dashboard'],
     queryFn: () => dealsApi.stats().catch(() => null),
+  })
+
+  const { data: delivHealth } = useQuery({
+    queryKey: ['deliverability-health'],
+    queryFn: () => deliverabilityApi.healthSummary().catch(() => null),
   })
 
   const showOnboarding = onboardingStatus?.should_show_onboarding &&
@@ -690,6 +697,66 @@ export default function DashboardPage() {
           icon={Mail}
         />
       </div>
+
+      {/* Deliverability Health Card */}
+      {delivHealth && delivHealth.total_mailboxes > 0 && (
+        <div className="glass-card rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-teal-600" />
+              Deliverability Health
+            </h3>
+            <span className="text-xs text-gray-500">{delivHealth.total_mailboxes} mailboxes</span>
+          </div>
+          <div className="flex items-center gap-4 mb-4">
+            <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              {Math.round(delivHealth.avg_health_score)}
+            </div>
+            <div className="flex-1">
+              <div className="h-3 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    delivHealth.avg_health_score >= 80 ? 'bg-green-500' :
+                    delivHealth.avg_health_score >= 60 ? 'bg-yellow-500' :
+                    delivHealth.avg_health_score >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${Math.min(delivHealth.avg_health_score, 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Bounce Rate</span>
+              <span className={`text-xs font-medium flex items-center gap-0.5 ${
+                delivHealth.bounce_trend === 'up' ? 'text-red-600' :
+                delivHealth.bounce_trend === 'down' ? 'text-green-600' : 'text-gray-600'
+              }`}>
+                {delivHealth.avg_bounce_rate}%
+                {delivHealth.bounce_trend === 'up' && <TrendingUp className="w-3 h-3" />}
+                {delivHealth.bounce_trend === 'down' && <TrendingDown className="w-3 h-3" />}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Complaint Rate</span>
+              <span className={`text-xs font-medium ${delivHealth.avg_complaint_rate > 0.3 ? 'text-red-600' : 'text-gray-600'}`}>
+                {delivHealth.avg_complaint_rate}%
+                {delivHealth.avg_complaint_rate > 0.3 && <AlertCircle className="w-3 h-3 inline ml-0.5" />}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">DNS Issues</span>
+              <span className={`text-xs font-medium ${delivHealth.dns_issues_count > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+                {delivHealth.dns_issues_count}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Blocked Today</span>
+              <span className="text-xs font-medium text-gray-600">{delivHealth.send_gate_blocks_today}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Goal Progress Rings */}
       {kpis && (

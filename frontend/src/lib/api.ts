@@ -1390,6 +1390,57 @@ export const emailPreviewApi = {
   },
 }
 
+export const deliverabilityApi = {
+  healthSummary: async () => {
+    const response = await api.get('/deliverability/health-summary')
+    return response.data
+  },
+  mailboxHealth: async (id: number) => {
+    const response = await api.get(`/deliverability/mailbox/${id}/health`)
+    return response.data
+  },
+  preSendCheck: async (data: { contact_id: number; lead_id?: number; campaign_id?: number }) => {
+    const response = await api.post('/deliverability/pre-send-check', data)
+    return response.data
+  },
+  renderingCheck: async (data: { body_html: string }) => {
+    const response = await api.post('/deliverability/rendering-check', data)
+    return response.data
+  },
+  humanize: async (data: { subject: string; body_html: string; body_text?: string; intensity?: string }) => {
+    const response = await api.post('/deliverability/humanize', data)
+    return response.data
+  },
+  sendTimes: async (params?: { state?: string; preferred_hour?: number }) => {
+    const response = await api.get('/deliverability/send-times', { params })
+    return response.data
+  },
+  engagement: async (contactId: number) => {
+    const response = await api.get(`/deliverability/engagement/${contactId}`)
+    return response.data
+  },
+  spintaxPreview: async (data: { text: string; count?: number; campaign_id?: number }) => {
+    const response = await api.post('/deliverability/spintax-preview', data)
+    return response.data
+  },
+  ispProfiles: async () => {
+    const response = await api.get('/deliverability/isp-profiles')
+    return response.data
+  },
+  complaintStats: async () => {
+    const response = await api.get('/deliverability/complaint-stats')
+    return response.data
+  },
+  spamReduce: async (data: { subject: string; body_html: string; replacements: Array<{ original: string; replacement: string }> }) => {
+    const response = await api.post('/deliverability/spam-reduce', data)
+    return response.data
+  },
+  humanizePreview: async (data: { subject: string; body_html: string; body_text?: string; intensity?: string }) => {
+    const response = await api.post('/deliverability/humanize-preview', data)
+    return response.data
+  },
+}
+
 export const integrationsApi = {
   // API Keys
   listApiKeys: async () => {

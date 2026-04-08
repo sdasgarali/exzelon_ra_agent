@@ -108,10 +108,12 @@ export default function TemplatesPage() {
     setSaving(true)
     setError('')
     try {
+      // Never send status via create/edit — use the Activate button instead
+      const { status: _status, ...payload } = form
       if (editingId) {
-        await templatesApi.update(editingId, form)
+        await templatesApi.update(editingId, payload)
       } else {
-        await templatesApi.create(form)
+        await templatesApi.create(payload)
       }
       setShowModal(false)
       fetchTemplates()

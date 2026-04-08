@@ -1,9 +1,19 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 72: Centralized Send Gate — Created `services/send_gate.py` with `unified_send_gate()` that all 4 email-sending paths must call. 10 ordered checks (contact status → suppression → email validation → contact+lead cooldown → contact cooldown → per-lead limit → company cap → fatigue → domain throttle → AI orchestrator). Wired into campaign_engine.py (replaced 5 scattered blocks), outreach.py (2 functions), email_preview_service.py, ai_reply_agent_service.py. Added 409 handling in email_preview endpoint + frontend error banner. Deprecated check_send_eligibility(). 27 new unit tests + 858 total tests pass. Frontend build clean.
+> Session 74: Frontend Deliverability Intelligence Surface — ALL 8 PHASES COMPLETE. New backend: deliverability.py (12 API endpoints). Frontend: deliverabilityApi (12 methods), 10 new TypeScript interfaces. Dashboard health card, 5 mailbox health columns, email-preview 6-tab intelligence panel (spam+rendering+humanize+spintax+send gate+score), campaign spam badges+spintax preview, warmup ISP breakdown pie chart, settings deliverability tab (7 fields). 928 tests pass, frontend builds clean.
 
 ## Immediate TODO
+- [x] Frontend Deliverability Intelligence Surface (2026-04-08)
+  - Phase 1: `api/endpoints/deliverability.py` — 12 new endpoints wrapping backend safety/intelligence services
+  - Phase 2: `deliverabilityApi` (12 methods) + 10 TypeScript interfaces (HealthSummary, MailboxHealth, SendGate, Rendering, Humanize, Spintax, SpamReduce, Engagement)
+  - Phase 3: Dashboard — Deliverability Health card (score bar, bounce/complaint rates, DNS issues, gate blocks)
+  - Phase 4: Mailboxes — 5 new columns (Health score+grade, Bounce%, Reply%, Complaint%, Engagement tier)
+  - Phase 5: Email Preview — 6-tab intelligence panel replacing toggle (Spam & Fix, Rendering, Humanize, Spintax, Send Gate, Score)
+  - Phase 6: Campaigns — per-step spam grade badges + spintax preview modal
+  - Phase 7: Warmup — ISP breakdown pie chart + distribution table
+  - Phase 8: Settings — Deliverability tab with 7 configurable fields (complaint threshold, domain limits, cooldown, company cap, fatigue)
+  - 928 backend tests pass, frontend builds clean
 - [x] Centralized Send Gate (2026-04-07)
   - Created `services/send_gate.py` — `unified_send_gate()` with 10 ordered safety checks
   - Wired into all 4 send paths: campaign_engine, outreach.py (2 funcs), email_preview_service, ai_reply_agent_service

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { mailboxesApi } from '@/lib/api'
+import { mailboxesApi, deliverabilityApi } from '@/lib/api'
+import type { MailboxHealthDetail } from '@/types/api'
 import { useAuthStore } from '@/lib/store'
 import { useToast } from '@/components/toast'
 
@@ -141,6 +142,9 @@ export default function MailboxesPage() {
   const [sortKey, setSortKey] = useState<SortKey>('email')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
+  // Mailbox health data
+  const [mailboxHealthMap, setMailboxHealthMap] = useState<Record<number, MailboxHealthDetail>>({})
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -235,6 +239,20 @@ export default function MailboxesPage() {
         if (mb.connection_error) errorMap[mb.mailbox_id] = mb.connection_error
       }
       setConnectionErrors(prev => ({ ...errorMap, ...prev }))
+      // Fetch health data for each mailbox in background
+      if (items.length > 0) {
+        Promise.allSettled(
+          items.map((mb: Mailbox) => deliverabilityApi.mailboxHealth(mb.mailbox_id).then(h => ({ id: mb.mailbox_id, data: h })))
+        ).then(results => {
+          const healthMap: Record<number, MailboxHealthDetail> = {}
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) {
+              healthMap[r.value.id] = r.value.data
+            }
+          }
+          setMailboxHealthMap(healthMap)
+        })
+      }
     } catch (error: any) {
       if (error.code !== 'ERR_CANCELED') {
         console.error('Failed to fetch mailboxes:', error)
@@ -856,7 +874,11 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('total_emails_sent')}>
                 Total Sent <SortIcon column="total_emails_sent" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Metrics</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bounce %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reply %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Complaint %</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Engagement</th>
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('connection_status')}>
                 Connection <SortIcon column="connection_status" />
               </th>
@@ -910,11 +932,52 @@ export default function MailboxesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{mailbox.total_emails_sent}</td>
+                {/* Health Score + Grade */}
                 <td className="px-4 py-4 whitespace-nowrap">
-                  <div className="flex space-x-3 text-xs">
-                    <span className="text-red-600" title="Bounces">B: {mailbox.bounce_count}</span>
-                    <span className="text-green-600" title="Replies">R: {mailbox.reply_count}</span>
-                  </div>
+                  {mailboxHealthMap[mailbox.mailbox_id] ? (() => {
+                    const h = mailboxHealthMap[mailbox.mailbox_id]
+                    const gradeColors: Record<string, string> = { A: 'bg-green-100 text-green-800', B: 'bg-blue-100 text-blue-800', C: 'bg-yellow-100 text-yellow-800', D: 'bg-orange-100 text-orange-800', F: 'bg-red-100 text-red-800' }
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${h.health_score >= 80 ? 'bg-green-500' : h.health_score >= 60 ? 'bg-yellow-500' : h.health_score >= 40 ? 'bg-orange-500' : 'bg-red-500'}`} style={{ width: `${h.health_score}%` }} />
+                        </div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${gradeColors[h.health_grade] || 'bg-gray-100 text-gray-800'}`}>{h.health_grade}</span>
+                      </div>
+                    )
+                  })() : <span className="text-xs text-gray-400">-</span>}
+                </td>
+                {/* Bounce % */}
+                <td className="px-4 py-4 whitespace-nowrap text-xs">
+                  {mailboxHealthMap[mailbox.mailbox_id] ? (
+                    <span className={mailboxHealthMap[mailbox.mailbox_id].bounce_rate_pct > 5 ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      {mailboxHealthMap[mailbox.mailbox_id].bounce_rate_pct}%
+                    </span>
+                  ) : <span className="text-gray-400">-</span>}
+                </td>
+                {/* Reply % */}
+                <td className="px-4 py-4 whitespace-nowrap text-xs">
+                  {mailboxHealthMap[mailbox.mailbox_id] ? (
+                    <span className="text-green-600">{mailboxHealthMap[mailbox.mailbox_id].reply_rate_pct}%</span>
+                  ) : <span className="text-gray-400">-</span>}
+                </td>
+                {/* Complaint % */}
+                <td className="px-4 py-4 whitespace-nowrap text-xs">
+                  {mailboxHealthMap[mailbox.mailbox_id] ? (
+                    <span className={mailboxHealthMap[mailbox.mailbox_id].complaint_rate_pct > 0.3 ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      {mailboxHealthMap[mailbox.mailbox_id].complaint_rate_pct}%
+                      {mailboxHealthMap[mailbox.mailbox_id].complaint_rate_pct > 0.3 && ' ⚠'}
+                    </span>
+                  ) : <span className="text-gray-400">-</span>}
+                </td>
+                {/* Engagement */}
+                <td className="px-4 py-4 whitespace-nowrap text-xs">
+                  {mailboxHealthMap[mailbox.mailbox_id] ? (() => {
+                    const rate = mailboxHealthMap[mailbox.mailbox_id].engagement_rate
+                    const tier = rate >= 0.6 ? 'hot' : rate >= 0.3 ? 'warm' : rate >= 0.1 ? 'cold' : 'dead'
+                    const tierColors: Record<string, string> = { hot: 'bg-red-100 text-red-700', warm: 'bg-orange-100 text-orange-700', cold: 'bg-blue-100 text-blue-700', dead: 'bg-gray-100 text-gray-500' }
+                    return <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${tierColors[tier]}`}>{tier}</span>
+                  })() : <span className="text-gray-400">-</span>}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-center">
                   {connectionStatus[mailbox.mailbox_id] === 'testing' && (

@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi } from '@/lib/api'
+import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
-  FileSearch, Loader2, AlertTriangle,
+  FileSearch, Loader2, AlertTriangle, Shuffle,
 } from 'lucide-react'
 
 type TabView = 'list' | 'detail'
@@ -58,6 +58,12 @@ export default function CampaignsPage() {
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [contacts, setContacts] = useState<CampaignContact[]>([])
   const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics' | 'rules'>('sequence')
+
+  // Step spam scores
+  const [stepSpamScores, setStepSpamScores] = useState<Record<number, { grade: string; score: number }>>({})
+  const [spintaxModal, setSpintaxModal] = useState<{ step: SequenceStep } | null>(null)
+  const [spintaxVariants, setSpintaxVariants] = useState<string[]>([])
+  const [loadingSpintax, setLoadingSpintax] = useState(false)
 
   // Create/edit modals
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -145,6 +151,19 @@ export default function CampaignsPage() {
       ])
       setSteps(stepsData || [])
       setContacts(contactsData?.items || [])
+      // Fetch spam scores for email steps
+      const emailSteps = (stepsData || []).filter((s: SequenceStep) => s.step_type === 'email' && s.subject && s.body_html)
+      if (emailSteps.length > 0) {
+        Promise.allSettled(
+          emailSteps.map((s: SequenceStep) => emailPreviewApi.spamCheck({ subject: s.subject || '', body_html: s.body_html || '' }).then(r => ({ id: s.step_id, grade: r.grade, score: r.score })))
+        ).then(results => {
+          const scores: Record<number, { grade: string; score: number }> = {}
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) scores[r.value.id] = { grade: r.value.grade, score: r.value.score }
+          }
+          setStepSpamScores(scores)
+        })
+      }
       // Load enrollment rules
       const fullCampaign = await campaignsApi.get(campaign.campaign_id)
       setSelectedCampaign(fullCampaign)
@@ -652,6 +671,11 @@ export default function CampaignsPage() {
                       <span className="font-medium capitalize">{step.step_type}</span>
                       {step.step_type === 'email' && step.subject && <span className="text-sm text-gray-500">— {step.subject}</span>}
                       {step.delay_days > 0 && <span className="text-xs text-gray-400 ml-2">Wait {step.delay_days}d {step.delay_hours}h</span>}
+                      {step.step_type === 'email' && stepSpamScores[step.step_id] && (() => {
+                        const ss = stepSpamScores[step.step_id]
+                        const colors: Record<string, string> = { clean: 'bg-green-100 text-green-700', low_risk: 'bg-yellow-100 text-yellow-700', medium_risk: 'bg-orange-100 text-orange-700', high_risk: 'bg-red-100 text-red-700', spam: 'bg-red-200 text-red-800' }
+                        return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${colors[ss.grade] || 'bg-gray-100 text-gray-600'}`}>Spam: {ss.grade.replace('_', ' ')}</span>
+                      })()}
                     </div>
                     {step.step_type === 'email' && (
                       <div className="flex gap-4 mt-1 text-xs text-gray-500">
@@ -664,25 +688,42 @@ export default function CampaignsPage() {
                   </div>
                   <div className="flex gap-1">
                     {step.step_type === 'email' && (
-                      <button
-                        onClick={async () => {
-                          if (!selectedCampaign) return
-                          try {
-                            const result = await emailPreviewApi.generateDrafts({
-                              source: 'campaign',
-                              campaign_id: selectedCampaign.campaign_id,
-                              step_index: step.step_order,
-                            })
-                            if (result.batch_id) {
-                              window.location.href = `/dashboard/email-preview?batch_id=${result.batch_id}&source=campaign`
-                            }
-                          } catch (err) { console.error(err) }
-                        }}
-                        className="p-1 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded"
-                        title="Generate Previews"
-                      >
-                        <FileSearch className="w-4 h-4 text-teal-500" />
-                      </button>
+                      <>
+                        <button
+                          onClick={async () => {
+                            if (!selectedCampaign) return
+                            try {
+                              const result = await emailPreviewApi.generateDrafts({
+                                source: 'campaign',
+                                campaign_id: selectedCampaign.campaign_id,
+                                step_index: step.step_order,
+                              })
+                              if (result.batch_id) {
+                                window.location.href = `/dashboard/email-preview?batch_id=${result.batch_id}&source=campaign`
+                              }
+                            } catch (err) { console.error(err) }
+                          }}
+                          className="p-1 hover:bg-teal-50 dark:hover:bg-teal-900/20 rounded"
+                          title="Generate Previews"
+                        >
+                          <FileSearch className="w-4 h-4 text-teal-500" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setSpintaxModal({ step })
+                            setLoadingSpintax(true)
+                            try {
+                              const data = await deliverabilityApi.spintaxPreview({ text: step.body_html || '', count: 3, campaign_id: selectedCampaign?.campaign_id })
+                              setSpintaxVariants(data.variants || [])
+                            } catch { setSpintaxVariants([]) }
+                            finally { setLoadingSpintax(false) }
+                          }}
+                          className="p-1 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded"
+                          title="Preview Spintax Variations"
+                        >
+                          <Shuffle className="w-4 h-4 text-orange-500" />
+                        </button>
+                      </>
                     )}
                     <button onClick={() => { setEditingStep(step); setStepForm({ step_type: step.step_type, subject: step.subject || '', body_html: step.body_html || '', delay_days: step.delay_days, delay_hours: step.delay_hours, reply_to_thread: step.reply_to_thread, condition_type: step.condition_type || '', condition_window_hours: step.condition_window_hours || 24, variants_json: step.variants_json || '' }); setShowStepModal(true) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                       <Eye className="w-4 h-4 text-gray-400" />
@@ -1189,6 +1230,35 @@ export default function CampaignsPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </>
+      )}
+      {/* Spintax Preview Modal */}
+      {spintaxModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setSpintaxModal(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Shuffle className="w-4 h-4 text-orange-500" />
+                Spintax Preview
+              </h3>
+              <button onClick={() => setSpintaxModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            {loadingSpintax ? (
+              <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+            ) : spintaxVariants.length <= 1 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No spintax patterns found in this step</p>
+            ) : (
+              <div className="space-y-3">
+                {spintaxVariants.map((v, i) => (
+                  <div key={i} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="text-xs text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300" dangerouslySetInnerHTML={{ __html: v }} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

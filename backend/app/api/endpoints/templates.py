@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.email_template import EmailTemplate, TemplateStatus
-from app.db.query_helpers import tenant_filter
 from app.schemas.email_template import (
     EmailTemplateCreate,
     EmailTemplateUpdate,
@@ -25,9 +24,10 @@ async def list_templates(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """List all email templates."""
+    """List all email templates. Always scoped to one tenant (super admin defaults to own tenant)."""
+    effective_tenant = tenant_id or current_user.tenant_id or 1
     query = db.query(EmailTemplate)
-    query = tenant_filter(query, EmailTemplate, tenant_id)
+    query = query.filter(EmailTemplate.tenant_id == effective_tenant)
     if show_archived:
         query = query.filter(EmailTemplate.is_archived == True)
     else:
@@ -47,10 +47,12 @@ async def get_active_template(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get the currently active email template."""
-    query = db.query(EmailTemplate)
-    query = tenant_filter(query, EmailTemplate, tenant_id)
-    template = query.filter(EmailTemplate.status == TemplateStatus.ACTIVE).first()
+    """Get the currently active email template. Always scoped to one tenant."""
+    effective_tenant = tenant_id or current_user.tenant_id or 1
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.tenant_id == effective_tenant,
+        EmailTemplate.status == TemplateStatus.ACTIVE,
+    ).first()
     if not template:
         return None
     return EmailTemplateResponse.model_validate(template)
@@ -89,16 +91,17 @@ async def create_template(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new email template."""
+    effective_tenant = tenant_id or 1
+
     # If creating as active, deactivate all others in the same tenant
     if template_in.status == TemplateStatus.ACTIVE:
-        query = db.query(EmailTemplate).filter(
-            EmailTemplate.status == TemplateStatus.ACTIVE
-        )
-        query = tenant_filter(query, EmailTemplate, tenant_id)
-        query.update({"status": TemplateStatus.INACTIVE})
+        db.query(EmailTemplate).filter(
+            EmailTemplate.tenant_id == effective_tenant,
+            EmailTemplate.status == TemplateStatus.ACTIVE,
+        ).update({"status": TemplateStatus.INACTIVE})
 
     template = EmailTemplate(**template_in.model_dump())
-    template.tenant_id = tenant_id or 1
+    template.tenant_id = effective_tenant
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -134,12 +137,11 @@ async def update_template(
 
     # If setting to active, deactivate all others in the same tenant
     if update_data.get("status") == TemplateStatus.ACTIVE:
-        query = db.query(EmailTemplate).filter(
+        db.query(EmailTemplate).filter(
+            EmailTemplate.tenant_id == template.tenant_id,
             EmailTemplate.status == TemplateStatus.ACTIVE,
             EmailTemplate.template_id != template_id,
-        )
-        query = tenant_filter(query, EmailTemplate, tenant_id)
-        query.update({"status": TemplateStatus.INACTIVE})
+        ).update({"status": TemplateStatus.INACTIVE})
 
     for field, value in update_data.items():
         setattr(template, field, value)
@@ -208,12 +210,11 @@ async def activate_template(
             detail="Template not found",
         )
 
-    # Deactivate all others in the same tenant
-    query = db.query(EmailTemplate).filter(
-        EmailTemplate.status == TemplateStatus.ACTIVE
-    )
-    query = tenant_filter(query, EmailTemplate, tenant_id)
-    query.update({"status": TemplateStatus.INACTIVE})
+    # Deactivate all others in the same tenant as the target template
+    db.query(EmailTemplate).filter(
+        EmailTemplate.tenant_id == template.tenant_id,
+        EmailTemplate.status == TemplateStatus.ACTIVE,
+    ).update({"status": TemplateStatus.INACTIVE})
 
     template.status = TemplateStatus.ACTIVE
     db.commit()
