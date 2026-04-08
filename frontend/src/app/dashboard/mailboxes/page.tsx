@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { mailboxesApi, deliverabilityApi } from '@/lib/api'
 import type { MailboxHealthDetail } from '@/types/api'
 import { useAuthStore } from '@/lib/store'
@@ -123,6 +124,7 @@ type SortDir = 'asc' | 'desc'
 
 export default function MailboxesPage() {
   const { toast } = useToast()
+  const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [stats, setStats] = useState<MailboxStats | null>(null)
@@ -1381,17 +1383,24 @@ export default function MailboxesPage() {
                             archived: 'bg-gray-100 text-gray-500',
                           }
                           return (
-                            <div key={c.campaign_id} className="border rounded-lg p-4 hover:bg-gray-50">
+                            <div
+                              key={c.campaign_id}
+                              className="border rounded-lg p-4 hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition-colors"
+                              onClick={() => router.push(`/dashboard/campaigns?campaign_id=${c.campaign_id}`)}
+                            >
                               <div className="flex items-center justify-between">
                                 <div>
-                                  <div className="font-medium text-gray-900">{c.name}</div>
+                                  <div className="font-medium text-gray-900 hover:text-blue-700">{c.name}</div>
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${statusColors[c.status] || 'bg-gray-100'}`}>
                                     {c.status}
                                   </span>
                                 </div>
-                                <div className="text-right text-sm">
-                                  <div className="text-gray-900">{c.total_sent} sent</div>
-                                  <div className="text-green-600">{c.total_replied} replied</div>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right text-sm">
+                                    <div className="text-gray-900">{c.total_sent} sent</div>
+                                    <div className="text-green-600">{c.total_replied} replied</div>
+                                  </div>
+                                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                 </div>
                               </div>
                             </div>

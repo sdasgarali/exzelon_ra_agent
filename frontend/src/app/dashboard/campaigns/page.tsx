@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
@@ -131,7 +131,18 @@ export default function CampaignsPage() {
     }
   }, [page, search, statusFilter])
 
+  const searchParams = useSearchParams()
+
   useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
+
+  // Auto-open campaign detail when navigated with ?campaign_id=X
+  useEffect(() => {
+    const cid = searchParams.get('campaign_id')
+    if (cid && campaigns.length > 0 && !selectedCampaign) {
+      const target = campaigns.find(c => c.campaign_id === Number(cid))
+      if (target) openDetail(target)
+    }
+  }, [campaigns, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch feature status on mount
   useEffect(() => {
