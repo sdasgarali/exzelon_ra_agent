@@ -909,6 +909,10 @@ export const campaignsApi = {
     const response = await api.get(`/campaigns/${campaignId}/contact-schedule`)
     return response.data
   },
+  getMailboxStats: async (campaignId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/mailbox-stats`)
+    return response.data
+  },
   aiEnhance: async (campaignId: number) => {
     const response = await api.post(`/campaigns/${campaignId}/ai-enhance`)
     return response.data

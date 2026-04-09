@@ -80,6 +80,10 @@ export default function CampaignsPage() {
   const [contactSchedule, setContactSchedule] = useState<any[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
 
+  // Mailbox campaign stats
+  const [mailboxStats, setMailboxStats] = useState<any[]>([])
+  const [mailboxStatsLoading, setMailboxStatsLoading] = useState(false)
+
   // Overview edit state
   const [overviewEditing, setOverviewEditing] = useState(false)
   const [overviewForm, setOverviewForm] = useState({ name: '', description: '', sending_speed: 'normal' })
@@ -243,6 +247,18 @@ export default function CampaignsPage() {
       setContactSchedule([])
     } finally {
       setScheduleLoading(false)
+    }
+  }
+
+  const fetchMailboxStats = async (campaignId: number) => {
+    setMailboxStatsLoading(true)
+    try {
+      const data = await campaignsApi.getMailboxStats(campaignId)
+      setMailboxStats(data || [])
+    } catch {
+      setMailboxStats([])
+    } finally {
+      setMailboxStatsLoading(false)
     }
   }
 
@@ -919,6 +935,7 @@ export default function CampaignsPage() {
             if (tab.key === 'activity' && selectedCampaign) fetchActivity(selectedCampaign.campaign_id, activityFilter)
             if (tab.key === 'leads_contacts' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
             if (tab.key === 'schedule' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
+            if (tab.key === 'mailboxes' && selectedCampaign) fetchMailboxStats(selectedCampaign.campaign_id)
           }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${detailTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {tab.label}
@@ -1162,39 +1179,61 @@ export default function CampaignsPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100">Assigned Mailboxes</h3>
-            <button
-              onClick={async () => {
-                const allIds = mailboxes.map((m: any) => m.mailbox_id)
-                const currentIds = selectedCampaign.mailbox_ids || []
-                const newIds = currentIds.length === allIds.length ? [] : allIds
-                try {
-                  await campaignsApi.update(selectedCampaign.campaign_id, { mailbox_ids: newIds })
-                  setSelectedCampaign({ ...selectedCampaign, mailbox_ids: newIds })
-                } catch {}
-              }}
-              className="text-sm text-primary-600 hover:text-primary-700"
-            >
-              {(selectedCampaign.mailbox_ids || []).length === mailboxes.length ? 'Deselect All' : 'Select All'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchMailboxStats(selectedCampaign.campaign_id)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={async () => {
+                  const allIds = mailboxes.map((m: any) => m.mailbox_id)
+                  const currentIds = selectedCampaign.mailbox_ids || []
+                  const newIds = currentIds.length === allIds.length ? [] : allIds
+                  try {
+                    await campaignsApi.update(selectedCampaign.campaign_id, { mailbox_ids: newIds })
+                    setSelectedCampaign({ ...selectedCampaign, mailbox_ids: newIds })
+                    fetchMailboxStats(selectedCampaign.campaign_id)
+                  } catch {}
+                }}
+                className="text-sm text-primary-600 hover:text-primary-700"
+              >
+                {(selectedCampaign.mailbox_ids || []).length === mailboxes.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
           </div>
-          <div className="border rounded-lg overflow-hidden dark:border-gray-700">
+          {mailboxStatsLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading mailbox stats...</div>
+          ) : (
+          <div className="border rounded-lg overflow-hidden dark:border-gray-700 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-4 py-2 text-left w-8"></th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Daily Limit</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sent Today</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Warmup</th>
+                  <th className="px-3 py-2 text-left w-8"></th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Warmup</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Sent</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Opened</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Clicked</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Replied</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Bounced</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unsub</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {mailboxes.map((m: any) => {
+                {(mailboxStats.length > 0 ? mailboxStats : mailboxes.filter((m: any) => (selectedCampaign.mailbox_ids || []).includes(m.mailbox_id))).map((m: any) => {
                   const isSelected = (selectedCampaign.mailbox_ids || []).includes(m.mailbox_id)
+                  const sent = m.campaign_sent || 0
+                  const opened = m.campaign_opened || 0
+                  const clicked = m.campaign_clicked || 0
+                  const replied = m.campaign_replied || 0
+                  const bounced = m.campaign_bounced || 0
+                  const unsub = m.campaign_unsubscribed || 0
                   return (
                     <tr key={m.mailbox_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                      <td className="px-4 py-2">
+                      <td className="px-3 py-2">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -1211,28 +1250,70 @@ export default function CampaignsPage() {
                           className="w-4 h-4 rounded"
                         />
                       </td>
-                      <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{m.email}</td>
-                      <td className="px-4 py-2">
-                        <span className={`px-2 py-0.5 text-xs rounded-full ${m.health_score >= 80 ? 'bg-green-100 text-green-800' : m.health_score >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                      <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-medium">{m.email}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${(m.health_score || 0) >= 80 ? 'bg-green-100 text-green-800' : (m.health_score || 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
                           {m.health_score || 0}%
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-gray-500">{m.daily_send_limit}</td>
-                      <td className="px-4 py-2 text-gray-500">{m.emails_sent_today || 0}</td>
-                      <td className="px-4 py-2">
+                      <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 text-xs rounded-full ${m.warmup_status === 'completed' ? 'bg-green-100 text-green-800' : m.warmup_status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
                           {m.warmup_status || 'none'}
                         </span>
                       </td>
+                      <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100 font-medium">{sent}</td>
+                      <td className="px-3 py-2 text-right">
+                        <span className="text-gray-900 dark:text-gray-100">{opened}</span>
+                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.open_rate || 0}%)</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className="text-gray-900 dark:text-gray-100">{clicked}</span>
+                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.click_rate || 0}%)</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className="text-green-600">{replied}</span>
+                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.reply_rate || 0}%)</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={bounced > 0 ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'}>{bounced}</span>
+                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.bounce_rate || 0}%)</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <span className={unsub > 0 ? 'text-orange-600' : 'text-gray-900 dark:text-gray-100'}>{unsub}</span>
+                      </td>
                     </tr>
                   )
                 })}
-                {mailboxes.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">No mailboxes available</td></tr>
+                {mailboxStats.length === 0 && mailboxes.filter((m: any) => (selectedCampaign.mailbox_ids || []).includes(m.mailbox_id)).length === 0 && (
+                  <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-500">No mailboxes assigned</td></tr>
                 )}
               </tbody>
+              {mailboxStats.length > 0 && (() => {
+                const totals = mailboxStats.reduce((acc: any, m: any) => ({
+                  sent: acc.sent + (m.campaign_sent || 0),
+                  opened: acc.opened + (m.campaign_opened || 0),
+                  clicked: acc.clicked + (m.campaign_clicked || 0),
+                  replied: acc.replied + (m.campaign_replied || 0),
+                  bounced: acc.bounced + (m.campaign_bounced || 0),
+                  unsub: acc.unsub + (m.campaign_unsubscribed || 0),
+                }), { sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, unsub: 0 })
+                return totals.sent > 0 ? (
+                  <tfoot className="bg-gray-50 dark:bg-gray-700 font-medium">
+                    <tr>
+                      <td className="px-3 py-2" colSpan={4}><span className="text-xs uppercase text-gray-500">Total</span></td>
+                      <td className="px-3 py-2 text-right">{totals.sent}</td>
+                      <td className="px-3 py-2 text-right">{totals.opened} <span className="text-xs text-gray-400">({(totals.opened/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right">{totals.clicked} <span className="text-xs text-gray-400">({(totals.clicked/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right text-green-600">{totals.replied} <span className="text-xs text-gray-400">({(totals.replied/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right text-red-600">{totals.bounced} <span className="text-xs text-gray-400">({(totals.bounced/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right text-orange-600">{totals.unsub}</td>
+                    </tr>
+                  </tfoot>
+                ) : null
+              })()}
             </table>
           </div>
+          )}
         </div>
       )}
 

@@ -750,6 +750,104 @@ def complete_campaign(
     return {"message": "Campaign completed", "status": "completed"}
 
 
+@router.get("/{campaign_id}/mailbox-stats")
+def campaign_mailbox_stats(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Per-mailbox campaign stats: sent, opened, clicked, replied, bounced, unsubscribed."""
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from app.db.models.sender_mailbox import SenderMailbox
+    from sqlalchemy import func, case
+
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Aggregate outreach events by mailbox for this campaign
+    rows = db.query(
+        OutreachEvent.sender_mailbox_id,
+        func.count(OutreachEvent.event_id).label("total_sent"),
+        func.sum(case((OutreachEvent.opened_at.isnot(None), 1), else_=0)).label("opened"),
+        func.sum(case((OutreachEvent.clicked_at.isnot(None), 1), else_=0)).label("clicked"),
+        func.sum(case((OutreachEvent.status == OutreachStatus.REPLIED, 1), else_=0)).label("replied"),
+        func.sum(case((OutreachEvent.status == OutreachStatus.BOUNCED, 1), else_=0)).label("bounced"),
+    ).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.status.in_([OutreachStatus.SENT, OutreachStatus.REPLIED, OutreachStatus.BOUNCED]),
+    ).group_by(OutreachEvent.sender_mailbox_id).all()
+
+    stats_by_mailbox = {}
+    for row in rows:
+        if row.sender_mailbox_id:
+            stats_by_mailbox[row.sender_mailbox_id] = {
+                "total_sent": row.total_sent or 0,
+                "opened": row.opened or 0,
+                "clicked": row.clicked or 0,
+                "replied": row.replied or 0,
+                "bounced": row.bounced or 0,
+            }
+
+    # Count unsubscribed contacts per mailbox (via last outreach event's mailbox)
+    unsub_contacts = db.query(CampaignContact).filter(
+        CampaignContact.campaign_id == campaign_id,
+        CampaignContact.status == CampaignContactStatus.UNSUBSCRIBED,
+    ).all()
+    # Map each unsub contact to the mailbox that sent them their last email
+    for cc in unsub_contacts:
+        last_event = db.query(OutreachEvent.sender_mailbox_id).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.contact_id == cc.contact_id,
+        ).order_by(OutreachEvent.sent_at.desc()).first()
+        if last_event and last_event.sender_mailbox_id:
+            mid = last_event.sender_mailbox_id
+            if mid not in stats_by_mailbox:
+                stats_by_mailbox[mid] = {"total_sent": 0, "opened": 0, "clicked": 0, "replied": 0, "bounced": 0}
+            stats_by_mailbox[mid].setdefault("unsubscribed", 0)
+            stats_by_mailbox[mid]["unsubscribed"] = stats_by_mailbox[mid].get("unsubscribed", 0) + 1
+
+    # Get mailbox info
+    assigned_ids = json.loads(campaign.mailbox_ids_json) if campaign.mailbox_ids_json else []
+    mailbox_map = {}
+    if assigned_ids:
+        mboxes = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id.in_(assigned_ids)).all()
+        for mb in mboxes:
+            mailbox_map[mb.mailbox_id] = {
+                "mailbox_id": mb.mailbox_id,
+                "email": mb.email,
+                "health_score": mb.health_score or 0,
+                "daily_send_limit": mb.daily_send_limit,
+                "emails_sent_today": mb.emails_sent_today or 0,
+                "warmup_status": mb.warmup_status.value if mb.warmup_status else "none",
+            }
+
+    result = []
+    for mid in assigned_ids:
+        mb_info = mailbox_map.get(mid, {"mailbox_id": mid, "email": f"Mailbox #{mid}", "health_score": 0, "daily_send_limit": 0, "emails_sent_today": 0, "warmup_status": "none"})
+        campaign_stats = stats_by_mailbox.get(mid, {"total_sent": 0, "opened": 0, "clicked": 0, "replied": 0, "bounced": 0})
+        campaign_stats.setdefault("unsubscribed", 0)
+        total = campaign_stats["total_sent"]
+        result.append({
+            **mb_info,
+            "campaign_sent": total,
+            "campaign_opened": campaign_stats["opened"],
+            "campaign_clicked": campaign_stats["clicked"],
+            "campaign_replied": campaign_stats["replied"],
+            "campaign_bounced": campaign_stats["bounced"],
+            "campaign_unsubscribed": campaign_stats["unsubscribed"],
+            "open_rate": round(campaign_stats["opened"] / total * 100, 1) if total else 0,
+            "click_rate": round(campaign_stats["clicked"] / total * 100, 1) if total else 0,
+            "reply_rate": round(campaign_stats["replied"] / total * 100, 1) if total else 0,
+            "bounce_rate": round(campaign_stats["bounced"] / total * 100, 1) if total else 0,
+        })
+
+    return result
+
+
 # ─── Sequence Steps ───────────────────────────────────────────────
 
 @router.get("/{campaign_id}/steps")
