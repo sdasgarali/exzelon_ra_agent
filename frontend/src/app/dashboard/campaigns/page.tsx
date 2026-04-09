@@ -63,6 +63,7 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [contacts, setContacts] = useState<CampaignContact[]>([])
+  const [expandedLeads, setExpandedLeads] = useState<Set<number | string>>(new Set())
   const [detailTab, setDetailTab] = useState<'overview' | 'mailboxes' | 'leads_contacts' | 'sequence' | 'schedule' | 'rules' | 'activity' | 'analytics'>('overview')
 
   // Available leads for campaign creation
@@ -293,6 +294,7 @@ export default function CampaignsPage() {
 
   const openDetail = async (campaign: Campaign) => {
     setSelectedCampaign(campaign)
+    setExpandedLeads(new Set())
     setView('detail')
     setDetailTab('sequence')
     try {
@@ -1672,55 +1674,151 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* Contacts Tab (also shows under leads_contacts for enrollment management) */}
-      {(detailTab === 'leads_contacts') && (
-        <div className="space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-500">{contacts.length} enrolled contacts</span>
-            <button onClick={openEnrollModal} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 text-sm">
-              <Users className="w-4 h-4" /> Enroll Contacts
-            </button>
+      {/* Contacts Tab — Lead-grouped expandable view */}
+      {(detailTab === 'leads_contacts') && (() => {
+        // Group contacts by lead_id
+        const leadGroups: { key: number | string; lead_id: number | null; lead_title: string; lead_company: string; lead_state: string; contacts: CampaignContact[] }[] = []
+        const grouped = new Map<number | string, CampaignContact[]>()
+        for (const cc of contacts) {
+          const key = cc.lead_id ?? 'ungrouped'
+          if (!grouped.has(key)) grouped.set(key, [])
+          grouped.get(key)!.push(cc)
+        }
+        // Build lead groups with metadata from first contact in each group
+        grouped.forEach((ccs, key) => {
+          const first = ccs[0]
+          leadGroups.push({
+            key,
+            lead_id: typeof key === 'number' ? key : null,
+            lead_title: first.lead_title || '',
+            lead_company: first.lead_company || '',
+            lead_state: first.lead_state || '',
+            contacts: ccs,
+          })
+        })
+        // Sort: named leads first (alphabetically by company), ungrouped last
+        leadGroups.sort((a, b) => {
+          if (a.key === 'ungrouped') return 1
+          if (b.key === 'ungrouped') return -1
+          return (a.lead_company || '').localeCompare(b.lead_company || '')
+        })
+
+        const toggleLead = (key: number | string) => {
+          setExpandedLeads(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) next.delete(key)
+            else next.add(key)
+            return next
+          })
+        }
+
+        return (
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">{contacts.length} enrolled contacts across {leadGroups.length} lead{leadGroups.length !== 1 ? 's' : ''}</span>
+              <button onClick={openEnrollModal} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 text-sm">
+                <Users className="w-4 h-4" /> Enroll Contacts
+              </button>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {contacts.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">No contacts enrolled yet</div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {leadGroups.map(group => {
+                    const isExpanded = expandedLeads.has(group.key)
+                    return (
+                      <div key={String(group.key)}>
+                        {/* Lead header row */}
+                        <div
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 select-none"
+                          onClick={() => toggleLead(group.key)}
+                        >
+                          {isExpanded
+                            ? <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          }
+                          <div className="flex-1 min-w-0">
+                            {group.lead_id ? (
+                              <span className="font-medium text-gray-900 dark:text-gray-100">
+                                <a
+                                  href={`/dashboard/leads?id=${group.lead_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:text-primary-600 hover:underline"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  {group.lead_company || 'Unknown Company'}
+                                </a>
+                                {group.lead_title && (
+                                  <span className="text-gray-500 dark:text-gray-400 font-normal"> — {group.lead_title}</span>
+                                )}
+                                {group.lead_state && (
+                                  <span className="text-gray-400 dark:text-gray-500 font-normal text-sm"> ({group.lead_state})</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="font-medium text-gray-500 italic">Ungrouped</span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-400 flex-shrink-0">
+                            {group.contacts.length} contact{group.contacts.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {/* Expanded contact rows */}
+                        {isExpanded && (
+                          <div className="bg-gray-50/50 dark:bg-gray-900/30 border-t border-gray-100 dark:border-gray-700">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-xs text-gray-500 uppercase">
+                                  <th className="text-left px-4 pl-12 py-2 font-medium">Contact</th>
+                                  <th className="text-left px-4 py-2 font-medium">Email</th>
+                                  <th className="text-left px-4 py-2 font-medium">Status</th>
+                                  <th className="text-center px-4 py-2 font-medium">Step</th>
+                                  <th className="text-left px-4 py-2 font-medium">Next Send</th>
+                                  <th className="text-right px-4 py-2 font-medium">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                {group.contacts.map(cc => (
+                                  <tr key={cc.id} className="hover:bg-gray-100/50 dark:hover:bg-gray-700/30">
+                                    <td className="px-4 pl-12 py-2 font-medium text-gray-900 dark:text-gray-100">
+                                      {cc.contact_name || `Contact #${cc.contact_id}`}
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-500 max-w-[200px] truncate">{cc.contact_email || '—'}</td>
+                                    <td className="px-4 py-2">
+                                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                        cc.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' :
+                                        cc.status === 'replied' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
+                                        cc.status === 'completed' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' :
+                                        cc.status === 'paused' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                                        cc.status === 'bounced' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                                      }`}>{cc.status}</span>
+                                    </td>
+                                    <td className="px-4 py-2 text-center text-gray-600 dark:text-gray-400">Step {cc.current_step}</td>
+                                    <td className="px-4 py-2 text-sm text-gray-500">{cc.next_send_at ? new Date(cc.next_send_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                                    <td className="px-4 py-2 text-right">
+                                      <button
+                                        onClick={() => selectedCampaign && handleThreadPreview(selectedCampaign.campaign_id, cc.contact_id)}
+                                        className="text-xs text-primary-600 hover:underline"
+                                      >Preview Thread</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {contacts.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No contacts enrolled yet</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-gray-900/50">
-                  <tr>
-                    <th className="text-left px-4 py-3 font-medium">Contact</th>
-                    <th className="text-left px-4 py-3 font-medium">Status</th>
-                    <th className="text-right px-4 py-3 font-medium">Current Step</th>
-                    <th className="text-left px-4 py-3 font-medium">Next Send</th>
-                    <th className="text-right px-4 py-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {contacts.map(cc => (
-                    <tr key={cc.id}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{cc.contact_name || `Contact #${cc.contact_id}`}</div>
-                        <div className="text-xs text-gray-500">{cc.contact_email}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cc.status === 'active' ? 'bg-green-100 text-green-800' : cc.status === 'replied' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{cc.status}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right">{cc.current_step}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{cc.next_send_at ? new Date(cc.next_send_at).toLocaleString() : '—'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => selectedCampaign && handleThreadPreview(selectedCampaign.campaign_id, cc.contact_id)}
-                          className="text-xs text-primary-600 hover:underline"
-                        >Preview Thread</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Analytics Tab */}
       {detailTab === 'analytics' && (

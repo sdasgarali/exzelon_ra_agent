@@ -189,8 +189,8 @@ def _step_to_dict(s: SequenceStep) -> dict:
     }
 
 
-def _cc_to_dict(cc: CampaignContact) -> dict:
-    return {
+def _cc_to_dict(cc: CampaignContact, lead=None) -> dict:
+    d = {
         "id": cc.id,
         "campaign_id": cc.campaign_id,
         "contact_id": cc.contact_id,
@@ -201,6 +201,11 @@ def _cc_to_dict(cc: CampaignContact) -> dict:
         "enrolled_at": cc.enrolled_at.isoformat() if cc.enrolled_at else None,
         "completed_at": cc.completed_at.isoformat() if cc.completed_at else None,
     }
+    if lead is not None:
+        d["lead_title"] = lead.job_title
+        d["lead_company"] = lead.client_name
+        d["lead_state"] = lead.state
+    return d
 
 
 # ─── Campaign CRUD ────────────────────────────────────────────────
@@ -1079,19 +1084,28 @@ def list_campaign_contacts(
         (page - 1) * page_size
     ).limit(page_size).all()
 
-    # Enrich with contact details
+    # Enrich with contact + lead details
     contact_ids = [cc.contact_id for cc in items]
+    lead_ids = [cc.lead_id for cc in items if cc.lead_id]
     from app.db.models.contact import ContactDetails
+    from app.db.models.lead import LeadDetails
     contacts_map = {}
     if contact_ids:
         contacts = db.query(ContactDetails).filter(
             ContactDetails.contact_id.in_(contact_ids)
         ).all()
         contacts_map = {c.contact_id: c for c in contacts}
+    leads_map = {}
+    if lead_ids:
+        leads = db.query(LeadDetails).filter(
+            LeadDetails.lead_id.in_(lead_ids)
+        ).all()
+        leads_map = {l.lead_id: l for l in leads}
 
     enriched = []
     for cc in items:
-        d = _cc_to_dict(cc)
+        lead = leads_map.get(cc.lead_id) if cc.lead_id else None
+        d = _cc_to_dict(cc, lead=lead)
         c = contacts_map.get(cc.contact_id)
         if c:
             d["contact_name"] = f"{c.first_name or ''} {c.last_name or ''}".strip()

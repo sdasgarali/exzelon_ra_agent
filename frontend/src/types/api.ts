@@ -237,6 +237,9 @@ export interface CampaignContact {
   contact_name?: string;
   contact_email?: string;
   contact_company?: string;
+  lead_title?: string;
+  lead_company?: string;
+  lead_state?: string;
 }
 
 // ─── Inbox types ──────────────────────────────────────────────────
