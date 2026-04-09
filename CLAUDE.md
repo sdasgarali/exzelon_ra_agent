@@ -90,8 +90,10 @@ Multi-step email sequence processor:
 - Spintax text variation (`{option1|option2}`) with nested pattern support
 - Round-robin mailbox selection from campaign's assigned mailboxes
 - Handles replies, bounces, and unsubscribes per campaign contact
-- Timezone-aware send windows using contact's US state
+- **Per-contact timezone-aware send windows**: `_is_within_send_window()` checks contact's timezone (from `ContactDetails.timezone`), falls back to campaign timezone
+- **Smart send scheduling**: `_advance_to_next_step()` uses `calculate_optimal_send_time()` to schedule next email at optimal local business hours (9-11 AM = best)
 - **Preview mode**: When `campaign.preview_mode=True`, generates OutreachDraft records instead of sending — enables human review via Email Preview page
+- **Lead-selection creation**: `POST /campaigns/from-leads` auto-generates campaign name, 3-step sequence (outreach + wait + followup), assigns all active mailboxes, enrolls contacts from selected leads
 
 ### Unified Inbox (`services/inbox_syncer.py`)
 
@@ -176,7 +178,7 @@ Domain reputation management subsystem:
 - **LeadDetails** -- job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
 - **ContactDetails** -- decision-makers with priority levels (P1 job poster through P5 functional manager)
 - **LeadContactAssociation** -- many-to-many junction table
-- **ClientInfo** -- companies/organizations
+- **ClientInfo** -- companies/organizations, `timezone` column auto-resolved from `location_state` via `timezone_resolver.py`
 - **SenderMailbox** -- email accounts with daily limits, health scores, warmup status
 - **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
@@ -285,6 +287,12 @@ Domain reputation management subsystem:
 | `/objections` | `api/endpoints/objections.py` | AI objection template CRUD + seed + use-counter |
 | `/dfy` | `api/endpoints/dfy.py` | Done-For-You setup (domain suggestions, DNS setup, warmup estimates) |
 | `/email-preview` | `api/endpoints/email_preview.py` | Draft generation, CRUD, approve/reject, batch send, AI rewrite, deliverability score, spam check + AI suggestions, spam fix (13 endpoints) |
+| `/clients/backfill-timezones` | `api/endpoints/clients.py` | Backfill IANA timezone from location_state for all clients missing timezone (Admin+) |
+| `/campaigns/available-leads` | `api/endpoints/campaigns.py` | Leads not in active campaigns (posted within N days), with contact counts for campaign creation |
+| `/campaigns/from-leads` | `api/endpoints/campaigns.py` | Create campaign from selected leads: auto-name, 3-step sequence, mailbox assignment, contact enrollment |
+| `/campaigns/{id}/contact-schedule` | `api/endpoints/campaigns.py` | Timezone-aware contact send schedule ordered East→West with optimal send times |
+| `/campaigns/{id}/ai-enhance` | `api/endpoints/campaigns.py` | LLM-based campaign name/description improvement with rule-based fallback |
+| `/campaigns/{id}/ai-suggest-subjects` | `api/endpoints/campaigns.py` | LLM-based subject line generation (5 A/B variants) with rule-based fallback |
 
 ### User Onboarding System
 

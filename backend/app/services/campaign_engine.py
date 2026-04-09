@@ -138,6 +138,19 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
             except Exception as e_reply:
                 logger.warning("Reply check failed, proceeding", error=str(e_reply))
 
+            # Per-contact timezone check: if contact has timezone, verify it's within send window
+            try:
+                contact_for_tz = db.query(ContactDetails).with_entities(
+                    ContactDetails.timezone
+                ).filter(ContactDetails.contact_id == cc.contact_id).first()
+                if contact_for_tz and contact_for_tz.timezone:
+                    if not _is_within_send_window(campaign, now, contact_timezone=contact_for_tz.timezone):
+                        results["skipped"] += 1
+                        results["processed"] += 1
+                        continue
+            except Exception:
+                pass  # Fall through to campaign-level window (already passed)
+
             # Get the step this contact is on (from pre-fetched map)
             step = steps_map.get((cc.campaign_id, cc.current_step))
 
@@ -251,13 +264,18 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     return results
 
 
-def _is_within_send_window(campaign: Campaign, now: datetime) -> bool:
-    """Check if current time (in campaign's timezone) falls within send window."""
+def _is_within_send_window(campaign: Campaign, now: datetime, contact_timezone: Optional[str] = None) -> bool:
+    """Check if current time falls within send window.
+
+    Uses contact's timezone if available, otherwise falls back to campaign timezone.
+    This enables per-contact timezone-aware scheduling — emails only send during
+    business hours in the recipient's local timezone.
+    """
     try:
         from zoneinfo import ZoneInfo
 
-        # Convert UTC now to the campaign's timezone
-        tz_name = campaign.timezone or "UTC"
+        # Prefer contact timezone over campaign timezone
+        tz_name = contact_timezone or campaign.timezone or "UTC"
         try:
             tz = ZoneInfo(tz_name)
         except (KeyError, Exception):
@@ -268,7 +286,7 @@ def _is_within_send_window(campaign: Campaign, now: datetime) -> bool:
         start = campaign.send_window_start or "09:00"
         end = campaign.send_window_end or "17:00"
 
-        # Check day of week in campaign's local timezone
+        # Check day of week in the resolved timezone
         days_json = campaign.send_days_json or '["mon","tue","wed","thu","fri"]'
         send_days = json.loads(days_json)
         day_abbr = local_now.strftime("%a").lower()[:3]
@@ -644,7 +662,11 @@ def _advance_to_next_step(
     db: Session,
     jump_to_order: Optional[int] = None,
 ):
-    """Advance a contact to the next step in the sequence."""
+    """Advance a contact to the next step in the sequence.
+
+    Uses the contact's timezone (if available) to schedule the next send
+    during optimal business hours in the recipient's local time.
+    """
     if jump_to_order is not None:
         target_order = jump_to_order
     else:
@@ -663,10 +685,33 @@ def _advance_to_next_step(
         return
 
     cc.current_step = target_order
-    cc.next_send_at = datetime.utcnow() + timedelta(
+
+    # Calculate base delay
+    base_next = datetime.utcnow() + timedelta(
         days=next_step.delay_days,
         hours=next_step.delay_hours,
     )
+
+    # If the next step is an email step and contact has timezone, optimize send time
+    if next_step.step_type == StepType.EMAIL and next_step.delay_days >= 1:
+        try:
+            contact = db.query(ContactDetails).with_entities(
+                ContactDetails.timezone, ContactDetails.location_state
+            ).filter(ContactDetails.contact_id == cc.contact_id).first()
+            if contact and (contact.timezone or contact.location_state):
+                from app.services.send_time_optimizer import calculate_optimal_send_time
+                optimal = calculate_optimal_send_time(
+                    state=contact.location_state
+                )
+                optimal_utc = optimal.get("send_at_utc")
+                if optimal_utc and optimal_utc > base_next:
+                    # Use optimal time if it's after the minimum delay
+                    cc.next_send_at = optimal_utc
+                    return
+        except Exception:
+            pass  # Fall back to base delay
+
+    cc.next_send_at = base_next
 
 
 def _evaluate_condition(

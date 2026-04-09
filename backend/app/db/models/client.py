@@ -39,6 +39,7 @@ class ClientInfo(Base):
     industry = Column(String(100), nullable=True)
     company_size = Column(String(50), nullable=True)  # e.g., "1-50", "51-200", "201-500"
     location_state = Column(String(50), nullable=True)
+    timezone = Column(String(50), nullable=True)  # IANA timezone, auto-resolved from location_state
 
     # Enrichment fields
     website = Column(String(500), nullable=True)

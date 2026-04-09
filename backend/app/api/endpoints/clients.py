@@ -17,6 +17,7 @@ from app.db.models.contact import ContactDetails
 from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 from app.services.company_enrichment import enrich_client, bulk_enrich_clients
+from app.services.timezone_resolver import resolve_contact_timezone
 from app.core.settings_resolver import get_tenant_setting
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
@@ -30,6 +31,7 @@ SORT_COLUMNS = {
     "industry": ClientInfo.industry,
     "company_size": ClientInfo.company_size,
     "location_state": ClientInfo.location_state,
+    "timezone": ClientInfo.timezone,
     "services": ClientInfo.service_count,
     "website": ClientInfo.website,
     "linkedin_url": ClientInfo.linkedin_url,
@@ -387,6 +389,9 @@ async def create_client(
     client = ClientInfo(**client_in.model_dump())
     client.tenant_id = tenant_id or 1
     client.client_category = compute_client_category(db, client_in.client_name, tenant_id=tenant_id)
+    # Auto-resolve timezone from location_state
+    if client.location_state and not client.timezone:
+        client.timezone = resolve_contact_timezone(client.location_state)
     db.add(client)
     db.commit()
     db.refresh(client)
@@ -416,6 +421,10 @@ async def update_client(
     update_data = client_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(client, field, value)
+
+    # Auto-resolve timezone when location_state changes
+    if "location_state" in update_data and client.location_state:
+        client.timezone = resolve_contact_timezone(client.location_state)
 
     db.commit()
     db.refresh(client)
@@ -473,3 +482,29 @@ async def refresh_client_category(
     db.refresh(client)
 
     return ClientResponse.model_validate(client)
+
+
+@router.post("/backfill-timezones")
+async def backfill_client_timezones(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Backfill timezone for all clients that have location_state but no timezone."""
+    query = db.query(ClientInfo).filter(
+        ClientInfo.location_state.isnot(None),
+        ClientInfo.location_state != "",
+        (ClientInfo.timezone.is_(None)) | (ClientInfo.timezone == ""),
+    )
+    query = tenant_filter(query, ClientInfo, tenant_id)
+    clients = query.all()
+
+    updated = 0
+    for client in clients:
+        tz = resolve_contact_timezone(client.location_state)
+        if tz:
+            client.timezone = tz
+            updated += 1
+
+    db.commit()
+    return {"message": f"Backfilled timezone for {updated} client(s)", "updated": updated}

@@ -893,6 +893,26 @@ export const campaignsApi = {
     const response = await api.post(`/campaigns/${campaignId}/auto-enroll`)
     return response.data
   },
+  getAvailableLeads: async (params?: Record<string, any>) => {
+    const response = await api.get('/campaigns/available-leads', { params })
+    return response.data
+  },
+  createFromLeads: async (data: { lead_ids: number[]; preview_mode?: boolean }) => {
+    const response = await api.post('/campaigns/from-leads', data)
+    return response.data
+  },
+  getContactSchedule: async (campaignId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/contact-schedule`)
+    return response.data
+  },
+  aiEnhance: async (campaignId: number) => {
+    const response = await api.post(`/campaigns/${campaignId}/ai-enhance`)
+    return response.data
+  },
+  aiSuggestSubjects: async (campaignId: number) => {
+    const response = await api.post(`/campaigns/${campaignId}/ai-suggest-subjects`)
+    return response.data
+  },
 }
 
 // Inbox API (Unibox)

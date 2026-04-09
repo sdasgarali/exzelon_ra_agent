@@ -45,6 +45,7 @@ class ContactUpdate(BaseModel):
 class ContactResponse(ContactBase):
     """Schema for contact response."""
     contact_id: int
+    timezone: Optional[str] = None
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
     outreach_status: Optional[str] = "active"

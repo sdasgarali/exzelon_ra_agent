@@ -1,9 +1,17 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 74: Frontend Deliverability Intelligence Surface — ALL 8 PHASES COMPLETE. New backend: deliverability.py (12 API endpoints). Frontend: deliverabilityApi (12 methods), 10 new TypeScript interfaces. Dashboard health card, 5 mailbox health columns, email-preview 6-tab intelligence panel (spam+rendering+humanize+spintax+send gate+score), campaign spam badges+spintax preview, warmup ISP breakdown pie chart, settings deliverability tab (7 fields). 928 tests pass, frontend builds clean.
+> Session 75: Timezone-Aware Smart Campaign Creation — ALL 6 PHASES COMPLETE. Backend: ClientInfo.timezone column + auto-resolve from location_state + backfill migration. ContactDetails.timezone exposed in schema. Per-contact timezone send window check + optimal time scheduling in campaign_engine. 5 new API endpoints: available-leads, from-leads, contact-schedule, ai-enhance, ai-suggest-subjects. Frontend: timezone columns on clients+contacts pages, lead-selection campaign creation modal, 8-tab campaign detail (overview, mailboxes, leads/contacts, sequence, schedule, rules, activity, analytics). 930 tests pass, frontend builds clean.
 
 ## Immediate TODO
+- [x] Timezone-Aware Smart Campaign Creation (2026-04-09)
+  - Phase 1: ClientInfo.timezone column, auto-resolve from location_state on create/update, backfill migration, ContactResponse.timezone
+  - Phase 2: Timezone columns on clients + contacts frontend pages with friendly labels (ET/CT/MT/PT)
+  - Phase 3: Per-contact timezone in _is_within_send_window(), optimal time in _advance_to_next_step(), contact-schedule endpoint
+  - Phase 4: GET /campaigns/available-leads, POST /campaigns/from-leads (auto-name, 3-step sequence, mailbox assignment)
+  - Phase 5: 8-tab campaign detail (overview, mailboxes, leads/contacts, sequence, schedule, rules, activity, analytics)
+  - Phase 6: POST /campaigns/{id}/ai-enhance, POST /campaigns/{id}/ai-suggest-subjects (LLM with rule-based fallback)
+  - 930 backend tests pass, frontend builds clean
 - [x] Frontend Deliverability Intelligence Surface (2026-04-08)
   - Phase 1: `api/endpoints/deliverability.py` — 12 new endpoints wrapping backend safety/intelligence services
   - Phase 2: `deliverabilityApi` (12 methods) + 10 TypeScript interfaces (HealthSummary, MailboxHealth, SendGate, Rendering, Humanize, Spintax, SpamReduce, Engagement)

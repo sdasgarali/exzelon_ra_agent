@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi } from '@/lib/api'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
@@ -63,7 +63,22 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [contacts, setContacts] = useState<CampaignContact[]>([])
-  const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics' | 'activity' | 'rules'>('sequence')
+  const [detailTab, setDetailTab] = useState<'overview' | 'mailboxes' | 'leads_contacts' | 'sequence' | 'schedule' | 'rules' | 'activity' | 'analytics'>('overview')
+
+  // Available leads for campaign creation
+  const [availableLeads, setAvailableLeads] = useState<any[]>([])
+  const [availableLeadsTotal, setAvailableLeadsTotal] = useState(0)
+  const [availableLeadsPage, setAvailableLeadsPage] = useState(1)
+  const [availableLeadsPages, setAvailableLeadsPages] = useState(1)
+  const [availableLeadsSearch, setAvailableLeadsSearch] = useState('')
+  const [availableLeadsLoading, setAvailableLeadsLoading] = useState(false)
+  const [selectedCreateLeadIds, setSelectedCreateLeadIds] = useState<Set<number>>(new Set())
+  const [createPreviewMode, setCreatePreviewMode] = useState(false)
+  const [creatingFromLeads, setCreatingFromLeads] = useState(false)
+
+  // Contact schedule state
+  const [contactSchedule, setContactSchedule] = useState<any[]>([])
+  const [scheduleLoading, setScheduleLoading] = useState(false)
 
   // Step spam scores
   const [stepSpamScores, setStepSpamScores] = useState<Record<number, { grade: string; score: number }>>({})
@@ -164,6 +179,67 @@ export default function CampaignsPage() {
   const searchParams = useSearchParams()
 
   useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
+
+  // Fetch available leads for the create modal
+  const fetchAvailableLeads = useCallback(async () => {
+    setAvailableLeadsLoading(true)
+    try {
+      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: 30 }
+      if (availableLeadsSearch) params.search = availableLeadsSearch
+      const data = await campaignsApi.getAvailableLeads(params)
+      setAvailableLeads(data.items || [])
+      setAvailableLeadsTotal(data.total || 0)
+      setAvailableLeadsPages(data.pages || 1)
+      // Auto-select all leads by default
+      if (!availableLeadsSearch && availableLeadsPage === 1) {
+        setSelectedCreateLeadIds(new Set((data.items || []).map((l: any) => l.lead_id)))
+      }
+    } catch {
+      setAvailableLeads([])
+    } finally {
+      setAvailableLeadsLoading(false)
+    }
+  }, [availableLeadsPage, availableLeadsSearch])
+
+  useEffect(() => {
+    if (showCreateModal) fetchAvailableLeads()
+  }, [showCreateModal, fetchAvailableLeads])
+
+  // Create campaign from selected leads
+  const handleCreateFromLeads = async () => {
+    if (selectedCreateLeadIds.size === 0) return
+    setCreatingFromLeads(true)
+    try {
+      const data = await campaignsApi.createFromLeads({
+        lead_ids: Array.from(selectedCreateLeadIds),
+        preview_mode: createPreviewMode,
+      })
+      setShowCreateModal(false)
+      setSelectedCreateLeadIds(new Set())
+      setAvailableLeadsSearch('')
+      setAvailableLeadsPage(1)
+      await fetchCampaigns()
+      // Open the newly created campaign
+      openDetail(data)
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to create campaign')
+    } finally {
+      setCreatingFromLeads(false)
+    }
+  }
+
+  // Fetch contact schedule for a campaign
+  const fetchContactSchedule = async (campaignId: number) => {
+    setScheduleLoading(true)
+    try {
+      const data = await campaignsApi.getContactSchedule(campaignId)
+      setContactSchedule(data.schedule || [])
+    } catch {
+      setContactSchedule([])
+    } finally {
+      setScheduleLoading(false)
+    }
+  }
 
   // Auto-open campaign detail when navigated with ?campaign_id=X
   useEffect(() => {
@@ -640,94 +716,138 @@ export default function CampaignsPage() {
           </div>
         )}
 
-        {/* Create Campaign Modal */}
+        {/* Create Campaign Modal — Lead Selection Flow */}
         {showCreateModal && (
           <>
             <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
-            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] max-h-[85vh] overflow-y-auto">
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[700px] max-w-[95vw] max-h-[85vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold dark:text-gray-100">New Campaign</h2>
+                <div>
+                  <h2 className="text-lg font-bold dark:text-gray-100">New Campaign — Select Leads</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Select leads to auto-create a campaign with contacts, sequence, and mailboxes</p>
+                </div>
                 <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>
               </div>
-              <div className="space-y-4">
+
+              {/* Search & Stats */}
+              <div className="flex items-center gap-3 mb-3">
+                <input
+                  value={availableLeadsSearch}
+                  onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
+                  className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                  placeholder="Search by job title or company..."
+                />
+                <span className="text-sm text-gray-500 whitespace-nowrap">
+                  {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
+                </span>
+              </div>
+
+              {/* Leads Table */}
+              <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left w-8">
+                        <input
+                          type="checkbox"
+                          checked={availableLeads.length > 0 && availableLeads.every(l => selectedCreateLeadIds.has(l.lead_id))}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSelectedCreateLeadIds(prev => {
+                                const next = new Set(prev)
+                                availableLeads.forEach(l => next.add(l.lead_id))
+                                return next
+                              })
+                            } else {
+                              setSelectedCreateLeadIds(prev => {
+                                const next = new Set(prev)
+                                availableLeads.forEach(l => next.delete(l.lead_id))
+                                return next
+                              })
+                            }
+                          }}
+                          className="w-4 h-4 rounded"
+                        />
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Posted</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contacts</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {availableLeadsLoading ? (
+                      <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
+                    ) : availableLeads.length === 0 ? (
+                      <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
+                    ) : (
+                      availableLeads.map(lead => (
+                        <tr key={lead.lead_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedCreateLeadIds.has(lead.lead_id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedCreateLeadIds.has(lead.lead_id)}
+                              onChange={e => {
+                                setSelectedCreateLeadIds(prev => {
+                                  const next = new Set(prev)
+                                  if (e.target.checked) next.add(lead.lead_id)
+                                  else next.delete(lead.lead_id)
+                                  return next
+                                })
+                              }}
+                              className="w-4 h-4 rounded"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={lead.job_title}>{lead.job_title}</td>
+                          <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[150px] truncate">{lead.client_name}</td>
+                          <td className="px-3 py-2 text-gray-500">{lead.state || '-'}</td>
+                          <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
+                          <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {availableLeadsPages > 1 && (
+                <div className="flex justify-center gap-2 mb-4">
+                  <button disabled={availableLeadsPage <= 1} onClick={() => setAvailableLeadsPage(p => p - 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Prev</button>
+                  <span className="px-3 py-1 text-sm text-gray-500">Page {availableLeadsPage} of {availableLeadsPages}</span>
+                  <button disabled={availableLeadsPage >= availableLeadsPages} onClick={() => setAvailableLeadsPage(p => p + 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                </div>
+              )}
+
+              {/* Preview Mode Toggle */}
+              <div className="flex items-center justify-between py-2 mb-3 px-1">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Name *</label>
-                  <input value={campaignForm.name} onChange={e => setCampaignForm(f => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Campaign name" />
+                  <label className="block text-sm font-medium">Preview & Approve Mode</label>
+                  <p className="text-xs text-gray-500">Generate drafts for review instead of sending directly</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Description</label>
-                  <textarea value={campaignForm.description} onChange={e => setCampaignForm(f => ({ ...f, description: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" rows={2} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Send Window Start</label>
-                    <input type="time" value={campaignForm.send_window_start} onChange={e => setCampaignForm(f => ({ ...f, send_window_start: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Send Window End</label>
-                    <input type="time" value={campaignForm.send_window_end} onChange={e => setCampaignForm(f => ({ ...f, send_window_end: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Daily Limit</label>
-                  <input type="number" value={campaignForm.daily_limit} onChange={e => setCampaignForm(f => ({ ...f, daily_limit: parseInt(e.target.value) || 30 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
-                </div>
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <label className="block text-sm font-medium">Preview & Approve</label>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Generate drafts for review instead of sending directly</p>
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => setCreatePreviewMode(!createPreviewMode)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${createPreviewMode ? 'bg-teal-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${createPreviewMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2 border-t dark:border-gray-700">
+                <p className="text-sm text-gray-500">
+                  {selectedCreateLeadIds.size} lead(s) selected — auto-generates name, 3-step sequence, assigns all active mailboxes
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
                   <button
-                    type="button"
-                    onClick={() => setCampaignForm(f => ({ ...f, preview_mode: !f.preview_mode }))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${campaignForm.preview_mode ? 'bg-teal-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    onClick={handleCreateFromLeads}
+                    disabled={selectedCreateLeadIds.size === 0 || creatingFromLeads}
+                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm flex items-center gap-2"
                   >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${campaignForm.preview_mode ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-                {/* Sending Speed */}
-                <div>
-                  <label className="block text-sm font-medium mb-1">Sending Speed</label>
-                  <select
-                    value={campaignForm.sending_speed}
-                    onChange={e => setCampaignForm(f => ({ ...f, sending_speed: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                  >
-                    <option value="relaxed">Relaxed (2-5 min delay)</option>
-                    <option value="normal">Normal (30-90s delay)</option>
-                    <option value="aggressive">Aggressive (5-15s delay)</option>
-                  </select>
-                </div>
-                {/* Schedule for Future */}
-                <div>
-                  <label className="block text-sm font-medium mb-1">Schedule Send <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <input
-                    type="datetime-local"
-                    value={campaignForm.scheduled_send_at}
-                    onChange={e => setCampaignForm(f => ({ ...f, scheduled_send_at: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Campaign will auto-activate at this time</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Mailboxes</label>
-                  <div className="border rounded-lg p-2 max-h-32 overflow-y-auto dark:border-gray-600">
-                    {mailboxes.map(m => (
-                      <label key={m.mailbox_id} className="flex items-center gap-2 py-1 text-sm">
-                        <input type="checkbox" checked={selectedMailboxIds.includes(m.mailbox_id)} onChange={e => {
-                          if (e.target.checked) setSelectedMailboxIds(ids => [...ids, m.mailbox_id])
-                          else setSelectedMailboxIds(ids => ids.filter(i => i !== m.mailbox_id))
-                        }} />
-                        {m.email}
-                      </label>
-                    ))}
-                    {mailboxes.length === 0 && <p className="text-xs text-gray-500">No mailboxes available</p>}
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
-                  <button onClick={handleCreate} disabled={!campaignForm.name || saving} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
-                    {saving ? 'Creating...' : 'Create Campaign'}
+                    {creatingFromLeads ? 'Creating...' : `Create Campaign (${selectedCreateLeadIds.size} leads)`}
                   </button>
                 </div>
               </div>
@@ -776,18 +896,344 @@ export default function CampaignsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        {(['sequence', 'contacts', 'analytics', 'activity', 'rules'] as const).map(tab => (
-          <button key={tab} onClick={() => {
-            setDetailTab(tab)
-            if (tab === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id)
-            if (tab === 'activity' && selectedCampaign) fetchActivity(selectedCampaign.campaign_id, activityFilter)
+      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
+        {([
+          { key: 'overview', label: 'Overview' },
+          { key: 'mailboxes', label: 'Mailboxes' },
+          { key: 'leads_contacts', label: 'Leads & Contacts' },
+          { key: 'sequence', label: 'Sequence' },
+          { key: 'schedule', label: 'Schedule' },
+          { key: 'rules', label: 'Rules' },
+          { key: 'activity', label: 'Activity' },
+          { key: 'analytics', label: 'Analytics' },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => {
+            setDetailTab(tab.key as any)
+            if (tab.key === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id)
+            if (tab.key === 'activity' && selectedCampaign) fetchActivity(selectedCampaign.campaign_id, activityFilter)
+            if (tab.key === 'leads_contacts' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
+            if (tab.key === 'schedule' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
           }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${detailTab === tab ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {tab}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${detailTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {tab.label}
           </button>
         ))}
       </div>
+
+      {/* Overview Tab */}
+      {detailTab === 'overview' && selectedCampaign && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Campaign Info Card */}
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Campaign Details</h3>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                <p className="text-sm text-gray-900 dark:text-gray-100">{selectedCampaign.name}</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{selectedCampaign.description || 'No description'}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                  <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                    selectedCampaign.status === 'active' ? 'bg-green-100 text-green-800' :
+                    selectedCampaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                    selectedCampaign.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                    'bg-blue-100 text-blue-800'
+                  }`}>
+                    {selectedCampaign.status}
+                  </span>
+                </div>
+                {selectedCampaign.preview_mode && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Mode</label>
+                    <span className="px-2 py-1 text-xs rounded-full bg-teal-100 text-teal-800">Preview & Approve</span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Sending Speed</label>
+                <span className="text-sm capitalize">{selectedCampaign.sending_speed || 'normal'}</span>
+              </div>
+              {selectedCampaign.health_score !== null && selectedCampaign.health_score !== undefined && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Health Score</label>
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium ${
+                    selectedCampaign.health_score >= 80 ? 'bg-green-100 text-green-800' :
+                    selectedCampaign.health_score >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {selectedCampaign.health_score}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Stats Card */}
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Quick Stats</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selectedCampaign.total_contacts || 0}</p>
+                  <p className="text-xs text-gray-500">Contacts</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{selectedCampaign.total_sent || 0}</p>
+                  <p className="text-xs text-gray-500">Sent</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{selectedCampaign.total_opened || 0}</p>
+                  <p className="text-xs text-gray-500">Opened</p>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-purple-600">{selectedCampaign.total_replied || 0}</p>
+                  <p className="text-xs text-gray-500">Replied</p>
+                </div>
+              </div>
+              {(selectedCampaign.total_sent || 0) > 0 && (
+                <div className="pt-2 border-t dark:border-gray-700 space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Open Rate</span>
+                    <span className="font-medium">{((selectedCampaign.total_opened || 0) / selectedCampaign.total_sent * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Reply Rate</span>
+                    <span className="font-medium">{((selectedCampaign.total_replied || 0) / selectedCampaign.total_sent * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Bounce Rate</span>
+                    <span className="font-medium">{((selectedCampaign.total_bounced || 0) / selectedCampaign.total_sent * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mailboxes Tab */}
+      {detailTab === 'mailboxes' && selectedCampaign && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">Assigned Mailboxes</h3>
+            <button
+              onClick={async () => {
+                const allIds = mailboxes.map((m: any) => m.mailbox_id)
+                const currentIds = selectedCampaign.mailbox_ids || []
+                const newIds = currentIds.length === allIds.length ? [] : allIds
+                try {
+                  await campaignsApi.update(selectedCampaign.campaign_id, { mailbox_ids: newIds })
+                  setSelectedCampaign({ ...selectedCampaign, mailbox_ids: newIds })
+                } catch {}
+              }}
+              className="text-sm text-primary-600 hover:text-primary-700"
+            >
+              {(selectedCampaign.mailbox_ids || []).length === mailboxes.length ? 'Deselect All' : 'Select All'}
+            </button>
+          </div>
+          <div className="border rounded-lg overflow-hidden dark:border-gray-700">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th className="px-4 py-2 text-left w-8"></th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Daily Limit</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sent Today</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Warmup</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {mailboxes.map((m: any) => {
+                  const isSelected = (selectedCampaign.mailbox_ids || []).includes(m.mailbox_id)
+                  return (
+                    <tr key={m.mailbox_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                      <td className="px-4 py-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={async (e) => {
+                            const currentIds = selectedCampaign.mailbox_ids || []
+                            const newIds = e.target.checked
+                              ? [...currentIds, m.mailbox_id]
+                              : currentIds.filter((id: number) => id !== m.mailbox_id)
+                            try {
+                              await campaignsApi.update(selectedCampaign.campaign_id, { mailbox_ids: newIds })
+                              setSelectedCampaign({ ...selectedCampaign, mailbox_ids: newIds })
+                            } catch {}
+                          }}
+                          className="w-4 h-4 rounded"
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{m.email}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${m.health_score >= 80 ? 'bg-green-100 text-green-800' : m.health_score >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                          {m.health_score || 0}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-gray-500">{m.daily_send_limit}</td>
+                      <td className="px-4 py-2 text-gray-500">{m.emails_sent_today || 0}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${m.warmup_status === 'completed' ? 'bg-green-100 text-green-800' : m.warmup_status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                          {m.warmup_status || 'none'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {mailboxes.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">No mailboxes available</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Leads & Contacts Tab */}
+      {detailTab === 'leads_contacts' && selectedCampaign && (
+        <div className="space-y-4">
+          {/* Contacts ordered by timezone */}
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+              Enrolled Contacts <span className="text-sm font-normal text-gray-500">({contactSchedule.length} contacts, ordered East → West)</span>
+            </h3>
+            <span className="text-xs text-gray-400">Scroll down for enrollment management</span>
+          </div>
+          {scheduleLoading ? (
+            <div className="text-center py-8 text-gray-500">Loading contacts...</div>
+          ) : contactSchedule.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">No contacts enrolled yet</div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden dark:border-gray-700">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Timezone</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Best Send Time</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {(() => {
+                    let lastTzLabel = ''
+                    return contactSchedule.map((cs: any, idx: number) => {
+                      const showHeader = cs.timezone_label !== lastTzLabel
+                      lastTzLabel = cs.timezone_label
+                      return (
+                        <React.Fragment key={cs.contact_id}>
+                          {showHeader && (
+                            <tr className="bg-gray-100 dark:bg-gray-600">
+                              <td colSpan={7} className="px-4 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wider">
+                                {cs.timezone_label}
+                              </td>
+                            </tr>
+                          )}
+                          <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{cs.name}</td>
+                            <td className="px-4 py-2 text-gray-500 max-w-[180px] truncate">{cs.email}</td>
+                            <td className="px-4 py-2 text-gray-500">{cs.company || '-'}</td>
+                            <td className="px-4 py-2 text-gray-500 text-xs">{cs.timezone_label}</td>
+                            <td className="px-4 py-2 text-gray-500 text-xs">{cs.recommended_local_time || '-'}</td>
+                            <td className="px-4 py-2">
+                              <span className={`px-1.5 py-0.5 text-xs rounded ${cs.combined_score >= 0.8 ? 'bg-green-100 text-green-700' : cs.combined_score >= 0.5 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
+                                {(cs.combined_score * 100).toFixed(0)}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${cs.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                {cs.status}
+                              </span>
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      )
+                    })
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Schedule Tab */}
+      {detailTab === 'schedule' && selectedCampaign && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Send Window Config */}
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Send Window</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
+                  <p className="text-sm">{selectedCampaign.send_window_start || '09:00'}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
+                  <p className="text-sm">{selectedCampaign.send_window_end || '17:00'}</p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Send Days</label>
+                <div className="flex gap-1 flex-wrap">
+                  {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => {
+                    const dayKey = day.toLowerCase().slice(0, 3)
+                    const isActive = (selectedCampaign.send_days || []).includes(dayKey)
+                    return (
+                      <span key={day} className={`px-2 py-0.5 text-xs rounded ${isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'}`}>
+                        {day}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Campaign Timezone</label>
+                <p className="text-sm">{selectedCampaign.timezone || 'UTC'}</p>
+              </div>
+            </div>
+
+            {/* Smart Schedule Info */}
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Smart Scheduling</h3>
+              <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Emails are sent at optimal local times for each contact based on their timezone.
+                  Peak windows: 9-11 AM (highest), 2-3:30 PM (second), 7:30-9 AM (third).
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Timezone Distribution</label>
+                {contactSchedule.length > 0 ? (
+                  <div className="space-y-1">
+                    {Object.entries(
+                      contactSchedule.reduce((acc: Record<string, number>, cs: any) => {
+                        acc[cs.timezone_label] = (acc[cs.timezone_label] || 0) + 1
+                        return acc
+                      }, {})
+                    ).map(([tz, count]) => (
+                      <div key={tz} className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">{tz}</span>
+                        <span className="font-medium">{count as number} contact{(count as number) !== 1 ? 's' : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No contacts enrolled</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sequence Tab */}
       {detailTab === 'sequence' && (
@@ -979,8 +1425,8 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* Contacts Tab */}
-      {detailTab === 'contacts' && (
+      {/* Contacts Tab (also shows under leads_contacts for enrollment management) */}
+      {(detailTab === 'leads_contacts') && (
         <div className="space-y-3">
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-500">{contacts.length} enrolled contacts</span>

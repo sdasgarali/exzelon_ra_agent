@@ -15,11 +15,30 @@ interface Contact {
   email: string
   phone: string
   location_state: string
+  timezone: string | null
   priority_level: string
   validation_status: string
   source: string
   outreach_status: string
   unsubscribed_at: string | null
+}
+
+const TIMEZONE_LABELS: Record<string, string> = {
+  'America/New_York': 'ET',
+  'America/Chicago': 'CT',
+  'America/Denver': 'MT',
+  'America/Los_Angeles': 'PT',
+  'America/Anchorage': 'AKT',
+  'Pacific/Honolulu': 'HT',
+  'America/Phoenix': 'MT',
+  'America/Boise': 'MT',
+  'America/Detroit': 'ET',
+  'America/Indiana/Indianapolis': 'ET',
+}
+
+function formatTimezone(tz: string | null): string {
+  if (!tz) return '-'
+  return TIMEZONE_LABELS[tz] || tz.split('/').pop()?.replace(/_/g, ' ') || tz
 }
 
 const EMPTY_FORM = {
@@ -436,6 +455,7 @@ export default function ContactsPage() {
                   { key: 'company', label: 'Company' },
                   { key: 'email', label: 'Email' },
                   { key: 'phone', label: 'Phone' },
+                  { key: 'timezone', label: 'Timezone' },
                   { key: 'priority', label: 'Priority' },
                   { key: 'validation', label: 'Validation' },
                   { key: 'lead_id', label: 'Lead ID' },
@@ -451,9 +471,9 @@ export default function ContactsPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
+                <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
+                <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
               ) : (
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
@@ -474,6 +494,9 @@ export default function ContactsPage() {
                       {contact.phone ? (
                         <a href={'tel:' + contact.phone} className="text-blue-600 hover:underline">{contact.phone}</a>
                       ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500" title={contact.timezone || ''}>
+                      {formatTimezone(contact.timezone)}
                     </td>
                     <td className="px-4 py-3">
                       {contact.priority_level ? (

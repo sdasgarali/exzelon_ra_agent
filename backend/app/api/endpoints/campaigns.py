@@ -1,11 +1,12 @@
 """Campaign CRUD + management API endpoints."""
 import json
 import structlog
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 logger = structlog.get_logger()
 
@@ -102,6 +103,11 @@ class ContactEnroll(BaseModel):
 
 class ContactRemove(BaseModel):
     contact_ids: List[int]
+
+
+class CreateFromLeads(BaseModel):
+    lead_ids: List[int]
+    preview_mode: bool = False
 
 
 # ─── Helpers ───────────────────────────────────────────────────────
@@ -217,6 +223,253 @@ def list_campaigns(
         "page_size": page_size,
         "pages": (total + page_size - 1) // page_size,
     }
+
+
+@router.get("/available-leads")
+def get_available_leads(
+    search: Optional[str] = None,
+    state: Optional[str] = None,
+    days: int = Query(7, ge=1, le=90, description="Leads from last N days"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get leads available for campaign enrollment.
+
+    Returns leads NOT enrolled in any active campaign, posted within the last N days.
+    """
+    from app.db.models.lead import LeadDetails
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Base query: non-archived leads posted within window
+    query = db.query(LeadDetails).filter(
+        LeadDetails.is_archived == False,
+        LeadDetails.posting_date >= cutoff.date(),
+    )
+    query = tenant_filter(query, LeadDetails, tenant_id)
+
+    # Exclude leads already enrolled in active campaigns
+    enrolled_lead_ids_subq = db.query(CampaignContact.lead_id).join(
+        Campaign, CampaignContact.campaign_id == Campaign.campaign_id
+    ).filter(
+        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.DRAFT]),
+        Campaign.is_archived == False,
+        CampaignContact.lead_id.isnot(None),
+    ).distinct().subquery()
+
+    query = query.filter(~LeadDetails.lead_id.in_(enrolled_lead_ids_subq))
+
+    if search:
+        query = query.filter(
+            (LeadDetails.job_title.ilike(f"%{search}%")) |
+            (LeadDetails.client_name.ilike(f"%{search}%"))
+        )
+    if state:
+        query = query.filter(LeadDetails.state == state)
+
+    total = query.count()
+    leads = query.order_by(LeadDetails.posting_date.desc()).offset(
+        (page - 1) * page_size
+    ).limit(page_size).all()
+
+    # Get contact counts per lead via junction table
+    lead_ids = [l.lead_id for l in leads]
+    contact_counts = {}
+    if lead_ids:
+        counts = db.query(
+            LeadContactAssociation.lead_id,
+            func.count(LeadContactAssociation.contact_id)
+        ).filter(
+            LeadContactAssociation.lead_id.in_(lead_ids)
+        ).group_by(LeadContactAssociation.lead_id).all()
+        contact_counts = {lid: cnt for lid, cnt in counts}
+
+    return {
+        "items": [
+            {
+                "lead_id": l.lead_id,
+                "job_title": l.job_title,
+                "client_name": l.client_name,
+                "state": l.state,
+                "posting_date": l.posting_date.isoformat() if l.posting_date else None,
+                "source": l.source,
+                "industry": getattr(l, 'industry', None),
+                "contact_count": contact_counts.get(l.lead_id, 0),
+            }
+            for l in leads
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.post("/from-leads")
+def create_campaign_from_leads(
+    data: CreateFromLeads,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Create a campaign from selected leads.
+
+    Auto-generates name, enrolls contacts from leads, creates 3-step sequence
+    using active templates, and assigns all active mailboxes.
+    """
+    from app.db.models.lead import LeadDetails
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+    from app.db.models.mailbox import SenderMailbox
+    from app.db.models.template import EmailTemplate
+    from app.core.settings_resolver import get_tenant_setting
+
+    check_plan_limit(db, tenant_id, "campaigns")
+
+    if not data.lead_ids:
+        raise HTTPException(status_code=400, detail="No leads selected")
+
+    # Fetch leads
+    leads = db.query(LeadDetails).filter(
+        LeadDetails.lead_id.in_(data.lead_ids)
+    )
+    leads = tenant_filter(leads, LeadDetails, tenant_id).all()
+
+    if not leads:
+        raise HTTPException(status_code=404, detail="No valid leads found")
+
+    # Create campaign first to get an ID
+    campaign = Campaign(
+        name="(generating...)",
+        status=CampaignStatus.DRAFT,
+        timezone="America/New_York",
+        send_window_start="09:00",
+        send_window_end="17:00",
+        send_days_json=json.dumps(["mon", "tue", "wed", "thu", "fri"]),
+        daily_limit=30,
+        created_by=user.user_id,
+        tenant_id=tenant_id or 1,
+        preview_mode=data.preview_mode,
+        sending_speed="normal",
+    )
+    db.add(campaign)
+    db.flush()  # get campaign_id
+
+    # Generate campaign name: {id}_{first_name}_{mm-dd-yy}_{keywords}
+    date_str = datetime.utcnow().strftime("%m-%d-%y")
+    first_name = (user.full_name or "User").split()[0]
+
+    # Extract top keyword from lead titles/industries
+    from collections import Counter
+    titles = [l.job_title for l in leads if l.job_title]
+    words = []
+    for t in titles:
+        words.extend(t.lower().replace(",", " ").split())
+    stop_words = {"the", "a", "an", "and", "or", "of", "for", "to", "in", "at", "is"}
+    words = [w for w in words if w not in stop_words and len(w) > 2]
+    keyword = Counter(words).most_common(1)[0][0].title() if words else "Outreach"
+    keyword = keyword[:30]
+
+    campaign.name = f"{campaign.campaign_id}_{first_name}_{date_str}_{keyword}"
+
+    # Auto-generate description
+    companies = list(set(l.client_name for l in leads if l.client_name))[:5]
+    states = list(set(l.state for l in leads if l.state))[:5]
+    campaign.description = (
+        f"Auto-generated from {len(leads)} lead(s). "
+        f"Companies: {', '.join(companies[:3])}{'...' if len(companies) > 3 else ''}. "
+        f"States: {', '.join(states[:3])}{'...' if len(states) > 3 else ''}."
+    )
+
+    # Assign all active mailboxes
+    mailboxes = db.query(SenderMailbox).filter(
+        SenderMailbox.is_active == True,
+    )
+    mailboxes = tenant_filter(mailboxes, SenderMailbox, tenant_id).all()
+    mailbox_ids = [m.mailbox_id for m in mailboxes]
+    campaign.mailbox_ids_json = json.dumps(mailbox_ids)
+
+    # Fetch active templates from settings
+    outreach_template_id = get_tenant_setting(db, "active_outreach_template_id", tenant_id=tenant_id, default=None)
+    followup_template_id = get_tenant_setting(db, "active_followup_template_id", tenant_id=tenant_id, default=None)
+
+    outreach_template = None
+    followup_template = None
+    if outreach_template_id:
+        outreach_template = db.query(EmailTemplate).filter(
+            EmailTemplate.template_id == int(outreach_template_id)
+        ).first()
+    if followup_template_id:
+        followup_template = db.query(EmailTemplate).filter(
+            EmailTemplate.template_id == int(followup_template_id)
+        ).first()
+
+    # Create 3-step sequence
+    step1 = SequenceStep(
+        campaign_id=campaign.campaign_id,
+        step_order=1,
+        step_type=StepType.EMAIL,
+        subject=outreach_template.subject if outreach_template else "Reaching out re: {{job_title}}",
+        body_html=outreach_template.body_html if outreach_template else "<p>Hi {{first_name}},</p>",
+        body_text=outreach_template.body_text if outreach_template else "Hi {{first_name}},",
+        template_id=int(outreach_template_id) if outreach_template_id else None,
+        delay_days=0,
+        delay_hours=0,
+    )
+    step2 = SequenceStep(
+        campaign_id=campaign.campaign_id,
+        step_order=2,
+        step_type=StepType.WAIT,
+        delay_days=3,
+        delay_hours=0,
+    )
+    step3 = SequenceStep(
+        campaign_id=campaign.campaign_id,
+        step_order=3,
+        step_type=StepType.EMAIL,
+        subject=followup_template.subject if followup_template else "Re: Reaching out re: {{job_title}}",
+        body_html=followup_template.body_html if followup_template else "<p>Hi {{first_name}}, following up...</p>",
+        body_text=followup_template.body_text if followup_template else "Hi {{first_name}}, following up...",
+        template_id=int(followup_template_id) if followup_template_id else None,
+        delay_days=0,
+        delay_hours=0,
+        reply_to_thread=True,
+    )
+    db.add_all([step1, step2, step3])
+
+    # Enroll contacts from selected leads
+    lead_ids = [l.lead_id for l in leads]
+    assocs = db.query(LeadContactAssociation).filter(
+        LeadContactAssociation.lead_id.in_(lead_ids)
+    ).all()
+
+    enrolled_contact_ids = set()
+    enrolled_count = 0
+    for assoc in assocs:
+        if assoc.contact_id in enrolled_contact_ids:
+            continue
+        cc = CampaignContact(
+            campaign_id=campaign.campaign_id,
+            contact_id=assoc.contact_id,
+            lead_id=assoc.lead_id,
+            status=CampaignContactStatus.ACTIVE,
+            current_step=1,
+            enrolled_at=datetime.utcnow(),
+        )
+        db.add(cc)
+        enrolled_contact_ids.add(assoc.contact_id)
+        enrolled_count += 1
+
+    campaign.total_contacts = enrolled_count
+    db.commit()
+    db.refresh(campaign)
+
+    return _campaign_to_dict(campaign, include_steps=True, db=db)
 
 
 @router.post("")
@@ -1446,4 +1699,248 @@ def get_thread_preview(
         "contact_id": contact_id,
         "contact_name": f"{contact.first_name} {contact.last_name}",
         "steps": preview_steps,
+    }
+
+
+# ─── Contact Schedule (timezone-aware) ─────────────────────────────
+
+@router.get("/{campaign_id}/contact-schedule")
+def get_contact_schedule(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get timezone-aware send schedule for all enrolled contacts.
+
+    Returns contacts ordered by timezone (East→West) with recommended
+    send times based on their local timezone.
+    """
+    from app.db.models.contact import ContactDetails
+    from app.services.send_time_optimizer import calculate_optimal_send_time
+
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Get enrolled contacts with their details
+    enrolled = db.query(CampaignContact, ContactDetails).join(
+        ContactDetails, CampaignContact.contact_id == ContactDetails.contact_id
+    ).filter(
+        CampaignContact.campaign_id == campaign_id,
+        CampaignContact.status == CampaignContactStatus.ACTIVE,
+    ).all()
+
+    # Timezone ordering: East→West (ET before CT before MT before PT)
+    TZ_ORDER = {
+        "America/New_York": 1, "America/Detroit": 1,
+        "America/Indiana/Indianapolis": 1,
+        "America/Chicago": 2, "America/Denver": 3,
+        "America/Boise": 3, "America/Phoenix": 3,
+        "America/Los_Angeles": 4, "America/Anchorage": 5,
+        "Pacific/Honolulu": 6,
+    }
+
+    TZ_LABELS = {
+        "America/New_York": "Eastern Time",
+        "America/Chicago": "Central Time",
+        "America/Denver": "Mountain Time",
+        "America/Los_Angeles": "Pacific Time",
+        "America/Anchorage": "Alaska Time",
+        "Pacific/Honolulu": "Hawaii Time",
+        "America/Detroit": "Eastern Time",
+        "America/Indiana/Indianapolis": "Eastern Time",
+        "America/Boise": "Mountain Time",
+        "America/Phoenix": "Mountain Time (no DST)",
+    }
+
+    schedule = []
+    for cc, contact in enrolled:
+        tz = contact.timezone or campaign.timezone or "UTC"
+        optimal = calculate_optimal_send_time(state=contact.location_state)
+        schedule.append({
+            "contact_id": contact.contact_id,
+            "name": f"{contact.first_name} {contact.last_name}",
+            "email": contact.email,
+            "company": contact.client_name,
+            "timezone": tz,
+            "timezone_label": TZ_LABELS.get(tz, tz),
+            "timezone_order": TZ_ORDER.get(tz, 99),
+            "current_step": cc.current_step,
+            "next_send_at_utc": cc.next_send_at.isoformat() if cc.next_send_at else None,
+            "recommended_local_time": optimal.get("recipient_local_time"),
+            "recommended_utc": optimal.get("send_at_utc").isoformat() if optimal.get("send_at_utc") else None,
+            "day_score": optimal.get("day_score", 0),
+            "window_score": optimal.get("window_score", 0),
+            "combined_score": optimal.get("combined_score", 0),
+            "status": cc.status.value if cc.status else "active",
+        })
+
+    # Sort by timezone (East→West), then by name
+    schedule.sort(key=lambda x: (x["timezone_order"], x["name"]))
+
+    return {
+        "campaign_id": campaign_id,
+        "total_contacts": len(schedule),
+        "schedule": schedule,
+    }
+
+
+# ─── LLM Integration Endpoints ────────────────────────────────────
+
+@router.post("/{campaign_id}/ai-enhance")
+def ai_enhance_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Use LLM to improve campaign name and description based on lead data."""
+    from app.db.models.lead import LeadDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Get enrolled lead IDs
+    enrolled_lead_ids = [row[0] for row in db.query(CampaignContact.lead_id).filter(
+        CampaignContact.campaign_id == campaign_id,
+        CampaignContact.lead_id.isnot(None),
+    ).distinct().all()]
+
+    leads = []
+    if enrolled_lead_ids:
+        leads = db.query(LeadDetails).filter(
+            LeadDetails.lead_id.in_(enrolled_lead_ids)
+        ).limit(20).all()
+
+    # Build context for LLM
+    industries = list(set(getattr(l, 'industry', '') or '' for l in leads if getattr(l, 'industry', '')))[:5]
+    titles = list(set(l.job_title for l in leads if l.job_title))[:10]
+    companies = list(set(l.client_name for l in leads if l.client_name))[:10]
+    states = list(set(l.state for l in leads if l.state))[:5]
+
+    prompt = (
+        f"You are helping name and describe an email outreach campaign.\n\n"
+        f"Target leads info:\n"
+        f"- Industries: {', '.join(industries) if industries else 'Various'}\n"
+        f"- Job titles: {', '.join(titles[:5])}\n"
+        f"- Companies: {', '.join(companies[:5])}\n"
+        f"- States: {', '.join(states) if states else 'Nationwide'}\n"
+        f"- Total leads: {len(leads)}\n\n"
+        f"Generate:\n"
+        f"1. A concise campaign name (max 50 chars, descriptive and professional)\n"
+        f"2. A 1-2 sentence campaign description summarizing the target audience and goals\n\n"
+        f"Reply in JSON format: {{\"name\": \"...\", \"description\": \"...\"}}"
+    )
+
+    try:
+        from app.services.ai_resilience import call_ai_with_fallback
+        result = call_ai_with_fallback(
+            prompt=prompt,
+            system_prompt="You are a campaign naming assistant. Reply ONLY with valid JSON.",
+            db=db,
+            tenant_id=tenant_id,
+        )
+
+        import re
+        json_match = re.search(r'\{[^}]+\}', result or '')
+        if json_match:
+            suggestion = json.loads(json_match.group())
+            return {
+                "suggested_name": suggestion.get("name", campaign.name),
+                "suggested_description": suggestion.get("description", campaign.description or ""),
+                "applied": False,
+            }
+    except Exception as e:
+        logger.warning("AI enhance failed, using rule-based fallback", error=str(e))
+
+    # Rule-based fallback
+    top_industry = industries[0] if industries else "Multi-industry"
+    top_title = titles[0] if titles else "Decision Makers"
+    return {
+        "suggested_name": f"{top_industry} - {top_title} Outreach",
+        "suggested_description": f"Targeting {len(leads)} leads across {len(companies)} companies in {', '.join(states[:3]) if states else 'multiple states'}.",
+        "applied": False,
+    }
+
+
+@router.post("/{campaign_id}/ai-suggest-subjects")
+def ai_suggest_subjects(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Generate AI subject line suggestions for campaign email steps."""
+    from app.db.models.lead import LeadDetails
+
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Get enrolled lead data for context
+    enrolled_lead_ids = [row[0] for row in db.query(CampaignContact.lead_id).filter(
+        CampaignContact.campaign_id == campaign_id,
+        CampaignContact.lead_id.isnot(None),
+    ).distinct().limit(20).all()]
+
+    leads = []
+    if enrolled_lead_ids:
+        leads = db.query(LeadDetails).filter(
+            LeadDetails.lead_id.in_(enrolled_lead_ids)
+        ).limit(20).all()
+
+    industries = list(set(getattr(l, 'industry', '') or '' for l in leads if getattr(l, 'industry', '')))[:5]
+    titles = list(set(l.job_title for l in leads if l.job_title))[:5]
+
+    prompt = (
+        f"Generate 5 cold email subject line variants for B2B outreach.\n\n"
+        f"Target audience:\n"
+        f"- Industries: {', '.join(industries) if industries else 'Various'}\n"
+        f"- Job titles: {', '.join(titles)}\n\n"
+        f"Rules:\n"
+        f"- Keep under 50 characters\n"
+        f"- No spam trigger words (free, guarantee, act now)\n"
+        f"- Use personalization tokens like {{{{first_name}}}} or {{{{company}}}}\n"
+        f"- Mix curiosity, value, and direct approaches\n"
+        f"- Make them feel personal, not mass-marketed\n\n"
+        f"Reply in JSON format: {{\"subjects\": [\"...\", \"...\", \"...\", \"...\", \"...\"]}}"
+    )
+
+    try:
+        from app.services.ai_resilience import call_ai_with_fallback
+        result = call_ai_with_fallback(
+            prompt=prompt,
+            system_prompt="You are an email copywriting expert. Reply ONLY with valid JSON.",
+            db=db,
+            tenant_id=tenant_id,
+        )
+
+        import re
+        json_match = re.search(r'\{[^}]+\}', result or '', re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            return {"subjects": parsed.get("subjects", []), "source": "ai"}
+    except Exception as e:
+        logger.warning("AI subject suggestion failed", error=str(e))
+
+    # Fallback: template-based subjects
+    title_snippet = titles[0] if titles else "your team"
+    return {
+        "subjects": [
+            f"Quick question about {{{{company}}}}",
+            f"{{{{first_name}}}}, re: {title_snippet}",
+            f"Idea for {{{{company}}}}'s hiring",
+            f"{{{{first_name}}}} - saw your {title_snippet} opening",
+            f"Can we help with {{{{company}}}}'s growth?",
+        ],
+        "source": "template",
     }

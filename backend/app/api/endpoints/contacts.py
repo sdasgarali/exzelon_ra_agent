@@ -8,10 +8,12 @@ from app.api.deps import get_db, get_current_active_user, require_role, get_curr
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.contact import ContactDetails, PriorityLevel
+from app.db.models.client import ClientInfo
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.schemas.pipeline import BulkContactIdsRequest
+from app.services.timezone_resolver import resolve_contact_timezone
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
 
@@ -103,6 +105,7 @@ async def list_contacts(
         "source": ContactDetails.source,
         "status": ContactDetails.outreach_status,
         "unsubscribed_at": ContactDetails.unsubscribed_at,
+        "timezone": ContactDetails.timezone,
     }
     order_col = sort_columns.get(sort_by, ContactDetails.created_at)
     if sort_order == "asc":
@@ -413,6 +416,18 @@ async def create_contact(
     contact_data = contact_in.model_dump(exclude={"lead_ids"})
     contact = ContactDetails(**contact_data)
     contact.tenant_id = tenant_id or 1
+
+    # Auto-resolve timezone: prefer contact's own state, fall back to client's timezone
+    if contact.location_state:
+        contact.timezone = resolve_contact_timezone(contact.location_state)
+    elif contact.client_name:
+        client = db.query(ClientInfo).filter(
+            ClientInfo.client_name == contact.client_name,
+            ClientInfo.tenant_id == (tenant_id or 1),
+        ).first()
+        if client and client.timezone:
+            contact.timezone = client.timezone
+
     db.add(contact)
     db.flush()
 
@@ -448,6 +463,10 @@ async def update_contact(
     update_data = contact_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(contact, field, value)
+
+    # Auto-resolve timezone when location_state changes
+    if "location_state" in update_data and contact.location_state:
+        contact.timezone = resolve_contact_timezone(contact.location_state)
 
     db.commit()
     db.refresh(contact)

@@ -43,6 +43,7 @@ export interface Contact {
   validation_status: string | null;
   source: string | null;
   location_state: string | null;
+  timezone: string | null;
   lead_id: number | null;
   lead_ids: number[];
   is_archived: boolean;
@@ -56,6 +57,7 @@ export interface Client {
   industry: string | null;
   website: string | null;
   employee_count: number | null;
+  timezone: string | null;
   lead_count: number;
   contact_count: number;
   is_archived: boolean;

@@ -57,6 +57,7 @@ class ClientResponse(ClientBase):
     founded_year: Optional[int] = None
     headquarters: Optional[str] = None
     phone: Optional[str] = None
+    timezone: Optional[str] = None
     enrichment_source: Optional[str] = None
     enriched_at: Optional[datetime] = None
     created_at: datetime

@@ -1416,6 +1416,87 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for outreach_events tracking columns: {e}")
 
+    # Migration: add timezone column to client_info + backfill from location_state
+    try:
+        from sqlalchemy import text as sa_text_tz, inspect as sa_inspect_tz
+        with engine.connect() as conn:
+            inspector_tz = sa_inspect_tz(engine)
+            ci_cols = [c["name"] for c in inspector_tz.get_columns("client_info")]
+            if "timezone" not in ci_cols:
+                conn.execute(sa_text_tz(
+                    "ALTER TABLE client_info ADD COLUMN timezone VARCHAR(50) NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: added timezone column to client_info")
+            # Backfill timezone from location_state for existing clients
+            result = conn.execute(sa_text_tz(
+                "UPDATE client_info SET timezone = CASE location_state "
+                "WHEN 'AL' THEN 'America/Chicago' WHEN 'AK' THEN 'America/Anchorage' "
+                "WHEN 'AZ' THEN 'America/Phoenix' WHEN 'AR' THEN 'America/Chicago' "
+                "WHEN 'CA' THEN 'America/Los_Angeles' WHEN 'CO' THEN 'America/Denver' "
+                "WHEN 'CT' THEN 'America/New_York' WHEN 'DE' THEN 'America/New_York' "
+                "WHEN 'FL' THEN 'America/New_York' WHEN 'GA' THEN 'America/New_York' "
+                "WHEN 'HI' THEN 'Pacific/Honolulu' WHEN 'ID' THEN 'America/Boise' "
+                "WHEN 'IL' THEN 'America/Chicago' WHEN 'IN' THEN 'America/Indiana/Indianapolis' "
+                "WHEN 'IA' THEN 'America/Chicago' WHEN 'KS' THEN 'America/Chicago' "
+                "WHEN 'KY' THEN 'America/New_York' WHEN 'LA' THEN 'America/Chicago' "
+                "WHEN 'ME' THEN 'America/New_York' WHEN 'MD' THEN 'America/New_York' "
+                "WHEN 'MA' THEN 'America/New_York' WHEN 'MI' THEN 'America/Detroit' "
+                "WHEN 'MN' THEN 'America/Chicago' WHEN 'MS' THEN 'America/Chicago' "
+                "WHEN 'MO' THEN 'America/Chicago' WHEN 'MT' THEN 'America/Denver' "
+                "WHEN 'NE' THEN 'America/Chicago' WHEN 'NV' THEN 'America/Los_Angeles' "
+                "WHEN 'NH' THEN 'America/New_York' WHEN 'NJ' THEN 'America/New_York' "
+                "WHEN 'NM' THEN 'America/Denver' WHEN 'NY' THEN 'America/New_York' "
+                "WHEN 'NC' THEN 'America/New_York' WHEN 'ND' THEN 'America/Chicago' "
+                "WHEN 'OH' THEN 'America/New_York' WHEN 'OK' THEN 'America/Chicago' "
+                "WHEN 'OR' THEN 'America/Los_Angeles' WHEN 'PA' THEN 'America/New_York' "
+                "WHEN 'RI' THEN 'America/New_York' WHEN 'SC' THEN 'America/New_York' "
+                "WHEN 'SD' THEN 'America/Chicago' WHEN 'TN' THEN 'America/Chicago' "
+                "WHEN 'TX' THEN 'America/Chicago' WHEN 'UT' THEN 'America/Denver' "
+                "WHEN 'VT' THEN 'America/New_York' WHEN 'VA' THEN 'America/New_York' "
+                "WHEN 'WA' THEN 'America/Los_Angeles' WHEN 'WV' THEN 'America/New_York' "
+                "WHEN 'WI' THEN 'America/Chicago' WHEN 'WY' THEN 'America/Denver' "
+                "WHEN 'DC' THEN 'America/New_York' "
+                "END WHERE timezone IS NULL AND location_state IS NOT NULL"
+            ))
+            conn.commit()
+            logger.info(f"Migration: backfilled timezone for client_info rows")
+            # Also backfill contact_details timezone from location_state
+            conn.execute(sa_text_tz(
+                "UPDATE contact_details SET timezone = CASE location_state "
+                "WHEN 'AL' THEN 'America/Chicago' WHEN 'AK' THEN 'America/Anchorage' "
+                "WHEN 'AZ' THEN 'America/Phoenix' WHEN 'AR' THEN 'America/Chicago' "
+                "WHEN 'CA' THEN 'America/Los_Angeles' WHEN 'CO' THEN 'America/Denver' "
+                "WHEN 'CT' THEN 'America/New_York' WHEN 'DE' THEN 'America/New_York' "
+                "WHEN 'FL' THEN 'America/New_York' WHEN 'GA' THEN 'America/New_York' "
+                "WHEN 'HI' THEN 'Pacific/Honolulu' WHEN 'ID' THEN 'America/Boise' "
+                "WHEN 'IL' THEN 'America/Chicago' WHEN 'IN' THEN 'America/Indiana/Indianapolis' "
+                "WHEN 'IA' THEN 'America/Chicago' WHEN 'KS' THEN 'America/Chicago' "
+                "WHEN 'KY' THEN 'America/New_York' WHEN 'LA' THEN 'America/Chicago' "
+                "WHEN 'ME' THEN 'America/New_York' WHEN 'MD' THEN 'America/New_York' "
+                "WHEN 'MA' THEN 'America/New_York' WHEN 'MI' THEN 'America/Detroit' "
+                "WHEN 'MN' THEN 'America/Chicago' WHEN 'MS' THEN 'America/Chicago' "
+                "WHEN 'MO' THEN 'America/Chicago' WHEN 'MT' THEN 'America/Denver' "
+                "WHEN 'NE' THEN 'America/Chicago' WHEN 'NV' THEN 'America/Los_Angeles' "
+                "WHEN 'NH' THEN 'America/New_York' WHEN 'NJ' THEN 'America/New_York' "
+                "WHEN 'NM' THEN 'America/Denver' WHEN 'NY' THEN 'America/New_York' "
+                "WHEN 'NC' THEN 'America/New_York' WHEN 'ND' THEN 'America/Chicago' "
+                "WHEN 'OH' THEN 'America/New_York' WHEN 'OK' THEN 'America/Chicago' "
+                "WHEN 'OR' THEN 'America/Los_Angeles' WHEN 'PA' THEN 'America/New_York' "
+                "WHEN 'RI' THEN 'America/New_York' WHEN 'SC' THEN 'America/New_York' "
+                "WHEN 'SD' THEN 'America/Chicago' WHEN 'TN' THEN 'America/Chicago' "
+                "WHEN 'TX' THEN 'America/Chicago' WHEN 'UT' THEN 'America/Denver' "
+                "WHEN 'VT' THEN 'America/New_York' WHEN 'VA' THEN 'America/New_York' "
+                "WHEN 'WA' THEN 'America/Los_Angeles' WHEN 'WV' THEN 'America/New_York' "
+                "WHEN 'WI' THEN 'America/Chicago' WHEN 'WY' THEN 'America/Denver' "
+                "WHEN 'DC' THEN 'America/New_York' "
+                "END WHERE timezone IS NULL AND location_state IS NOT NULL"
+            ))
+            conn.commit()
+            logger.info(f"Migration: backfilled timezone for contact_details rows")
+    except Exception as e:
+        logger.warning(f"Migration check for timezone columns: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

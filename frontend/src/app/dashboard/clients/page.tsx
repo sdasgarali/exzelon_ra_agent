@@ -10,6 +10,7 @@ interface Client {
   industry: string
   company_size: string
   location_state: string
+  timezone: string | null
   client_category: string
   service_count: number
   website: string | null
@@ -17,6 +18,25 @@ interface Client {
   is_archived: boolean
   created_at: string
   updated_at: string
+}
+
+const TIMEZONE_LABELS: Record<string, string> = {
+  'America/New_York': 'ET',
+  'America/Chicago': 'CT',
+  'America/Denver': 'MT',
+  'America/Los_Angeles': 'PT',
+  'America/Anchorage': 'AKT',
+  'Pacific/Honolulu': 'HT',
+  'America/Phoenix': 'MT',
+  'America/Boise': 'MT',
+  'America/Detroit': 'ET',
+  'America/Indiana/Indianapolis': 'ET',
+  'America/Puerto_Rico': 'AT',
+}
+
+function formatTimezone(tz: string | null): string {
+  if (!tz) return '-'
+  return TIMEZONE_LABELS[tz] || tz.split('/').pop()?.replace(/_/g, ' ') || tz
 }
 
 interface FilterOptions {
@@ -37,7 +57,7 @@ const CATEGORY_OPTIONS = [
   { value: 'dormant', label: 'Dormant', color: 'bg-gray-100 text-gray-800' },
 ]
 
-type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'services' | 'website' | 'linkedin_url' | 'created_at'
+type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'timezone' | 'services' | 'website' | 'linkedin_url' | 'created_at'
 type SortOrder = 'asc' | 'desc'
 
 export default function ClientsPage() {
@@ -522,6 +542,12 @@ export default function ClientsPage() {
                   LinkedIn <SortIcon field="linkedin_url" />
                 </th>
                 <th
+                  onClick={() => handleSort('timezone')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Timezone <SortIcon field="timezone" />
+                </th>
+                <th
                   onClick={() => handleSort('created_at')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
@@ -535,13 +561,13 @@ export default function ClientsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
                     Loading clients...
                   </td>
                 </tr>
               ) : clients.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-8 text-center">
+                  <td colSpan={13} className="px-4 py-8 text-center">
                     <div className="flex flex-col items-center justify-center py-4">
                       <div className="text-gray-300 mb-4">
                         <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -657,6 +683,9 @@ export default function ClientsPage() {
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500" title={client.timezone || ''}>
+                      {formatTimezone(client.timezone)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDate(client.created_at)}
