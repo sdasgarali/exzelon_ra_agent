@@ -147,7 +147,7 @@ def _resolve_domain(db, lead) -> str | None:
     # 2. Fall back to ClientInfo.domain or website
     if lead.client_name:
         client = db.query(ClientInfo).filter(
-            ClientInfo.company_name == lead.client_name
+            ClientInfo.client_name == lead.client_name
         ).first()
         if client:
             if client.domain:
