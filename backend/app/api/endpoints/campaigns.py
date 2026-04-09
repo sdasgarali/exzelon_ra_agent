@@ -392,9 +392,10 @@ def create_campaign_from_leads(
         f"States: {', '.join(states[:3])}{'...' if len(states) > 3 else ''}."
     )
 
-    # Assign all active mailboxes
+    # Assign all active, non-archived mailboxes
     mailboxes = db.query(SenderMailbox).filter(
         SenderMailbox.is_active == True,
+        SenderMailbox.is_archived == False,
     )
     mailboxes = tenant_filter(mailboxes, SenderMailbox, tenant_id).all()
     mailbox_ids = [m.mailbox_id for m in mailboxes]
