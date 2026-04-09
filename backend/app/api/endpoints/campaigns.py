@@ -727,6 +727,29 @@ def resume_campaign(
     return {"message": "Campaign resumed", "status": "active"}
 
 
+@router.post("/{campaign_id}/complete")
+def complete_campaign(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    from app.core.state_machine import validate_campaign_transition
+    if not validate_campaign_transition(campaign.status, CampaignStatus.COMPLETED):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot complete campaign in '{campaign.status.value}' status",
+        )
+    campaign.status = CampaignStatus.COMPLETED
+    db.commit()
+    return {"message": "Campaign completed", "status": "completed"}
+
+
 # ─── Sequence Steps ───────────────────────────────────────────────
 
 @router.get("/{campaign_id}/steps")

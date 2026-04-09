@@ -392,6 +392,7 @@ export default function CampaignsPage() {
       if (action === 'activate') await campaignsApi.activate(id)
       else if (action === 'pause') await campaignsApi.pause(id)
       else if (action === 'resume') await campaignsApi.resume(id)
+      else if (action === 'complete') await campaignsApi.complete(id)
       else if (action === 'duplicate') await campaignsApi.duplicate(id)
       else if (action === 'delete') await campaignsApi.delete(id)
       fetchCampaigns()
@@ -1033,25 +1034,71 @@ export default function CampaignsPage() {
                 )}
               </div>
 
-              {/* Status & Mode (read-only) */}
-              <div className="flex items-center gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                  <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                    selectedCampaign.status === 'active' ? 'bg-green-100 text-green-800' :
-                    selectedCampaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
-                    selectedCampaign.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
-                    {selectedCampaign.status}
-                  </span>
-                </div>
-                {selectedCampaign.preview_mode && (
+              {/* Status & Mode + Action Buttons */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Mode</label>
-                    <span className="px-2 py-1 text-xs rounded-full bg-teal-100 text-teal-800">Preview & Approve</span>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                      selectedCampaign.status === 'active' ? 'bg-green-100 text-green-800' :
+                      selectedCampaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                      selectedCampaign.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                      selectedCampaign.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {selectedCampaign.status}
+                    </span>
                   </div>
-                )}
+                  {selectedCampaign.preview_mode && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Mode</label>
+                      <span className="px-2 py-1 text-xs rounded-full bg-teal-100 text-teal-800">Preview & Approve</span>
+                    </div>
+                  )}
+                </div>
+                {/* Status action buttons — based on allowed transitions */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedCampaign.status === 'draft' && (
+                    <button
+                      onClick={() => handleAction('activate', selectedCampaign.campaign_id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700"
+                    >
+                      <Play className="w-3.5 h-3.5" /> Activate Campaign
+                    </button>
+                  )}
+                  {selectedCampaign.status === 'active' && (
+                    <>
+                      <button
+                        onClick={() => handleAction('pause', selectedCampaign.campaign_id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-yellow-500 text-white hover:bg-yellow-600"
+                      >
+                        <Pause className="w-3.5 h-3.5" /> Pause
+                      </button>
+                      <button
+                        onClick={() => handleAction('complete', selectedCampaign.campaign_id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" /> Mark Complete
+                      </button>
+                    </>
+                  )}
+                  {selectedCampaign.status === 'paused' && (
+                    <>
+                      <button
+                        onClick={() => handleAction('resume', selectedCampaign.campaign_id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700"
+                      >
+                        <Play className="w-3.5 h-3.5" /> Resume
+                      </button>
+                      <button
+                        onClick={() => handleAction('complete', selectedCampaign.campaign_id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" /> Mark Complete
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {selectedCampaign.health_score !== null && selectedCampaign.health_score !== undefined && (

@@ -793,6 +793,10 @@ export const campaignsApi = {
     const response = await api.post(`/campaigns/${id}/resume`)
     return response.data
   },
+  complete: async (id: number) => {
+    const response = await api.post(`/campaigns/${id}/complete`)
+    return response.data
+  },
   duplicate: async (id: number) => {
     const response = await api.post(`/campaigns/${id}/duplicate`)
     return response.data
