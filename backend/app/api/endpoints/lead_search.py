@@ -1,12 +1,16 @@
 """AI-powered natural language lead search endpoint."""
-from fastapi import APIRouter, Depends, Query
+import structlog
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, get_current_tenant_id
-from app.db.models.user import User
+from app.api.deps.auth import get_current_user, get_current_tenant_id, require_role
+from app.db.models.user import User, UserRole
+from app.core.rate_limiter import limiter
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/leads", tags=["Lead Search"])
 
@@ -39,3 +43,35 @@ def ai_search_leads(
         offset=body.offset,
         tenant_id=tenant_id,
     )
+
+
+@router.post("/database-search")
+@limiter.limit("10/hour")
+def database_search_contacts(
+    request: Request,
+    data: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Search B2B contact database via Apollo adapter."""
+    job_title = data.get("job_title", "")
+    company = data.get("company", "")
+    industry = data.get("industry", "")
+    location = data.get("location", "")
+    limit = min(data.get("limit", 25), 100)
+
+    try:
+        from app.services.adapters.contact_discovery.apollo import ApolloAdapter
+        adapter = ApolloAdapter()
+        # Map the request params to what Apollo adapter accepts
+        results = adapter.search_contacts(
+            company_name=company,
+            job_title=job_title,
+            state=location,  # location maps to state param
+            limit=limit,
+        )
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        logger.warning("database_search_failed", error=str(e))
+        return {"results": [], "count": 0, "error": str(e)}

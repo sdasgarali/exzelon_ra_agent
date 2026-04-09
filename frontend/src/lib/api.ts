@@ -287,6 +287,14 @@ export const contactsApi = {
   delete: async (id: number) => {
     await api.delete(`/contacts/${id}`)
   },
+  databaseSearch: async (data: { job_title?: string; company?: string; industry?: string; location?: string; limit?: number }) => {
+    const response = await api.post('/leads/database-search', data)
+    return response.data
+  },
+  replyPrediction: async (id: number) => {
+    const response = await api.get(`/contacts/${id}/reply-prediction`)
+    return response.data
+  },
 }
 
 // Dashboard API
@@ -667,6 +675,14 @@ export const templatesApi = {
     const response = await api.post(`/templates/${id}/preview`)
     return response.data
   },
+  seedLibrary: async () => {
+    const response = await api.post('/templates/seed-library')
+    return response.data
+  },
+  importToStep: async (templateId: number, data: { campaign_id: number; step_id: number }) => {
+    const response = await api.post(`/templates/${templateId}/import-to-step`, data)
+    return response.data
+  },
 }
 
 // Users API (Admin+)
@@ -848,6 +864,24 @@ export const campaignsApi = {
   },
   abResults: async (campaignId: number, stepId: number) => {
     const response = await api.get(`/campaigns/${campaignId}/steps/${stepId}/ab-results`)
+    return response.data
+  },
+  // Activity feed
+  activity: async (campaignId: number, params?: { limit?: number; offset?: number; event_type?: string }) => {
+    const response = await api.get(`/campaigns/${campaignId}/activity`, { params })
+    return response.data
+  },
+  // Thread preview
+  threadPreview: async (campaignId: number, contactId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/thread-preview`, { params: { contact_id: contactId } })
+    return response.data
+  },
+  // Date-aware CSV export
+  exportCsvWithDates: async (id: number, dateFrom?: string, dateTo?: string) => {
+    const params: Record<string, string> = {}
+    if (dateFrom) params.date_from = dateFrom
+    if (dateTo) params.date_to = dateTo
+    const response = await api.get(`/campaigns/${id}/analytics/export`, { params, responseType: 'blob' })
     return response.data
   },
   // Auto-enrollment

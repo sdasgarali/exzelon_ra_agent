@@ -20,6 +20,8 @@ router = APIRouter(prefix="/templates", tags=["Email Templates"])
 @router.get("", response_model=EmailTemplateListResponse)
 async def list_templates(
     show_archived: bool = False,
+    industry: Optional[str] = Query(None, description="Filter by industry"),
+    goal: Optional[str] = Query(None, description="Filter by goal"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -32,6 +34,10 @@ async def list_templates(
         query = query.filter(EmailTemplate.is_archived == True)
     else:
         query = query.filter(EmailTemplate.is_archived == False)
+    if industry:
+        query = query.filter(EmailTemplate.industry == industry)
+    if goal:
+        query = query.filter(EmailTemplate.goal == goal)
     templates = query.order_by(EmailTemplate.created_at.desc()).all()
 
     # Find active template per category
@@ -336,3 +342,127 @@ async def duplicate_template(
     db.commit()
     db.refresh(new_template)
     return EmailTemplateResponse.model_validate(new_template)
+
+
+@router.post("/seed-library")
+async def seed_template_library(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Seed 12 system templates into the library (super_admin only)."""
+    effective_tenant = tenant_id or current_user.tenant_id or 1
+
+    # Check if system templates already exist for this tenant
+    existing_system = db.query(EmailTemplate).filter(
+        EmailTemplate.tenant_id == effective_tenant,
+        EmailTemplate.is_system == True,
+    ).count()
+    if existing_system >= 12:
+        return {"message": "System templates already seeded", "count": existing_system}
+
+    system_templates = [
+        {"name": "Cold Outreach - Staffing", "subject": "Candidates ready for your {{job_title}} role", "industry": "staffing", "goal": "intro", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>I noticed {{company_name}} is hiring for {{job_title}}. We have pre-screened candidates ready for review.</p><p>Would a quick call work this week?</p>"},
+        {"name": "Cold Outreach - Healthcare", "subject": "Healthcare talent for {{company_name}}", "industry": "healthcare", "goal": "intro", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>{{company_name}} has an opening for {{job_title}}. We specialize in healthcare staffing and can deliver qualified candidates within 48 hours.</p><p>Interested in a free candidate preview?</p>"},
+        {"name": "Cold Outreach - Technology", "subject": "Top tech talent for {{job_title}}", "industry": "technology", "goal": "intro", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>I see {{company_name}} is looking for a {{job_title}}. Our tech recruiting team has candidates with the exact skill set you need.</p><p>Can I send over a few profiles?</p>"},
+        {"name": "Cold Outreach - Manufacturing", "subject": "Skilled workers for {{company_name}}", "industry": "manufacturing", "goal": "intro", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>{{company_name}} posted a {{job_title}} position. We staff manufacturing roles nationwide and can help fill it fast.</p><p>Want to see some candidates?</p>"},
+        {"name": "Follow-up - Gentle Bump", "subject": "Quick follow-up — {{job_title}}", "industry": None, "goal": "followup", "category": "followup",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>Just following up on my previous email about the {{job_title}} role. I understand you are busy — happy to work around your schedule.</p><p>Would a brief 10-minute call work?</p>"},
+        {"name": "Follow-up - Value Add", "subject": "Market insights for {{job_title}} hiring", "industry": None, "goal": "followup", "category": "followup",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>Since my last email, I wanted to share that we are seeing strong candidate availability for {{job_title}} roles in your area. Average time-to-fill is down 15% this quarter.</p><p>Happy to share more details on a quick call.</p>"},
+        {"name": "Follow-up - Case Study", "subject": "How we helped a company like {{company_name}}", "industry": None, "goal": "followup", "category": "followup",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>A company similar to {{company_name}} recently used our services to fill their {{job_title}} position in under 2 weeks — with zero recruiter fees upfront.</p><p>Would you like to learn how?</p>"},
+        {"name": "Re-engagement - Past Contact", "subject": "Still looking for {{job_title}} talent?", "industry": None, "goal": "re-engage", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>We connected a while back about staffing needs at {{company_name}}. I wanted to check in — are you still looking for {{job_title}} candidates?</p><p>We have several new profiles that might be a great fit.</p>"},
+        {"name": "Meeting Request", "subject": "15 min to discuss {{company_name}} hiring", "industry": None, "goal": "meeting", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>I would love to spend 15 minutes discussing how we can help {{company_name}} with your {{job_title}} search. No commitment — just a quick chat to see if we are a good fit.</p><p>What does your calendar look like this week?</p>"},
+        {"name": "Referral Request", "subject": "Quick question about hiring at {{company_name}}", "industry": None, "goal": "referral", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>I am reaching out about the {{job_title}} opening at {{company_name}}. If you are not the right person to speak with, could you point me to whoever handles recruiting for this role?</p><p>Thanks in advance!</p>"},
+        {"name": "Breakup Email", "subject": "Last attempt — {{job_title}} at {{company_name}}", "industry": None, "goal": "breakup", "category": "followup",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>I have reached out a few times about the {{job_title}} position and haven't heard back, so I will assume the timing isn't right.</p><p>If things change, feel free to reach out anytime. Wishing you success in your search!</p>"},
+        {"name": "Event/Season Trigger", "subject": "New year hiring plans for {{company_name}}?", "industry": None, "goal": "seasonal", "category": "outreach",
+         "body_html": "<p>Hi {{contact_first_name}},</p><p>As we head into the new quarter, many companies are ramping up hiring. If {{company_name}} has any upcoming {{job_title}} needs, we would love to help you get a head start.</p><p>Want to chat this week?</p>"},
+    ]
+
+    created = 0
+    for tmpl in system_templates:
+        # Skip if a system template with same name already exists
+        exists = db.query(EmailTemplate).filter(
+            EmailTemplate.tenant_id == effective_tenant,
+            EmailTemplate.name == tmpl["name"],
+            EmailTemplate.is_system == True,
+        ).first()
+        if exists:
+            continue
+
+        cat = TemplateCategory.FOLLOWUP if tmpl["category"] == "followup" else TemplateCategory.OUTREACH
+        template = EmailTemplate(
+            tenant_id=effective_tenant,
+            name=tmpl["name"],
+            subject=tmpl["subject"],
+            body_html=tmpl["body_html"],
+            body_text="",
+            status=TemplateStatus.INACTIVE,
+            category=cat,
+            is_default=False,
+            is_system=True,
+            industry=tmpl.get("industry"),
+            goal=tmpl.get("goal"),
+            description=f"System template: {tmpl['goal']}",
+        )
+        db.add(template)
+        created += 1
+
+    db.commit()
+    return {"message": f"Seeded {created} system templates", "count": created}
+
+
+@router.post("/{template_id}/import-to-step")
+async def import_template_to_step(
+    template_id: int,
+    step_id: int = Query(..., description="Target sequence step ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Copy template content to a campaign sequence step."""
+    template = db.query(EmailTemplate).filter(
+        EmailTemplate.template_id == template_id
+    ).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+    # Verify tenant ownership
+    if tenant_id is not None and template.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+
+    from app.db.models.campaign import SequenceStep
+    step = db.query(SequenceStep).filter(
+        SequenceStep.step_id == step_id,
+    ).first()
+    if not step:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sequence step not found",
+        )
+
+    step.subject = template.subject
+    step.body_html = template.body_html
+    step.body_text = template.body_text
+    step.template_id = template.template_id
+    db.commit()
+
+    return {
+        "message": "Template imported to step",
+        "step_id": step.step_id,
+        "template_id": template.template_id,
+    }

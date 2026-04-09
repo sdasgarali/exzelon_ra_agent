@@ -1378,6 +1378,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for campaign new columns: {e}")
 
+    # Migration: Template library enhancement — add industry, goal, is_system columns
+    try:
+        from sqlalchemy import text as sa_text_tmpl_lib, inspect as sa_inspect_tmpl_lib
+        with engine.connect() as conn:
+            inspector_tmpl = sa_inspect_tmpl_lib(engine)
+            tmpl_cols = [c["name"] for c in inspector_tmpl.get_columns("email_templates")]
+            for col, coldef in [("industry", "VARCHAR(50) NULL"), ("goal", "VARCHAR(50) NULL"), ("is_system", "TINYINT(1) DEFAULT 0")]:
+                if col not in tmpl_cols:
+                    try:
+                        conn.execute(sa_text_tmpl_lib(f"ALTER TABLE email_templates ADD COLUMN {col} {coldef}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col} to email_templates")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for template library columns: {e}")
+
     # Migration: add opened_at, clicked_at to outreach_events
     try:
         from sqlalchemy import text as sa_text_oe_track, inspect as sa_inspect_oe_track

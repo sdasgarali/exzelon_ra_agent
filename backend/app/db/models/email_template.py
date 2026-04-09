@@ -31,6 +31,9 @@ class EmailTemplate(Base):
     category = Column(Enum(TemplateCategory, values_callable=lambda x: [e.value for e in x]), default=TemplateCategory.OUTREACH, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     description = Column(Text, nullable=True)
+    industry = Column(String(50), nullable=True)
+    goal = Column(String(50), nullable=True)
+    is_system = Column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
         Index("idx_template_tenant", "tenant_id"),

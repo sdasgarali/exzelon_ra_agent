@@ -200,7 +200,7 @@ export interface SequenceStep {
   step_id: number;
   campaign_id: number;
   step_order: number;
-  step_type: 'email' | 'wait' | 'condition';
+  step_type: 'email' | 'wait' | 'condition' | 'sms' | 'call' | 'linkedin';
   subject: string | null;
   body_html: string | null;
   body_text: string | null;
@@ -596,4 +596,46 @@ export interface EngagementScore {
   signals: Record<string, number>;
   total_sent: number;
   last_engagement_at: string | null;
+}
+
+// ─── Campaign Activity Feed ─────────────────────────────────────
+
+export interface CampaignActivityEvent {
+  event_id: number;
+  contact_email: string;
+  contact_name: string;
+  event_type: 'sent' | 'opened' | 'clicked' | 'replied' | 'bounced';
+  timestamp: string | null;
+  step_order: number;
+  variant_index: number | null;
+  subject: string;
+}
+
+// ─── Thread Preview ─────────────────────────────────────────────
+
+export interface ThreadPreviewStep {
+  step_order: number;
+  step_type: string;
+  delay_days: number;
+  delay_hours: number;
+  subject?: string;
+  body_html?: string;
+  condition_type?: string;
+  condition_window_hours?: number;
+}
+
+// ─── Reply Prediction ───────────────────────────────────────────
+
+export interface ReplyPrediction {
+  score: number;
+  level: 'high' | 'medium' | 'low' | 'unknown';
+  factors: Record<string, number>;
+}
+
+// ─── Template Library ───────────────────────────────────────────
+
+export interface EmailTemplateExtended extends EmailTemplate {
+  industry: string | null;
+  goal: string | null;
+  is_system: boolean;
 }

@@ -475,3 +475,22 @@ async def delete_contact(
     # Soft delete: archive instead of hard deleting
     contact.is_archived = True
     db.commit()
+
+
+@router.get("/{contact_id}/reply-prediction")
+def get_reply_prediction(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get statistical reply prediction for a contact."""
+    from app.services.reply_predictor import predict_reply_likelihood
+
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+    if not query.first():
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    return predict_reply_likelihood(contact_id, db)

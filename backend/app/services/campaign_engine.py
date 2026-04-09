@@ -174,6 +174,67 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                 # Advance past wait step
                 _advance_to_next_step(cc, step, campaign, db)
 
+            elif step.step_type == StepType.SMS:
+                # SMS step — send via Twilio if phone available
+                try:
+                    contact = db.query(ContactDetails).filter(
+                        ContactDetails.contact_id == cc.contact_id
+                    ).first()
+                    if not contact or not contact.phone:
+                        cc.skip_reason = "no_phone_number"
+                        logger.info("sms_step_skipped", contact_id=cc.contact_id, reason="no_phone_number")
+                    else:
+                        sms_body = step.body_text or step.body_html or ""
+                        # Apply spintax if present
+                        from app.services.spintax import process_spintax
+                        sms_body = process_spintax(sms_body, seed=cc.contact_id)
+                        # Render placeholders
+                        sms_body = sms_body.replace("{{first_name}}", contact.first_name or "")
+                        sms_body = sms_body.replace("{{last_name}}", contact.last_name or "")
+                        sms_body = sms_body.replace("{{company}}", contact.client_name or "")
+                        try:
+                            from app.services.adapters.communications.twilio_adapter import TwilioAdapter
+                            adapter = TwilioAdapter()
+                            adapter.send_sms(contact.phone, sms_body)
+                            step.total_sent = (step.total_sent or 0) + 1
+                            logger.info("sms_sent", contact_id=cc.contact_id, step_id=step.step_id)
+                        except Exception as sms_err:
+                            logger.warning("sms_send_failed", error=str(sms_err), contact_id=cc.contact_id)
+                            cc.skip_reason = f"sms_failed: {str(sms_err)[:100]}"
+                except Exception as e:
+                    logger.warning("sms_step_error", error=str(e))
+                _advance_to_next_step(cc, step, campaign, db)
+
+            elif step.step_type == StepType.CALL:
+                # Call step — initiate via Twilio if phone available
+                try:
+                    contact = db.query(ContactDetails).filter(
+                        ContactDetails.contact_id == cc.contact_id
+                    ).first()
+                    if not contact or not contact.phone:
+                        cc.skip_reason = "no_phone_number"
+                        logger.info("call_step_skipped", contact_id=cc.contact_id, reason="no_phone_number")
+                    else:
+                        twiml_url = step.body_text or ""
+                        try:
+                            from app.services.adapters.communications.twilio_adapter import TwilioAdapter
+                            adapter = TwilioAdapter()
+                            adapter.initiate_call(contact.phone, twiml_url=twiml_url)
+                            step.total_sent = (step.total_sent or 0) + 1
+                            logger.info("call_initiated", contact_id=cc.contact_id, step_id=step.step_id)
+                        except Exception as call_err:
+                            logger.warning("call_initiate_failed", error=str(call_err), contact_id=cc.contact_id)
+                            cc.skip_reason = f"call_failed: {str(call_err)[:100]}"
+                except Exception as e:
+                    logger.warning("call_step_error", error=str(e))
+                _advance_to_next_step(cc, step, campaign, db)
+
+            elif step.step_type == StepType.LINKEDIN:
+                # LinkedIn step — placeholder, log skip
+                cc.skip_reason = "linkedin_not_configured"
+                logger.info("linkedin_step_skipped", contact_id=cc.contact_id, reason="linkedin_not_configured")
+                _advance_to_next_step(cc, step, campaign, db)
+
             results["processed"] += 1
 
         except Exception as e:

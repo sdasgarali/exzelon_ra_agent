@@ -191,3 +191,114 @@ def zapier_sample(event: str):
         },
     }
     return [samples.get(event, {"event": event, "data": {}})]
+
+
+# ─── Zapier Inbound Actions ──────────────────────────────────────
+
+class ZapierAddContact(BaseModel):
+    email: str
+    first_name: str
+    last_name: str
+    company: Optional[str] = None
+    title: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class ZapierEnrollCampaign(BaseModel):
+    contact_id: int
+    campaign_id: int
+
+
+class ZapierCreateDeal(BaseModel):
+    title: str
+    value: Optional[float] = None
+    contact_id: Optional[int] = None
+    client_id: Optional[int] = None
+
+
+@router.post("/zapier/actions/add-contact")
+def zapier_add_contact(
+    data: ZapierAddContact,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Create a contact from Zapier webhook."""
+    from app.db.models.contact import ContactDetails
+    contact = ContactDetails(
+        email=data.email,
+        first_name=data.first_name,
+        last_name=data.last_name,
+        client_name=data.company or "",
+        title=data.title,
+        phone=data.phone,
+        source="zapier",
+        tenant_id=tenant_id or 1,
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    return {"contact_id": contact.contact_id, "email": contact.email, "status": "created"}
+
+
+@router.post("/zapier/actions/enroll-campaign")
+def zapier_enroll_campaign(
+    data: ZapierEnrollCampaign,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Enroll a contact in a campaign from Zapier."""
+    from app.db.models.campaign import Campaign, CampaignContact, CampaignContactStatus
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == data.campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    existing = db.query(CampaignContact).filter(
+        CampaignContact.campaign_id == data.campaign_id,
+        CampaignContact.contact_id == data.contact_id,
+    ).first()
+    if existing:
+        return {"status": "already_enrolled", "id": existing.id}
+
+    cc = CampaignContact(
+        campaign_id=data.campaign_id,
+        contact_id=data.contact_id,
+        status=CampaignContactStatus.ACTIVE,
+        current_step=1,
+        enrolled_at=datetime.utcnow(),
+    )
+    db.add(cc)
+    campaign.total_contacts = (campaign.total_contacts or 0) + 1
+    db.commit()
+    return {"status": "enrolled", "id": cc.id}
+
+
+@router.post("/zapier/actions/create-deal")
+def zapier_create_deal(
+    data: ZapierCreateDeal,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Create a CRM deal from Zapier."""
+    from app.db.models.deal import Deal, DealStage
+    # Get first stage
+    first_stage = db.query(DealStage).filter(
+        DealStage.stage_order == 1,
+    ).first()
+    deal = Deal(
+        title=data.title,
+        value=data.value or 0,
+        contact_id=data.contact_id,
+        client_id=data.client_id,
+        stage_id=first_stage.stage_id if first_stage else None,
+        probability=10,
+        tenant_id=tenant_id or 1,
+    )
+    db.add(deal)
+    db.commit()
+    db.refresh(deal)
+    return {"deal_id": deal.deal_id, "title": deal.title, "status": "created"}

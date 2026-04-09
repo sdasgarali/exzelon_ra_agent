@@ -7,15 +7,20 @@ import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
-  FileSearch, Loader2, AlertTriangle, Shuffle,
+  FileSearch, Loader2, AlertTriangle, Shuffle, MessageSquare, Phone, Linkedin,
+  MousePointerClick, Reply, Activity, LayoutList, Workflow,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const SequenceBuilder = dynamic(() => import('@/components/sequence-builder'), { ssr: false })
 
 type TabView = 'list' | 'detail'
 
 interface StepFormData {
-  step_type: 'email' | 'wait' | 'condition'
+  step_type: 'email' | 'wait' | 'condition' | 'sms' | 'call' | 'linkedin'
   subject: string
   body_html: string
+  body_text: string
   delay_days: number
   delay_hours: number
   reply_to_thread: boolean
@@ -28,6 +33,7 @@ const defaultStep: StepFormData = {
   step_type: 'email',
   subject: '',
   body_html: '',
+  body_text: '',
   delay_days: 1,
   delay_hours: 0,
   reply_to_thread: true,
@@ -57,7 +63,7 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [steps, setSteps] = useState<SequenceStep[]>([])
   const [contacts, setContacts] = useState<CampaignContact[]>([])
-  const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics' | 'rules'>('sequence')
+  const [detailTab, setDetailTab] = useState<'sequence' | 'contacts' | 'analytics' | 'activity' | 'rules'>('sequence')
 
   // Step spam scores
   const [stepSpamScores, setStepSpamScores] = useState<Record<number, { grade: string; score: number }>>({})
@@ -122,6 +128,22 @@ export default function CampaignsPage() {
   const [mailboxes, setMailboxes] = useState<any[]>([])
   const [selectedMailboxIds, setSelectedMailboxIds] = useState<number[]>([])
   const [campaignsEnabled, setCampaignsEnabled] = useState(true)
+
+  // Activity feed state
+  const [activityEvents, setActivityEvents] = useState<any[]>([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityFilter, setActivityFilter] = useState<string>('all')
+
+  // A/B stats state
+  const [abStatsData, setAbStatsData] = useState<Record<number, any>>({})
+
+  // Thread preview state
+  const [threadPreview, setThreadPreview] = useState<any>(null)
+  const [threadPreviewLoading, setThreadPreviewLoading] = useState(false)
+  const [showThreadPreviewModal, setShowThreadPreviewModal] = useState(false)
+
+  // Sequence view mode
+  const [sequenceViewMode, setSequenceViewMode] = useState<'list' | 'visual'>('list')
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true)
@@ -218,7 +240,7 @@ export default function CampaignsPage() {
 
   const handleExportCsv = async (id: number) => {
     try {
-      const blob = await campaignsApi.exportCsv(id)
+      const blob = await campaignsApi.exportCsvWithDates(id, analyticsDateFrom || undefined, analyticsDateTo || undefined)
       const url = window.URL.createObjectURL(new Blob([blob]))
       const a = document.createElement('a')
       a.href = url
@@ -236,6 +258,34 @@ export default function CampaignsPage() {
       setCompareData(data)
     } catch { /* ignore */ }
     setCompareLoading(false)
+  }
+
+  const fetchActivity = useCallback(async (campaignId: number, filter?: string) => {
+    setActivityLoading(true)
+    try {
+      const params: Record<string, any> = { limit: 50 }
+      if (filter && filter !== 'all') params.event_type = filter
+      const data = await campaignsApi.activity(campaignId, params)
+      setActivityEvents(data?.items || [])
+    } catch { setActivityEvents([]) }
+    setActivityLoading(false)
+  }, [])
+
+  const fetchAbStats = async (campaignId: number, stepId: number) => {
+    try {
+      const data = await campaignsApi.abStats(campaignId, stepId)
+      setAbStatsData(prev => ({ ...prev, [stepId]: data }))
+    } catch { /* ignore */ }
+  }
+
+  const handleThreadPreview = async (campaignId: number, contactId: number) => {
+    setThreadPreviewLoading(true)
+    setShowThreadPreviewModal(true)
+    try {
+      const data = await campaignsApi.threadPreview(campaignId, contactId)
+      setThreadPreview(data)
+    } catch { setThreadPreview(null) }
+    setThreadPreviewLoading(false)
   }
 
   const handleCreate = async () => {
@@ -413,6 +463,15 @@ export default function CampaignsPage() {
     mailboxesApi.list({ page: 1, page_size: 100 }).then(d => setMailboxes(d?.items || [])).catch(() => {})
   }, [])
 
+  // Auto-refresh activity feed every 10s when on activity tab
+  useEffect(() => {
+    if (detailTab !== 'activity' || !selectedCampaign) return
+    const interval = setInterval(() => {
+      fetchActivity(selectedCampaign.campaign_id, activityFilter)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [detailTab, selectedCampaign, activityFilter, fetchActivity])
+
   const handleSaveRules = async () => {
     if (!selectedCampaign) return
     setRulesSaving(true)
@@ -541,9 +600,11 @@ export default function CampaignsPage() {
                             c.health_score >= 80 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
                             c.health_score >= 50 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
                             'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                          }`}>{c.health_score}</span>
+                          }`}>
+                            {c.health_score >= 80 ? 'Excellent' : c.health_score >= 50 ? 'Fair' : 'Poor'} {c.health_score}
+                          </span>
                         ) : (
-                          <span className="text-gray-400 text-xs">—</span>
+                          <span className="text-gray-400 text-xs">N/A</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
@@ -716,8 +777,12 @@ export default function CampaignsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
-        {(['sequence', 'contacts', 'analytics', 'rules'] as const).map(tab => (
-          <button key={tab} onClick={() => { setDetailTab(tab); if (tab === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id) }}
+        {(['sequence', 'contacts', 'analytics', 'activity', 'rules'] as const).map(tab => (
+          <button key={tab} onClick={() => {
+            setDetailTab(tab)
+            if (tab === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id)
+            if (tab === 'activity' && selectedCampaign) fetchActivity(selectedCampaign.campaign_id, activityFilter)
+          }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${detailTab === tab ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {tab}
           </button>
@@ -727,17 +792,72 @@ export default function CampaignsPage() {
       {/* Sequence Tab */}
       {detailTab === 'sequence' && (
         <div className="space-y-3">
-          {steps.length === 0 ? (
+          {/* View mode toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+              <button
+                onClick={() => setSequenceViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  sequenceViewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow-sm text-gray-900 dark:text-gray-100' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <LayoutList className="w-3.5 h-3.5" /> List View
+              </button>
+              <button
+                onClick={() => setSequenceViewMode('visual')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  sequenceViewMode === 'visual' ? 'bg-white dark:bg-gray-600 shadow-sm text-gray-900 dark:text-gray-100' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Workflow className="w-3.5 h-3.5" /> Visual Builder
+              </button>
+            </div>
+          </div>
+
+          {/* Visual Builder */}
+          {sequenceViewMode === 'visual' && steps.length > 0 && (
+            <SequenceBuilder
+              steps={steps}
+              spamScores={stepSpamScores}
+              onEditStep={(step) => {
+                setEditingStep(step)
+                setStepForm({
+                  step_type: step.step_type as any,
+                  subject: step.subject || '',
+                  body_html: step.body_html || '',
+                  body_text: step.body_text || '',
+                  delay_days: step.delay_days,
+                  delay_hours: step.delay_hours,
+                  reply_to_thread: step.reply_to_thread,
+                  condition_type: step.condition_type || '',
+                  condition_window_hours: step.condition_window_hours || 24,
+                  variants_json: step.variants_json || '',
+                })
+                setShowStepModal(true)
+              }}
+            />
+          )}
+
+          {/* List View (original) */}
+          {sequenceViewMode === 'list' && steps.length === 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8 text-center">
               <Mail className="w-10 h-10 mx-auto mb-3 text-gray-300" />
               <p className="font-medium text-gray-900 dark:text-gray-100">No steps yet</p>
               <p className="text-sm text-gray-500 mt-1">Add your first email step to build the sequence</p>
             </div>
-          ) : (
+          )}
+          {sequenceViewMode === 'list' && steps.length > 0 && (
             steps.map((step, idx) => (
               <div key={step.step_id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${step.step_type === 'email' ? 'bg-blue-500' : step.step_type === 'wait' ? 'bg-yellow-500' : 'bg-purple-500'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
+                    step.step_type === 'email' ? 'bg-blue-500' :
+                    step.step_type === 'wait' ? 'bg-yellow-500' :
+                    step.step_type === 'sms' ? 'bg-emerald-500' :
+                    step.step_type === 'call' ? 'bg-orange-500' :
+                    step.step_type === 'linkedin' ? 'bg-sky-600' :
+                    'bg-purple-500'
+                  }`}>
                     {idx + 1}
                   </div>
                   <div className="flex-1">
@@ -745,6 +865,9 @@ export default function CampaignsPage() {
                       {step.step_type === 'email' && <Mail className="w-4 h-4 text-blue-500" />}
                       {step.step_type === 'wait' && <Clock className="w-4 h-4 text-yellow-500" />}
                       {step.step_type === 'condition' && <GitBranch className="w-4 h-4 text-purple-500" />}
+                      {step.step_type === 'sms' && <MessageSquare className="w-4 h-4 text-emerald-500" />}
+                      {step.step_type === 'call' && <Phone className="w-4 h-4 text-orange-500" />}
+                      {step.step_type === 'linkedin' && <Linkedin className="w-4 h-4 text-sky-600" />}
                       <span className="font-medium capitalize">{step.step_type}</span>
                       {step.step_type === 'email' && step.subject && <span className="text-sm text-gray-500">— {step.subject}</span>}
                       {step.delay_days > 0 && <span className="text-xs text-gray-400 ml-2">Wait {step.delay_days}d {step.delay_hours}h</span>}
@@ -760,6 +883,43 @@ export default function CampaignsPage() {
                         <span>Opened: {step.total_opened}</span>
                         <span>Replied: {step.total_replied}</span>
                         <span>Bounced: {step.total_bounced}</span>
+                        {step.variants_json && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); selectedCampaign && fetchAbStats(selectedCampaign.campaign_id, step.step_id) }}
+                            className="text-primary-600 hover:underline"
+                          >A/B Stats</button>
+                        )}
+                      </div>
+                    )}
+                    {/* A/B variant stats */}
+                    {abStatsData[step.step_id]?.variants && abStatsData[step.step_id].variants.length > 0 && (
+                      <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-gray-400">
+                              <th className="text-left py-1">Variant</th>
+                              <th className="text-right py-1">Sent</th>
+                              <th className="text-right py-1">Open%</th>
+                              <th className="text-right py-1">Click%</th>
+                              <th className="text-right py-1">Reply%</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {abStatsData[step.step_id].variants.map((v: any, vi: number) => (
+                              <tr key={vi} className="border-t border-gray-50 dark:border-gray-800">
+                                <td className="py-1 font-medium">Variant {String.fromCharCode(65 + vi)}</td>
+                                <td className="py-1 text-right">{v.sent || 0}</td>
+                                <td className="py-1 text-right">{v.open_rate?.toFixed(1) || '0.0'}%</td>
+                                <td className="py-1 text-right">{v.click_rate?.toFixed(1) || '0.0'}%</td>
+                                <td className="py-1 text-right text-green-600">{v.reply_rate?.toFixed(1) || '0.0'}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <button
+                          onClick={() => selectedCampaign && campaignsApi.abOptimize(selectedCampaign.campaign_id, step.step_id).then(() => fetchAbStats(selectedCampaign.campaign_id, step.step_id))}
+                          className="mt-1 text-xs text-primary-600 hover:underline"
+                        >Optimize Winner</button>
                       </div>
                     )}
                   </div>
@@ -802,7 +962,7 @@ export default function CampaignsPage() {
                         </button>
                       </>
                     )}
-                    <button onClick={() => { setEditingStep(step); setStepForm({ step_type: step.step_type, subject: step.subject || '', body_html: step.body_html || '', delay_days: step.delay_days, delay_hours: step.delay_hours, reply_to_thread: step.reply_to_thread, condition_type: step.condition_type || '', condition_window_hours: step.condition_window_hours || 24, variants_json: step.variants_json || '' }); setShowStepModal(true) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <button onClick={() => { setEditingStep(step); setStepForm({ step_type: step.step_type as any, subject: step.subject || '', body_html: step.body_html || '', body_text: step.body_text || '', delay_days: step.delay_days, delay_hours: step.delay_hours, reply_to_thread: step.reply_to_thread, condition_type: step.condition_type || '', condition_window_hours: step.condition_window_hours || 24, variants_json: step.variants_json || '' }); setShowStepModal(true) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                       <Eye className="w-4 h-4 text-gray-400" />
                     </button>
                     <button onClick={() => handleDeleteStep(step.step_id)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
@@ -839,6 +999,7 @@ export default function CampaignsPage() {
                     <th className="text-left px-4 py-3 font-medium">Status</th>
                     <th className="text-right px-4 py-3 font-medium">Current Step</th>
                     <th className="text-left px-4 py-3 font-medium">Next Send</th>
+                    <th className="text-right px-4 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -853,6 +1014,12 @@ export default function CampaignsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">{cc.current_step}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">{cc.next_send_at ? new Date(cc.next_send_at).toLocaleString() : '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => selectedCampaign && handleThreadPreview(selectedCampaign.campaign_id, cc.contact_id)}
+                          className="text-xs text-primary-600 hover:underline"
+                        >Preview Thread</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -865,8 +1032,32 @@ export default function CampaignsPage() {
       {/* Analytics Tab */}
       {detailTab === 'analytics' && (
         <div className="space-y-4">
-          {/* Date Range + Actions Bar */}
+          {/* Date Range + Presets + Actions Bar */}
           <div className="flex flex-wrap items-center gap-3">
+            {/* Quick presets */}
+            {[
+              { label: '7d', days: 7 },
+              { label: '30d', days: 30 },
+              { label: '90d', days: 90 },
+              { label: 'All', days: 0 },
+            ].map(p => (
+              <button
+                key={p.label}
+                onClick={() => {
+                  if (p.days === 0) {
+                    setAnalyticsDateFrom(''); setAnalyticsDateTo('')
+                    selectedCampaign && loadAnalytics(selectedCampaign.campaign_id)
+                  } else {
+                    const from = new Date(Date.now() - p.days * 86400000).toISOString().split('T')[0]
+                    const to = new Date().toISOString().split('T')[0]
+                    setAnalyticsDateFrom(from); setAnalyticsDateTo(to)
+                    selectedCampaign && loadAnalytics(selectedCampaign.campaign_id, from, to)
+                  }
+                }}
+                className="px-2.5 py-1 border rounded text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 dark:border-gray-600"
+              >{p.label}</button>
+            ))}
+            <span className="text-gray-300 dark:text-gray-600">|</span>
             <input
               type="date"
               value={analyticsDateFrom}
@@ -991,6 +1182,57 @@ export default function CampaignsPage() {
                 </div>
               )}
 
+              {/* Per-Variant Breakdown */}
+              {analytics.steps?.some((s: any) => s.variants && s.variants.length > 0) && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <h3 className="px-4 py-3 font-medium border-b border-gray-200 dark:border-gray-700">A/B Variant Breakdown</h3>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {analytics.steps.filter((s: any) => s.variants && s.variants.length > 0).map((s: any) => (
+                      <div key={s.step_id} className="p-3">
+                        <p className="text-xs text-gray-500 mb-2 font-medium">Step {s.step_order}: {s.subject || '—'}</p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-gray-400">
+                                <th className="text-left py-1 px-2">Variant</th>
+                                <th className="text-right py-1 px-2">Sent</th>
+                                <th className="text-right py-1 px-2">Open%</th>
+                                <th className="text-right py-1 px-2">Click%</th>
+                                <th className="text-right py-1 px-2">Reply%</th>
+                                <th className="text-right py-1 px-2">Bounce%</th>
+                                <th className="text-center py-1 px-2">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.variants.map((v: any, vi: number) => {
+                                const isLeader = s.variants.length > 1 && v.reply_rate === Math.max(...s.variants.map((x: any) => x.reply_rate || 0))
+                                return (
+                                  <tr key={vi}>
+                                    <td className="py-1 px-2 font-medium">{v.subject || `Variant ${String.fromCharCode(65 + vi)}`}</td>
+                                    <td className="py-1 px-2 text-right">{v.sent}</td>
+                                    <td className="py-1 px-2 text-right">{v.open_rate?.toFixed(1) || '0.0'}%</td>
+                                    <td className="py-1 px-2 text-right">{v.click_rate?.toFixed(1) || '0.0'}%</td>
+                                    <td className="py-1 px-2 text-right text-green-600">{v.reply_rate?.toFixed(1) || '0.0'}%</td>
+                                    <td className="py-1 px-2 text-right text-red-500">{v.bounce_rate?.toFixed(1) || '0.0'}%</td>
+                                    <td className="py-1 px-2 text-center">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                        isLeader ? 'bg-green-100 text-green-700' : v.sent < 30 ? 'bg-gray-100 text-gray-500' : 'bg-yellow-100 text-yellow-700'
+                                      }`}>
+                                        {isLeader ? 'Leader' : v.sent < 30 ? 'Collecting' : 'Trailing'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Funnel */}
               {analytics.funnel && analytics.funnel.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -1016,6 +1258,76 @@ export default function CampaignsPage() {
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Activity Tab */}
+      {detailTab === 'activity' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <select
+              value={activityFilter}
+              onChange={e => { setActivityFilter(e.target.value); selectedCampaign && fetchActivity(selectedCampaign.campaign_id, e.target.value) }}
+              className="px-3 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600"
+            >
+              <option value="all">All Events</option>
+              <option value="sent">Sent</option>
+              <option value="opened">Opened</option>
+              <option value="clicked">Clicked</option>
+              <option value="replied">Replied</option>
+              <option value="bounced">Bounced</option>
+            </select>
+            <button
+              onClick={() => selectedCampaign && fetchActivity(selectedCampaign.campaign_id, activityFilter)}
+              className="px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1"
+            >
+              <Activity className="w-3 h-3" /> Refresh
+            </button>
+            <span className="text-xs text-gray-400">Auto-refreshes every 10s</span>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            {activityLoading ? (
+              <div className="p-8 text-center text-gray-500"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></div>
+            ) : activityEvents.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No activity yet</div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-[500px] overflow-y-auto">
+                {activityEvents.map((ev: any) => {
+                  const iconMap: Record<string, any> = {
+                    sent: <Mail className="w-4 h-4 text-blue-500" />,
+                    opened: <Eye className="w-4 h-4 text-purple-500" />,
+                    clicked: <MousePointerClick className="w-4 h-4 text-cyan-500" />,
+                    replied: <Reply className="w-4 h-4 text-green-500" />,
+                    bounced: <AlertTriangle className="w-4 h-4 text-red-500" />,
+                  }
+                  const colorMap: Record<string, string> = {
+                    sent: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
+                    opened: 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
+                    clicked: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-400',
+                    replied: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
+                    bounced: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
+                  }
+                  return (
+                    <div key={ev.event_id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                      {iconMap[ev.event_type] || <Mail className="w-4 h-4 text-gray-400" />}
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{ev.contact_name}</span>
+                        <span className="text-xs text-gray-500 ml-2">{ev.contact_email}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${colorMap[ev.event_type] || 'bg-gray-100 text-gray-600'}`}>
+                        {ev.event_type}
+                      </span>
+                      {ev.step_order && <span className="text-xs text-gray-400">Step {ev.step_order}</span>}
+                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                        {ev.timestamp ? new Date(ev.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1261,6 +1573,9 @@ export default function CampaignsPage() {
                   <option value="email">Email</option>
                   <option value="wait">Wait</option>
                   <option value="condition">Condition</option>
+                  <option value="sms">SMS</option>
+                  <option value="call">Call</option>
+                  <option value="linkedin">LinkedIn</option>
                 </select>
               </div>
               {stepForm.step_type === 'email' && (
@@ -1296,6 +1611,29 @@ export default function CampaignsPage() {
                     <input type="number" value={stepForm.condition_window_hours} onChange={e => setStepForm(f => ({ ...f, condition_window_hours: parseInt(e.target.value) || 24 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                   </div>
                 </>
+              )}
+              {stepForm.step_type === 'sms' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">SMS Body</label>
+                  <textarea value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" rows={4} placeholder="Hi {{first_name}}, ..." />
+                  <p className="text-xs text-gray-400 mt-1">Max 160 chars recommended. Supports {'{{first_name}}'}, {'{{company}}'} placeholders and {'{'} spintax {'}'}</p>
+                </div>
+              )}
+              {stepForm.step_type === 'call' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">TwiML URL or Script</label>
+                  <input value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="https://your-domain.com/twiml/script" />
+                  <p className="text-xs text-gray-400 mt-1">URL to TwiML instructions for the call, or leave empty for a simple dial</p>
+                </div>
+              )}
+              {stepForm.step_type === 'linkedin' && (
+                <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3">
+                  <p className="text-sm text-sky-700 dark:text-sky-300 flex items-center gap-2">
+                    <Linkedin className="w-4 h-4" />
+                    LinkedIn automation requires a browser extension (coming soon)
+                  </p>
+                  <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">The campaign engine will skip this step and advance to the next one until the extension is configured.</p>
+                </div>
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1482,6 +1820,66 @@ export default function CampaignsPage() {
           </div>
         </>
       )}
+      {/* Thread Preview Modal */}
+      {showThreadPreviewModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowThreadPreviewModal(false)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[600px] max-w-[90vw] max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-lg">Email Thread Preview</h3>
+                {threadPreview && <p className="text-sm text-gray-500">{threadPreview.contact_name}</p>}
+              </div>
+              <button onClick={() => setShowThreadPreviewModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            {threadPreviewLoading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+            ) : !threadPreview?.steps?.length ? (
+              <p className="text-sm text-gray-500 text-center py-8">No steps to preview</p>
+            ) : (
+              <div className="space-y-3">
+                {threadPreview.steps.map((step: any, i: number) => (
+                  <div key={i}>
+                    {step.step_type === 'email' ? (
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-blue-500" />
+                          <span className="text-xs font-medium text-gray-500">Step {step.step_order} — Email</span>
+                        </div>
+                        <div className="px-4 py-3">
+                          <p className="font-medium text-sm mb-2">{step.subject || '(no subject)'}</p>
+                          <div className="text-sm text-gray-600 dark:text-gray-400 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: step.body_html || '' }} />
+                        </div>
+                      </div>
+                    ) : step.step_type === 'wait' ? (
+                      <div className="flex items-center justify-center py-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full">
+                          <Clock className="w-3 h-3" />
+                          Wait {step.delay_days}d {step.delay_hours}h
+                        </div>
+                      </div>
+                    ) : step.step_type === 'condition' ? (
+                      <div className="flex items-center justify-center py-2">
+                        <div className="flex items-center gap-2 text-xs text-purple-500 bg-purple-50 dark:bg-purple-900/20 px-3 py-1.5 rounded-full">
+                          <GitBranch className="w-3 h-3" />
+                          If {step.condition_type} within {step.condition_window_hours}h
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center py-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full capitalize">
+                          {step.step_type} step
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
       {/* Spintax Preview Modal */}
       {spintaxModal && (
         <>

@@ -540,3 +540,45 @@ async def humanize_preview(
     """Preview humanization without applying to any draft."""
     # Same logic as /humanize — both are stateless
     return await humanize_email(request, current_user)
+
+
+# ─── Seed Test / Inbox Placement ─────────────────────────────────
+
+@router.post("/seed-test/{mailbox_id}")
+def run_seed_test_endpoint(
+    mailbox_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Send test emails to seed accounts for inbox placement testing."""
+    from app.services.seed_tester import run_seed_test
+
+    mailbox = tenant_filter(db.query(SenderMailbox), tenant_id).filter(
+        SenderMailbox.mailbox_id == mailbox_id
+    ).first()
+    if not mailbox:
+        raise HTTPException(status_code=404, detail="Mailbox not found")
+    return run_seed_test(mailbox_id, db)
+
+
+@router.post("/seed-test/{test_run_id}/check")
+def check_seed_results_endpoint(
+    test_run_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Poll IMAP accounts to check inbox placement for a seed test run."""
+    from app.services.seed_tester import check_seed_results
+    return check_seed_results(test_run_id, db)
+
+
+@router.get("/seed-test/{test_run_id}/results")
+def get_seed_test_results(
+    test_run_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+):
+    """Get results for a specific seed test run."""
+    from app.services.seed_tester import get_test_results
+    return get_test_results(test_run_id, db)

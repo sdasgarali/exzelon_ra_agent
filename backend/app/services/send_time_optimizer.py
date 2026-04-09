@@ -165,6 +165,67 @@ def calculate_optimal_send_time(
     }
 
 
+def calculate_per_contact_optimal_time(contact_id: int, db) -> Dict[str, Any]:
+    """Calculate personalized optimal send time based on contact's engagement history."""
+    from app.db.models.outreach import OutreachEvent
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead import LeadDetails
+    from app.db.models.lead_contact import LeadContactAssociation
+
+    # Get engagement events for this contact
+    events = db.query(OutreachEvent).filter(
+        OutreachEvent.contact_id == contact_id
+    ).all()
+
+    engagement_hours = []
+    for ev in events:
+        # Collect hours of engagement events (replies > clicks > opens)
+        if ev.reply_detected_at:
+            engagement_hours.append(ev.reply_detected_at.hour)
+        elif ev.clicked_at:
+            engagement_hours.append(ev.clicked_at.hour)
+        elif ev.opened_at:
+            engagement_hours.append(ev.opened_at.hour)
+
+    if len(engagement_hours) >= 3:
+        # Build histogram and find peak hour
+        from collections import Counter
+        hour_counts = Counter(engagement_hours)
+        peak_hour = hour_counts.most_common(1)[0][0]
+        return {
+            "optimal_hour": peak_hour,
+            "confidence": min(len(engagement_hours) / 10.0, 1.0),
+            "engagement_count": len(engagement_hours),
+            "method": "personal",
+        }
+
+    # Fallback to generic timezone-based optimization
+    contact = db.query(ContactDetails).filter(
+        ContactDetails.contact_id == contact_id
+    ).first()
+    state = None
+    if contact:
+        # Try to get state from associated lead
+        assoc = db.query(LeadContactAssociation).filter(
+            LeadContactAssociation.contact_id == contact_id
+        ).first()
+        if assoc:
+            lead = db.query(LeadDetails).filter(
+                LeadDetails.lead_id == assoc.lead_id
+            ).first()
+            if lead:
+                state = lead.state
+
+    optimal = calculate_optimal_send_time(state=state)
+    return {
+        "optimal_hour": optimal.get("send_at_utc", datetime.now()).hour if optimal.get("send_at_utc") else 10,
+        "confidence": 0.3,
+        "engagement_count": len(engagement_hours),
+        "method": "generic",
+        "timezone": optimal.get("timezone", "US/Eastern"),
+    }
+
+
 def is_within_send_window(
     state: Optional[str] = None,
     start_hour: int = 8,

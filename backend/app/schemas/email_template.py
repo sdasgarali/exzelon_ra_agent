@@ -14,6 +14,8 @@ class EmailTemplateCreate(BaseModel):
     description: Optional[str] = None
     status: TemplateStatus = TemplateStatus.INACTIVE
     category: TemplateCategory = TemplateCategory.OUTREACH
+    industry: Optional[str] = None
+    goal: Optional[str] = None
 
 
 class EmailTemplateUpdate(BaseModel):
@@ -25,6 +27,8 @@ class EmailTemplateUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[TemplateStatus] = None
     category: Optional[TemplateCategory] = None
+    industry: Optional[str] = None
+    goal: Optional[str] = None
 
 
 class EmailTemplateResponse(BaseModel):
@@ -38,6 +42,9 @@ class EmailTemplateResponse(BaseModel):
     category: TemplateCategory = TemplateCategory.OUTREACH
     is_default: bool
     description: Optional[str] = None
+    industry: Optional[str] = None
+    goal: Optional[str] = None
+    is_system: bool = False
     is_archived: bool = False
     created_at: datetime
     updated_at: datetime

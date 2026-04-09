@@ -73,6 +73,93 @@ def run_seed_test(mailbox_id: int, db: Session) -> Dict[str, Any]:
     }
 
 
+def check_seed_results(test_run_id: str, db: Session) -> Dict[str, Any]:
+    """Check inbox placement via IMAP for unchecked seed test results.
+
+    Connects to each seed account via IMAP, searches for the test email,
+    and records whether it landed in inbox, spam, or was not delivered.
+    """
+    import imaplib
+
+    results = db.query(SeedTestResult).filter(
+        SeedTestResult.test_run_id == test_run_id,
+        SeedTestResult.checked_at.is_(None),
+    ).all()
+
+    if not results:
+        return {"test_run_id": test_run_id, "message": "No unchecked results", "total": 0}
+
+    summary = {"total": len(results), "inbox": 0, "spam": 0, "not_delivered": 0, "error": 0}
+
+    for result in results:
+        seed_acct = db.query(SeedTestAccount).filter(
+            SeedTestAccount.account_id == result.seed_account_id
+        ).first()
+        if not seed_acct or not seed_acct.imap_password:
+            result.placement = "error"
+            result.checked_at = datetime.utcnow()
+            summary["error"] += 1
+            continue
+
+        # Resolve IMAP host — use explicit or infer from provider
+        imap_host = seed_acct.imap_host
+        if not imap_host:
+            provider_hosts = {
+                "gmail": "imap.gmail.com",
+                "outlook": "outlook.office365.com",
+                "yahoo": "imap.mail.yahoo.com",
+            }
+            imap_host = provider_hosts.get(seed_acct.provider, "")
+        if not imap_host:
+            result.placement = "error"
+            result.checked_at = datetime.utcnow()
+            summary["error"] += 1
+            continue
+
+        placement = "not_delivered"
+        try:
+            mail = imaplib.IMAP4_SSL(imap_host, seed_acct.imap_port or 993)
+            mail.login(seed_acct.email, seed_acct.imap_password)
+
+            # Check INBOX first
+            mail.select("INBOX")
+            _, data = mail.search(None, f'(SUBJECT "Inbox Placement Test [{test_run_id}]")')
+            if data[0]:
+                placement = "inbox"
+            else:
+                # Check Spam/Junk folders
+                for folder in ["[Gmail]/Spam", "Junk", "Spam", "Junk E-mail"]:
+                    try:
+                        status, _ = mail.select(folder)
+                        if status == "OK":
+                            _, data = mail.search(None, f'(SUBJECT "Inbox Placement Test [{test_run_id}]")')
+                            if data[0]:
+                                placement = "spam"
+                                break
+                    except Exception:
+                        continue
+
+            mail.logout()
+        except Exception as e:
+            logger.warning("imap_check_failed", seed_email=seed_acct.email, error=str(e))
+            placement = "error"
+
+        result.placement = placement
+        result.checked_at = datetime.utcnow()
+        if result.created_at:
+            result.latency_seconds = int((result.checked_at - result.created_at).total_seconds())
+        summary[placement] = summary.get(placement, 0) + 1
+
+    db.commit()
+
+    inbox_rate = round(summary["inbox"] / summary["total"] * 100, 1) if summary["total"] > 0 else 0
+    return {
+        "test_run_id": test_run_id,
+        **summary,
+        "inbox_rate": inbox_rate,
+    }
+
+
 def get_test_results(test_run_id: str, db: Session) -> list:
     """Get results for a specific test run."""
     results = db.query(SeedTestResult).filter(

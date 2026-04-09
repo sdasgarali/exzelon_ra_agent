@@ -869,6 +869,33 @@ def campaign_analytics(
         step_replied = _step_query().filter(OutreachEvent.reply_detected_at.isnot(None)).count()
         step_bounced = _step_query().filter(OutreachEvent.status == OutreachStatus.BOUNCED).count()
 
+        # Per-variant breakdown
+        variant_stats = []
+        if step.variants_json:
+            try:
+                variants = json.loads(step.variants_json)
+                for vi, variant in enumerate(variants):
+                    v_sent = _step_query().filter(OutreachEvent.status == OutreachStatus.SENT, OutreachEvent.variant_index == vi).count()
+                    v_opened = _step_query().filter(OutreachEvent.opened_at.isnot(None), OutreachEvent.variant_index == vi).count()
+                    v_clicked = _step_query().filter(OutreachEvent.clicked_at.isnot(None), OutreachEvent.variant_index == vi).count()
+                    v_replied = _step_query().filter(OutreachEvent.reply_detected_at.isnot(None), OutreachEvent.variant_index == vi).count()
+                    v_bounced = _step_query().filter(OutreachEvent.status == OutreachStatus.BOUNCED, OutreachEvent.variant_index == vi).count()
+                    variant_stats.append({
+                        "variant_index": vi,
+                        "subject": variant.get("subject", ""),
+                        "sent": v_sent,
+                        "opened": v_opened,
+                        "open_rate": round(v_opened / v_sent * 100, 1) if v_sent > 0 else 0,
+                        "clicked": v_clicked,
+                        "click_rate": round(v_clicked / v_sent * 100, 1) if v_sent > 0 else 0,
+                        "replied": v_replied,
+                        "reply_rate": round(v_replied / v_sent * 100, 1) if v_sent > 0 else 0,
+                        "bounced": v_bounced,
+                        "bounce_rate": round(v_bounced / v_sent * 100, 1) if v_sent > 0 else 0,
+                    })
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         step_analytics.append({
             "step_id": step.step_id,
             "step_order": step.step_order,
@@ -883,6 +910,7 @@ def campaign_analytics(
             "reply_rate": round(step_replied / sent * 100, 1) if sent > 0 else 0,
             "bounced": step_bounced,
             "bounce_rate": round(step_bounced / sent * 100, 1) if sent > 0 else 0,
+            "variants": variant_stats,
         })
 
     # Funnel: contacts at each step
@@ -977,6 +1005,8 @@ def campaign_daily_analytics(
 @router.get("/{campaign_id}/analytics/export")
 def export_campaign_analytics_csv(
     campaign_id: int,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -993,10 +1023,23 @@ def export_campaign_analytics_csv(
     import csv
     import io
 
-    events = db.query(OutreachEvent).filter(
+    events_query = db.query(OutreachEvent).filter(
         OutreachEvent.campaign_id == campaign_id,
         OutreachEvent.status == OutreachStatus.SENT,
-    ).all()
+    )
+    if date_from:
+        from datetime import datetime as dt
+        try:
+            events_query = events_query.filter(OutreachEvent.sent_at >= dt.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if date_to:
+        from datetime import datetime as dt
+        try:
+            events_query = events_query.filter(OutreachEvent.sent_at <= dt.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59))
+        except ValueError:
+            pass
+    events = events_query.all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1235,3 +1278,172 @@ def duplicate_campaign(
     db.commit()
     db.refresh(clone)
     return _campaign_to_dict(clone, include_steps=True, db=db)
+
+
+# ─── Campaign Activity Feed ──────────────────────────────────────
+
+@router.get("/{campaign_id}/activity")
+def get_campaign_activity(
+    campaign_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    event_type: Optional[str] = Query(None, description="Filter: sent/opened/clicked/replied/bounced"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Real-time activity feed for a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from app.db.models.contact import ContactDetails
+
+    query = db.query(OutreachEvent).filter(OutreachEvent.campaign_id == campaign_id)
+
+    # Filter by event type
+    if event_type == "bounced":
+        query = query.filter(OutreachEvent.status == OutreachStatus.BOUNCED)
+    elif event_type == "replied":
+        query = query.filter(OutreachEvent.reply_detected_at.isnot(None))
+    elif event_type == "clicked":
+        query = query.filter(OutreachEvent.clicked_at.isnot(None))
+    elif event_type == "opened":
+        query = query.filter(OutreachEvent.opened_at.isnot(None))
+    elif event_type == "sent":
+        query = query.filter(OutreachEvent.status == OutreachStatus.SENT)
+
+    total = query.count()
+    events = query.order_by(OutreachEvent.sent_at.desc()).offset(offset).limit(limit).all()
+
+    items = []
+    for ev in events:
+        contact = db.query(ContactDetails).filter(
+            ContactDetails.contact_id == ev.contact_id
+        ).first()
+
+        # Determine event type
+        if ev.status == OutreachStatus.BOUNCED:
+            ev_type = "bounced"
+        elif ev.reply_detected_at:
+            ev_type = "replied"
+        elif ev.clicked_at:
+            ev_type = "clicked"
+        elif ev.opened_at:
+            ev_type = "opened"
+        else:
+            ev_type = "sent"
+
+        # Best timestamp for this event type
+        timestamp = ev.reply_detected_at or ev.clicked_at or ev.opened_at or ev.sent_at
+
+        items.append({
+            "event_id": ev.event_id,
+            "contact_email": contact.email if contact else "",
+            "contact_name": f"{contact.first_name} {contact.last_name}" if contact else f"Contact #{ev.contact_id}",
+            "event_type": ev_type,
+            "timestamp": timestamp.isoformat() if timestamp else None,
+            "step_order": ev.step_id,
+            "variant_index": ev.variant_index,
+            "subject": ev.subject or "",
+        })
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+# ─── Email Thread Preview ────────────────────────────────────────
+
+@router.get("/{campaign_id}/thread-preview")
+def get_thread_preview(
+    campaign_id: int,
+    contact_id: int = Query(..., description="Contact ID to preview thread for"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Preview the full email thread as it would be sent to a specific contact."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead import LeadDetails
+
+    contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    steps = db.query(SequenceStep).filter(
+        SequenceStep.campaign_id == campaign_id
+    ).order_by(SequenceStep.step_order).all()
+
+    # Build placeholder context
+    lead = None
+    cc = db.query(CampaignContact).filter(
+        CampaignContact.campaign_id == campaign_id,
+        CampaignContact.contact_id == contact_id,
+    ).first()
+    if cc and cc.lead_id:
+        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == cc.lead_id).first()
+
+    placeholders = {
+        "first_name": contact.first_name or "",
+        "last_name": contact.last_name or "",
+        "email": contact.email or "",
+        "company": contact.client_name or "",
+        "job_title": contact.title or "",
+        "city": getattr(lead, "city", "") or "" if lead else "",
+        "state": getattr(lead, "state", "") or "" if lead else "",
+    }
+
+    preview_steps = []
+    for step in steps:
+        step_data = {
+            "step_order": step.step_order,
+            "step_type": step.step_type.value if step.step_type else "email",
+            "delay_days": step.delay_days,
+            "delay_hours": step.delay_hours,
+        }
+
+        if step.step_type and step.step_type.value == "email":
+            subject = step.subject or ""
+            body = step.body_html or ""
+
+            # Apply variant selection if A/B test
+            if step.variants_json:
+                try:
+                    variants = json.loads(step.variants_json)
+                    if variants and len(variants) > 0:
+                        # Use first variant for preview
+                        variant = variants[0]
+                        subject = variant.get("subject", subject)
+                        body = variant.get("body_html", body)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Apply placeholders
+            for key, val in placeholders.items():
+                subject = subject.replace("{{" + key + "}}", val)
+                body = body.replace("{{" + key + "}}", val)
+
+            step_data["subject"] = subject
+            step_data["body_html"] = body
+        elif step.step_type and step.step_type.value == "condition":
+            step_data["condition_type"] = step.condition_type
+            step_data["condition_window_hours"] = step.condition_window_hours
+        elif step.step_type and step.step_type.value == "wait":
+            pass  # delay_days/hours already included
+
+        preview_steps.append(step_data)
+
+    return {
+        "campaign_id": campaign_id,
+        "contact_id": contact_id,
+        "contact_name": f"{contact.first_name} {contact.last_name}",
+        "steps": preview_steps,
+    }

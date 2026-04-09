@@ -78,6 +78,11 @@ export default function TemplatesPage() {
   const [error, setError] = useState('')
   const [dragOverField, setDragOverField] = useState<string | null>(null)
 
+  // Template library filters
+  const [industryFilter, setIndustryFilter] = useState('')
+  const [goalFilter, setGoalFilter] = useState('')
+  const [seedingLibrary, setSeedingLibrary] = useState(false)
+
   // Refs for drop targets
   const subjectRef = useRef<HTMLInputElement>(null)
   const bodyHtmlRef = useRef<HTMLTextAreaElement>(null)
@@ -87,7 +92,10 @@ export default function TemplatesPage() {
     try {
       setLoading(true)
       setError('')
-      const data = await templatesApi.list(showArchived ? { show_archived: true } : {})
+      const params: Record<string, any> = showArchived ? { show_archived: true } : {}
+      if (industryFilter) params.industry = industryFilter
+      if (goalFilter) params.goal = goalFilter
+      const data = await templatesApi.list(params)
       setTemplates(data.items || [])
       setActiveOutreachId(data.active_outreach_template_id ?? data.active_template_id ?? null)
       setActiveFollowupId(data.active_followup_template_id ?? null)
@@ -100,9 +108,18 @@ export default function TemplatesPage() {
     }
   }
 
+  const handleSeedLibrary = async () => {
+    setSeedingLibrary(true)
+    try {
+      await templatesApi.seedLibrary()
+      fetchTemplates()
+    } catch { /* ignore */ }
+    setSeedingLibrary(false)
+  }
+
   useEffect(() => {
     fetchTemplates()
-  }, [showArchived])
+  }, [showArchived, industryFilter, goalFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = () => {
     setEditingId(null)
@@ -270,6 +287,43 @@ export default function TemplatesPage() {
             Create Template
           </button>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <select
+          value={industryFilter}
+          onChange={(e) => setIndustryFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Industries</option>
+          <option value="saas">SaaS</option>
+          <option value="recruiting">Recruiting</option>
+          <option value="healthcare">Healthcare</option>
+          <option value="ecommerce">E-Commerce</option>
+          <option value="finance">Finance</option>
+          <option value="general">General</option>
+        </select>
+        <select
+          value={goalFilter}
+          onChange={(e) => setGoalFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Goals</option>
+          <option value="cold_outreach">Cold Outreach</option>
+          <option value="follow_up">Follow-up</option>
+          <option value="re_engagement">Re-engagement</option>
+          <option value="event_invite">Event Invite</option>
+          <option value="demo_request">Demo Request</option>
+        </select>
+        <button
+          onClick={handleSeedLibrary}
+          disabled={seedingLibrary}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+        >
+          <Zap className="w-3.5 h-3.5" />
+          {seedingLibrary ? 'Seeding...' : 'Seed System Templates'}
+        </button>
       </div>
 
       {/* Error banner */}
