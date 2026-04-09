@@ -819,7 +819,6 @@ def campaign_mailbox_stats(
             mailbox_map[mb.mailbox_id] = {
                 "mailbox_id": mb.mailbox_id,
                 "email": mb.email,
-                "health_score": mb.health_score or 0,
                 "daily_send_limit": mb.daily_send_limit,
                 "emails_sent_today": mb.emails_sent_today or 0,
                 "warmup_status": mb.warmup_status.value if mb.warmup_status else "none",
@@ -827,7 +826,7 @@ def campaign_mailbox_stats(
 
     result = []
     for mid in assigned_ids:
-        mb_info = mailbox_map.get(mid, {"mailbox_id": mid, "email": f"Mailbox #{mid}", "health_score": 0, "daily_send_limit": 0, "emails_sent_today": 0, "warmup_status": "none"})
+        mb_info = mailbox_map.get(mid, {"mailbox_id": mid, "email": f"Mailbox #{mid}", "daily_send_limit": 0, "emails_sent_today": 0, "warmup_status": "none"})
         campaign_stats = stats_by_mailbox.get(mid, {"total_sent": 0, "opened": 0, "clicked": 0, "replied": 0, "bounced": 0})
         campaign_stats.setdefault("unsubscribed", 0)
         total = campaign_stats["total_sent"]

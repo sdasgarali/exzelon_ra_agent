@@ -80,9 +80,10 @@ export default function CampaignsPage() {
   const [contactSchedule, setContactSchedule] = useState<any[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
 
-  // Mailbox campaign stats
+  // Mailbox campaign stats + health
   const [mailboxStats, setMailboxStats] = useState<any[]>([])
   const [mailboxStatsLoading, setMailboxStatsLoading] = useState(false)
+  const [mailboxHealthMap, setMailboxHealthMap] = useState<Record<number, any>>({})
 
   // Overview edit state
   const [overviewEditing, setOverviewEditing] = useState(false)
@@ -255,6 +256,18 @@ export default function CampaignsPage() {
     try {
       const data = await campaignsApi.getMailboxStats(campaignId)
       setMailboxStats(data || [])
+      // Fetch health for each mailbox in parallel
+      if (data && data.length > 0) {
+        Promise.allSettled(
+          data.map((m: any) => deliverabilityApi.mailboxHealth(m.mailbox_id).then((h: any) => ({ id: m.mailbox_id, data: h })))
+        ).then(results => {
+          const hMap: Record<number, any> = {}
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) hMap[r.value.id] = r.value.data
+          }
+          setMailboxHealthMap(hMap)
+        })
+      }
     } catch {
       setMailboxStats([])
     } finally {
@@ -1252,9 +1265,19 @@ export default function CampaignsPage() {
                       </td>
                       <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-medium">{m.email}</td>
                       <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 text-xs rounded-full ${(m.health_score || 0) >= 80 ? 'bg-green-100 text-green-800' : (m.health_score || 0) >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                          {m.health_score || 0}%
-                        </span>
+                        {(() => {
+                          const h = mailboxHealthMap[m.mailbox_id]
+                          const score = h?.health_score ?? '-'
+                          const grade = h?.health_grade || ''
+                          const numScore = typeof score === 'number' ? score : 0
+                          return h ? (
+                            <span className={`px-2 py-0.5 text-xs rounded-full ${numScore >= 80 ? 'bg-green-100 text-green-800' : numScore >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                              {score} ({grade})
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">...</span>
+                          )
+                        })()}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-0.5 text-xs rounded-full ${m.warmup_status === 'completed' ? 'bg-green-100 text-green-800' : m.warmup_status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
