@@ -148,6 +148,12 @@ def _campaign_to_dict(c: Campaign, include_steps: bool = False, db: Session = No
         "auto_reply_enabled": getattr(c, 'auto_reply_enabled', False) or False,
         "assignment_mode": getattr(c, 'assignment_mode', 'manual') or 'manual',
     }
+    # Resolve created_by user name
+    if c.created_by and db:
+        creator = db.query(User).filter(User.user_id == c.created_by).first()
+        d["created_by_name"] = creator.full_name if creator else None
+    else:
+        d["created_by_name"] = None
     if include_steps and db:
         steps = db.query(SequenceStep).filter(
             SequenceStep.campaign_id == c.campaign_id

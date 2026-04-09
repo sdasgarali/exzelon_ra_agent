@@ -178,6 +178,7 @@ export interface Campaign {
   total_replied: number;
   total_bounced: number;
   created_by: number | null;
+  created_by_name: string | null;
   created_at: string;
   updated_at: string;
   is_archived: boolean;

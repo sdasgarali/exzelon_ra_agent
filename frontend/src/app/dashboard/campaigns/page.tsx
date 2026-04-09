@@ -80,6 +80,11 @@ export default function CampaignsPage() {
   const [contactSchedule, setContactSchedule] = useState<any[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
 
+  // Overview edit state
+  const [overviewEditing, setOverviewEditing] = useState(false)
+  const [overviewForm, setOverviewForm] = useState({ name: '', description: '', sending_speed: 'normal' })
+  const [overviewSaving, setOverviewSaving] = useState(false)
+
   // Step spam scores
   const [stepSpamScores, setStepSpamScores] = useState<Record<number, { grade: string; score: number }>>({})
   const [spintaxModal, setSpintaxModal] = useState<{ step: SequenceStep } | null>(null)
@@ -926,15 +931,109 @@ export default function CampaignsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Campaign Info Card */}
             <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Campaign Details</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Campaign Details</h3>
+                {!overviewEditing ? (
+                  <button
+                    onClick={() => {
+                      setOverviewForm({
+                        name: selectedCampaign.name || '',
+                        description: selectedCampaign.description || '',
+                        sending_speed: selectedCampaign.sending_speed || 'normal',
+                      })
+                      setOverviewEditing(true)
+                    }}
+                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setOverviewEditing(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      disabled={overviewSaving}
+                      onClick={async () => {
+                        setOverviewSaving(true)
+                        try {
+                          const updated = await campaignsApi.update(selectedCampaign.campaign_id, {
+                            name: overviewForm.name,
+                            description: overviewForm.description || null,
+                            sending_speed: overviewForm.sending_speed,
+                          })
+                          setSelectedCampaign(updated)
+                          setCampaigns(prev => prev.map(c => c.campaign_id === updated.campaign_id ? updated : c))
+                          setOverviewEditing(false)
+                        } catch { /* toast handled by interceptor */ }
+                        setOverviewSaving(false)
+                      }}
+                      className="text-xs bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 disabled:opacity-50"
+                    >
+                      {overviewSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Name */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-                <p className="text-sm text-gray-900 dark:text-gray-100">{selectedCampaign.name}</p>
+                {overviewEditing ? (
+                  <input
+                    type="text"
+                    value={overviewForm.name}
+                    onChange={e => setOverviewForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  />
+                ) : (
+                  <p className="text-sm text-gray-900 dark:text-gray-100">{selectedCampaign.name}</p>
+                )}
               </div>
+
+              {/* Description */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{selectedCampaign.description || 'No description'}</p>
+                {overviewEditing ? (
+                  <textarea
+                    value={overviewForm.description}
+                    onChange={e => setOverviewForm(f => ({ ...f, description: e.target.value }))}
+                    rows={3}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  />
+                ) : (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{selectedCampaign.description || 'No description'}</p>
+                )}
               </div>
+
+              {/* Campaign Owner */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Campaign Owner</label>
+                <p className="text-sm text-gray-900 dark:text-gray-100">{selectedCampaign.created_by_name || 'Unknown'}</p>
+              </div>
+
+              {/* Sending Speed */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Sending Speed</label>
+                {overviewEditing ? (
+                  <select
+                    value={overviewForm.sending_speed}
+                    onChange={e => setOverviewForm(f => ({ ...f, sending_speed: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 capitalize"
+                  >
+                    <option value="relaxed">Relaxed (120-300s delay)</option>
+                    <option value="normal">Normal (30-90s delay)</option>
+                    <option value="aggressive">Aggressive (5-15s delay)</option>
+                  </select>
+                ) : (
+                  <span className="text-sm capitalize">{selectedCampaign.sending_speed || 'normal'}</span>
+                )}
+              </div>
+
+              {/* Status & Mode (read-only) */}
               <div className="flex items-center gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
@@ -954,10 +1053,7 @@ export default function CampaignsPage() {
                   </div>
                 )}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Sending Speed</label>
-                <span className="text-sm capitalize">{selectedCampaign.sending_speed || 'normal'}</span>
-              </div>
+
               {selectedCampaign.health_score !== null && selectedCampaign.health_score !== undefined && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Health Score</label>
