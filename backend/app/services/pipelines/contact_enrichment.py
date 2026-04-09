@@ -1,7 +1,9 @@
 """Contact enrichment pipeline service."""
 import json
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 import structlog
 
 from app.db.base import SessionLocal
@@ -104,6 +106,55 @@ def get_contact_discovery_adapters(db=None, tenant_id=None):
 
     logger.info(f"Contact discovery providers: {[a[0] for a in adapters]}")
     return adapters
+
+
+def _extract_domain(url: str | None) -> str | None:
+    """Extract bare domain from a URL or domain string.
+
+    Examples:
+        "https://www.cognizant.com/us" -> "cognizant.com"
+        "www.cognizant.com" -> "cognizant.com"
+        "cognizant.com" -> "cognizant.com"
+        None -> None
+    """
+    if not url or not url.strip():
+        return None
+    url = url.strip()
+    # Add scheme if missing so urlparse works
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    try:
+        host = urlparse(url).hostname
+        if not host:
+            return None
+        # Strip www. prefix
+        if host.startswith("www."):
+            host = host[4:]
+        # Basic validation: must contain a dot
+        if "." not in host:
+            return None
+        return host.lower()
+    except Exception:
+        return None
+
+
+def _resolve_domain(db, lead) -> str | None:
+    """Resolve company domain from lead's employer_website or ClientInfo.domain."""
+    # 1. Try lead's employer_website first (most specific)
+    domain = _extract_domain(getattr(lead, "employer_website", None))
+    if domain:
+        return domain
+    # 2. Fall back to ClientInfo.domain or website
+    if lead.client_name:
+        client = db.query(ClientInfo).filter(
+            ClientInfo.company_name == lead.client_name
+        ).first()
+        if client:
+            if client.domain:
+                return _extract_domain(client.domain) or client.domain.lower().strip()
+            if client.website:
+                return _extract_domain(client.website)
+    return None
 
 
 def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
@@ -321,6 +372,7 @@ def run_contact_enrichment_pipeline(
                     continue
 
                 needed = max_contacts_per_job - existing_count
+                lead_domain = _resolve_domain(db, lead)
                 contacts = []
                 adapters_used_for_lead = []
                 for adapter_name, adapter in adapters:
@@ -339,7 +391,8 @@ def run_contact_enrichment_pipeline(
                             company_name=lead.client_name,
                             job_title=lead.job_title,
                             state=lead.state,
-                            limit=remaining_needed
+                            limit=remaining_needed,
+                            domain=lead_domain,
                         )
                         for c in result:
                             c["source"] = c.get("source", adapter_name)

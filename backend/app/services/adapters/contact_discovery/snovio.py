@@ -75,6 +75,7 @@ class SnovioAdapter(ContactDiscoveryAdapter):
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
         limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using Snov.io domain email search."""
         if not self.client_id or not self.client_secret:
@@ -84,10 +85,11 @@ class SnovioAdapter(ContactDiscoveryAdapter):
             token = self._get_access_token()
 
             with httpx.Client() as client:
-                # Get domain emails with contact info
+                # Use actual domain when available, otherwise guess from company name
+                search_domain = domain or (company_name.lower().replace(" ", "").replace(",", "") + ".com")
                 params = {
                     "access_token": token,
-                    "domain": company_name.lower().replace(" ", "").replace(",", "") + ".com",
+                    "domain": search_domain,
                     "type": "all",
                     "limit": limit * 2,
                 }

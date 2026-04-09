@@ -54,18 +54,21 @@ class SeamlessAdapter(ContactDiscoveryAdapter):
         job_title: Optional[str] = None,
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
-        limit: int = 4
+        limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts at a company using Seamless API."""
         if not self.api_key:
             raise ValueError("Seamless API key not configured")
 
-        # Build search payload — company name only, no title/location filters
-        # so that every company returns contacts regardless of role naming
+        # Prefer domain for precise matching, fall back to company name
         payload = {
-            "company_name": company_name,
             "limit": limit * 2
         }
+        if domain:
+            payload["company_domain"] = domain
+        else:
+            payload["company_name"] = company_name
 
         # Only apply title filter when explicitly passed by caller
         if titles:

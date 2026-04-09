@@ -55,6 +55,7 @@ class HunterContactAdapter(ContactDiscoveryAdapter):
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
         limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using Hunter.io domain search."""
         if not self.api_key:
@@ -62,12 +63,15 @@ class HunterContactAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Domain search — finds emails at a domain
+                # Prefer domain (precise) over company name (fuzzy)
                 params = {
                     "api_key": self.api_key,
-                    "company": company_name,
                     "limit": limit * 2,
                 }
+                if domain:
+                    params["domain"] = domain
+                else:
+                    params["company"] = company_name
                 if titles:
                     params["seniority"] = "senior,executive"
 

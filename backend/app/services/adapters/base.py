@@ -77,10 +77,17 @@ class ContactDiscoveryAdapter(BaseAdapter):
         job_title: Optional[str] = None,
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
-        limit: int = 4
+        limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for contacts at a company.
+
+        Args:
+            company_name: Company name (fuzzy, used as fallback)
+            domain: Company website domain (e.g. "cognizant.com") — preferred
+                    over company_name for precise matching when available.
+            limit: Max contacts to return.
 
         Returns list of dicts with keys:
         - first_name

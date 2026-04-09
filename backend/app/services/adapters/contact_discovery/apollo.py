@@ -55,16 +55,21 @@ class ApolloAdapter(ContactDiscoveryAdapter):
             return PriorityLevel.P4_OPS_LEADER
         return PriorityLevel.P5_FUNCTIONAL_MANAGER
 
-    def _search_people(self, client, company_name, titles, state, limit):
+    def _search_people(self, client, company_name, titles, state, limit, domain=None):
         """Step 1: Search for people IDs (free, no credits consumed).
 
-        Searches by company name only — no title or location filters so that
-        every company returns contacts regardless of how they label roles.
+        Prefers domain-based search (precise) over company name (fuzzy).
+        e.g. domain="cognizant.com" matches all Cognizant employees regardless
+        of whether the company is stored as "Cognizant", "Cognizant Technologies", or "CTS".
         """
         params = {
             "per_page": limit * 2,
-            "q_organization_name": company_name,
         }
+        # Prefer domain search (precise) over company name (fuzzy)
+        if domain:
+            params["q_organization_domains"] = domain
+        else:
+            params["q_organization_name"] = company_name
         # Only apply title filter when explicitly passed by caller
         if titles:
             params["person_titles[]"] = titles
@@ -123,9 +128,14 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         job_title: Optional[str] = None,
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
-        limit: int = 4
+        limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Search for contacts at a company using Apollo API (Search + Enrich)."""
+        """Search for contacts at a company using Apollo API (Search + Enrich).
+
+        Prefers domain-based search when available for precise company matching.
+        Falls back to company name search otherwise.
+        """
         if not self.api_key:
             raise ValueError("Apollo API key not configured")
 
@@ -135,8 +145,9 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         try:
             with httpx.Client() as client:
                 # Step 1: Search for people IDs (free)
-                people = self._search_people(client, company_name, titles, state, limit)
-                logger.info(f"Apollo search found {len(people)} candidates for {company_name}")
+                people = self._search_people(client, company_name, titles, state, limit, domain=domain)
+                search_key = domain or company_name
+                logger.info(f"Apollo search found {len(people)} candidates for {search_key}")
 
                 if not people:
                     return []

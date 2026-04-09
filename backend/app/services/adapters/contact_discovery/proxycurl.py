@@ -56,6 +56,7 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
         limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using Proxycurl role lookup API."""
         if not self.api_key:
@@ -63,13 +64,16 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Use company role-based search — no default role filter
+                # Prefer domain for precise matching, fall back to company name
                 params = {
-                    "company_name": company_name,
                     "page_size": str(limit),
                     "enrich_profiles": "enrich",
                     "country": "US",
                 }
+                if domain:
+                    params["company_domain"] = domain
+                else:
+                    params["company_name"] = company_name
                 # Only apply role filter when explicitly passed by caller
                 if titles:
                     params["role"] = titles[0]

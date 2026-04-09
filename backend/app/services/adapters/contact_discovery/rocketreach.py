@@ -55,6 +55,7 @@ class RocketReachAdapter(ContactDiscoveryAdapter):
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
         limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using RocketReach person search."""
         if not self.api_key:
@@ -62,11 +63,14 @@ class RocketReachAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Person search by company — no title/location filters
+                # Prefer domain for precise matching, fall back to company name
                 query = {
-                    "current_employer": [company_name],
                     "page_size": limit * 2,
                 }
+                if domain:
+                    query["company_domain"] = [domain]
+                else:
+                    query["current_employer"] = [company_name]
                 # Only apply title filter when explicitly passed by caller
                 if titles:
                     query["current_title"] = titles

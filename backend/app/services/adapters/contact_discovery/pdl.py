@@ -60,6 +60,7 @@ class PDLAdapter(ContactDiscoveryAdapter):
         state: Optional[str] = None,
         titles: Optional[List[str]] = None,
         limit: int = 4,
+        domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using PDL person search with SQL-like DSL."""
         if not self.api_key:
@@ -67,10 +68,15 @@ class PDLAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Build Elasticsearch-style query — company name only
-                must_clauses = [
-                    {"match": {"job_company_name": company_name}},
-                ]
+                # Prefer domain for precise matching, fall back to company name
+                if domain:
+                    must_clauses = [
+                        {"match": {"job_company_website": domain}},
+                    ]
+                else:
+                    must_clauses = [
+                        {"match": {"job_company_name": company_name}},
+                    ]
 
                 # Only apply title filter when explicitly passed by caller
                 if titles:
