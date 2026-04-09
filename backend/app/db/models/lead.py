@@ -100,7 +100,8 @@ class LeadDetails(Base):
     ra_name = Column(String(100), nullable=True)
 
     # Legacy one-to-many relationship (contacts with lead_id FK)
-    contacts = relationship("ContactDetails", back_populates="lead", cascade="all, delete-orphan")
+    # No cascade delete — contacts must survive lead deletion to grow the database
+    contacts = relationship("ContactDetails", back_populates="lead")
 
     # Many-to-many relationship via junction table
     associated_contacts = relationship(

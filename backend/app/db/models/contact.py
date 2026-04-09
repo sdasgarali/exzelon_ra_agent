@@ -35,7 +35,8 @@ class ContactDetails(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
 
     # Direct link to the lead this contact was discovered for
-    lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='CASCADE'), nullable=True, index=True)
+    # SET NULL on lead delete — contacts must survive lead deletion to grow the database
+    lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='SET NULL'), nullable=True, index=True)
 
     # Company link (kept for backward compatibility and convenience)
     client_name = Column(String(255), nullable=False, index=True)

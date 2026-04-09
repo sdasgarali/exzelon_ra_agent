@@ -1533,6 +1533,39 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Demo data seeding: {e}")
 
+    # ── Migration: Change contact_details.lead_id FK from CASCADE to SET NULL ──
+    # Contacts must survive lead deletion to preserve the database
+    try:
+        from sqlalchemy import text as sa_text_fk
+        with engine.connect() as conn:
+            # Check if the FK still uses CASCADE by inspecting information_schema
+            fk_info = conn.execute(sa_text_fk(
+                "SELECT DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = 'contact_details' "
+                "AND REFERENCED_TABLE_NAME = 'lead_details' "
+                "LIMIT 1"
+            )).scalar()
+            if fk_info and fk_info.upper() == 'CASCADE':
+                # Find the constraint name
+                fk_name = conn.execute(sa_text_fk(
+                    "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS "
+                    "WHERE CONSTRAINT_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = 'contact_details' "
+                    "AND REFERENCED_TABLE_NAME = 'lead_details' "
+                    "LIMIT 1"
+                )).scalar()
+                if fk_name:
+                    conn.execute(sa_text_fk(f"ALTER TABLE contact_details DROP FOREIGN KEY {fk_name}"))
+                    conn.execute(sa_text_fk(
+                        "ALTER TABLE contact_details ADD CONSTRAINT fk_contact_lead "
+                        "FOREIGN KEY (lead_id) REFERENCES lead_details(lead_id) ON DELETE SET NULL"
+                    ))
+                    conn.commit()
+                    logger.info("Migrated contact_details.lead_id FK from CASCADE to SET NULL")
+    except Exception as e:
+        logger.debug(f"FK migration check (may already be done): {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

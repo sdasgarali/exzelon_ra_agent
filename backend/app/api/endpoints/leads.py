@@ -810,21 +810,10 @@ async def bulk_delete_leads(
     found_ids = [l.lead_id for l in leads]
 
     try:
-        # Soft delete: archive leads instead of hard deleting
+        # Soft delete: archive leads only — contacts and companies are preserved
         archived_count = db.query(LeadDetails).filter(
             LeadDetails.lead_id.in_(found_ids)
         ).update({LeadDetails.is_archived: True}, synchronize_session=False)
-
-        # Also archive linked contacts
-        linked_contacts = db.query(ContactDetails).filter(
-            ContactDetails.lead_id.in_(found_ids)
-        ).all()
-        contact_ids = [c.contact_id for c in linked_contacts]
-        contacts_archived = 0
-        if contact_ids:
-            contacts_archived = db.query(ContactDetails).filter(
-                ContactDetails.contact_id.in_(contact_ids)
-            ).update({ContactDetails.is_archived: True}, synchronize_session=False)
 
         db.commit()
     except Exception as e:
@@ -832,9 +821,8 @@ async def bulk_delete_leads(
         raise HTTPException(status_code=500, detail=f"Bulk delete failed: {str(e)}")
 
     return {
-        "message": f"Successfully archived {archived_count} lead(s) and {contacts_archived} linked contact(s)",
+        "message": f"Successfully archived {archived_count} lead(s)",
         "archived_count": archived_count,
-        "contacts_archived": contacts_archived,
         "archived_ids": found_ids
     }
 
