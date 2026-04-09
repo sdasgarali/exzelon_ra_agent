@@ -63,18 +63,16 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Use company role-based search
+                # Use company role-based search — no default role filter
                 params = {
                     "company_name": company_name,
                     "page_size": str(limit),
                     "enrich_profiles": "enrich",
+                    "country": "US",
                 }
+                # Only apply role filter when explicitly passed by caller
                 if titles:
                     params["role"] = titles[0]
-                else:
-                    params["role"] = "HR Manager"
-                if state:
-                    params["country"] = "US"
 
                 response = client.get(
                     f"{self.BASE_URL}/linkedin/company/role/",

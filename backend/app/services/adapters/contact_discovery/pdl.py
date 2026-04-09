@@ -67,11 +67,12 @@ class PDLAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Build Elasticsearch-style query
+                # Build Elasticsearch-style query — company name only
                 must_clauses = [
                     {"match": {"job_company_name": company_name}},
                 ]
 
+                # Only apply title filter when explicitly passed by caller
                 if titles:
                     must_clauses.append({
                         "bool": {
@@ -79,22 +80,6 @@ class PDLAdapter(ContactDiscoveryAdapter):
                             "minimum_should_match": 1,
                         }
                     })
-                else:
-                    must_clauses.append({
-                        "bool": {
-                            "should": [
-                                {"match": {"job_title": "HR Manager"}},
-                                {"match": {"job_title": "HR Director"}},
-                                {"match": {"job_title": "Recruiter"}},
-                                {"match": {"job_title": "Operations Manager"}},
-                                {"match": {"job_title": "Talent Acquisition"}},
-                            ],
-                            "minimum_should_match": 1,
-                        }
-                    })
-
-                if state:
-                    must_clauses.append({"match": {"location_region": state}})
 
                 query = {
                     "bool": {

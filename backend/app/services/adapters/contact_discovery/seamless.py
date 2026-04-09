@@ -60,22 +60,16 @@ class SeamlessAdapter(ContactDiscoveryAdapter):
         if not self.api_key:
             raise ValueError("Seamless API key not configured")
 
-        # Build search payload
+        # Build search payload — company name only, no title/location filters
+        # so that every company returns contacts regardless of role naming
         payload = {
             "company_name": company_name,
             "limit": limit * 2
         }
 
+        # Only apply title filter when explicitly passed by caller
         if titles:
             payload["job_titles"] = titles
-        else:
-            payload["job_titles"] = [
-                "HR Manager", "HR Director", "Talent Acquisition",
-                "Recruiter", "Operations Manager", "HRBP"
-            ]
-
-        if state:
-            payload["location_state"] = state
 
         try:
             with httpx.Client() as client:

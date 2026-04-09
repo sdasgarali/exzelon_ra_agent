@@ -56,20 +56,18 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         return PriorityLevel.P5_FUNCTIONAL_MANAGER
 
     def _search_people(self, client, company_name, titles, state, limit):
-        """Step 1: Search for people IDs (free, no credits consumed)."""
+        """Step 1: Search for people IDs (free, no credits consumed).
+
+        Searches by company name only — no title or location filters so that
+        every company returns contacts regardless of how they label roles.
+        """
         params = {
             "per_page": limit * 2,
             "q_organization_name": company_name,
         }
+        # Only apply title filter when explicitly passed by caller
         if titles:
             params["person_titles[]"] = titles
-        else:
-            params["person_titles[]"] = [
-                "HR Manager", "HR Director", "Talent Acquisition",
-                "Recruiter", "Operations Manager", "HRBP"
-            ]
-        if state:
-            params["person_locations[]"] = [f"{state}, US"]
 
         response = client.post(
             f"{self.BASE_URL}/mixed_people/api_search",

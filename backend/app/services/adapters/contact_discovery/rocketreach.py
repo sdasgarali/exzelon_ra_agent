@@ -62,20 +62,14 @@ class RocketReachAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Person search by company
+                # Person search by company — no title/location filters
                 query = {
                     "current_employer": [company_name],
                     "page_size": limit * 2,
                 }
+                # Only apply title filter when explicitly passed by caller
                 if titles:
                     query["current_title"] = titles
-                else:
-                    query["current_title"] = [
-                        "HR Manager", "HR Director", "Talent Acquisition",
-                        "Recruiter", "Operations Manager", "HRBP",
-                    ]
-                if state:
-                    query["location"] = [f"{state}, US"]
 
                 response = client.post(
                     f"{self.BASE_URL}/search",
