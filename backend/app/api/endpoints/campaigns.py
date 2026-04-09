@@ -325,8 +325,8 @@ def create_campaign_from_leads(
     from app.db.models.lead import LeadDetails
     from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
-    from app.db.models.mailbox import SenderMailbox
-    from app.db.models.template import EmailTemplate
+    from app.db.models.sender_mailbox import SenderMailbox
+    from app.db.models.email_template import EmailTemplate
     from app.core.settings_resolver import get_tenant_setting
 
     check_plan_limit(db, tenant_id, "campaigns")
