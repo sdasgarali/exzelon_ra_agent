@@ -109,6 +109,9 @@ class CreateFromLeads(BaseModel):
     lead_ids: List[int]
     preview_mode: bool = False
 
+class BulkArchiveRequest(BaseModel):
+    campaign_ids: List[int] = Field(..., min_length=1, max_length=100)
+
 
 # ─── Helpers ───────────────────────────────────────────────────────
 
@@ -528,6 +531,39 @@ def create_campaign(
     return _campaign_to_dict(campaign)
 
 
+@router.post("/bulk-archive")
+def bulk_archive_campaigns(
+    data: BulkArchiveRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Archive multiple campaigns and disassociate their contacts."""
+    from app.core.state_machine import validate_campaign_transition
+
+    archived = 0
+    errors = []
+
+    for cid in data.campaign_ids:
+        campaign = db.query(Campaign).filter(Campaign.campaign_id == cid).first()
+        if not campaign:
+            errors.append({"campaign_id": cid, "error": "Not found"})
+            continue
+        if tenant_id is not None and campaign.tenant_id != tenant_id:
+            errors.append({"campaign_id": cid, "error": "Not found"})
+            continue
+        if not validate_campaign_transition(campaign.status, CampaignStatus.ARCHIVED):
+            errors.append({"campaign_id": cid, "error": f"Cannot archive campaign in '{campaign.status.value}' status"})
+            continue
+        db.query(CampaignContact).filter(CampaignContact.campaign_id == cid).delete()
+        campaign.status = CampaignStatus.ARCHIVED
+        campaign.is_archived = True
+        archived += 1
+
+    db.commit()
+    return {"archived": archived, "failed": len(errors), "errors": errors}
+
+
 @router.get("/{campaign_id}")
 def get_campaign(
     campaign_id: int,
@@ -595,7 +631,7 @@ def update_campaign(
 def archive_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN])),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -609,6 +645,8 @@ def archive_campaign(
             status_code=400,
             detail=f"Cannot archive campaign in '{campaign.status.value}' status",
         )
+    # Disassociate contacts so they become available for other campaigns
+    db.query(CampaignContact).filter(CampaignContact.campaign_id == campaign_id).delete()
     campaign.status = CampaignStatus.ARCHIVED
     campaign.is_archived = True
     db.commit()

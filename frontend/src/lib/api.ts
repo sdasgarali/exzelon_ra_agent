@@ -800,6 +800,10 @@ export const campaignsApi = {
   delete: async (id: number) => {
     await api.delete(`/campaigns/${id}`)
   },
+  bulkArchive: async (ids: number[]) => {
+    const response = await api.post('/campaigns/bulk-archive', { campaign_ids: ids })
+    return response.data
+  },
   activate: async (id: number) => {
     const response = await api.post(`/campaigns/${id}/activate`)
     return response.data

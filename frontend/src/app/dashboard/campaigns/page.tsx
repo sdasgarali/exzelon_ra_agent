@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
@@ -172,6 +173,12 @@ export default function CampaignsPage() {
   // Sequence view mode
   const [sequenceViewMode, setSequenceViewMode] = useState<'list' | 'visual'>('list')
 
+  // Bulk selection (Super Admin only)
+  const { user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
   const fetchCampaigns = useCallback(async () => {
     setLoading(true)
     try {
@@ -181,6 +188,7 @@ export default function CampaignsPage() {
       const data = await campaignsApi.list(params)
       setCampaigns(data.items || [])
       setTotalPages(data.pages || 1)
+      setSelectedCampaignIds(new Set())
     } catch {
       setCampaigns([])
     } finally {
@@ -443,6 +451,35 @@ export default function CampaignsPage() {
     } catch { /* ignore */ }
   }
 
+  const toggleSelectAll = () => {
+    if (selectedCampaignIds.size === campaigns.length) {
+      setSelectedCampaignIds(new Set())
+    } else {
+      setSelectedCampaignIds(new Set(campaigns.map(c => c.campaign_id)))
+    }
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedCampaignIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleBulkArchive = async () => {
+    if (selectedCampaignIds.size === 0) return
+    if (!confirm(`Archive ${selectedCampaignIds.size} campaign(s)? Their contacts will be disassociated and become available for other campaigns.`)) return
+    setBulkDeleting(true)
+    try {
+      await campaignsApi.bulkArchive(Array.from(selectedCampaignIds))
+      setSelectedCampaignIds(new Set())
+      fetchCampaigns()
+    } catch { /* ignore */ }
+    setBulkDeleting(false)
+  }
+
   const handleAddStep = async () => {
     if (!selectedCampaign) return
     setSaving(true)
@@ -675,6 +712,26 @@ export default function CampaignsPage() {
           </select>
         </div>
 
+        {/* Bulk action bar */}
+        {isSuperAdmin && selectedCampaignIds.size > 0 && (
+          <div className="flex items-center gap-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 px-4 py-2.5 rounded-lg">
+            <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
+              {selectedCampaignIds.size} selected
+            </span>
+            <button
+              onClick={handleBulkArchive}
+              disabled={bulkDeleting}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
+            >
+              {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Archive Selected ({selectedCampaignIds.size})
+            </button>
+            <button onClick={() => setSelectedCampaignIds(new Set())} className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Table */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
           {loading ? (
@@ -689,6 +746,16 @@ export default function CampaignsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
+                  {isSuperAdmin && (
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={campaigns.length > 0 && selectedCampaignIds.size === campaigns.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-gray-300"
+                      />
+                    </th>
+                  )}
                   <th className="text-left px-4 py-3 font-medium">Name</th>
                   <th className="text-left px-4 py-3 font-medium">Status</th>
                   <th className="text-right px-4 py-3 font-medium">Contacts</th>
@@ -705,6 +772,16 @@ export default function CampaignsPage() {
                   const replyRate = c.total_sent > 0 ? ((c.total_replied / c.total_sent) * 100).toFixed(1) : '0.0'
                   return (
                     <tr key={c.campaign_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer" onClick={() => openDetail(c)}>
+                      {isSuperAdmin && (
+                        <td className="w-10 px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedCampaignIds.has(c.campaign_id)}
+                            onChange={() => toggleSelect(c.campaign_id)}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900 dark:text-gray-100">{c.name}</div>
                         {c.description && <div className="text-xs text-gray-500 truncate max-w-xs">{c.description}</div>}
