@@ -420,6 +420,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Schema validation check: {e}")
 
+    # ── Migration: outreach_role_id on sender_mailboxes ──
+    # MUST run before any ORM query that touches sender_mailboxes
+    try:
+        from sqlalchemy import text as sa_text_or
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                from sqlalchemy import inspect as sa_inspect_or
+                inspector = sa_inspect_or(engine)
+                cols = [c["name"] for c in inspector.get_columns("sender_mailboxes")]
+                if "outreach_role_id" not in cols:
+                    conn.execute(sa_text_or(
+                        "ALTER TABLE sender_mailboxes ADD COLUMN outreach_role_id INTEGER NULL"
+                    ))
+                    conn.execute(sa_text_or(
+                        "CREATE INDEX ix_sender_mailboxes_outreach_role_id "
+                        "ON sender_mailboxes (outreach_role_id)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added outreach_role_id column to sender_mailboxes")
+    except Exception as e:
+        logger.warning(f"Migration check for outreach_role_id: {e}")
+
     # Migration: ensure role enum includes super_admin
     try:
         from sqlalchemy import text as sa_text_role
@@ -1556,27 +1578,6 @@ async def lifespan(app: FastAPI):
             logger.info(f"Migration: backfilled timezone for contact_details rows")
     except Exception as e:
         logger.warning(f"Migration check for timezone columns: {e}")
-
-    # ── Migration: outreach_role_id on sender_mailboxes ──
-    try:
-        from sqlalchemy import text as sa_text_or
-        if settings.DB_TYPE == "mysql":
-            with engine.connect() as conn:
-                from sqlalchemy import inspect as sa_inspect_or
-                inspector = sa_inspect_or(engine)
-                cols = [c["name"] for c in inspector.get_columns("sender_mailboxes")]
-                if "outreach_role_id" not in cols:
-                    conn.execute(sa_text_or(
-                        "ALTER TABLE sender_mailboxes ADD COLUMN outreach_role_id INTEGER NULL"
-                    ))
-                    conn.execute(sa_text_or(
-                        "CREATE INDEX ix_sender_mailboxes_outreach_role_id "
-                        "ON sender_mailboxes (outreach_role_id)"
-                    ))
-                    conn.commit()
-                    logger.info("Migration: added outreach_role_id column to sender_mailboxes")
-    except Exception as e:
-        logger.warning(f"Migration check for outreach_role_id: {e}")
 
     _seed_warmup_profiles()
     _seed_default_email_template()
