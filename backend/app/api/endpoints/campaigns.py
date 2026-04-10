@@ -208,6 +208,12 @@ def _cc_to_dict(cc: CampaignContact, lead=None) -> dict:
         d["lead_title"] = lead.job_title
         d["lead_company"] = lead.client_name
         d["lead_state"] = lead.state
+        d["lead_posted"] = lead.posting_date.isoformat() if lead.posting_date else None
+        d["lead_source"] = lead.source
+        d["lead_industry"] = getattr(lead, 'industry', None)
+        d["lead_company_size"] = getattr(lead, 'company_size', None)
+        d["lead_job_link"] = lead.job_link
+        d["lead_status"] = lead.lead_status.value if lead.lead_status else None
     return d
 
 
@@ -1156,6 +1162,9 @@ def list_campaign_contacts(
             d["contact_name"] = f"{c.first_name or ''} {c.last_name or ''}".strip()
             d["contact_email"] = c.email
             d["contact_company"] = c.client_name
+            d["contact_timezone"] = c.timezone
+            d["contact_phone"] = c.phone
+            d["contact_title"] = c.title
         enriched.append(d)
 
     return {
