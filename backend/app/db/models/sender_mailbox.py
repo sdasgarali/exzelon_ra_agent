@@ -81,6 +81,9 @@ class SenderMailbox(Base):
     # SMTP relay rotation (JSON array of {host, port, ip})
     smtp_relay_config_json = Column(Text, nullable=True)
 
+    # Outreach role (RA, BDM, Recruiter, etc.)
+    outreach_role_id = Column(Integer, ForeignKey("outreach_roles.role_id"), nullable=True, index=True)
+
     # Dedicated IP for sender IP separation/rotation (SISR)
     dedicated_ip = Column(String(45), nullable=True)
 

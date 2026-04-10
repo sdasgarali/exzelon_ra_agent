@@ -44,6 +44,7 @@ class SenderMailboxCreate(SenderMailboxBase):
     oauth_tenant_id: Optional[str] = None
     warmup_status: WarmupStatusEnum = WarmupStatusEnum.INACTIVE
     is_active: bool = True
+    outreach_role_id: Optional[int] = None
 
 
 class SenderMailboxUpdate(BaseModel):
@@ -63,6 +64,7 @@ class SenderMailboxUpdate(BaseModel):
     daily_send_limit: Optional[int] = None
     notes: Optional[str] = None
     email_signature_json: Optional[str] = None
+    outreach_role_id: Optional[int] = None
 
 
 class SenderMailboxResponse(SenderMailboxBase):
@@ -96,6 +98,10 @@ class SenderMailboxResponse(SenderMailboxBase):
     oauth_tenant_id: Optional[str] = None
     oauth_connected: bool = False  # True if OAuth tokens are stored
 
+    # Outreach role
+    outreach_role_id: Optional[int] = None
+    outreach_role_name: Optional[str] = None
+
     # Computed fields
     can_send: bool = False
     remaining_daily_quota: int = 0
@@ -125,6 +131,7 @@ class SenderMailboxStatsResponse(BaseModel):
     total_emails_sent: int
     total_bounces: int
     total_replies: int
+    role_counts: dict = {}
 
 
 class TestMailboxConnectionRequest(BaseModel):

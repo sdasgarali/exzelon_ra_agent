@@ -306,6 +306,66 @@ def _seed_deal_stages():
         db.close()
 
 
+def _seed_outreach_roles():
+    """Seed default outreach roles (RA, BDM, Recruiter) for every tenant that lacks them."""
+    from app.db.base import SessionLocal
+    from app.db.models.outreach_role import OutreachRole
+    from app.db.models.tenant import Tenant
+    from app.db.models.sender_mailbox import SenderMailbox
+    db = SessionLocal()
+    try:
+        tenants = db.query(Tenant.tenant_id).all()
+        if not tenants:
+            tenants = [(1,)]  # Fallback single-tenant
+
+        default_roles = [
+            {"role_name": "RA", "description": "Recruiting Associate — handles sourcing outreach"},
+            {"role_name": "BDM", "description": "Business Development Manager — handles client outreach"},
+            {"role_name": "Recruiter", "description": "Recruiter — handles candidate outreach"},
+        ]
+
+        seeded = 0
+        for (tid,) in tenants:
+            existing_names = {
+                r.role_name for r in
+                db.query(OutreachRole.role_name).filter(
+                    OutreachRole.tenant_id == tid,
+                    OutreachRole.is_archived == False,
+                ).all()
+            }
+            for role_def in default_roles:
+                if role_def["role_name"] not in existing_names:
+                    db.add(OutreachRole(
+                        tenant_id=tid,
+                        role_name=role_def["role_name"],
+                        description=role_def["description"],
+                        is_system=True,
+                    ))
+                    seeded += 1
+
+        if seeded > 0:
+            db.commit()
+
+            # Backfill: assign RA role to mailboxes without a role
+            for (tid,) in tenants:
+                ra_role = db.query(OutreachRole).filter(
+                    OutreachRole.tenant_id == tid,
+                    OutreachRole.role_name == "RA",
+                    OutreachRole.is_archived == False,
+                ).first()
+                if ra_role:
+                    db.query(SenderMailbox).filter(
+                        SenderMailbox.tenant_id == tid,
+                        SenderMailbox.outreach_role_id == None,
+                    ).update({SenderMailbox.outreach_role_id: ra_role.role_id}, synchronize_session=False)
+            db.commit()
+            logger.info(f"Seeded {seeded} outreach roles and backfilled mailboxes")
+    except Exception as e:
+        logger.error("Failed to seed outreach roles", error=str(e))
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
@@ -1497,9 +1557,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for timezone columns: {e}")
 
+    # ── Migration: outreach_role_id on sender_mailboxes ──
+    try:
+        from sqlalchemy import text as sa_text_or
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                from sqlalchemy import inspect as sa_inspect_or
+                inspector = sa_inspect_or(engine)
+                cols = [c["name"] for c in inspector.get_columns("sender_mailboxes")]
+                if "outreach_role_id" not in cols:
+                    conn.execute(sa_text_or(
+                        "ALTER TABLE sender_mailboxes ADD COLUMN outreach_role_id INTEGER NULL"
+                    ))
+                    conn.execute(sa_text_or(
+                        "CREATE INDEX ix_sender_mailboxes_outreach_role_id "
+                        "ON sender_mailboxes (outreach_role_id)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added outreach_role_id column to sender_mailboxes")
+    except Exception as e:
+        logger.warning(f"Migration check for outreach_role_id: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()
+    _seed_outreach_roles()
 
     # Seed admin user
     try:

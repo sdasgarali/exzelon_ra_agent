@@ -521,6 +521,25 @@ export const mailboxesApi = {
   },
 }
 
+// Outreach Roles API
+export const outreachRolesApi = {
+  list: async () => {
+    const response = await api.get('/outreach-roles')
+    return response.data
+  },
+  create: async (data: { role_name: string; description?: string }) => {
+    const response = await api.post('/outreach-roles', data)
+    return response.data
+  },
+  update: async (id: number, data: { role_name?: string; description?: string }) => {
+    const response = await api.put(`/outreach-roles/${id}`, data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    await api.delete(`/outreach-roles/${id}`)
+  },
+}
+
 // Warmup Engine API
 export const warmupApi = {
   getStatus: async () => {

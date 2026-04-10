@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { mailboxesApi, deliverabilityApi } from '@/lib/api'
+import { mailboxesApi, deliverabilityApi, outreachRolesApi } from '@/lib/api'
 import type { MailboxHealthDetail } from '@/types/api'
 import { useAuthStore } from '@/lib/store'
 import { useToast } from '@/components/toast'
@@ -41,6 +41,8 @@ interface Mailbox {
   auth_method: string
   oauth_tenant_id: string | null
   oauth_connected: boolean
+  outreach_role_id: number | null
+  outreach_role_name: string | null
 }
 
 type WizardStep = 'select_provider' | 'google_instructions' | 'google_form' |
@@ -96,6 +98,7 @@ interface MailboxStats {
   total_emails_sent: number
   total_bounces: number
   total_replies: number
+  role_counts: Record<string, number>
 }
 
 const WARMUP_STATUS_LABELS: Record<string, { label: string; color: string; tooltip: string }> = {
@@ -149,6 +152,20 @@ export default function MailboxesPage() {
   // Mailbox health data
   const [mailboxHealthMap, setMailboxHealthMap] = useState<Record<number, MailboxHealthDetail>>({})
 
+  // Outreach Roles state
+  interface OutreachRole {
+    role_id: number
+    role_name: string
+    description: string | null
+    is_system: boolean
+    mailbox_count: number
+  }
+  const [outreachRoles, setOutreachRoles] = useState<OutreachRole[]>([])
+  const [showRolesModal, setShowRolesModal] = useState(false)
+  const [roleFormData, setRoleFormData] = useState({ role_name: '', description: '' })
+  const [editingRole, setEditingRole] = useState<OutreachRole | null>(null)
+  const [roleSaving, setRoleSaving] = useState(false)
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -181,6 +198,7 @@ export default function MailboxesPage() {
     email_signature_json: '',
     auth_method: 'password' as 'password' | 'oauth2',
     oauth_tenant_id: '',
+    outreach_role_id: null as number | null,
   })
   const [oauthConnecting, setOauthConnecting] = useState(false)
 
@@ -247,10 +265,12 @@ export default function MailboxesPage() {
       if (statusFilter) params.status = statusFilter
       if (showArchived) params.show_archived = true
 
-      const [mailboxData, statsData] = await Promise.all([
+      const [mailboxData, statsData, rolesData] = await Promise.all([
         mailboxesApi.list(params),
-        mailboxesApi.stats()
+        mailboxesApi.stats(),
+        outreachRolesApi.list().catch(() => []),
       ])
+      setOutreachRoles(rolesData)
       const items = mailboxData.items || []
       setMailboxes(items)
       setStats(statsData)
@@ -452,6 +472,7 @@ export default function MailboxesPage() {
       email_signature_json: mailbox.email_signature_json || '',
       auth_method: (mailbox.auth_method || 'password') as 'password' | 'oauth2',
       oauth_tenant_id: mailbox.oauth_tenant_id || '',
+      outreach_role_id: mailbox.outreach_role_id,
     })
     // Populate signature fields from saved JSON
     if (mailbox.email_signature_json) {
@@ -589,6 +610,7 @@ export default function MailboxesPage() {
       email_signature_json: '',
       auth_method: 'password',
       oauth_tenant_id: '',
+      outreach_role_id: null,
     })
     setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
     setWizardStep('select_provider')
@@ -644,6 +666,7 @@ export default function MailboxesPage() {
         is_active: formData.is_active,
         notes: formData.notes,
         email_signature_json: sigJson,
+        outreach_role_id: formData.outreach_role_id,
       })
       setShowAddModal(false)
       resetForm()
@@ -715,6 +738,14 @@ export default function MailboxesPage() {
           <p className="text-gray-500">Manage email accounts used for outreach</p>
         </div>
         <div className="flex space-x-3">
+          {isSuperAdmin && (
+            <button
+              onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+            >
+              Manage Roles
+            </button>
+          )}
           <button
             onClick={handleTestAll}
             disabled={testingAll || mailboxes.length === 0}
@@ -758,6 +789,13 @@ export default function MailboxesPage() {
             <div className="text-2xl font-bold text-purple-600">{stats.total_replies}</div>
             <div className="text-sm text-gray-500">Total Replies</div>
           </div>
+          {/* Role Count Cards */}
+          {stats.role_counts && Object.entries(stats.role_counts).map(([roleName, count]) => (
+            <div key={roleName} className="bg-white p-4 rounded-lg shadow border-l-4 border-indigo-400">
+              <div className="text-2xl font-bold text-indigo-600">{count}</div>
+              <div className="text-sm text-gray-500">Total {roleName}s</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -885,6 +923,7 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('warmup_status')} title="Warmup lifecycle: Inactive → Warming Up (30 days) → Cold Ready → Active. Managed automatically by the warmup engine.">
                 Status <SortIcon column="warmup_status" />
               </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('emails_sent_today')}>
                 Today <SortIcon column="emails_sent_today" />
               </th>
@@ -932,6 +971,13 @@ export default function MailboxesPage() {
                   <span className={`text-xs px-2 py-1 rounded-full cursor-help ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`} title={WARMUP_STATUS_LABELS[mailbox.warmup_status]?.tooltip || ''}>
                     {WARMUP_STATUS_LABELS[mailbox.warmup_status]?.label || mailbox.warmup_status}
                   </span>
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  {mailbox.outreach_role_name ? (
+                    <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-800">{mailbox.outreach_role_name}</span>
+                  ) : (
+                    <span className="text-xs text-gray-400">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-900">{mailbox.emails_sent_today} / {mailbox.daily_send_limit}</div>
@@ -1167,6 +1213,19 @@ export default function MailboxesPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
                   <input type="number" min="1" max="100" value={formData.daily_send_limit} onChange={(e) => setFormData({ ...formData, daily_send_limit: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Role</label>
+                <select
+                  value={formData.outreach_role_id ?? ''}
+                  onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">— No Role —</option>
+                  {outreachRoles.map((r) => (
+                    <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center">
                 <input type="checkbox" id="is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
@@ -2033,6 +2092,20 @@ export default function MailboxesPage() {
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Role</label>
+                    <select
+                      value={formData.outreach_role_id ?? ''}
+                      onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    >
+                      <option value="">— No Role —</option>
+                      {outreachRoles.map((r) => (
+                        <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div className="flex items-center">
                     <input type="checkbox" id="wizard_is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
                     <label htmlFor="wizard_is_active" className="ml-2 text-sm text-gray-700">Active</label>
@@ -2109,6 +2182,122 @@ export default function MailboxesPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Roles Modal */}
+      {showRolesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowRolesModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Manage Outreach Roles</h2>
+              <button onClick={() => setShowRolesModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+
+            {/* Existing Roles */}
+            <div className="space-y-2 mb-6">
+              {outreachRoles.length === 0 && <p className="text-sm text-gray-500">No roles defined yet.</p>}
+              {outreachRoles.map((role) => (
+                <div key={role.role_id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <div className="font-medium text-gray-900 flex items-center gap-2">
+                      {role.role_name}
+                      {role.is_system && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">System</span>}
+                    </div>
+                    {role.description && <div className="text-xs text-gray-500">{role.description}</div>}
+                    <div className="text-xs text-gray-400">{role.mailbox_count} mailbox{role.mailbox_count !== 1 ? 'es' : ''}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setEditingRole(role); setRoleFormData({ role_name: role.role_name, description: role.description || '' }) }}
+                      className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      Edit
+                    </button>
+                    {!role.is_system && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete role "${role.role_name}"? Mailboxes using this role will be unassigned.`)) return
+                          try {
+                            await outreachRolesApi.delete(role.role_id)
+                            toast('success', `Role "${role.role_name}" deleted`)
+                            fetchData()
+                          } catch (err: any) {
+                            toast('error', err.response?.data?.detail || 'Failed to delete role')
+                          }
+                        }}
+                        className="text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add / Edit Form */}
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">{editingRole ? 'Edit Role' : 'Add New Role'}</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role Name</label>
+                  <input
+                    type="text"
+                    value={roleFormData.role_name}
+                    onChange={(e) => setRoleFormData({ ...roleFormData, role_name: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    placeholder="e.g. Account Executive"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={roleFormData.description}
+                    onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    placeholder="Optional description..."
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  {editingRole && (
+                    <button
+                      onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }) }}
+                      className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border rounded-lg"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    disabled={!roleFormData.role_name.trim() || roleSaving}
+                    onClick={async () => {
+                      setRoleSaving(true)
+                      try {
+                        if (editingRole) {
+                          await outreachRolesApi.update(editingRole.role_id, roleFormData)
+                          toast('success', 'Role updated')
+                        } else {
+                          await outreachRolesApi.create(roleFormData)
+                          toast('success', 'Role created')
+                        }
+                        setEditingRole(null)
+                        setRoleFormData({ role_name: '', description: '' })
+                        fetchData()
+                      } catch (err: any) {
+                        toast('error', err.response?.data?.detail || 'Failed to save role')
+                      } finally {
+                        setRoleSaving(false)
+                      }
+                    }}
+                    className="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {roleSaving ? 'Saving...' : editingRole ? 'Update Role' : 'Add Role'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

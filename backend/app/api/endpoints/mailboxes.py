@@ -164,7 +164,7 @@ async def oauth_callback(
     }
 
 
-def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
+def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> SenderMailboxResponse:
     """Convert mailbox model to response schema."""
     warmup_sent = mailbox.warmup_emails_sent or 0
     outreach_sent = max(0, (mailbox.total_emails_sent or 0) - warmup_sent)
@@ -204,6 +204,8 @@ def mailbox_to_response(mailbox: SenderMailbox) -> SenderMailboxResponse:
         auth_method=mailbox.auth_method or "password",
         oauth_tenant_id=mailbox.oauth_tenant_id,
         oauth_connected=bool(mailbox.oauth_refresh_token),
+        outreach_role_id=mailbox.outreach_role_id,
+        outreach_role_name=role_name,
     )
 
 
@@ -245,12 +247,22 @@ async def list_mailboxes(
 
     mailboxes = query.order_by(SenderMailbox.email).all()
 
+    # Batch-load role names
+    from app.db.models.outreach_role import OutreachRole
+    role_ids = {m.outreach_role_id for m in mailboxes if m.outreach_role_id}
+    role_map: dict = {}
+    if role_ids:
+        roles = db.query(OutreachRole.role_id, OutreachRole.role_name).filter(
+            OutreachRole.role_id.in_(role_ids)
+        ).all()
+        role_map = {r.role_id: r.role_name for r in roles}
+
     # Calculate counts
     active_count = sum(1 for m in mailboxes if m.is_active)
     ready_count = sum(1 for m in mailboxes if m.warmup_status == WarmupStatus.COLD_READY and m.is_active)
 
     return SenderMailboxListResponse(
-        items=[mailbox_to_response(m) for m in mailboxes],
+        items=[mailbox_to_response(m, role_name=role_map.get(m.outreach_role_id)) for m in mailboxes],
         total=len(mailboxes),
         active_count=active_count,
         ready_count=ready_count
@@ -285,6 +297,16 @@ async def get_mailbox_stats(
     total_bounces = sum(m.bounce_count for m in mailboxes)
     total_replies = sum(m.reply_count for m in mailboxes)
 
+    # Role counts
+    from app.db.models.outreach_role import OutreachRole
+    role_count_rows = (
+        db.query(OutreachRole.role_name, func.count(SenderMailbox.mailbox_id))
+        .outerjoin(SenderMailbox, (SenderMailbox.outreach_role_id == OutreachRole.role_id) & (SenderMailbox.is_archived == False))
+        .filter(OutreachRole.is_archived == False)
+    )
+    role_count_rows = tenant_filter(role_count_rows, OutreachRole, tenant_id)
+    role_counts = {name: cnt for name, cnt in role_count_rows.group_by(OutreachRole.role_name).all()}
+
     return SenderMailboxStatsResponse(
         total_mailboxes=total,
         active_mailboxes=active,
@@ -296,7 +318,8 @@ async def get_mailbox_stats(
         available_today=total_daily_capacity - used_today,
         total_emails_sent=total_emails_sent,
         total_bounces=total_bounces,
-        total_replies=total_replies
+        total_replies=total_replies,
+        role_counts=role_counts,
     )
 
 
@@ -317,7 +340,13 @@ async def get_mailbox(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mailbox not found"
         )
-    return mailbox_to_response(mailbox)
+    role_name = None
+    if mailbox.outreach_role_id:
+        from app.db.models.outreach_role import OutreachRole
+        role = db.query(OutreachRole.role_name).filter(OutreachRole.role_id == mailbox.outreach_role_id).first()
+        if role:
+            role_name = role.role_name
+    return mailbox_to_response(mailbox, role_name=role_name)
 
 
 @router.get("/{mailbox_id}/detail")
@@ -429,8 +458,15 @@ async def get_mailbox_detail(
     except Exception as e:
         logger.warning("Failed to load warmup logs for mailbox detail", error=str(e))
 
+    role_name = None
+    if mailbox.outreach_role_id:
+        from app.db.models.outreach_role import OutreachRole as _OR
+        _role = db.query(_OR.role_name).filter(_OR.role_id == mailbox.outreach_role_id).first()
+        if _role:
+            role_name = _role.role_name
+
     return {
-        "mailbox": mailbox_to_response(mailbox),
+        "mailbox": mailbox_to_response(mailbox, role_name=role_name),
         "outreach_stats": outreach_stats,
         "campaigns": campaigns_list,
         "warmup_logs": warmup_logs,
@@ -466,6 +502,18 @@ async def create_mailbox(
         smtp_host = "smtp.gmail.com"
         imap_host = "imap.gmail.com"
 
+    # Resolve outreach_role_id: use provided value or default to "RA" role
+    role_id = mailbox_in.outreach_role_id
+    if role_id is None:
+        from app.db.models.outreach_role import OutreachRole
+        ra_role = db.query(OutreachRole).filter(
+            OutreachRole.tenant_id == (tenant_id or 1),
+            OutreachRole.role_name == "RA",
+            OutreachRole.is_archived == False,
+        ).first()
+        if ra_role:
+            role_id = ra_role.role_id
+
     mailbox = SenderMailbox(
         email=mailbox_in.email,
         display_name=mailbox_in.display_name,
@@ -482,6 +530,7 @@ async def create_mailbox(
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
         tenant_id=tenant_id or 1,
+        outreach_role_id=role_id,
     )
 
     db.add(mailbox)
@@ -499,7 +548,15 @@ async def create_mailbox(
     except Exception:
         pass  # Non-critical: warmup assessment failure should not block creation
 
-    return mailbox_to_response(mailbox)
+    # Resolve role name for response
+    _role_name = None
+    if mailbox.outreach_role_id:
+        from app.db.models.outreach_role import OutreachRole as _ORC
+        _r = db.query(_ORC.role_name).filter(_ORC.role_id == mailbox.outreach_role_id).first()
+        if _r:
+            _role_name = _r.role_name
+
+    return mailbox_to_response(mailbox, role_name=_role_name)
 
 
 @router.put("/{mailbox_id}", response_model=SenderMailboxResponse)
@@ -544,7 +601,15 @@ async def update_mailbox(
     db.commit()
     db.refresh(mailbox)
 
-    return mailbox_to_response(mailbox)
+    # Resolve role name for response
+    _upd_role_name = None
+    if mailbox.outreach_role_id:
+        from app.db.models.outreach_role import OutreachRole as _ORU
+        _ur = db.query(_ORU.role_name).filter(_ORU.role_id == mailbox.outreach_role_id).first()
+        if _ur:
+            _upd_role_name = _ur.role_name
+
+    return mailbox_to_response(mailbox, role_name=_upd_role_name)
 
 
 @router.delete("/{mailbox_id}")

@@ -46,6 +46,7 @@ from app.db.models.credit_usage import CreditUsage
 from app.db.models.goal_target import GoalTarget
 from app.db.models.notification import NotificationEntry
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
+from app.db.models.outreach_role import OutreachRole
 
 __all__ = [
     "User",
@@ -119,4 +120,5 @@ __all__ = [
     "OutreachDraft",
     "DraftStatus",
     "DraftSource",
+    "OutreachRole",
 ]
