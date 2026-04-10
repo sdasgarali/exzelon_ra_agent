@@ -157,10 +157,14 @@ def _resolve_domain(db, lead) -> str | None:
     return None
 
 
-def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
+def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | None = None) -> int:
     """
     Check DB for contacts at the same company NOT already linked to this lead.
     Associate them via LeadContactAssociation. Return count reused.
+
+    Uses domain-based matching (email domain) as primary strategy to handle
+    company name variations (e.g. "Cognizant" vs "Cognizant Technologies" vs "CTS").
+    Falls back to exact client_name match when domain is unavailable.
     """
     existing_cids = set()
     for row in db.query(LeadContactAssociation).filter(
@@ -177,9 +181,19 @@ def _reuse_existing_contacts(db, lead, max_contacts: int) -> int:
     if needed <= 0:
         return 0
 
-    query = db.query(ContactDetails).filter(
-        ContactDetails.client_name == lead.client_name
-    )
+    from sqlalchemy import or_
+    conditions = []
+    # Primary: match by email domain (handles name variations like Cognizant/CTS)
+    if lead_domain:
+        conditions.append(ContactDetails.email.like(f"%@{lead_domain}"))
+    # Fallback: exact client_name match (covers cases where domain is unavailable)
+    if lead.client_name:
+        conditions.append(ContactDetails.client_name == lead.client_name)
+
+    if not conditions:
+        return 0
+
+    query = db.query(ContactDetails).filter(or_(*conditions))
     if existing_cids:
         query = query.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
     reusable = query.limit(needed).all()
@@ -222,10 +236,20 @@ def _update_lead_from_contacts(db, lead):
         lead.lead_status = LeadStatus.ENRICHED
 
 
-def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters):
-    """Find all unenriched leads at the same company and auto-link cached contacts."""
+def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters, lead_domain: str | None = None):
+    """Find all unenriched leads at the same company and auto-link cached contacts.
+
+    Uses domain-based matching (employer_website) in addition to exact client_name
+    to catch leads for the same company under different name variations.
+    """
+    from sqlalchemy import or_
+    conditions = [LeadDetails.client_name == client_name]
+    # Also find siblings whose employer_website resolves to the same domain
+    if lead_domain:
+        conditions.append(LeadDetails.employer_website.like(f"%{lead_domain}%"))
+
     sibling_leads = db.query(LeadDetails).filter(
-        LeadDetails.client_name == client_name,
+        or_(*conditions),
         LeadDetails.first_name.is_(None),
         ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
         LeadDetails.is_archived == False,
@@ -233,7 +257,8 @@ def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts,
     ).all()
 
     for sibling in sibling_leads:
-        reused = _reuse_existing_contacts(db, sibling, max_contacts)
+        sibling_domain = lead_domain or _resolve_domain(db, sibling)
+        reused = _reuse_existing_contacts(db, sibling, max_contacts, lead_domain=sibling_domain)
         if reused > 0:
             _update_lead_from_contacts(db, sibling)
             counters["auto_enriched_leads"] += 1
@@ -271,7 +296,7 @@ def run_contact_enrichment_pipeline(
     db = SessionLocal()
     counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0}
     lead_results = []
-    auto_enriched_companies = set()
+    auto_enriched_companies = set()  # tracks client_name AND domain to avoid re-processing
     adapter_stats: Dict[str, Dict[str, int]] = {}  # per-adapter call/result tracking
     adapter_errors: Dict[str, str] = {}  # last error per adapter
 
@@ -351,7 +376,9 @@ def run_contact_enrichment_pipeline(
                     logger.debug("Lead already has max contacts", lead_id=lead.lead_id, count=existing_count)
                     continue
 
-                reused = _reuse_existing_contacts(db, lead, max_contacts_per_job)
+                lead_domain = _resolve_domain(db, lead)
+
+                reused = _reuse_existing_contacts(db, lead, max_contacts_per_job, lead_domain=lead_domain)
                 counters["contacts_reused"] += reused
                 counters["contacts_found"] += reused
 
@@ -366,13 +393,15 @@ def run_contact_enrichment_pipeline(
                         "status": "cache_only", "contacts_found": 0, "contacts_reused": reused,
                         "adapter_used": None, "reason": "Fully satisfied from cache"
                     })
-                    if lead.client_name and lead.client_name not in auto_enriched_companies:
-                        auto_enriched_companies.add(lead.client_name)
-                        _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters)
+                    company_key = lead_domain or lead.client_name
+                    if company_key and company_key not in auto_enriched_companies:
+                        auto_enriched_companies.add(company_key)
+                        if lead.client_name:
+                            auto_enriched_companies.add(lead.client_name)
+                        _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain)
                     continue
 
                 needed = max_contacts_per_job - existing_count
-                lead_domain = _resolve_domain(db, lead)
                 contacts = []
                 adapters_used_for_lead = []
                 for adapter_name, adapter in adapters:
@@ -500,9 +529,12 @@ def run_contact_enrichment_pipeline(
                            client=lead.client_name,
                            contacts_added=contacts_added)
 
-                if lead.client_name and lead.client_name not in auto_enriched_companies:
-                    auto_enriched_companies.add(lead.client_name)
-                    _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters)
+                company_key = lead_domain or lead.client_name
+                if company_key and company_key not in auto_enriched_companies:
+                    auto_enriched_companies.add(company_key)
+                    if lead.client_name:
+                        auto_enriched_companies.add(lead.client_name)
+                    _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain)
 
             except ApolloCreditsExhaustedError:
                 logger.error("Apollo credits exhausted - stopping pipeline early. Upgrade at https://app.apollo.io/#/settings/plans/upgrade")
