@@ -175,8 +175,12 @@ export default function CampaignsPage() {
   const [sequenceViewMode, setSequenceViewMode] = useState<'list' | 'visual'>('list')
 
   // Wizard step state
-  const [createStep, setCreateStep] = useState<'source' | 'pipeline_running' | 'csv_upload' | 'csv_preview' | 'manual_entry' | 'google_sheet' | 'google_preview' | 'select_leads'>('source')
+  const [createStep, setCreateStep] = useState<'source' | 'ai_check' | 'pipeline_running' | 'csv_upload' | 'csv_preview' | 'manual_entry' | 'google_sheet' | 'google_preview' | 'select_leads'>('source')
   const [autoSelectLeadIds, setAutoSelectLeadIds] = useState<number[]>([])
+
+  // AI check (existing leads check before pipeline)
+  const [aiCheckLoading, setAiCheckLoading] = useState(false)
+  const [aiCheckLeadCount, setAiCheckLeadCount] = useState(0)
 
   // Pipeline running
   const [pipelineRunning, setPipelineRunning] = useState(false)
@@ -270,6 +274,7 @@ export default function CampaignsPage() {
   const openCreateModal = () => {
     setCreateStep('source')
     setAutoSelectLeadIds([])
+    setAiCheckLoading(false); setAiCheckLeadCount(0)
     setPipelineRunning(false); setPipelineStatus(''); setPipelineProgress(0); setPipelineFailed(false)
     setCsvFile(null); setCsvPreviewData(null); setCsvSkipDuplicates(true)
     setManualEntries([{ ...emptyEntry }])
@@ -279,6 +284,29 @@ export default function CampaignsPage() {
   }
 
   // Wizard handlers
+  // Step 1: Check existing leads in DB before running pipeline
+  const handleAiLeadCheck = async () => {
+    setCreateStep('ai_check')
+    setAiCheckLoading(true)
+    setAiCheckLeadCount(0)
+    try {
+      const data = await campaignsApi.getAvailableLeads({ page: 1, page_size: 1, days: 30 })
+      const total = data.total || 0
+      setAiCheckLeadCount(total)
+    } catch {
+      setAiCheckLeadCount(0)
+    } finally {
+      setAiCheckLoading(false)
+    }
+  }
+
+  // Step 2: Use existing leads directly (skip pipeline)
+  const handleUseExistingLeads = () => {
+    setAvailableLeadsDays(30)
+    setCreateStep('select_leads')
+  }
+
+  // Step 3: Run the actual lead sourcing pipeline
   const handleStartPipeline = async () => {
     setCreateStep('pipeline_running')
     setPipelineRunning(true)
@@ -296,7 +324,6 @@ export default function CampaignsPage() {
           await new Promise(r => setTimeout(r, 3000))
           try {
             const allRuns: any[] = await pipelinesApi.runs({ limit: 10 })
-            // Filter to lead_sourcing runs only
             const lsRuns = allRuns.filter((r: any) => r.pipeline_name === 'lead_sourcing')
             const latest = lsRuns[0]
             if (!latest) continue
@@ -316,7 +343,6 @@ export default function CampaignsPage() {
               setPipelineFailed(true)
               return
             } else {
-              // Still running — use progress_pct from backend if available
               const backendPct = latest.progress_pct || 0
               const timePct = Math.min(85, 5 + (attempts / maxAttempts) * 80)
               const progress = Math.max(backendPct, timePct)
@@ -1070,6 +1096,7 @@ export default function CampaignsPage() {
                   <div>
                     <h2 className="text-lg font-bold dark:text-gray-100">
                       {createStep === 'source' && 'New Campaign — Choose Lead Source'}
+                      {createStep === 'ai_check' && 'New Campaign — AI Lead Hunting'}
                       {createStep === 'pipeline_running' && 'New Campaign — AI Lead Hunting'}
                       {createStep === 'csv_upload' && 'New Campaign — CSV Upload'}
                       {createStep === 'csv_preview' && 'New Campaign — Preview CSV'}
@@ -1080,6 +1107,7 @@ export default function CampaignsPage() {
                     </h2>
                     <p className="text-sm text-gray-500 mt-0.5">
                       {createStep === 'source' && 'How would you like to add leads to this campaign?'}
+                      {createStep === 'ai_check' && 'Checking available leads in database...'}
                       {createStep === 'pipeline_running' && 'Sourcing leads from job boards...'}
                       {createStep === 'csv_upload' && 'Upload a CSV file with your leads'}
                       {createStep === 'csv_preview' && 'Review your data before importing'}
@@ -1099,7 +1127,7 @@ export default function CampaignsPage() {
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     {/* AI Lead Hunting Agent */}
                     <button
-                      onClick={handleStartPipeline}
+                      onClick={handleAiLeadCheck}
                       className="group relative p-5 rounded-xl border-2 border-blue-200 dark:border-blue-800 hover:border-blue-400 dark:hover:border-blue-600 transition-all text-left hover:shadow-lg"
                     >
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-3">
@@ -1154,6 +1182,69 @@ export default function CampaignsPage() {
                       or skip and select from existing leads
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Step: AI Check — show existing leads count, offer pipeline if < 50 */}
+              {createStep === 'ai_check' && (
+                <div className="flex flex-col items-center justify-center py-10">
+                  {aiCheckLoading ? (
+                    <>
+                      <Brain className="w-16 h-16 text-blue-500 animate-pulse mb-4" />
+                      <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Searching available leads...</p>
+                      <div className="w-full max-w-md bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-4">
+                        <div className="h-3 rounded-full bg-blue-500 animate-pulse" style={{ width: '60%' }} />
+                      </div>
+                    </>
+                  ) : aiCheckLeadCount >= 50 ? (
+                    <>
+                      <CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
+                      <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                        {aiCheckLeadCount.toLocaleString()} leads available
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm">
+                        You have plenty of leads ready for campaign selection. No need to run the pipeline.
+                      </p>
+                      <button
+                        onClick={handleUseExistingLeads}
+                        className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium mb-3"
+                      >
+                        Select from {aiCheckLeadCount.toLocaleString()} Leads
+                      </button>
+                      <button
+                        onClick={handleStartPipeline}
+                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:underline"
+                      >
+                        Run pipeline anyway to find more leads
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-16 h-16 text-amber-500 mb-4" />
+                      <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                        Only {aiCheckLeadCount} lead{aiCheckLeadCount !== 1 ? 's' : ''} available
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-sm">
+                        Would you like to run the AI Lead Sourcing pipeline to find more leads from job boards? This may take 5-10 minutes.
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleStartPipeline}
+                          className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                        >
+                          Yes, Source More Leads
+                        </button>
+                        {aiCheckLeadCount > 0 && (
+                          <button
+                            onClick={handleUseExistingLeads}
+                            className="px-5 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium"
+                          >
+                            Use {aiCheckLeadCount} Lead{aiCheckLeadCount !== 1 ? 's' : ''}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
