@@ -195,15 +195,23 @@ export default function CampaignsPage() {
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
     try {
-      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: 30 }
+      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: 7 }
       if (availableLeadsSearch) params.search = availableLeadsSearch
       const data = await campaignsApi.getAvailableLeads(params)
       setAvailableLeads(data.items || [])
       setAvailableLeadsTotal(data.total || 0)
       setAvailableLeadsPages(data.pages || 1)
-      // Auto-select all leads by default
+      // Auto-select ALL leads on initial open (fetch all IDs if multi-page)
       if (!availableLeadsSearch && availableLeadsPage === 1) {
-        setSelectedCreateLeadIds(new Set((data.items || []).map((l: any) => l.lead_id)))
+        const allIds = new Set<number>((data.items || []).map((l: any) => l.lead_id))
+        // If there are more pages, fetch remaining lead IDs
+        if ((data.pages || 1) > 1 && (data.total || 0) > 0) {
+          try {
+            const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: data.total, days: 7 })
+            ;(allData.items || []).forEach((l: any) => allIds.add(l.lead_id))
+          } catch { /* fallback: only page 1 selected */ }
+        }
+        setSelectedCreateLeadIds(allIds)
       }
     } catch {
       setAvailableLeads([])
@@ -296,7 +304,7 @@ export default function CampaignsPage() {
     setSelectedCampaign(campaign)
     setExpandedLeads(new Set())
     setView('detail')
-    setDetailTab('sequence')
+    setDetailTab('overview')
     try {
       const [stepsData, contactsData] = await Promise.all([
         campaignsApi.listSteps(campaign.campaign_id),
@@ -784,27 +792,29 @@ export default function CampaignsPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                      <th className="px-3 py-2 text-left w-8">
-                        <input
-                          type="checkbox"
-                          checked={availableLeads.length > 0 && availableLeads.every(l => selectedCreateLeadIds.has(l.lead_id))}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedCreateLeadIds(prev => {
-                                const next = new Set(prev)
-                                availableLeads.forEach(l => next.add(l.lead_id))
-                                return next
-                              })
-                            } else {
-                              setSelectedCreateLeadIds(prev => {
-                                const next = new Set(prev)
-                                availableLeads.forEach(l => next.delete(l.lead_id))
-                                return next
-                              })
-                            }
-                          }}
-                          className="w-4 h-4 rounded"
-                        />
+                      <th className="px-3 py-2 text-left">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedCreateLeadIds.size > 0 && selectedCreateLeadIds.size >= availableLeadsTotal}
+                            onChange={async e => {
+                              if (e.target.checked) {
+                                // Select ALL leads across all pages
+                                try {
+                                  const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: 7, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
+                                  setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
+                                } catch {
+                                  // Fallback: select current page
+                                  setSelectedCreateLeadIds(new Set(availableLeads.map(l => l.lead_id)))
+                                }
+                              } else {
+                                setSelectedCreateLeadIds(new Set())
+                              }
+                            }}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-xs font-medium text-gray-500 uppercase">All</span>
+                        </label>
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>

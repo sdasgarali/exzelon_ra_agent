@@ -242,14 +242,15 @@ def get_available_leads(
     state: Optional[str] = None,
     days: int = Query(7, ge=1, le=90, description="Leads from last N days"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get leads available for campaign enrollment.
 
-    Returns leads NOT enrolled in any active campaign, posted within the last N days.
+    Returns leads NOT enrolled in any active campaign, posted within the last N days,
+    and having at least one associated contact.
     """
     from app.db.models.lead import LeadDetails
     from app.db.models.contact import ContactDetails
@@ -274,6 +275,12 @@ def get_available_leads(
     ).distinct().subquery()
 
     query = query.filter(~LeadDetails.lead_id.in_(enrolled_lead_ids_subq))
+
+    # Only include leads with at least one contact
+    leads_with_contacts_subq = db.query(
+        LeadContactAssociation.lead_id
+    ).distinct().subquery()
+    query = query.filter(LeadDetails.lead_id.in_(leads_with_contacts_subq))
 
     if search:
         query = query.filter(
