@@ -286,8 +286,8 @@ export default function CampaignsPage() {
     setPipelineProgress(5)
     setPipelineFailed(false)
     try {
-      await pipelinesApi.runLeadSourcing([])
-      // Poll for completion
+      await pipelinesApi.runLeadSourcing(['linkedin', 'indeed'])
+      // Poll for completion — runs endpoint returns a flat array, uses pipeline_name/limit params
       let attempts = 0
       const maxAttempts = 200
       const poll = async () => {
@@ -295,28 +295,33 @@ export default function CampaignsPage() {
           attempts++
           await new Promise(r => setTimeout(r, 3000))
           try {
-            const runs = await pipelinesApi.runs({ page: 1, page_size: 1, pipeline: 'lead_sourcing' })
-            const latest = (runs.items || runs)?.[0]
+            const allRuns: any[] = await pipelinesApi.runs({ limit: 10 })
+            // Filter to lead_sourcing runs only
+            const lsRuns = allRuns.filter((r: any) => r.pipeline_name === 'lead_sourcing')
+            const latest = lsRuns[0]
             if (!latest) continue
             const s = latest.status?.toLowerCase()
-            if (s === 'completed' || s === 'success') {
+            if (s === 'completed') {
               setPipelineProgress(100)
-              setPipelineStatus('Lead sourcing complete!')
+              setPipelineStatus(`Lead sourcing complete! ${latest.records_success || 0} leads found`)
               setPipelineRunning(false)
               setTimeout(() => {
                 setAvailableLeadsDays(7)
                 setCreateStep('select_leads')
               }, 1500)
               return
-            } else if (s === 'failed' || s === 'error') {
-              setPipelineStatus('Lead sourcing failed')
+            } else if (s === 'failed') {
+              setPipelineStatus(latest.error_message || 'Lead sourcing failed')
               setPipelineRunning(false)
               setPipelineFailed(true)
               return
             } else {
-              const progress = Math.min(90, 5 + (attempts / maxAttempts) * 85)
+              // Still running — use progress_pct from backend if available
+              const backendPct = latest.progress_pct || 0
+              const timePct = Math.min(85, 5 + (attempts / maxAttempts) * 80)
+              const progress = Math.max(backendPct, timePct)
               setPipelineProgress(progress)
-              setPipelineStatus(latest.status_message || `Sourcing leads... (${Math.round(progress)}%)`)
+              setPipelineStatus(`Sourcing leads... (${Math.round(progress)}%)`)
             }
           } catch { /* continue polling */ }
         }
