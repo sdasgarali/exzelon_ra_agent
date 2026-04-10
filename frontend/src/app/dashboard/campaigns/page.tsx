@@ -550,7 +550,7 @@ export default function CampaignsPage() {
     try {
       const [stepsData, contactsData] = await Promise.all([
         campaignsApi.listSteps(campaign.campaign_id),
-        campaignsApi.listContacts(campaign.campaign_id, { page: 1, page_size: 100 }),
+        campaignsApi.listContacts(campaign.campaign_id, { page: 1, page_size: 1000 }),
       ])
       setSteps(stepsData || [])
       setContacts(contactsData?.items || [])
@@ -745,7 +745,7 @@ export default function CampaignsPage() {
     setSaving(true)
     try {
       await campaignsApi.enrollContacts(selectedCampaign.campaign_id, selectedContactIds)
-      const data = await campaignsApi.listContacts(selectedCampaign.campaign_id, { page: 1, page_size: 100 })
+      const data = await campaignsApi.listContacts(selectedCampaign.campaign_id, { page: 1, page_size: 1000 })
       setContacts(data?.items || [])
       setShowEnrollModal(false)
       setSelectedContactIds([])
@@ -893,7 +893,7 @@ export default function CampaignsPage() {
       const result = await campaignsApi.triggerAutoEnroll(selectedCampaign.campaign_id)
       setRulesMessage(`Enrolled ${result.enrolled || 0} contacts`)
       // Refresh contacts
-      const data = await campaignsApi.listContacts(selectedCampaign.campaign_id, { page: 1, page_size: 100 })
+      const data = await campaignsApi.listContacts(selectedCampaign.campaign_id, { page: 1, page_size: 1000 })
       setContacts(data?.items || [])
       // Refresh campaign to get updated auto_enrolled_today
       const updated = await campaignsApi.get(selectedCampaign.campaign_id)

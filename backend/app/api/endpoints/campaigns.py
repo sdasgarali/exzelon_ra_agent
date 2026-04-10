@@ -1108,7 +1108,7 @@ def list_campaign_contacts(
     campaign_id: int,
     status: Optional[str] = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=1000),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
