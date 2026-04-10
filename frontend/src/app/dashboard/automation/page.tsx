@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { automationApi } from '@/lib/api'
+import { automationApi, settingsApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import {
   Zap, Power, Link2, ChevronDown, ChevronRight,
   Clock, AlertCircle, CheckCircle2, XCircle,
@@ -90,6 +91,8 @@ export default function AutomationControlCenter() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(GROUP_ORDER))
+  const [canWrite, setCanWrite] = useState(true)
+  const { user } = useAuthStore()
 
   const fetchData = useCallback(async () => {
     try {
@@ -100,12 +103,21 @@ export default function AutomationControlCenter() {
       setControls(controlsData)
       setEvents(eventsData.items || [])
       setError(null)
+
+      // Check module permission — if user has read-only, disable all toggles
+      if (user?.role !== 'super_admin') {
+        try {
+          const perms = await settingsApi.getMyPermissions()
+          const automationPerm = perms?.automation || 'full'
+          setCanWrite(automationPerm === 'full' || automationPerm === 'read_write')
+        } catch { /* default to writable */ }
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load automation controls')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.role])
 
   useEffect(() => {
     fetchData()
@@ -207,6 +219,13 @@ export default function AutomationControlCenter() {
         </div>
       </div>
 
+      {!canWrite && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 text-sm text-yellow-700 dark:text-yellow-400 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          You have read-only access to Automation Control. Contact a Super Admin to change settings.
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-400">
           {error}
@@ -234,7 +253,7 @@ export default function AutomationControlCenter() {
           <Toggle
             enabled={controls.master_enabled}
             onChange={(val) => updateControls({ master_enabled: val })}
-            disabled={saving}
+            disabled={saving || !canWrite}
           />
         </div>
       </div>
@@ -261,7 +280,7 @@ export default function AutomationControlCenter() {
             <Toggle
               enabled={controls.chain_enrichment}
               onChange={(val) => updateControls({ chain_enrichment: val })}
-              disabled={saving || masterOff}
+              disabled={saving || masterOff || !canWrite}
               size="sm"
             />
           </div>
@@ -284,7 +303,7 @@ export default function AutomationControlCenter() {
             <Toggle
               enabled={controls.chain_validation}
               onChange={(val) => updateControls({ chain_validation: val })}
-              disabled={saving || masterOff}
+              disabled={saving || masterOff || !canWrite}
               size="sm"
             />
           </div>
@@ -307,7 +326,7 @@ export default function AutomationControlCenter() {
             <Toggle
               enabled={controls.chain_enrollment}
               onChange={(val) => updateControls({ chain_enrollment: val })}
-              disabled={saving || masterOff}
+              disabled={saving || masterOff || !canWrite}
               size="sm"
             />
           </div>
@@ -374,7 +393,7 @@ export default function AutomationControlCenter() {
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => toggleGroupJobs(group, !allEnabled)}
-                    disabled={saving || isDisabledByMaster}
+                    disabled={saving || isDisabledByMaster || !canWrite}
                     className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
                   >
                     {allEnabled ? 'Disable All' : noneEnabled ? 'Enable All' : 'Enable All'}
@@ -415,7 +434,7 @@ export default function AutomationControlCenter() {
                       <Toggle
                         enabled={job.enabled}
                         onChange={(val) => updateControls({ jobs: { [job.id]: val } })}
-                        disabled={saving || isDisabledByMaster}
+                        disabled={saving || isDisabledByMaster || !canWrite}
                         size="sm"
                       />
                     </div>

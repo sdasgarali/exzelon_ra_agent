@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, require_module_permission
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.automation_event import AutomationEvent
@@ -176,7 +176,7 @@ def _upsert_bool_setting(db: Session, key: str, value: bool, updated_by: str):
 @router.get("/controls")
 def get_controls(
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN])),
+    user: User = Depends(require_module_permission('automation', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Return master toggle, chain toggles, and all 17 jobs with enabled state."""
@@ -217,7 +217,7 @@ def get_controls(
 def update_controls(
     payload: Dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN])),
+    user: User = Depends(require_module_permission('automation', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update master toggle, chain toggles, and/or per-job enabled states."""
