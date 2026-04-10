@@ -246,6 +246,15 @@ export const leadsApi = {
     const response = await api.post('/leads/import/google-sheet', { sheet_url: sheetUrl, skip_duplicates: skipDuplicates })
     return response.data
   },
+  downloadTemplate: async () => {
+    const response = await api.get('/leads/import/template', { responseType: 'blob' })
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'lead_import_template.csv'
+    a.click()
+    window.URL.revokeObjectURL(url)
+  },
 }
 
 // Clients API

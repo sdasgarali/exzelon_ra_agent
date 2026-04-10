@@ -626,6 +626,29 @@ async def preview_csv_import(
             duplicate_count += 1
 
         if i < 10:
+            # Extract contact name from various column formats
+            contact_name = (
+                row_lower.get('contact name') or row_lower.get('name') or ""
+            ).strip()
+            first_name = (
+                row_lower.get('first name') or row_lower.get('first_name') or
+                row_lower.get('contact first name') or ""
+            ).strip()
+            last_name = (
+                row_lower.get('last name') or row_lower.get('last_name') or
+                row_lower.get('contact last name') or ""
+            ).strip()
+            if contact_name and not first_name:
+                parts = contact_name.split(None, 1)
+                first_name = parts[0] if parts else ""
+                last_name = parts[1] if len(parts) > 1 else ""
+            display_name = f"{first_name} {last_name}".strip()
+
+            email = (
+                row_lower.get('contact email') or row_lower.get('email') or
+                row_lower.get('email id') or ""
+            ).strip()
+
             preview_rows.append({
                 "row_number": i + 2,
                 "company_name": (row_lower.get('company name') or row_lower.get('client_name') or
@@ -633,6 +656,8 @@ async def preview_csv_import(
                 "job_title": (row_lower.get('job title') or row_lower.get('job_title') or
                              row_lower.get('title') or "").strip(),
                 "state": (row_lower.get('state') or "").strip(),
+                "contact_name": display_name,
+                "email": email,
                 "source": (row_lower.get('source') or "import").strip(),
                 "is_duplicate": is_duplicate,
             })
@@ -661,6 +686,7 @@ def _parse_and_import_lead_rows(
     """
     imported = 0
     skipped = 0
+    contacts_created = 0
     errors = []
     imported_lead_ids = []
 
@@ -745,6 +771,41 @@ def _parse_and_import_lead_rows(
             except ValueError:
                 pass
 
+            # Extract contact fields
+            contact_email = (
+                row_lower.get('contact email') or
+                row_lower.get('email') or
+                row_lower.get('email id') or ""
+            ).strip()
+            contact_first = (
+                row_lower.get('first name') or
+                row_lower.get('first_name') or
+                row_lower.get('contact first name') or ""
+            ).strip()
+            contact_last = (
+                row_lower.get('last name') or
+                row_lower.get('last_name') or
+                row_lower.get('contact last name') or ""
+            ).strip()
+            # Support a single "Contact Name" / "Name" column — split into first/last
+            contact_full = (
+                row_lower.get('contact name') or
+                row_lower.get('name') or ""
+            ).strip()
+            if contact_full and not contact_first:
+                parts = contact_full.split(None, 1)
+                contact_first = parts[0] if parts else ""
+                contact_last = parts[1] if len(parts) > 1 else ""
+            contact_phone = (
+                row_lower.get('phone') or
+                row_lower.get('contact phone') or
+                row_lower.get('phone number') or ""
+            ).strip()
+            contact_title = (
+                row_lower.get('contact title') or
+                row_lower.get('designation') or ""
+            ).strip()
+
             lead = LeadDetails(
                 client_name=client_name,
                 job_title=job_title,
@@ -755,13 +816,39 @@ def _parse_and_import_lead_rows(
                 lead_status=lead_status_val,
                 salary_min=salary_min,
                 salary_max=salary_max,
-                contact_email=(row_lower.get('contact email') or row_lower.get('email') or "").strip() or None,
+                contact_email=contact_email or None,
             )
             lead.tenant_id = tenant_id or 1
             db.add(lead)
             db.flush()
             imported_lead_ids.append(lead.lead_id)
             imported += 1
+
+            # Create contact if email is provided
+            if contact_email:
+                try:
+                    contact = ContactDetails(
+                        tenant_id=tenant_id or 1,
+                        lead_id=lead.lead_id,
+                        client_name=client_name,
+                        first_name=contact_first or "Unknown",
+                        last_name=contact_last or "Contact",
+                        email=contact_email,
+                        phone=contact_phone or None,
+                        title=contact_title or job_title,
+                        source=source_default,
+                    )
+                    db.add(contact)
+                    db.flush()
+                    # Also create the junction table link
+                    assoc = LeadContactAssociation(
+                        lead_id=lead.lead_id,
+                        contact_id=contact.contact_id,
+                    )
+                    db.add(assoc)
+                    contacts_created += 1
+                except Exception:
+                    pass  # Contact creation is best-effort
 
         except Exception as e:
             errors.append(f"Row {row_num}: {str(e)}")
@@ -772,6 +859,7 @@ def _parse_and_import_lead_rows(
     return {
         "imported": imported,
         "skipped": skipped,
+        "contacts_created": contacts_created,
         "errors": errors[:10] if errors else [],
         "imported_lead_ids": imported_lead_ids,
     }
@@ -823,6 +911,33 @@ async def import_leads_csv(
         **result,
     }
 
+
+
+@router.get("/import/template")
+async def download_import_template(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download a CSV template for lead+contact import."""
+    headers = [
+        "Company Name", "Job Title", "State", "Job Link", "Source",
+        "Posting Date", "Salary Min", "Salary Max", "Status",
+        "First Name", "Last Name", "Email", "Phone", "Contact Title",
+    ]
+    sample = [
+        "Acme Corp", "Software Engineer", "TX", "https://example.com/job/123", "import",
+        "2026-04-10", "80000", "120000", "open",
+        "Jane", "Doe", "jane.doe@acmecorp.com", "555-123-4567", "HR Manager",
+    ]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    writer.writerow(sample)
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=lead_import_template.csv"},
+    )
 
 
 def _extract_google_sheet_id(url: str) -> tuple[str, str]:
@@ -890,6 +1005,28 @@ async def preview_google_sheet_import(
             duplicate_count += 1
 
         if i < 10:
+            contact_name = (
+                row_lower.get('contact name') or row_lower.get('name') or ""
+            ).strip()
+            first_name = (
+                row_lower.get('first name') or row_lower.get('first_name') or
+                row_lower.get('contact first name') or ""
+            ).strip()
+            last_name = (
+                row_lower.get('last name') or row_lower.get('last_name') or
+                row_lower.get('contact last name') or ""
+            ).strip()
+            if contact_name and not first_name:
+                parts = contact_name.split(None, 1)
+                first_name = parts[0] if parts else ""
+                last_name = parts[1] if len(parts) > 1 else ""
+            display_name = f"{first_name} {last_name}".strip()
+
+            email = (
+                row_lower.get('contact email') or row_lower.get('email') or
+                row_lower.get('email id') or ""
+            ).strip()
+
             preview_rows.append({
                 "row_number": i + 2,
                 "company_name": (row_lower.get('company name') or row_lower.get('client_name') or
@@ -897,6 +1034,8 @@ async def preview_google_sheet_import(
                 "job_title": (row_lower.get('job title') or row_lower.get('job_title') or
                              row_lower.get('title') or "").strip(),
                 "state": (row_lower.get('state') or "").strip(),
+                "contact_name": display_name,
+                "email": email,
                 "source": (row_lower.get('source') or "google_sheet").strip(),
                 "is_duplicate": is_duplicate,
             })
