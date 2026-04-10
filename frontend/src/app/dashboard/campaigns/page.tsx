@@ -73,6 +73,7 @@ export default function CampaignsPage() {
   const [availableLeadsPages, setAvailableLeadsPages] = useState(1)
   const [availableLeadsSearch, setAvailableLeadsSearch] = useState('')
   const [availableLeadsLoading, setAvailableLeadsLoading] = useState(false)
+  const [availableLeadsDays, setAvailableLeadsDays] = useState(7)
   const [selectedCreateLeadIds, setSelectedCreateLeadIds] = useState<Set<number>>(new Set())
   const [createPreviewMode, setCreatePreviewMode] = useState(false)
   const [creatingFromLeads, setCreatingFromLeads] = useState(false)
@@ -195,7 +196,7 @@ export default function CampaignsPage() {
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
     try {
-      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: 7 }
+      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: availableLeadsDays }
       if (availableLeadsSearch) params.search = availableLeadsSearch
       const data = await campaignsApi.getAvailableLeads(params)
       setAvailableLeads(data.items || [])
@@ -207,7 +208,7 @@ export default function CampaignsPage() {
         // If there are more pages, fetch remaining lead IDs
         if ((data.pages || 1) > 1 && (data.total || 0) > 0) {
           try {
-            const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: data.total, days: 7 })
+            const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: data.total, days: availableLeadsDays })
             ;(allData.items || []).forEach((l: any) => allIds.add(l.lead_id))
           } catch { /* fallback: only page 1 selected */ }
         }
@@ -218,7 +219,7 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsSearch])
+  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays])
 
   useEffect(() => {
     if (showCreateModal) fetchAvailableLeads()
@@ -774,7 +775,7 @@ export default function CampaignsPage() {
                 <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>
               </div>
 
-              {/* Search & Stats */}
+              {/* Search, Days Filter & Stats */}
               <div className="flex items-center gap-3 mb-3">
                 <input
                   value={availableLeadsSearch}
@@ -782,6 +783,17 @@ export default function CampaignsPage() {
                   className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
                   placeholder="Search by job title or company..."
                 />
+                <select
+                  value={availableLeadsDays}
+                  onChange={e => { setAvailableLeadsDays(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
+                  className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                >
+                  <option value={7}>Last 7 days</option>
+                  <option value={14}>Last 14 days</option>
+                  <option value={30}>Last 30 days</option>
+                  <option value={60}>Last 60 days</option>
+                  <option value={90}>Last 90 days</option>
+                </select>
                 <span className="text-sm text-gray-500 whitespace-nowrap">
                   {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
                 </span>
@@ -801,7 +813,7 @@ export default function CampaignsPage() {
                               if (e.target.checked) {
                                 // Select ALL leads across all pages
                                 try {
-                                  const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: 7, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
+                                  const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: availableLeadsDays, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
                                   setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
                                 } catch {
                                   // Fallback: select current page
