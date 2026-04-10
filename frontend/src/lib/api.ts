@@ -221,6 +221,31 @@ export const leadsApi = {
     const response = await api.get('/leads/filter-options')
     return response.data
   },
+  importPreview: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/leads/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+  },
+  importCsv: async (file: File, skipDuplicates: boolean = true) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/leads/import/csv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      params: { skip_duplicates: skipDuplicates },
+    })
+    return response.data
+  },
+  importGoogleSheetPreview: async (sheetUrl: string) => {
+    const response = await api.post('/leads/import/google-sheet/preview', { sheet_url: sheetUrl })
+    return response.data
+  },
+  importGoogleSheet: async (sheetUrl: string, skipDuplicates: boolean = true) => {
+    const response = await api.post('/leads/import/google-sheet', { sheet_url: sheetUrl, skip_duplicates: skipDuplicates })
+    return response.data
+  },
 }
 
 // Clients API

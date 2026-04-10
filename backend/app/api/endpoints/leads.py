@@ -1,10 +1,13 @@
 """Lead management endpoints."""
 import csv
 import io
+import re
+import logging
 from typing import Optional, List, Literal
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc, or_
 
@@ -24,6 +27,13 @@ from app.core.state_machine import validate_transition, get_allowed_transitions
 from app.db.models.audit_log import AuditLog
 from app.schemas.pipeline import BulkLeadIdsRequest, BulkLeadStatusRequest, BulkEnrichRequest, BulkOutreachRequest, ManageContactsRequest
 import json
+
+logger = logging.getLogger(__name__)
+
+
+class GoogleSheetRequest(BaseModel):
+    sheet_url: str
+    skip_duplicates: bool = True
 
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
@@ -637,43 +647,24 @@ async def preview_csv_import(
     }
 
 
-@router.post("/import/csv")
-async def import_leads_csv(
-    file: UploadFile = File(...),
-    skip_duplicates: bool = Query(True, description="Skip leads with duplicate job_link"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
-):
-    """Import leads from CSV file."""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be a CSV"
-        )
+def _parse_and_import_lead_rows(
+    rows: list[dict],
+    existing_links: set,
+    skip_duplicates: bool,
+    source_default: str,
+    tenant_id: Optional[int],
+    db: Session,
+) -> dict:
+    """Shared helper to parse CSV/Google Sheet rows and import leads.
 
-    content = await file.read()
-    decoded = content.decode('utf-8')
-    reader = csv.DictReader(io.StringIO(decoded))
-
+    Returns dict with imported, skipped, errors, imported_lead_ids.
+    """
     imported = 0
     skipped = 0
     errors = []
+    imported_lead_ids = []
 
-    # Pre-load existing job_links to avoid N+1 queries
-    existing_links = set()
-    if skip_duplicates:
-        import_dup_query = db.query(LeadDetails).with_entities(
-            LeadDetails.job_link
-        ).filter(
-            LeadDetails.job_link.isnot(None)
-        )
-        import_dup_query = tenant_filter(import_dup_query, LeadDetails, tenant_id)
-        existing_links = {
-            link for (link,) in import_dup_query.all()
-        }
-
-    for row_num, row in enumerate(reader, start=2):
+    for row_num, row in enumerate(rows, start=2):
         try:
             row_lower = {k.lower().strip(): v for k, v in row.items()}
 
@@ -705,7 +696,7 @@ async def import_leads_csv(
                 if job_link in existing_links:
                     skipped += 1
                     continue
-                existing_links.add(job_link)  # Track new imports too
+                existing_links.add(job_link)
 
             posting_date_str = (
                 row_lower.get('posting date') or
@@ -726,7 +717,6 @@ async def import_leads_csv(
                 row_lower.get('status') or
                 row_lower.get('lead_status') or "open"
             ).strip().lower()
-            lead_status_val = LeadStatus.OPEN
             status_map = {
                 'open': LeadStatus.OPEN,
                 'hunting': LeadStatus.HUNTING,
@@ -761,14 +751,16 @@ async def import_leads_csv(
                 state=(row_lower.get('state') or "").strip()[:2].upper(),
                 posting_date=posting_date or date.today(),
                 job_link=job_link or None,
-                source=(row_lower.get('source') or "import").strip(),
+                source=(row_lower.get('source') or source_default).strip(),
                 lead_status=lead_status_val,
                 salary_min=salary_min,
                 salary_max=salary_max,
                 contact_email=(row_lower.get('contact email') or row_lower.get('email') or "").strip() or None,
             )
-            lead.tenant_id = tenant_id or 1  # fallback for super admin without X-Tenant-ID
+            lead.tenant_id = tenant_id or 1
             db.add(lead)
+            db.flush()
+            imported_lead_ids.append(lead.lead_id)
             imported += 1
 
         except Exception as e:
@@ -778,12 +770,173 @@ async def import_leads_csv(
     db.commit()
 
     return {
-        "message": f"Import complete: {imported} leads imported, {skipped} skipped",
         "imported": imported,
         "skipped": skipped,
-        "errors": errors[:10] if errors else []
+        "errors": errors[:10] if errors else [],
+        "imported_lead_ids": imported_lead_ids,
     }
 
+
+def _get_existing_links(db: Session, tenant_id: Optional[int]) -> set:
+    """Pre-load existing job_links for duplicate checking."""
+    dup_query = db.query(LeadDetails).with_entities(
+        LeadDetails.job_link
+    ).filter(
+        LeadDetails.job_link.isnot(None)
+    )
+    dup_query = tenant_filter(dup_query, LeadDetails, tenant_id)
+    return {link for (link,) in dup_query.all()}
+
+
+@router.post("/import/csv")
+async def import_leads_csv(
+    file: UploadFile = File(...),
+    skip_duplicates: bool = Query(True, description="Skip leads with duplicate job_link"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Import leads from CSV file."""
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a CSV"
+        )
+
+    content = await file.read()
+    decoded = content.decode('utf-8')
+    rows = list(csv.DictReader(io.StringIO(decoded)))
+
+    existing_links = _get_existing_links(db, tenant_id) if skip_duplicates else set()
+
+    result = _parse_and_import_lead_rows(
+        rows=rows,
+        existing_links=existing_links,
+        skip_duplicates=skip_duplicates,
+        source_default="import",
+        tenant_id=tenant_id,
+        db=db,
+    )
+
+    return {
+        "message": f"Import complete: {result['imported']} leads imported, {result['skipped']} skipped",
+        **result,
+    }
+
+
+
+def _extract_google_sheet_id(url: str) -> tuple[str, str]:
+    """Extract sheet ID and optional gid from Google Sheets URL.
+
+    Returns (sheet_id, gid) where gid may be '0' for default.
+    """
+    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid Google Sheets URL. Expected format: https://docs.google.com/spreadsheets/d/SHEET_ID/...")
+    sheet_id = match.group(1)
+    gid_match = re.search(r'[?&]gid=(\d+)', url)
+    gid = gid_match.group(1) if gid_match else '0'
+    return sheet_id, gid
+
+
+async def _fetch_google_sheet_csv(sheet_id: str, gid: str) -> str:
+    """Fetch CSV export of a public Google Sheet."""
+    import httpx
+    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        resp = await client.get(export_url)
+    if resp.status_code == 404:
+        raise HTTPException(status_code=400, detail="Sheet not found. Make sure it is publicly accessible (File → Share → Anyone with the link).")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch sheet (HTTP {resp.status_code}). Ensure the sheet is publicly accessible.")
+    return resp.text
+
+
+@router.post("/import/google-sheet/preview")
+async def preview_google_sheet_import(
+    request: GoogleSheetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Preview Google Sheet import: show first 10 rows, total count, and duplicate count."""
+    sheet_id, gid = _extract_google_sheet_id(request.sheet_url)
+    csv_text = await _fetch_google_sheet_csv(sheet_id, gid)
+
+    reader = csv.DictReader(io.StringIO(csv_text))
+    rows = list(reader)
+    total_rows = len(rows)
+
+    if total_rows == 0:
+        return {
+            "total_rows": 0,
+            "duplicate_count": 0,
+            "new_count": 0,
+            "preview": [],
+            "columns": [],
+        }
+
+    existing_links = _get_existing_links(db, tenant_id)
+
+    duplicate_count = 0
+    preview_rows = []
+    for i, row in enumerate(rows):
+        row_lower = {k.lower().strip(): v for k, v in row.items()}
+        job_link = (row_lower.get('job link') or row_lower.get('job_link') or
+                    row_lower.get('link') or row_lower.get('url') or "").strip()
+
+        is_duplicate = bool(job_link and job_link in existing_links)
+        if is_duplicate:
+            duplicate_count += 1
+
+        if i < 10:
+            preview_rows.append({
+                "row_number": i + 2,
+                "company_name": (row_lower.get('company name') or row_lower.get('client_name') or
+                                row_lower.get('company') or "").strip(),
+                "job_title": (row_lower.get('job title') or row_lower.get('job_title') or
+                             row_lower.get('title') or "").strip(),
+                "state": (row_lower.get('state') or "").strip(),
+                "source": (row_lower.get('source') or "google_sheet").strip(),
+                "is_duplicate": is_duplicate,
+            })
+
+    return {
+        "total_rows": total_rows,
+        "duplicate_count": duplicate_count,
+        "new_count": total_rows - duplicate_count,
+        "preview": preview_rows,
+        "columns": list(rows[0].keys()) if rows else [],
+    }
+
+
+@router.post("/import/google-sheet")
+async def import_google_sheet(
+    request: GoogleSheetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Import leads from a public Google Sheet."""
+    sheet_id, gid = _extract_google_sheet_id(request.sheet_url)
+    csv_text = await _fetch_google_sheet_csv(sheet_id, gid)
+
+    rows = list(csv.DictReader(io.StringIO(csv_text)))
+    existing_links = _get_existing_links(db, tenant_id) if request.skip_duplicates else set()
+
+    result = _parse_and_import_lead_rows(
+        rows=rows,
+        existing_links=existing_links,
+        skip_duplicates=request.skip_duplicates,
+        source_default="google_sheet",
+        tenant_id=tenant_id,
+        db=db,
+    )
+
+    return {
+        "message": f"Import complete: {result['imported']} leads imported, {result['skipped']} skipped",
+        **result,
+    }
 
 
 @router.delete("/bulk")

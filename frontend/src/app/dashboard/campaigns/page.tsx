@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi } from '@/lib/api'
+import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
@@ -10,6 +10,7 @@ import {
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
   FileSearch, Loader2, AlertTriangle, Shuffle, MessageSquare, Phone, Linkedin,
   MousePointerClick, Reply, Activity, LayoutList, Workflow,
+  Brain, Upload, PenLine, Table2, ArrowLeft, CheckCircle2, XCircle, FileText, Link2,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
@@ -173,6 +174,37 @@ export default function CampaignsPage() {
   // Sequence view mode
   const [sequenceViewMode, setSequenceViewMode] = useState<'list' | 'visual'>('list')
 
+  // Wizard step state
+  const [createStep, setCreateStep] = useState<'source' | 'pipeline_running' | 'csv_upload' | 'csv_preview' | 'manual_entry' | 'google_sheet' | 'google_preview' | 'select_leads'>('source')
+  const [autoSelectLeadIds, setAutoSelectLeadIds] = useState<number[]>([])
+
+  // Pipeline running
+  const [pipelineRunning, setPipelineRunning] = useState(false)
+  const [pipelineStatus, setPipelineStatus] = useState('')
+  const [pipelineProgress, setPipelineProgress] = useState(0)
+  const [pipelineFailed, setPipelineFailed] = useState(false)
+
+  // CSV upload
+  const csvFileRef = useRef<HTMLInputElement>(null)
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvUploading, setCsvUploading] = useState(false)
+  const [csvPreviewData, setCsvPreviewData] = useState<any>(null)
+  const [csvImporting, setCsvImporting] = useState(false)
+  const [csvSkipDuplicates, setCsvSkipDuplicates] = useState(true)
+
+  // Manual entry
+  interface ManualEntry { client_name: string; job_title: string; state: string; job_link: string; salary_min: string; salary_max: string; first_name: string; last_name: string; email: string; phone: string; title: string }
+  const emptyEntry: ManualEntry = { client_name: '', job_title: '', state: '', job_link: '', salary_min: '', salary_max: '', first_name: '', last_name: '', email: '', phone: '', title: '' }
+  const [manualEntries, setManualEntries] = useState<ManualEntry[]>([{ ...emptyEntry }])
+  const [manualSubmitting, setManualSubmitting] = useState(false)
+
+  // Google Sheet
+  const [googleSheetUrl, setGoogleSheetUrl] = useState('')
+  const [googleSheetLoading, setGoogleSheetLoading] = useState(false)
+  const [googleSheetPreview, setGoogleSheetPreview] = useState<any>(null)
+  const [googleSheetImporting, setGoogleSheetImporting] = useState(false)
+  const [googleSkipDuplicates, setGoogleSkipDuplicates] = useState(true)
+
   // Bulk selection (Super Admin only)
   const { user } = useAuthStore()
   const isSuperAdmin = user?.role === 'super_admin'
@@ -210,10 +242,11 @@ export default function CampaignsPage() {
       setAvailableLeads(data.items || [])
       setAvailableLeadsTotal(data.total || 0)
       setAvailableLeadsPages(data.pages || 1)
-      // Auto-select ALL leads on initial open (fetch all IDs if multi-page)
-      if (!availableLeadsSearch && availableLeadsPage === 1) {
+      // Auto-select imported lead IDs if coming from import, otherwise select all
+      if (autoSelectLeadIds.length > 0) {
+        setSelectedCreateLeadIds(new Set(autoSelectLeadIds))
+      } else if (!availableLeadsSearch && availableLeadsPage === 1) {
         const allIds = new Set<number>((data.items || []).map((l: any) => l.lead_id))
-        // If there are more pages, fetch remaining lead IDs
         if ((data.pages || 1) > 1 && (data.total || 0) > 0) {
           try {
             const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: data.total, days: availableLeadsDays })
@@ -227,11 +260,180 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays])
+  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds])
 
   useEffect(() => {
-    if (showCreateModal) fetchAvailableLeads()
-  }, [showCreateModal, fetchAvailableLeads])
+    if (showCreateModal && createStep === 'select_leads') fetchAvailableLeads()
+  }, [showCreateModal, createStep, fetchAvailableLeads])
+
+  // Open create modal with wizard reset
+  const openCreateModal = () => {
+    setCreateStep('source')
+    setAutoSelectLeadIds([])
+    setPipelineRunning(false); setPipelineStatus(''); setPipelineProgress(0); setPipelineFailed(false)
+    setCsvFile(null); setCsvPreviewData(null); setCsvSkipDuplicates(true)
+    setManualEntries([{ ...emptyEntry }])
+    setGoogleSheetUrl(''); setGoogleSheetPreview(null); setGoogleSkipDuplicates(true)
+    setAvailableLeadsDays(7)
+    setShowCreateModal(true)
+  }
+
+  // Wizard handlers
+  const handleStartPipeline = async () => {
+    setCreateStep('pipeline_running')
+    setPipelineRunning(true)
+    setPipelineStatus('Starting lead sourcing...')
+    setPipelineProgress(5)
+    setPipelineFailed(false)
+    try {
+      await pipelinesApi.runLeadSourcing([])
+      // Poll for completion
+      let attempts = 0
+      const maxAttempts = 200
+      const poll = async () => {
+        while (attempts < maxAttempts) {
+          attempts++
+          await new Promise(r => setTimeout(r, 3000))
+          try {
+            const runs = await pipelinesApi.runs({ page: 1, page_size: 1, pipeline: 'lead_sourcing' })
+            const latest = (runs.items || runs)?.[0]
+            if (!latest) continue
+            const s = latest.status?.toLowerCase()
+            if (s === 'completed' || s === 'success') {
+              setPipelineProgress(100)
+              setPipelineStatus('Lead sourcing complete!')
+              setPipelineRunning(false)
+              setTimeout(() => {
+                setAvailableLeadsDays(7)
+                setCreateStep('select_leads')
+              }, 1500)
+              return
+            } else if (s === 'failed' || s === 'error') {
+              setPipelineStatus('Lead sourcing failed')
+              setPipelineRunning(false)
+              setPipelineFailed(true)
+              return
+            } else {
+              const progress = Math.min(90, 5 + (attempts / maxAttempts) * 85)
+              setPipelineProgress(progress)
+              setPipelineStatus(latest.status_message || `Sourcing leads... (${Math.round(progress)}%)`)
+            }
+          } catch { /* continue polling */ }
+        }
+        setPipelineStatus('Timed out waiting for pipeline')
+        setPipelineRunning(false)
+        setPipelineFailed(true)
+      }
+      await poll()
+    } catch (err: any) {
+      setPipelineStatus(err?.response?.data?.detail || 'Failed to start pipeline')
+      setPipelineRunning(false)
+      setPipelineFailed(true)
+    }
+  }
+
+  const handleCsvFileSelect = async (file: File) => {
+    setCsvFile(file)
+    setCsvUploading(true)
+    try {
+      const preview = await leadsApi.importPreview(file)
+      setCsvPreviewData(preview)
+      setCreateStep('csv_preview')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to preview CSV')
+    } finally {
+      setCsvUploading(false)
+    }
+  }
+
+  const handleCsvImport = async () => {
+    if (!csvFile) return
+    setCsvImporting(true)
+    try {
+      const result = await leadsApi.importCsv(csvFile, csvSkipDuplicates)
+      setAutoSelectLeadIds(result.imported_lead_ids || [])
+      setAvailableLeadsDays(365)
+      setCreateStep('select_leads')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to import CSV')
+    } finally {
+      setCsvImporting(false)
+    }
+  }
+
+  const handleManualSubmit = async () => {
+    const validEntries = manualEntries.filter(e => e.client_name.trim() && e.job_title.trim())
+    if (validEntries.length === 0) return
+    setManualSubmitting(true)
+    const leadIds: number[] = []
+    try {
+      for (const entry of validEntries) {
+        const leadData: any = {
+          client_name: entry.client_name.trim(),
+          job_title: entry.job_title.trim(),
+          state: entry.state.trim().slice(0, 2).toUpperCase(),
+          job_link: entry.job_link.trim() || undefined,
+          source: 'manual',
+          posting_date: new Date().toISOString().split('T')[0],
+        }
+        if (entry.salary_min) leadData.salary_min = parseFloat(entry.salary_min)
+        if (entry.salary_max) leadData.salary_max = parseFloat(entry.salary_max)
+        const lead = await leadsApi.create(leadData)
+        leadIds.push(lead.lead_id)
+
+        // If email provided, create a contact and link it
+        if (entry.email.trim()) {
+          try {
+            await api.post('/contacts', {
+              client_name: entry.client_name.trim(),
+              first_name: entry.first_name.trim() || 'Unknown',
+              last_name: entry.last_name.trim() || 'Contact',
+              email: entry.email.trim(),
+              phone: entry.phone.trim() || undefined,
+              title: entry.title.trim() || entry.job_title.trim(),
+              lead_id: lead.lead_id,
+              source: 'manual',
+            })
+          } catch { /* contact creation is best-effort */ }
+        }
+      }
+      setAutoSelectLeadIds(leadIds)
+      setAvailableLeadsDays(365)
+      setCreateStep('select_leads')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to create leads')
+    } finally {
+      setManualSubmitting(false)
+    }
+  }
+
+  const handleGoogleSheetPreview = async () => {
+    if (!googleSheetUrl.trim()) return
+    setGoogleSheetLoading(true)
+    try {
+      const preview = await leadsApi.importGoogleSheetPreview(googleSheetUrl.trim())
+      setGoogleSheetPreview(preview)
+      setCreateStep('google_preview')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to preview Google Sheet')
+    } finally {
+      setGoogleSheetLoading(false)
+    }
+  }
+
+  const handleGoogleSheetImport = async () => {
+    setGoogleSheetImporting(true)
+    try {
+      const result = await leadsApi.importGoogleSheet(googleSheetUrl.trim(), googleSkipDuplicates)
+      setAutoSelectLeadIds(result.imported_lead_ids || [])
+      setAvailableLeadsDays(365)
+      setCreateStep('select_leads')
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to import Google Sheet')
+    } finally {
+      setGoogleSheetImporting(false)
+    }
+  }
 
   // Create campaign from selected leads
   const handleCreateFromLeads = async () => {
@@ -684,7 +886,7 @@ export default function CampaignsPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Campaigns</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">Multi-step email sequences</p>
           </div>
-          <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+          <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
             <Plus className="w-4 h-4" /> New Campaign
           </button>
         </div>
@@ -839,154 +1041,576 @@ export default function CampaignsPage() {
           </div>
         )}
 
-        {/* Create Campaign Modal — Lead Selection Flow */}
+        {/* Create Campaign Modal — Multi-Step Wizard */}
         {showCreateModal && (
           <>
             <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
             <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[700px] max-w-[95vw] max-h-[85vh] overflow-y-auto">
+              {/* Header */}
               <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-lg font-bold dark:text-gray-100">New Campaign — Select Leads</h2>
-                  <p className="text-sm text-gray-500 mt-0.5">Select leads to auto-create a campaign with contacts, sequence, and mailboxes</p>
+                <div className="flex items-center gap-3">
+                  {createStep !== 'source' && (
+                    <button
+                      onClick={() => {
+                        if (createStep === 'select_leads' && autoSelectLeadIds.length > 0) { setAutoSelectLeadIds([]); setCreateStep('source') }
+                        else if (createStep === 'csv_preview') setCreateStep('csv_upload')
+                        else if (createStep === 'google_preview') setCreateStep('google_sheet')
+                        else setCreateStep('source')
+                      }}
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                  )}
+                  <div>
+                    <h2 className="text-lg font-bold dark:text-gray-100">
+                      {createStep === 'source' && 'New Campaign — Choose Lead Source'}
+                      {createStep === 'pipeline_running' && 'New Campaign — AI Lead Hunting'}
+                      {createStep === 'csv_upload' && 'New Campaign — CSV Upload'}
+                      {createStep === 'csv_preview' && 'New Campaign — Preview CSV'}
+                      {createStep === 'manual_entry' && 'New Campaign — Manual Entry'}
+                      {createStep === 'google_sheet' && 'New Campaign — Google Sheet'}
+                      {createStep === 'google_preview' && 'New Campaign — Preview Sheet'}
+                      {createStep === 'select_leads' && 'New Campaign — Select Leads'}
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {createStep === 'source' && 'How would you like to add leads to this campaign?'}
+                      {createStep === 'pipeline_running' && 'Sourcing leads from job boards...'}
+                      {createStep === 'csv_upload' && 'Upload a CSV file with your leads'}
+                      {createStep === 'csv_preview' && 'Review your data before importing'}
+                      {createStep === 'manual_entry' && 'Enter lead details manually'}
+                      {createStep === 'google_sheet' && 'Import leads from a public Google Sheet'}
+                      {createStep === 'google_preview' && 'Review your sheet data before importing'}
+                      {createStep === 'select_leads' && 'Select leads to auto-create a campaign with contacts, sequence, and mailboxes'}
+                    </p>
+                  </div>
                 </div>
                 <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>
               </div>
 
-              {/* Search, Days Filter & Stats */}
-              <div className="flex items-center gap-3 mb-3">
-                <input
-                  value={availableLeadsSearch}
-                  onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
-                  className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                  placeholder="Search by job title or company..."
-                />
-                <select
-                  value={availableLeadsDays}
-                  onChange={e => { setAvailableLeadsDays(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
-                  className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                >
-                  <option value={7}>Last 7 days</option>
-                  <option value={14}>Last 14 days</option>
-                  <option value={30}>Last 30 days</option>
-                  <option value={60}>Last 60 days</option>
-                  <option value={90}>Last 90 days</option>
-                </select>
-                <span className="text-sm text-gray-500 whitespace-nowrap">
-                  {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
-                </span>
-              </div>
+              {/* Step: Source Selection */}
+              {createStep === 'source' && (
+                <div>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {/* AI Lead Hunting Agent */}
+                    <button
+                      onClick={handleStartPipeline}
+                      className="group relative p-5 rounded-xl border-2 border-blue-200 dark:border-blue-800 hover:border-blue-400 dark:hover:border-blue-600 transition-all text-left hover:shadow-lg"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-3">
+                        <Brain className="w-6 h-6 text-white" />
+                      </div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">AI Lead Hunting Agent</h3>
+                      <p className="text-xs text-gray-500">Auto-source leads from Indeed, LinkedIn, Glassdoor and more</p>
+                    </button>
 
-              {/* Leads Table */}
-              <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                      <th className="px-3 py-2 text-left">
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedCreateLeadIds.size > 0 && selectedCreateLeadIds.size >= availableLeadsTotal}
-                            onChange={async e => {
-                              if (e.target.checked) {
-                                // Select ALL leads across all pages
-                                try {
-                                  const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: availableLeadsDays, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
-                                  setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
-                                } catch {
-                                  // Fallback: select current page
-                                  setSelectedCreateLeadIds(new Set(availableLeads.map(l => l.lead_id)))
-                                }
-                              } else {
-                                setSelectedCreateLeadIds(new Set())
-                              }
-                            }}
-                            className="w-4 h-4 rounded"
-                          />
-                          <span className="text-xs font-medium text-gray-500 uppercase">All</span>
-                        </label>
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Posted</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contacts</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {availableLeadsLoading ? (
-                      <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
-                    ) : availableLeads.length === 0 ? (
-                      <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
-                    ) : (
-                      availableLeads.map(lead => (
-                        <tr key={lead.lead_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedCreateLeadIds.has(lead.lead_id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedCreateLeadIds.has(lead.lead_id)}
-                              onChange={e => {
-                                setSelectedCreateLeadIds(prev => {
-                                  const next = new Set(prev)
-                                  if (e.target.checked) next.add(lead.lead_id)
-                                  else next.delete(lead.lead_id)
-                                  return next
-                                })
-                              }}
-                              className="w-4 h-4 rounded"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={lead.job_title}>{lead.job_title}</td>
-                          <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[150px] truncate">{lead.client_name}</td>
-                          <td className="px-3 py-2 text-gray-500">{lead.state || '-'}</td>
-                          <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
-                          <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    {/* CSV Upload */}
+                    <button
+                      onClick={() => setCreateStep('csv_upload')}
+                      className="group relative p-5 rounded-xl border-2 border-green-200 dark:border-green-800 hover:border-green-400 dark:hover:border-green-600 transition-all text-left hover:shadow-lg"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-3">
+                        <Upload className="w-6 h-6 text-white" />
+                      </div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">CSV Upload</h3>
+                      <p className="text-xs text-gray-500">Import leads from a spreadsheet CSV file</p>
+                    </button>
 
-              {/* Pagination */}
-              {availableLeadsPages > 1 && (
-                <div className="flex justify-center gap-2 mb-4">
-                  <button disabled={availableLeadsPage <= 1} onClick={() => setAvailableLeadsPage(p => p - 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Prev</button>
-                  <span className="px-3 py-1 text-sm text-gray-500">Page {availableLeadsPage} of {availableLeadsPages}</span>
-                  <button disabled={availableLeadsPage >= availableLeadsPages} onClick={() => setAvailableLeadsPage(p => p + 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                    {/* Manual Entry */}
+                    <button
+                      onClick={() => setCreateStep('manual_entry')}
+                      className="group relative p-5 rounded-xl border-2 border-orange-200 dark:border-orange-800 hover:border-orange-400 dark:hover:border-orange-600 transition-all text-left hover:shadow-lg"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center mb-3">
+                        <PenLine className="w-6 h-6 text-white" />
+                      </div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Manual Entry</h3>
+                      <p className="text-xs text-gray-500">Type in lead details one by one</p>
+                    </button>
+
+                    {/* Google Sheet */}
+                    <button
+                      onClick={() => setCreateStep('google_sheet')}
+                      className="group relative p-5 rounded-xl border-2 border-teal-200 dark:border-teal-800 hover:border-teal-400 dark:hover:border-teal-600 transition-all text-left hover:shadow-lg"
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center mb-3">
+                        <Table2 className="w-6 h-6 text-white" />
+                      </div>
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Google Sheet</h3>
+                      <p className="text-xs text-gray-500">Import directly from a public Google Sheets URL</p>
+                    </button>
+                  </div>
+
+                  <div className="text-center">
+                    <button
+                      onClick={() => { setAvailableLeadsDays(7); setCreateStep('select_leads') }}
+                      className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:underline"
+                    >
+                      or skip and select from existing leads
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Preview Mode Toggle */}
-              <div className="flex items-center justify-between py-2 mb-3 px-1">
-                <div>
-                  <label className="block text-sm font-medium">Preview & Approve Mode</label>
-                  <p className="text-xs text-gray-500">Generate drafts for review instead of sending directly</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCreatePreviewMode(!createPreviewMode)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${createPreviewMode ? 'bg-teal-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${createPreviewMode ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
+              {/* Step: Pipeline Running */}
+              {createStep === 'pipeline_running' && (
+                <div className="flex flex-col items-center justify-center py-10">
+                  {pipelineRunning ? (
+                    <Brain className="w-16 h-16 text-blue-500 animate-pulse mb-4" />
+                  ) : pipelineFailed ? (
+                    <XCircle className="w-16 h-16 text-red-500 mb-4" />
+                  ) : (
+                    <CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
+                  )}
+                  <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">{pipelineStatus}</p>
 
-              {/* Actions */}
-              <div className="flex items-center justify-between pt-2 border-t dark:border-gray-700">
-                <p className="text-sm text-gray-500">
-                  {selectedCreateLeadIds.size} lead(s) selected — auto-generates name, 3-step sequence, assigns all active mailboxes
-                </p>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
-                  <button
-                    onClick={handleCreateFromLeads}
-                    disabled={selectedCreateLeadIds.size === 0 || creatingFromLeads}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm flex items-center gap-2"
+                  {/* Progress bar */}
+                  <div className="w-full max-w-md bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-4">
+                    <div
+                      className={`h-3 rounded-full transition-all duration-500 ${pipelineFailed ? 'bg-red-500' : pipelineProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                      style={{ width: `${pipelineProgress}%` }}
+                    />
+                  </div>
+
+                  {pipelineRunning && (
+                    <div className="flex gap-2 mt-2">
+                      {['Indeed', 'LinkedIn', 'Glassdoor', 'Google Jobs'].map(src => (
+                        <span key={src} className="px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{src}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {pipelineFailed && (
+                    <button onClick={handleStartPipeline} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                      Try Again
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Step: CSV Upload */}
+              {createStep === 'csv_upload' && (
+                <div>
+                  <div
+                    className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-10 text-center cursor-pointer hover:border-green-400 dark:hover:border-green-600 transition-colors"
+                    onClick={() => csvFileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+                    onDrop={e => {
+                      e.preventDefault(); e.stopPropagation()
+                      const file = e.dataTransfer.files?.[0]
+                      if (file && file.name.endsWith('.csv')) handleCsvFileSelect(file)
+                    }}
                   >
-                    {creatingFromLeads ? 'Creating...' : `Create Campaign (${selectedCreateLeadIds.size} leads)`}
+                    {csvUploading ? (
+                      <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto mb-3" />
+                    ) : (
+                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    )}
+                    <p className="text-gray-700 dark:text-gray-300 font-medium mb-1">
+                      {csvUploading ? 'Analyzing file...' : 'Drop your CSV file here or click to browse'}
+                    </p>
+                    <p className="text-xs text-gray-500">Accepts .csv files</p>
+                  </div>
+                  <input
+                    ref={csvFileRef}
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleCsvFileSelect(file)
+                    }}
+                  />
+                  <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expected columns:</p>
+                    <p className="text-xs text-gray-500">Company Name, Job Title, State, Job Link, Source, Posting Date, Salary Min, Salary Max, Status</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: CSV Preview */}
+              {createStep === 'csv_preview' && csvPreviewData && (
+                <div>
+                  {/* File badge */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{csvPreviewData.filename || csvFile?.name}</span>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-blue-600">{csvPreviewData.total_rows}</p>
+                      <p className="text-xs text-gray-500">Total Rows</p>
+                    </div>
+                    <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-green-600">{csvPreviewData.new_count}</p>
+                      <p className="text-xs text-gray-500">New Leads</p>
+                    </div>
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-yellow-600">{csvPreviewData.duplicate_count}</p>
+                      <p className="text-xs text-gray-500">Duplicates</p>
+                    </div>
+                  </div>
+
+                  {/* Preview table */}
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Row</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {(csvPreviewData.preview || []).map((row: any) => (
+                          <tr key={row.row_number} className={row.is_duplicate ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''}>
+                            <td className="px-3 py-1.5 text-gray-500">{row.row_number}</td>
+                            <td className="px-3 py-1.5 max-w-[150px] truncate">{row.company_name}</td>
+                            <td className="px-3 py-1.5 max-w-[150px] truncate">{row.job_title}</td>
+                            <td className="px-3 py-1.5">{row.state}</td>
+                            <td className="px-3 py-1.5">
+                              {row.is_duplicate ? (
+                                <span className="text-yellow-600 text-xs">Duplicate</span>
+                              ) : (
+                                <span className="text-green-600 text-xs">New</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Skip duplicates */}
+                  <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                    <input type="checkbox" checked={csvSkipDuplicates} onChange={e => setCsvSkipDuplicates(e.target.checked)} className="w-4 h-4 rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Skip duplicate leads ({csvPreviewData.duplicate_count} found)</span>
+                  </label>
+
+                  {/* Import button */}
+                  <button
+                    onClick={handleCsvImport}
+                    disabled={csvImporting || csvPreviewData.new_count === 0}
+                    className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    {csvImporting ? <><Loader2 className="w-4 h-4 animate-spin" /> Importing...</> : `Import ${csvSkipDuplicates ? csvPreviewData.new_count : csvPreviewData.total_rows} Leads`}
                   </button>
                 </div>
-              </div>
+              )}
+
+              {/* Step: Manual Entry */}
+              {createStep === 'manual_entry' && (
+                <div>
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1 mb-4">
+                    {manualEntries.map((entry, idx) => (
+                      <div key={idx} className="border dark:border-gray-700 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Lead #{idx + 1}</span>
+                          {manualEntries.length > 1 && (
+                            <button onClick={() => setManualEntries(prev => prev.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700 text-xs">Remove</button>
+                          )}
+                        </div>
+                        {/* Lead fields */}
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <input value={entry.client_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], client_name: e.target.value }; setManualEntries(v) }}
+                            placeholder="Company Name *" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                          <input value={entry.job_title} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], job_title: e.target.value }; setManualEntries(v) }}
+                            placeholder="Job Title *" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                          <input value={entry.state} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], state: e.target.value }; setManualEntries(v) }}
+                            placeholder="State (e.g. TX)" maxLength={2} className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                          <input value={entry.job_link} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], job_link: e.target.value }; setManualEntries(v) }}
+                            placeholder="Job Link (optional)" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                          <input value={entry.salary_min} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], salary_min: e.target.value }; setManualEntries(v) }}
+                            placeholder="Salary Min" type="number" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                          <input value={entry.salary_max} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], salary_max: e.target.value }; setManualEntries(v) }}
+                            placeholder="Salary Max" type="number" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                        </div>
+                        {/* Contact fields (optional) */}
+                        <p className="text-xs text-gray-500 mb-2">Contact (optional)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={entry.first_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], first_name: e.target.value }; setManualEntries(v) }}
+                            placeholder="First Name" className="px-3 py-1.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs" />
+                          <input value={entry.last_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], last_name: e.target.value }; setManualEntries(v) }}
+                            placeholder="Last Name" className="px-3 py-1.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs" />
+                          <input value={entry.email} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], email: e.target.value }; setManualEntries(v) }}
+                            placeholder="Email" type="email" className="px-3 py-1.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs" />
+                          <input value={entry.phone} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], phone: e.target.value }; setManualEntries(v) }}
+                            placeholder="Phone" className="px-3 py-1.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setManualEntries(prev => [...prev, { ...emptyEntry }])}
+                      className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 flex items-center gap-1"
+                    >
+                      <Plus className="w-4 h-4" /> Add Another
+                    </button>
+                    <button
+                      onClick={handleManualSubmit}
+                      disabled={manualSubmitting || !manualEntries.some(e => e.client_name.trim() && e.job_title.trim())}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm flex items-center gap-2"
+                    >
+                      {manualSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : `Create ${manualEntries.filter(e => e.client_name.trim() && e.job_title.trim()).length} Lead(s)`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Google Sheet */}
+              {createStep === 'google_sheet' && (
+                <div>
+                  <div className="relative mb-4">
+                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      value={googleSheetUrl}
+                      onChange={e => setGoogleSheetUrl(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      className="w-full pl-10 pr-4 py-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-teal-50 dark:bg-teal-900/20 rounded-lg mb-4 border border-teal-200 dark:border-teal-800">
+                    <p className="text-xs text-teal-800 dark:text-teal-300 font-medium mb-1">Important</p>
+                    <p className="text-xs text-teal-700 dark:text-teal-400">The sheet must be publicly accessible. Go to File &rarr; Share &rarr; &quot;Anyone with the link&quot; can view.</p>
+                  </div>
+
+                  <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg mb-4">
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expected columns:</p>
+                    <p className="text-xs text-gray-500">Company Name, Job Title, State, Job Link, Source, Posting Date, Salary Min, Salary Max, Status</p>
+                  </div>
+
+                  <button
+                    onClick={handleGoogleSheetPreview}
+                    disabled={googleSheetLoading || !googleSheetUrl.trim()}
+                    className="w-full px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    {googleSheetLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading Sheet...</> : 'Preview Sheet'}
+                  </button>
+                </div>
+              )}
+
+              {/* Step: Google Preview */}
+              {createStep === 'google_preview' && googleSheetPreview && (
+                <div>
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-blue-600">{googleSheetPreview.total_rows}</p>
+                      <p className="text-xs text-gray-500">Total Rows</p>
+                    </div>
+                    <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-green-600">{googleSheetPreview.new_count}</p>
+                      <p className="text-xs text-gray-500">New Leads</p>
+                    </div>
+                    <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-yellow-600">{googleSheetPreview.duplicate_count}</p>
+                      <p className="text-xs text-gray-500">Duplicates</p>
+                    </div>
+                  </div>
+
+                  {/* Preview table */}
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Row</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {(googleSheetPreview.preview || []).map((row: any) => (
+                          <tr key={row.row_number} className={row.is_duplicate ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''}>
+                            <td className="px-3 py-1.5 text-gray-500">{row.row_number}</td>
+                            <td className="px-3 py-1.5 max-w-[150px] truncate">{row.company_name}</td>
+                            <td className="px-3 py-1.5 max-w-[150px] truncate">{row.job_title}</td>
+                            <td className="px-3 py-1.5">{row.state}</td>
+                            <td className="px-3 py-1.5">
+                              {row.is_duplicate ? (
+                                <span className="text-yellow-600 text-xs">Duplicate</span>
+                              ) : (
+                                <span className="text-green-600 text-xs">New</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Skip duplicates */}
+                  <label className="flex items-center gap-2 mb-4 cursor-pointer">
+                    <input type="checkbox" checked={googleSkipDuplicates} onChange={e => setGoogleSkipDuplicates(e.target.checked)} className="w-4 h-4 rounded" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">Skip duplicate leads ({googleSheetPreview.duplicate_count} found)</span>
+                  </label>
+
+                  {/* Import button */}
+                  <button
+                    onClick={handleGoogleSheetImport}
+                    disabled={googleSheetImporting || googleSheetPreview.new_count === 0}
+                    className="w-full px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    {googleSheetImporting ? <><Loader2 className="w-4 h-4 animate-spin" /> Importing...</> : `Import ${googleSkipDuplicates ? googleSheetPreview.new_count : googleSheetPreview.total_rows} Leads`}
+                  </button>
+                </div>
+              )}
+
+              {/* Step: Select Leads (existing flow) */}
+              {createStep === 'select_leads' && (
+                <div>
+                  {/* Success banner if coming from import */}
+                  {autoSelectLeadIds.length > 0 && (
+                    <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg mb-3">
+                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      <span className="text-sm text-green-800 dark:text-green-300">{autoSelectLeadIds.length} leads imported and pre-selected</span>
+                    </div>
+                  )}
+
+                  {/* Search, Days Filter & Stats */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <input
+                      value={availableLeadsSearch}
+                      onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
+                      className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                      placeholder="Search by job title or company..."
+                    />
+                    <select
+                      value={availableLeadsDays}
+                      onChange={e => { setAvailableLeadsDays(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
+                      className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                    >
+                      <option value={7}>Last 7 days</option>
+                      <option value={14}>Last 14 days</option>
+                      <option value={30}>Last 30 days</option>
+                      <option value={60}>Last 60 days</option>
+                      <option value={90}>Last 90 days</option>
+                      <option value={365}>Last year</option>
+                    </select>
+                    <span className="text-sm text-gray-500 whitespace-nowrap">
+                      {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
+                    </span>
+                  </div>
+
+                  {/* Leads Table */}
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                          <th className="px-3 py-2 text-left">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedCreateLeadIds.size > 0 && selectedCreateLeadIds.size >= availableLeadsTotal}
+                                onChange={async e => {
+                                  if (e.target.checked) {
+                                    try {
+                                      const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: availableLeadsDays, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
+                                      setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
+                                    } catch {
+                                      setSelectedCreateLeadIds(new Set(availableLeads.map(l => l.lead_id)))
+                                    }
+                                  } else {
+                                    setSelectedCreateLeadIds(new Set())
+                                  }
+                                }}
+                                className="w-4 h-4 rounded"
+                              />
+                              <span className="text-xs font-medium text-gray-500 uppercase">All</span>
+                            </label>
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Posted</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contacts</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {availableLeadsLoading ? (
+                          <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
+                        ) : availableLeads.length === 0 ? (
+                          <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
+                        ) : (
+                          availableLeads.map(lead => (
+                            <tr key={lead.lead_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedCreateLeadIds.has(lead.lead_id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedCreateLeadIds.has(lead.lead_id)}
+                                  onChange={e => {
+                                    setSelectedCreateLeadIds(prev => {
+                                      const next = new Set(prev)
+                                      if (e.target.checked) next.add(lead.lead_id)
+                                      else next.delete(lead.lead_id)
+                                      return next
+                                    })
+                                  }}
+                                  className="w-4 h-4 rounded"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={lead.job_title}>{lead.job_title}</td>
+                              <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[150px] truncate">{lead.client_name}</td>
+                              <td className="px-3 py-2 text-gray-500">{lead.state || '-'}</td>
+                              <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
+                              <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {availableLeadsPages > 1 && (
+                    <div className="flex justify-center gap-2 mb-4">
+                      <button disabled={availableLeadsPage <= 1} onClick={() => setAvailableLeadsPage(p => p - 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Prev</button>
+                      <span className="px-3 py-1 text-sm text-gray-500">Page {availableLeadsPage} of {availableLeadsPages}</span>
+                      <button disabled={availableLeadsPage >= availableLeadsPages} onClick={() => setAvailableLeadsPage(p => p + 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                    </div>
+                  )}
+
+                  {/* Preview Mode Toggle */}
+                  <div className="flex items-center justify-between py-2 mb-3 px-1">
+                    <div>
+                      <label className="block text-sm font-medium">Preview & Approve Mode</label>
+                      <p className="text-xs text-gray-500">Generate drafts for review instead of sending directly</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCreatePreviewMode(!createPreviewMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${createPreviewMode ? 'bg-teal-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${createPreviewMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-2 border-t dark:border-gray-700">
+                    <p className="text-sm text-gray-500">
+                      {selectedCreateLeadIds.size} lead(s) selected — auto-generates name, 3-step sequence, assigns all active mailboxes
+                    </p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button>
+                      <button
+                        onClick={handleCreateFromLeads}
+                        disabled={selectedCreateLeadIds.size === 0 || creatingFromLeads}
+                        className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-sm flex items-center gap-2"
+                      >
+                        {creatingFromLeads ? 'Creating...' : `Create Campaign (${selectedCreateLeadIds.size} leads)`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
