@@ -11,10 +11,39 @@ import {
   FileSearch, Loader2, AlertTriangle, Shuffle, MessageSquare, Phone, Linkedin,
   MousePointerClick, Reply, Activity, LayoutList, Workflow,
   Brain, Upload, PenLine, Table2, ArrowLeft, CheckCircle2, XCircle, FileText, Link2, Download,
+  Filter, ChevronUp, ChevronsUpDown,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
 const SequenceBuilder = dynamic(() => import('@/components/sequence-builder'), { ssr: false })
+
+// ─── Available Leads Filter Constants ─────────────────────────────
+const LEAD_STATUS_OPTIONS = [
+  { value: 'new', label: 'New' },
+  { value: 'enriched', label: 'Enriched' },
+  { value: 'validated', label: 'Validated' },
+  { value: 'open', label: 'Open' },
+  { value: 'hunting', label: 'Hunting' },
+  { value: 'sent', label: 'Sent' },
+  { value: 'skipped', label: 'Skipped' },
+  { value: 'closed_hired', label: 'Closed-Hired' },
+  { value: 'closed_not_hired', label: 'Closed-Not-Hired' },
+  { value: 'closed_test', label: 'Closed-Test' },
+]
+
+const LEAD_SOURCE_OPTIONS = ['jsearch', 'apollo', 'indeed', 'linkedin', 'glassdoor', 'theirstack', 'serpapi', 'adzuna', 'searchapi', 'usajobs', 'jooble', 'jobdatafeeds', 'coresignal', 'mock', 'import']
+
+const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
+
+const WIZARD_US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+  'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+  'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+  'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+  'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+]
+
+type AvailableLeadsSortField = 'job_title' | 'client_name' | 'state' | 'employment_type' | 'posting_date' | 'source'
 
 type TabView = 'list' | 'detail'
 
@@ -79,6 +108,18 @@ export default function CampaignsPage() {
   const [selectedCreateLeadIds, setSelectedCreateLeadIds] = useState<Set<number>>(new Set())
   const [createPreviewMode, setCreatePreviewMode] = useState(false)
   const [creatingFromLeads, setCreatingFromLeads] = useState(false)
+
+  // Available leads filters
+  const [alFilterStatus, setAlFilterStatus] = useState('')
+  const [alFilterSource, setAlFilterSource] = useState('')
+  const [alFilterEmploymentType, setAlFilterEmploymentType] = useState('')
+  const [alFilterState, setAlFilterState] = useState<string[]>([])
+  const [alFilterIndustry, setAlFilterIndustry] = useState<string[]>([])
+  const [alFilterCompanySize, setAlFilterCompanySize] = useState<string[]>([])
+  const [alShowMoreFilters, setAlShowMoreFilters] = useState(false)
+  const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[] }>({ industries: [], company_sizes: [] })
+  const [alSortBy, setAlSortBy] = useState<AvailableLeadsSortField>('posting_date')
+  const [alSortOrder, setAlSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Contact schedule state
   const [contactSchedule, setContactSchedule] = useState<any[]>([])
@@ -237,11 +278,25 @@ export default function CampaignsPage() {
   useEffect(() => { fetchCampaigns() }, [fetchCampaigns])
 
   // Fetch available leads for the create modal
+  // Build filter params for available-leads API
+  const buildAlFilterParams = useCallback(() => {
+    const params: Record<string, any> = { days: availableLeadsDays }
+    if (availableLeadsSearch) params.search = availableLeadsSearch
+    if (alFilterStatus) params.status = alFilterStatus
+    if (alFilterSource) params.source = alFilterSource
+    if (alFilterEmploymentType) params.employment_type = alFilterEmploymentType
+    if (alFilterState.length > 0) params.state = alFilterState
+    if (alFilterIndustry.length > 0) params.industry = alFilterIndustry
+    if (alFilterCompanySize.length > 0) params.company_size = alFilterCompanySize
+    if (alSortBy !== 'posting_date') params.sort_by = alSortBy
+    if (alSortOrder !== 'desc') params.sort_order = alSortOrder
+    return params
+  }, [availableLeadsDays, availableLeadsSearch, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alSortBy, alSortOrder])
+
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
     try {
-      const params: Record<string, any> = { page: availableLeadsPage, page_size: 50, days: availableLeadsDays }
-      if (availableLeadsSearch) params.search = availableLeadsSearch
+      const params = { ...buildAlFilterParams(), page: availableLeadsPage, page_size: 50 }
       const data = await campaignsApi.getAvailableLeads(params)
       setAvailableLeads(data.items || [])
       setAvailableLeadsTotal(data.total || 0)
@@ -249,11 +304,11 @@ export default function CampaignsPage() {
       // Auto-select imported lead IDs if coming from import, otherwise select all
       if (autoSelectLeadIds.length > 0) {
         setSelectedCreateLeadIds(new Set(autoSelectLeadIds))
-      } else if (!availableLeadsSearch && availableLeadsPage === 1) {
+      } else if (!availableLeadsSearch && !alFilterStatus && !alFilterSource && !alFilterEmploymentType && alFilterState.length === 0 && alFilterIndustry.length === 0 && alFilterCompanySize.length === 0 && availableLeadsPage === 1) {
         const allIds = new Set<number>((data.items || []).map((l: any) => l.lead_id))
         if ((data.pages || 1) > 1 && (data.total || 0) > 0) {
           try {
-            const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: data.total, days: availableLeadsDays })
+            const allData = await campaignsApi.getAvailableLeads({ ...buildAlFilterParams(), page: 1, page_size: data.total })
             ;(allData.items || []).forEach((l: any) => allIds.add(l.lead_id))
           } catch { /* fallback: only page 1 selected */ }
         }
@@ -264,11 +319,20 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds])
+  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize])
 
   useEffect(() => {
     if (showCreateModal && createStep === 'select_leads') fetchAvailableLeads()
   }, [showCreateModal, createStep, fetchAvailableLeads])
+
+  // Fetch dynamic filter options (industries, company_sizes) when entering select_leads
+  useEffect(() => {
+    if (showCreateModal && createStep === 'select_leads') {
+      leadsApi.filterOptions().then((opts: any) => {
+        setAlFilterOptions({ industries: opts.industries || [], company_sizes: opts.company_sizes || [] })
+      }).catch(() => {})
+    }
+  }, [showCreateModal, createStep])
 
   // Open create modal with wizard reset
   const openCreateModal = () => {
@@ -280,6 +344,10 @@ export default function CampaignsPage() {
     setManualEntries([{ ...emptyEntry }])
     setGoogleSheetUrl(''); setGoogleSheetPreview(null); setGoogleSkipDuplicates(true)
     setAvailableLeadsDays(7)
+    setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType('')
+    setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([])
+    setAlShowMoreFilters(false)
+    setAlSortBy('posting_date'); setAlSortOrder('desc')
     setShowCreateModal(true)
   }
 
@@ -1591,13 +1659,16 @@ export default function CampaignsPage() {
                   )}
 
                   {/* Search, Days Filter & Stats */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <input
-                      value={availableLeadsSearch}
-                      onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
-                      className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                      placeholder="Search by job title or company..."
-                    />
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        value={availableLeadsSearch}
+                        onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
+                        className="w-full pl-9 pr-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        placeholder="Search by job title or company..."
+                      />
+                    </div>
                     <select
                       value={availableLeadsDays}
                       onChange={e => { setAvailableLeadsDays(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
@@ -1608,12 +1679,107 @@ export default function CampaignsPage() {
                       <option value={30}>Last 30 days</option>
                       <option value={60}>Last 60 days</option>
                       <option value={90}>Last 90 days</option>
+                      <option value={180}>Last 6 months</option>
                       <option value={365}>Last year</option>
                     </select>
                     <span className="text-sm text-gray-500 whitespace-nowrap">
                       {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
                     </span>
                   </div>
+
+                  {/* Filters Row */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <select
+                      value={alFilterStatus}
+                      onChange={e => { setAlFilterStatus(e.target.value); setAvailableLeadsPage(1) }}
+                      className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterStatus ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
+                    >
+                      <option value="">All Statuses</option>
+                      {LEAD_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                    <select
+                      value={alFilterSource}
+                      onChange={e => { setAlFilterSource(e.target.value); setAvailableLeadsPage(1) }}
+                      className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterSource ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
+                    >
+                      <option value="">All Sources</option>
+                      {LEAD_SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select
+                      value={alFilterEmploymentType}
+                      onChange={e => { setAlFilterEmploymentType(e.target.value); setAvailableLeadsPage(1) }}
+                      className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterEmploymentType ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
+                    >
+                      <option value="">All Types</option>
+                      {EMPLOYMENT_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setAlShowMoreFilters(!alShowMoreFilters)}
+                      className={`px-2 py-1.5 border rounded-lg text-sm flex items-center gap-1 ${alShowMoreFilters || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600'}`}
+                    >
+                      <Filter className="w-3.5 h-3.5" />
+                      More{(alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length) > 0 && ` (${alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length})`}
+                      {alShowMoreFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    {(alFilterStatus || alFilterSource || alFilterEmploymentType || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => { setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType(''); setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([]); setAvailableLeadsPage(1) }}
+                        className="text-xs text-red-600 hover:text-red-700 hover:underline"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Expandable multi-select filters */}
+                  {alShowMoreFilters && (
+                    <div className="grid grid-cols-3 gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+                      {/* State multi-select */}
+                      {(() => {
+                        const WizardMultiSelect = ({ label, options, selected, onChange }: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void }) => {
+                          const [open, setOpen] = useState(false)
+                          const ref = useRef<HTMLDivElement>(null)
+                          useEffect(() => {
+                            const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+                            document.addEventListener('mousedown', handler)
+                            return () => document.removeEventListener('mousedown', handler)
+                          }, [])
+                          return (
+                            <div ref={ref} className="relative">
+                              <button type="button" onClick={() => setOpen(!open)} className={`w-full px-2 py-1.5 border rounded-lg text-sm text-left flex items-center justify-between dark:bg-gray-700 dark:border-gray-600 ${selected.length > 0 ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+                                <span className="truncate">{selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}</span>
+                                <span className="text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
+                              </button>
+                              {open && (
+                                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                  <div className="flex gap-2 px-2 py-1.5 border-b bg-gray-50 dark:bg-gray-700 sticky top-0">
+                                    <button type="button" onClick={() => { onChange([...options]); setAvailableLeadsPage(1) }} className="text-xs text-blue-600 hover:underline">All</button>
+                                    <button type="button" onClick={() => { onChange([]); setAvailableLeadsPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
+                                  </div>
+                                  {options.map(opt => (
+                                    <label key={opt} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm">
+                                      <input type="checkbox" checked={selected.includes(opt)} onChange={() => { onChange(selected.includes(opt) ? selected.filter(v => v !== opt) : [...selected, opt]); setAvailableLeadsPage(1) }} className="w-3.5 h-3.5 rounded" />
+                                      {opt}
+                                    </label>
+                                  ))}
+                                  {options.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No options</div>}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+                        return (
+                          <>
+                            <WizardMultiSelect label="States" options={WIZARD_US_STATES} selected={alFilterState} onChange={setAlFilterState} />
+                            <WizardMultiSelect label="Industries" options={alFilterOptions.industries} selected={alFilterIndustry} onChange={setAlFilterIndustry} />
+                            <WizardMultiSelect label="Company Size" options={alFilterOptions.company_sizes} selected={alFilterCompanySize} onChange={setAlFilterCompanySize} />
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
 
                   {/* Leads Table */}
                   <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4">
@@ -1628,7 +1794,7 @@ export default function CampaignsPage() {
                                 onChange={async e => {
                                   if (e.target.checked) {
                                     try {
-                                      const allData = await campaignsApi.getAvailableLeads({ page: 1, page_size: Math.max(availableLeadsTotal, 200), days: availableLeadsDays, ...(availableLeadsSearch ? { search: availableLeadsSearch } : {}) })
+                                      const allData = await campaignsApi.getAvailableLeads({ ...buildAlFilterParams(), page: 1, page_size: Math.max(availableLeadsTotal, 200) })
                                       setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
                                     } catch {
                                       setSelectedCreateLeadIds(new Set(availableLeads.map(l => l.lead_id)))
@@ -1642,19 +1808,37 @@ export default function CampaignsPage() {
                               <span className="text-xs font-medium text-gray-500 uppercase">All</span>
                             </label>
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Posted</th>
+                          {([
+                            { key: 'job_title', label: 'Job Title' },
+                            { key: 'client_name', label: 'Company' },
+                            { key: 'state', label: 'State' },
+                            { key: 'employment_type', label: 'Type' },
+                            { key: 'posting_date', label: 'Posted' },
+                            { key: 'source', label: 'Source' },
+                          ] as { key: AvailableLeadsSortField; label: string }[]).map(col => (
+                            <th
+                              key={col.key}
+                              className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 select-none"
+                              onClick={() => { if (alSortBy === col.key) { setAlSortOrder(o => o === 'asc' ? 'desc' : 'asc') } else { setAlSortBy(col.key); setAlSortOrder('asc') } setAvailableLeadsPage(1) }}
+                            >
+                              <span className="flex items-center gap-1">
+                                {col.label}
+                                {alSortBy === col.key ? (
+                                  alSortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                                ) : (
+                                  <ChevronsUpDown className="w-3 h-3 opacity-30" />
+                                )}
+                              </span>
+                            </th>
+                          ))}
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contacts</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {availableLeadsLoading ? (
-                          <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
+                          <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
                         ) : availableLeads.length === 0 ? (
-                          <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
+                          <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
                         ) : (
                           availableLeads.map(lead => (
                             <tr key={lead.lead_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedCreateLeadIds.has(lead.lead_id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
@@ -1673,8 +1857,8 @@ export default function CampaignsPage() {
                                   className="w-4 h-4 rounded"
                                 />
                               </td>
-                              <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={lead.job_title}>{lead.job_title}</td>
-                              <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[150px] truncate">{lead.client_name}</td>
+                              <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[180px] truncate" title={lead.job_title}>{lead.job_title}</td>
+                              <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[130px] truncate">{lead.client_name}</td>
                               <td className="px-3 py-2 text-gray-500">{lead.state || '-'}</td>
                               <td className="px-3 py-2">
                                 {lead.employment_type ? (
@@ -1688,6 +1872,7 @@ export default function CampaignsPage() {
                                 ) : <span className="text-gray-400">-</span>}
                               </td>
                               <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
+                              <td className="px-3 py-2 text-gray-500 text-xs">{lead.source || '-'}</td>
                               <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
                             </tr>
                           ))

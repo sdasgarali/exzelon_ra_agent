@@ -2,11 +2,11 @@
 import json
 import structlog
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, asc, desc
 
 logger = structlog.get_logger()
 
@@ -249,8 +249,15 @@ def list_campaigns(
 @router.get("/available-leads")
 def get_available_leads(
     search: Optional[str] = None,
-    state: Optional[str] = None,
-    days: int = Query(7, ge=1, le=90, description="Leads from last N days"),
+    status: Optional[str] = Query(None, description="Lead status filter"),
+    source: Optional[str] = Query(None, description="Job source filter"),
+    state: Optional[List[str]] = Query(None, description="State filter (multi-select)"),
+    industry: Optional[List[str]] = Query(None, description="Industry filter (multi-select)"),
+    company_size: Optional[List[str]] = Query(None, description="Company size filter (multi-select)"),
+    employment_type: Optional[str] = Query(None, description="Position type filter"),
+    days: int = Query(7, ge=1, le=365, description="Leads from last N days"),
+    sort_by: Optional[str] = Query("posting_date", description="Column to sort by"),
+    sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -260,11 +267,13 @@ def get_available_leads(
     """Get leads available for campaign enrollment.
 
     Returns leads NOT enrolled in any active campaign, posted within the last N days,
-    and having at least one associated contact.
+    and having at least one associated contact. Supports filtering by status, source,
+    state, industry, company_size, employment_type, and sorting.
     """
     from app.db.models.lead import LeadDetails
     from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
+    from app.db.models.client import ClientInfo
 
     cutoff = datetime.utcnow() - timedelta(days=days)
 
@@ -292,18 +301,58 @@ def get_available_leads(
     ).distinct().subquery()
     query = query.filter(LeadDetails.lead_id.in_(leads_with_contacts_subq))
 
+    # Text search
     if search:
         query = query.filter(
             (LeadDetails.job_title.ilike(f"%{search}%")) |
             (LeadDetails.client_name.ilike(f"%{search}%"))
         )
+
+    # Filters
+    if status:
+        query = query.filter(LeadDetails.lead_status == status)
+    if source:
+        query = query.filter(LeadDetails.source == source)
     if state:
-        query = query.filter(LeadDetails.state == state)
+        query = query.filter(LeadDetails.state.in_(state))
+    if employment_type:
+        query = query.filter(LeadDetails.employment_type == employment_type)
+
+    # Industry/company_size — check both lead_details and client_info (same pattern as leads.py)
+    if industry:
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.industry.in_(industry))
+        matching_names = [r[0] for r in client_q.all()]
+        query = query.filter(
+            (LeadDetails.industry.in_(industry)) |
+            (LeadDetails.client_name.in_(matching_names) if matching_names else False)
+        )
+    if company_size:
+        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size.in_(company_size))
+        matching_names = [r[0] for r in client_q.all()]
+        query = query.filter(
+            (LeadDetails.company_size.in_(company_size)) |
+            (LeadDetails.client_name.in_(matching_names) if matching_names else False)
+        )
 
     total = query.count()
-    leads = query.order_by(LeadDetails.posting_date.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
+
+    # Dynamic sorting
+    available_sort_columns = {
+        "lead_id": LeadDetails.lead_id,
+        "client_name": LeadDetails.client_name,
+        "job_title": LeadDetails.job_title,
+        "state": LeadDetails.state,
+        "posting_date": LeadDetails.posting_date,
+        "source": LeadDetails.source,
+        "employment_type": LeadDetails.employment_type,
+    }
+    sort_col = available_sort_columns.get(sort_by, LeadDetails.posting_date)
+    if sort_order == "asc":
+        query = query.order_by(asc(sort_col))
+    else:
+        query = query.order_by(desc(sort_col))
+
+    leads = query.offset((page - 1) * page_size).limit(page_size).all()
 
     # Get contact counts per lead via junction table
     lead_ids = [l.lead_id for l in leads]
@@ -324,9 +373,11 @@ def get_available_leads(
                 "job_title": l.job_title,
                 "client_name": l.client_name,
                 "state": l.state,
+                "lead_status": getattr(l, 'lead_status', None),
                 "posting_date": l.posting_date.isoformat() if l.posting_date else None,
                 "source": l.source,
                 "industry": getattr(l, 'industry', None),
+                "company_size": getattr(l, 'company_size', None),
                 "employment_type": getattr(l, 'employment_type', None),
                 "contact_count": contact_counts.get(l.lead_id, 0),
             }
