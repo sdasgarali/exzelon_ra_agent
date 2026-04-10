@@ -191,6 +191,16 @@ class AdzunaAdapter(JobSourceAdapter):
         company = raw_data.get("company", {}) or {}
         company_name = company.get("display_name", "Unknown Company")
 
+        # Employment type: Adzuna has contract_type (permanent/contract/temporary) + contract_time (full_time/part_time)
+        from app.services.adapters.base import normalize_employment_type
+        contract_type = raw_data.get("contract_type", "")  # permanent, contract, temporary, seasonal
+        contract_time = raw_data.get("contract_time", "")  # full_time, part_time
+        # Prefer contract_type if it's more specific than "permanent"; fall back to contract_time
+        emp_raw = contract_type if contract_type and contract_type != "permanent" else contract_time
+        if not emp_raw and contract_type == "permanent":
+            emp_raw = "full_time"  # permanent → Full-time
+        emp_type = normalize_employment_type(emp_raw or "")
+
         return {
             "client_name": company_name,
             "job_title": raw_data.get("title", "Unknown Position"),
@@ -200,6 +210,7 @@ class AdzunaAdapter(JobSourceAdapter):
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": "adzuna",
+            "employment_type": emp_type,
             "external_job_id": str(raw_data.get("id", "")) if raw_data.get("id") else "",
             "city": city,
             "employer_linkedin_url": "",

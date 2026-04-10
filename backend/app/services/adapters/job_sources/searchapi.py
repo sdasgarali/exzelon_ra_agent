@@ -174,6 +174,10 @@ class SearchAPIAdapter(JobSourceAdapter):
             elif len(nums) == 1:
                 salary_min = float(nums[0])
 
+        # Employment type: SearchAPI field is detected_extensions.schedule_type (same as SerpAPI)
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(extensions.get("schedule_type", ""))
+
         return {
             "client_name": raw_data.get("company_name", "Unknown Company"),
             "job_title": raw_data.get("title", "Unknown Position"),
@@ -183,6 +187,7 @@ class SearchAPIAdapter(JobSourceAdapter):
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "searchapi",
+            "employment_type": emp_type,
             "external_job_id": raw_data.get("job_id", ""),
             "city": city,
             "employer_linkedin_url": "",

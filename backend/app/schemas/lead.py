@@ -16,6 +16,7 @@ class LeadBase(BaseModel):
     salary_min: Optional[Decimal] = None
     salary_max: Optional[Decimal] = None
     source: Optional[str] = None
+    employment_type: Optional[str] = None
     ra_name: Optional[str] = None
 
 
@@ -34,6 +35,7 @@ class LeadUpdate(BaseModel):
     salary_min: Optional[Decimal] = None
     salary_max: Optional[Decimal] = None
     source: Optional[str] = None
+    employment_type: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     contact_title: Optional[str] = None
@@ -55,6 +57,7 @@ class LeadResponse(LeadBase):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_source: Optional[str] = None
+    employment_type: Optional[str] = None
     lead_status: LeadStatus
     data_type: Optional[str] = "prod"
     skip_reason: Optional[str] = None

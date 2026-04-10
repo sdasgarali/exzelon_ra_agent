@@ -1319,7 +1319,7 @@ export default function CampaignsPage() {
                   />
                   <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                     <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expected columns:</p>
-                    <p className="text-xs text-gray-500 mb-0.5"><span className="font-medium">Lead:</span> Company Name, Job Title, State, Job Link, Source, Posting Date, Salary Min, Salary Max</p>
+                    <p className="text-xs text-gray-500 mb-0.5"><span className="font-medium">Lead:</span> Company Name, Job Title, State, Position Type, Job Link, Source, Posting Date, Salary Min, Salary Max</p>
                     <p className="text-xs text-gray-500"><span className="font-medium">Contact:</span> First Name, Last Name, Email, Phone, Contact Title</p>
                   </div>
                   <button
@@ -1489,7 +1489,7 @@ export default function CampaignsPage() {
 
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg mb-4">
                     <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Expected columns:</p>
-                    <p className="text-xs text-gray-500 mb-0.5"><span className="font-medium">Lead:</span> Company Name, Job Title, State, Job Link, Source, Posting Date, Salary Min, Salary Max</p>
+                    <p className="text-xs text-gray-500 mb-0.5"><span className="font-medium">Lead:</span> Company Name, Job Title, State, Position Type, Job Link, Source, Posting Date, Salary Min, Salary Max</p>
                     <p className="text-xs text-gray-500"><span className="font-medium">Contact:</span> First Name, Last Name, Email, Phone, Contact Title</p>
                   </div>
 
@@ -1645,15 +1645,16 @@ export default function CampaignsPage() {
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Job Title</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Posted</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contacts</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                         {availableLeadsLoading ? (
-                          <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
+                          <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">Loading leads...</td></tr>
                         ) : availableLeads.length === 0 ? (
-                          <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
+                          <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-500">No available leads found</td></tr>
                         ) : (
                           availableLeads.map(lead => (
                             <tr key={lead.lead_id} className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedCreateLeadIds.has(lead.lead_id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
@@ -1675,6 +1676,17 @@ export default function CampaignsPage() {
                               <td className="px-3 py-2 text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={lead.job_title}>{lead.job_title}</td>
                               <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[150px] truncate">{lead.client_name}</td>
                               <td className="px-3 py-2 text-gray-500">{lead.state || '-'}</td>
+                              <td className="px-3 py-2">
+                                {lead.employment_type ? (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                    lead.employment_type === 'Full-time' ? 'bg-green-100 text-green-700' :
+                                    lead.employment_type === 'Contract' ? 'bg-orange-100 text-orange-700' :
+                                    lead.employment_type === 'Part-time' ? 'bg-blue-100 text-blue-700' :
+                                    lead.employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}>{lead.employment_type}</span>
+                                ) : <span className="text-gray-400">-</span>}
+                              </td>
                               <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
                               <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
                             </tr>
@@ -2516,6 +2528,7 @@ export default function CampaignsPage() {
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">State</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Posted</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Source</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Type</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Industry</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Size</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-500 uppercase">Link</th>
@@ -2559,6 +2572,17 @@ export default function CampaignsPage() {
                             <td className="px-3 py-2.5 text-gray-600">{f.lead_state || '—'}</td>
                             <td className="px-3 py-2.5 text-gray-500">{f.lead_posted ? new Date(f.lead_posted).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}</td>
                             <td className="px-3 py-2.5 text-gray-500">{f.lead_source || '—'}</td>
+                            <td className="px-3 py-2.5">
+                              {f.lead_employment_type ? (
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                  f.lead_employment_type === 'Full-time' ? 'bg-green-100 text-green-700' :
+                                  f.lead_employment_type === 'Contract' ? 'bg-orange-100 text-orange-700' :
+                                  f.lead_employment_type === 'Part-time' ? 'bg-blue-100 text-blue-700' :
+                                  f.lead_employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>{f.lead_employment_type}</span>
+                              ) : <span className="text-gray-400">—</span>}
+                            </td>
                             <td className="px-3 py-2.5 text-gray-500 max-w-[100px] truncate">{f.lead_industry || '—'}</td>
                             <td className="px-3 py-2.5 text-gray-500">{f.lead_company_size || '—'}</td>
                             <td className="px-3 py-2.5">
@@ -2576,7 +2600,7 @@ export default function CampaignsPage() {
                             <>
                               <tr className="bg-gray-100/80 dark:bg-gray-700/60">
                                 <td></td>
-                                <td colSpan={10} className="px-0 py-0">
+                                <td colSpan={11} className="px-0 py-0">
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="text-gray-500 uppercase">

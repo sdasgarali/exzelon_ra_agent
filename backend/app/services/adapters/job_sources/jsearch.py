@@ -269,6 +269,10 @@ class JSearchAdapter(JobSourceAdapter):
         else:
             source = "jsearch"
 
+        # Employment type: JSearch field is "job_employment_type" (FULLTIME, PARTTIME, CONTRACTOR, INTERN)
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(raw_data.get("job_employment_type", ""))
+
         return {
             "client_name": raw_data.get("employer_name", "Unknown Company"),
             "job_title": raw_data.get("job_title", "Unknown Position"),
@@ -278,6 +282,7 @@ class JSearchAdapter(JobSourceAdapter):
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": source,
+            "employment_type": emp_type,
             # Enhanced dedup fields (use `or ""` since API returns null, not missing keys)
             "external_job_id": raw_data.get("job_id") or "",
             "city": raw_data.get("job_city") or "",

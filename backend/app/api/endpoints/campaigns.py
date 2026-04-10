@@ -212,6 +212,7 @@ def _cc_to_dict(cc: CampaignContact, lead=None) -> dict:
         d["lead_source"] = lead.source
         d["lead_industry"] = getattr(lead, 'industry', None)
         d["lead_company_size"] = getattr(lead, 'company_size', None)
+        d["lead_employment_type"] = getattr(lead, 'employment_type', None)
         d["lead_job_link"] = lead.job_link
         d["lead_status"] = lead.lead_status.value if lead.lead_status else None
     return d
@@ -326,6 +327,7 @@ def get_available_leads(
                 "posting_date": l.posting_date.isoformat() if l.posting_date else None,
                 "source": l.source,
                 "industry": getattr(l, 'industry', None),
+                "employment_type": getattr(l, 'employment_type', None),
                 "contact_count": contact_counts.get(l.lead_id, 0),
             }
             for l in leads

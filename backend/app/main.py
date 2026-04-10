@@ -1649,6 +1649,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"FK migration check (may already be done): {e}")
 
+    # --- Migration: Add employment_type column to lead_details ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as sa_text_emptype
+            cols = [r[0].lower() for r in conn.execute(sa_text_emptype("SHOW COLUMNS FROM lead_details")).fetchall()]
+            if "employment_type" not in cols:
+                conn.execute(sa_text_emptype(
+                    "ALTER TABLE lead_details ADD COLUMN employment_type VARCHAR(50) NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: Added employment_type column to lead_details")
+    except Exception as e:
+        logger.debug(f"employment_type migration check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

@@ -12,6 +12,7 @@ interface Lead {
   posting_date: string
   job_link: string
   source: string
+  employment_type: string | null
   lead_status: string
   contact_email: string
   salary_min: number
@@ -64,7 +65,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'lead_status' | 'contact_count' | 'industry' | 'company_size'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size'
 type SortOrder = 'asc' | 'desc'
 
 export default function LeadsPage() {
@@ -916,6 +917,12 @@ export default function LeadsPage() {
                   Source <SortIcon field="source" />
                 </th>
                 <th
+                  onClick={() => handleSort('employment_type')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Type <SortIcon field="employment_type" />
+                </th>
+                <th
                   onClick={() => handleSort('industry')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
@@ -993,6 +1000,21 @@ export default function LeadsPage() {
                       <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">
                         {lead.source}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {lead.employment_type ? (
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          lead.employment_type === 'Full-time' ? 'bg-green-100 text-green-700' :
+                          lead.employment_type === 'Contract' ? 'bg-orange-100 text-orange-700' :
+                          lead.employment_type === 'Part-time' ? 'bg-blue-100 text-blue-700' :
+                          lead.employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {lead.employment_type}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.industry || '-'}

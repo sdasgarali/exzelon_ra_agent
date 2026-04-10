@@ -176,6 +176,11 @@ class TheirStackAdapter(JobSourceAdapter):
         salary_min = raw_data.get("min_annual_salary")
         salary_max = raw_data.get("max_annual_salary")
 
+        # Employment type: TheirStack field is "employment_statuses" (array of: full_time, part_time, contract, etc.)
+        from app.services.adapters.base import normalize_employment_type
+        emp_statuses = raw_data.get("employment_statuses") or []
+        emp_type = normalize_employment_type(emp_statuses[0] if emp_statuses else "")
+
         return {
             "client_name": raw_data.get("company_name", "Unknown Company"),
             "job_title": raw_data.get("job_title", "Unknown Position"),
@@ -185,6 +190,7 @@ class TheirStackAdapter(JobSourceAdapter):
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": "theirstack",
+            "employment_type": emp_type,
             "external_job_id": str(raw_data.get("id", "")) if raw_data.get("id") else "",
             "city": city,
             "employer_linkedin_url": raw_data.get("company_linkedin_url") or "",

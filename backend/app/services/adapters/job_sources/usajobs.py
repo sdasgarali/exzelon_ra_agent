@@ -197,6 +197,13 @@ class USAJobsAdapter(JobSourceAdapter):
         apply_uri = raw_data.get("PositionURI", "")
         job_id = raw_data.get("PositionID", "")
 
+        # Employment type: USAJobs field is "PositionSchedule" (array of {Name, Code})
+        # Code 1=Full-Time, 2=Part-Time, 3=Shift Work, 4=Intermittent, 5=Job Sharing, 6=Multiple
+        from app.services.adapters.base import normalize_employment_type
+        schedules = raw_data.get("PositionSchedule", [])
+        emp_raw = schedules[0].get("Name", "") if schedules and isinstance(schedules[0], dict) else ""
+        emp_type = normalize_employment_type(emp_raw)
+
         return {
             "client_name": raw_data.get("OrganizationName", "US Federal Government"),
             "job_title": raw_data.get("PositionTitle", "Unknown Position"),
@@ -206,6 +213,7 @@ class USAJobsAdapter(JobSourceAdapter):
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "usajobs",
+            "employment_type": emp_type,
             "external_job_id": f"usajobs-{job_id}" if job_id else "",
             "city": city,
             "employer_linkedin_url": "",

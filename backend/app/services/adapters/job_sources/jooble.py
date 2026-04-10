@@ -183,6 +183,10 @@ class JoobleAdapter(JobSourceAdapter):
         # Source attribution from Jooble
         job_source = raw_data.get("source", "jooble")
 
+        # Employment type: Jooble field is "type" (Full-time, Part-time, etc.)
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(raw_data.get("type", ""))
+
         return {
             "client_name": raw_data.get("company", "Unknown Company"),
             "job_title": raw_data.get("title", "Unknown Position"),
@@ -192,6 +196,7 @@ class JoobleAdapter(JobSourceAdapter):
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "jooble",
+            "employment_type": emp_type,
             "external_job_id": raw_data.get("id", ""),
             "city": city,
             "employer_linkedin_url": "",

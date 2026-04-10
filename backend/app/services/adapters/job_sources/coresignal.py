@@ -305,6 +305,12 @@ class CoresignalAdapter(JobSourceAdapter):
         # Source platform (linkedin, indeed, glassdoor, etc.)
         source_platform = raw_data.get("source", "") or raw_data.get("source_type", "") or "coresignal"
 
+        # Employment type: Coresignal field is "employment_type" (Full-time, Part-time, Contract, etc.)
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(
+            raw_data.get("employment_type", "") or raw_data.get("job_type", "")
+        )
+
         result = {
             "client_name": company_name or "Unknown Company",
             "job_title": raw_data.get("title", "") or raw_data.get("job_title", "Unknown Position"),
@@ -314,6 +320,7 @@ class CoresignalAdapter(JobSourceAdapter):
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": source_platform if source_platform != "coresignal" else "coresignal",
+            "employment_type": emp_type,
             "external_job_id": str(ext_id) if ext_id else "",
             "city": city,
             "employer_linkedin_url": company_linkedin or "",

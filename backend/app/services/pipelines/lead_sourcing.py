@@ -120,7 +120,6 @@ def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tup
     Returns list of (source_name, adapter) tuples.
     """
     from app.services.adapters.job_sources.jsearch import JSearchAdapter
-    from app.services.adapters.job_sources.apollo import ApolloJobSourceAdapter
     from app.services.adapters.job_sources.theirstack import TheirStackAdapter
     from app.services.adapters.job_sources.serpapi import SerpAPIAdapter
     from app.services.adapters.job_sources.adzuna import AdzunaAdapter
@@ -138,12 +137,10 @@ def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tup
             adapters.append(("jsearch", JSearchAdapter(api_key=jsearch_api_key)))
             logger.info("JSearch adapter configured")
 
-    # Apollo adapter
-    if "apollo" in enabled_sources:
-        apollo_api_key = get_tenant_setting(db, "apollo_api_key", tenant_id=tenant_id)
-        if apollo_api_key:
-            adapters.append(("apollo", ApolloJobSourceAdapter(api_key=apollo_api_key)))
-            logger.info("Apollo adapter configured")
+    # Apollo is NOT a job source (it's a contact enrichment platform).
+    # It was removed from job sourcing because it generates synthetic leads
+    # with fake LinkedIn search URLs, not real job postings.
+    # Apollo remains available for Contact Enrichment (Pipeline Stage 2).
 
     # TheirStack adapter
     if "theirstack" in enabled_sources:
@@ -702,8 +699,9 @@ def run_lead_sourcing_pipeline(
                     salary_min=job_data.get("salary_min"),
                     salary_max=job_data.get("salary_max"),
                     source=", ".join(job_data.get("all_sources", [job_data.get("source", "unknown")])),
+                    employment_type=job_data.get("employment_type") or None,
                     lead_status=LeadStatus.NEW,  # NEW status allows contact enrichment to pick it up
-                    # Pre-populate contact info if available from Apollo
+                    # Pre-populate contact info if available from Coresignal
                     first_name=job_data.get("contact_first_name"),
                     last_name=job_data.get("contact_last_name"),
                     contact_email=job_data.get("contact_email"),
@@ -1040,6 +1038,7 @@ def import_leads_from_file(
                     job_title=job_title,
                     state=str(row.get("State", row.get("state", ""))) if pd.notna(row.get("State", row.get("state"))) else None,
                     source="file_import",
+                    employment_type=str(row.get("Position Type", row.get("Employment Type", ""))) if pd.notna(row.get("Position Type", row.get("Employment Type"))) else None,
                     lead_status=LeadStatus.OPEN,
                 )
                 db.add(lead)

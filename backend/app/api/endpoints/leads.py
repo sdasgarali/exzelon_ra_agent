@@ -62,6 +62,7 @@ SORT_COLUMNS = {
     "posting_date": LeadDetails.posting_date,
     "created_at": LeadDetails.created_at,
     "source": LeadDetails.source,
+    "employment_type": LeadDetails.employment_type,
     "lead_status": LeadDetails.lead_status,
 }
 
@@ -514,9 +515,9 @@ async def export_leads_csv(
 
         # Write header
         writer.writerow([
-            "Lead ID", "Company Name", "Job Title", "State", "Posting Date",
-            "Job Link", "Source", "Status", "Salary Min", "Salary Max",
-            "Contact Email", "Created At"
+            "Lead ID", "Company Name", "Job Title", "State", "Position Type",
+            "Posting Date", "Job Link", "Source", "Status", "Salary Min",
+            "Salary Max", "Contact Email", "Created At"
         ])
         yield output.getvalue()
         output.seek(0)
@@ -536,6 +537,7 @@ async def export_leads_csv(
                     lead.client_name,
                     lead.job_title,
                     lead.state,
+                    lead.employment_type or "",
                     lead.posting_date.isoformat() if lead.posting_date else "",
                     lead.job_link,
                     lead.source,
@@ -806,6 +808,17 @@ def _parse_and_import_lead_rows(
                 row_lower.get('designation') or ""
             ).strip()
 
+            # Employment / position type
+            employment_type_raw = (
+                row_lower.get('position type') or
+                row_lower.get('employment type') or
+                row_lower.get('employment_type') or
+                row_lower.get('job type') or
+                row_lower.get('contract type') or ""
+            ).strip()
+            from app.services.adapters.base import normalize_employment_type
+            employment_type_val = normalize_employment_type(employment_type_raw) or None
+
             lead = LeadDetails(
                 client_name=client_name,
                 job_title=job_title,
@@ -813,6 +826,7 @@ def _parse_and_import_lead_rows(
                 posting_date=posting_date or date.today(),
                 job_link=job_link or None,
                 source=(row_lower.get('source') or source_default).strip(),
+                employment_type=employment_type_val,
                 lead_status=lead_status_val,
                 salary_min=salary_min,
                 salary_max=salary_max,
@@ -919,12 +933,12 @@ async def download_import_template(
 ):
     """Download a CSV template for lead+contact import."""
     headers = [
-        "Company Name", "Job Title", "State", "Job Link", "Source",
+        "Company Name", "Job Title", "State", "Position Type", "Job Link", "Source",
         "Posting Date", "Salary Min", "Salary Max", "Status",
         "First Name", "Last Name", "Email", "Phone", "Contact Title",
     ]
     sample = [
-        "Acme Corp", "Software Engineer", "TX", "https://example.com/job/123", "import",
+        "Acme Corp", "Software Engineer", "TX", "Full-time", "https://example.com/job/123", "import",
         "2026-04-10", "80000", "120000", "open",
         "Jane", "Doe", "jane.doe@acmecorp.com", "555-123-4567", "HR Manager",
     ]

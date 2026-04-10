@@ -116,7 +116,8 @@ class MockJobSourceAdapter(JobSourceAdapter):
                 "job_link": f"https://jobs.example.com/{run_id}-{i}",
                 "salary_min": random.randint(40000, 60000),
                 "salary_max": random.randint(65000, 120000),
-                "source": "mock"
+                "source": "mock",
+                "employment_type": random.choice(["Full-time", "Part-time", "Contract", "Temporary"]),
             }
 
             # Apply exclude keywords filter

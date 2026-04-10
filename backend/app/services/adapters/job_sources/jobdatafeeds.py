@@ -194,6 +194,12 @@ class JobDataFeedsAdapter(JobSourceAdapter):
         except (ValueError, TypeError):
             salary_max = None
 
+        # Employment type: JobDataFeeds field is "employment_type" or "job_type"
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(
+            raw_data.get("employment_type", "") or raw_data.get("job_type", "") or raw_data.get("contract_type", "")
+        )
+
         return {
             "client_name": raw_data.get("company", raw_data.get("company_name", "Unknown Company")),
             "job_title": raw_data.get("title", raw_data.get("job_title", "Unknown Position")),
@@ -203,6 +209,7 @@ class JobDataFeedsAdapter(JobSourceAdapter):
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "jobdatafeeds",
+            "employment_type": emp_type,
             "external_job_id": str(raw_data.get("id", "")) if raw_data.get("id") else "",
             "city": city,
             "employer_linkedin_url": raw_data.get("company_linkedin", ""),

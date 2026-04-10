@@ -35,6 +35,40 @@ class BaseAdapter(ABC):
         pass
 
 
+def normalize_employment_type(raw_value: str) -> str:
+    """Normalize employment type from various API formats to standard values.
+
+    Standard values: Full-time, Part-time, Contract, Temporary, Internship, Volunteer
+    """
+    if not raw_value:
+        return ""
+    v = raw_value.strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+    mapping = {
+        "fulltime": "Full-time",
+        "full": "Full-time",
+        "parttime": "Part-time",
+        "part": "Part-time",
+        "contract": "Contract",
+        "contractor": "Contract",
+        "c2c": "Contract",
+        "corptocorp": "Contract",
+        "temporary": "Temporary",
+        "temp": "Temporary",
+        "seasonal": "Temporary",
+        "internship": "Internship",
+        "intern": "Internship",
+        "volunteer": "Volunteer",
+        "permanent": "Full-time",
+        "placement": "Internship",
+        "student": "Internship",
+        "shiftwork": "Full-time",
+        "intermittent": "Part-time",
+        "jobsharing": "Part-time",
+        "multipleschedules": "Full-time",
+    }
+    return mapping.get(v, raw_value.strip().title() if raw_value.strip() else "")
+
+
 class JobSourceAdapter(BaseAdapter):
     """Base adapter for job source providers."""
 

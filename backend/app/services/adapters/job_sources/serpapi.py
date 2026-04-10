@@ -208,6 +208,10 @@ class SerpAPIAdapter(JobSourceAdapter):
         if not job_link:
             job_link = raw_data.get("share_link", "") or raw_data.get("job_id", "")
 
+        # Employment type: SerpAPI field is detected_extensions.schedule_type (Full-time, Part-time, Contractor)
+        from app.services.adapters.base import normalize_employment_type
+        emp_type = normalize_employment_type(detected_extensions.get("schedule_type", ""))
+
         return {
             "client_name": raw_data.get("company_name", "Unknown Company"),
             "job_title": raw_data.get("title", "Unknown Position"),
@@ -217,6 +221,7 @@ class SerpAPIAdapter(JobSourceAdapter):
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "serpapi",
+            "employment_type": emp_type,
             "external_job_id": raw_data.get("job_id", ""),
             "city": city,
             "employer_linkedin_url": "",

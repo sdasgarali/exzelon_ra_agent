@@ -69,6 +69,7 @@ class LeadDetails(Base):
     salary_min = Column(Numeric(10, 2), nullable=True)
     salary_max = Column(Numeric(10, 2), nullable=True)
     source = Column(String(50), nullable=True)  # linkedin, indeed, glassdoor, simplyhired
+    employment_type = Column(String(50), nullable=True)  # Full-time, Part-time, Contract, Temporary, Internship
 
     # Enhanced deduplication fields
     external_job_id = Column(String(255), nullable=True, index=True)  # JSearch job_id for cross-run dedup
