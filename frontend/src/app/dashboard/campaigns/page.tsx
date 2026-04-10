@@ -2580,7 +2580,7 @@ export default function CampaignsPage() {
                             {group.lead_id ? (
                               <span className="font-medium text-gray-900 dark:text-gray-100">
                                 <a
-                                  href={`/dashboard/leads?id=${group.lead_id}`}
+                                  href={`/dashboard/leads/${group.lead_id}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="hover:text-primary-600 hover:underline"
