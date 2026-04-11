@@ -1,9 +1,20 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 75: Timezone-Aware Smart Campaign Creation — ALL 6 PHASES COMPLETE. Backend: ClientInfo.timezone column + auto-resolve from location_state + backfill migration. ContactDetails.timezone exposed in schema. Per-contact timezone send window check + optimal time scheduling in campaign_engine. 5 new API endpoints: available-leads, from-leads, contact-schedule, ai-enhance, ai-suggest-subjects. Frontend: timezone columns on clients+contacts pages, lead-selection campaign creation modal, 8-tab campaign detail (overview, mailboxes, leads/contacts, sequence, schedule, rules, activity, analytics). 930 tests pass, frontend builds clean.
+> Session 77: Added Exclusion Keywords + Job Title multi-select filters to both Leads page and Campaign Wizard. Backend: GET /leads/filter-options now returns exclusion_keywords (IT/Staffing grouped) and job_titles from tenant settings. GET /leads and GET /campaigns/available-leads accept exclude_keywords + title query params. Frontend: SearchableMultiSelect component with search + grouped categories on Leads page. WizardSearchableMultiSelect on Campaign Wizard. Renamed "Filters" → "Advance Filters" on Leads page. 930 tests pass, frontend builds clean. Ready for deploy.
 
 ## Immediate TODO
+- [x] Exclusion Keywords + Title Multi-Select Filters (2026-04-11)
+  - Backend: GET /leads/filter-options extended with exclusion_keywords (it_keywords, staffing_keywords) + job_titles from tenant settings
+  - Backend: GET /leads + GET /campaigns/available-leads: new exclude_keywords + title query params with ILIKE filtering
+  - Frontend Leads: SearchableMultiSelect component (search input + grouped categories), 2 new filter states, "Advance Filters" rename
+  - Frontend Campaign Wizard: WizardSearchableMultiSelect component, 2 new filter states, badge count + clear filters updated
+  - 930 tests pass, frontend builds clean
+- [x] NeuraLeads Requirements Implementation + Campaign Wizard Filters (2026-04-10)
+  - 16 commits: employment_type column, Apollo removal from job sources, enriched Leads & Contacts tab, contact fields in CSV/Google Sheet/Manual import, etc.
+  - Campaign wizard Select Leads: 6 new filters (status, source, employment_type, state, industry, company_size) + sortable columns + Source column
+  - Backend: GET /campaigns/available-leads extended with filter params, sort_by/sort_order, days max 365
+  - Deployed to VPS (commit 4afb4ae), 930 tests pass, frontend builds clean
 - [x] Timezone-Aware Smart Campaign Creation (2026-04-09)
   - Phase 1: ClientInfo.timezone column, auto-resolve from location_state on create/update, backfill migration, ContactResponse.timezone
   - Phase 2: Timezone columns on clients + contacts frontend pages with friendly labels (ET/CT/MT/PT)

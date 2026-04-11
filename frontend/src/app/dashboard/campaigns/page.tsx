@@ -116,8 +116,10 @@ export default function CampaignsPage() {
   const [alFilterState, setAlFilterState] = useState<string[]>([])
   const [alFilterIndustry, setAlFilterIndustry] = useState<string[]>([])
   const [alFilterCompanySize, setAlFilterCompanySize] = useState<string[]>([])
+  const [alFilterExcludeKeywords, setAlFilterExcludeKeywords] = useState<string[]>([])
+  const [alFilterTitle, setAlFilterTitle] = useState<string[]>([])
   const [alShowMoreFilters, setAlShowMoreFilters] = useState(false)
-  const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[] }>({ industries: [], company_sizes: [] })
+  const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[]; exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }; job_titles: string[] }>({ industries: [], company_sizes: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
   const [alSortBy, setAlSortBy] = useState<AvailableLeadsSortField>('posting_date')
   const [alSortOrder, setAlSortOrder] = useState<'asc' | 'desc'>('desc')
 
@@ -288,10 +290,12 @@ export default function CampaignsPage() {
     if (alFilterState.length > 0) params.state = alFilterState
     if (alFilterIndustry.length > 0) params.industry = alFilterIndustry
     if (alFilterCompanySize.length > 0) params.company_size = alFilterCompanySize
+    if (alFilterExcludeKeywords.length > 0) params.exclude_keywords = alFilterExcludeKeywords
+    if (alFilterTitle.length > 0) params.title = alFilterTitle
     if (alSortBy !== 'posting_date') params.sort_by = alSortBy
     if (alSortOrder !== 'desc') params.sort_order = alSortOrder
     return params
-  }, [availableLeadsDays, availableLeadsSearch, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alSortBy, alSortOrder])
+  }, [availableLeadsDays, availableLeadsSearch, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle, alSortBy, alSortOrder])
 
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
@@ -304,7 +308,7 @@ export default function CampaignsPage() {
       // Auto-select imported lead IDs if coming from import, otherwise select all
       if (autoSelectLeadIds.length > 0) {
         setSelectedCreateLeadIds(new Set(autoSelectLeadIds))
-      } else if (!availableLeadsSearch && !alFilterStatus && !alFilterSource && !alFilterEmploymentType && alFilterState.length === 0 && alFilterIndustry.length === 0 && alFilterCompanySize.length === 0 && availableLeadsPage === 1) {
+      } else if (!availableLeadsSearch && !alFilterStatus && !alFilterSource && !alFilterEmploymentType && alFilterState.length === 0 && alFilterIndustry.length === 0 && alFilterCompanySize.length === 0 && alFilterExcludeKeywords.length === 0 && alFilterTitle.length === 0 && availableLeadsPage === 1) {
         const allIds = new Set<number>((data.items || []).map((l: any) => l.lead_id))
         if ((data.pages || 1) > 1 && (data.total || 0) > 0) {
           try {
@@ -319,7 +323,7 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize])
+  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle])
 
   useEffect(() => {
     if (showCreateModal && createStep === 'select_leads') fetchAvailableLeads()
@@ -329,7 +333,12 @@ export default function CampaignsPage() {
   useEffect(() => {
     if (showCreateModal && createStep === 'select_leads') {
       leadsApi.filterOptions().then((opts: any) => {
-        setAlFilterOptions({ industries: opts.industries || [], company_sizes: opts.company_sizes || [] })
+        setAlFilterOptions({
+          industries: opts.industries || [],
+          company_sizes: opts.company_sizes || [],
+          exclusion_keywords: opts.exclusion_keywords || { it_keywords: [], staffing_keywords: [] },
+          job_titles: opts.job_titles || [],
+        })
       }).catch(() => {})
     }
   }, [showCreateModal, createStep])
@@ -346,6 +355,7 @@ export default function CampaignsPage() {
     setAvailableLeadsDays(7)
     setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType('')
     setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([])
+    setAlFilterExcludeKeywords([]); setAlFilterTitle([])
     setAlShowMoreFilters(false)
     setAlSortBy('posting_date'); setAlSortOrder('desc')
     setShowCreateModal(true)
@@ -1716,16 +1726,16 @@ export default function CampaignsPage() {
                     <button
                       type="button"
                       onClick={() => setAlShowMoreFilters(!alShowMoreFilters)}
-                      className={`px-2 py-1.5 border rounded-lg text-sm flex items-center gap-1 ${alShowMoreFilters || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600'}`}
+                      className={`px-2 py-1.5 border rounded-lg text-sm flex items-center gap-1 ${alShowMoreFilters || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0 ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600'}`}
                     >
                       <Filter className="w-3.5 h-3.5" />
-                      More{(alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length) > 0 && ` (${alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length})`}
+                      More{(alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length + alFilterExcludeKeywords.length + alFilterTitle.length) > 0 && ` (${alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length + alFilterExcludeKeywords.length + alFilterTitle.length})`}
                       {alShowMoreFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
-                    {(alFilterStatus || alFilterSource || alFilterEmploymentType || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0) && (
+                    {(alFilterStatus || alFilterSource || alFilterEmploymentType || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0) && (
                       <button
                         type="button"
-                        onClick={() => { setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType(''); setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([]); setAvailableLeadsPage(1) }}
+                        onClick={() => { setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType(''); setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([]); setAlFilterExcludeKeywords([]); setAlFilterTitle([]); setAvailableLeadsPage(1) }}
                         className="text-xs text-red-600 hover:text-red-700 hover:underline"
                       >
                         Clear filters
@@ -1735,8 +1745,7 @@ export default function CampaignsPage() {
 
                   {/* Expandable multi-select filters */}
                   {alShowMoreFilters && (
-                    <div className="grid grid-cols-3 gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-                      {/* State multi-select */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
                       {(() => {
                         const WizardMultiSelect = ({ label, options, selected, onChange }: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void }) => {
                           const [open, setOpen] = useState(false)
@@ -1770,11 +1779,87 @@ export default function CampaignsPage() {
                             </div>
                           )
                         }
+                        const WizardSearchableMultiSelect = ({ label, options, selected, onChange, grouped }: { label: string; options: string[] | { category: string; items: string[] }[]; selected: string[]; onChange: (v: string[]) => void; grouped?: boolean }) => {
+                          const [open, setOpen] = useState(false)
+                          const [searchText, setSearchText] = useState('')
+                          const ref = useRef<HTMLDivElement>(null)
+                          useEffect(() => {
+                            const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+                            document.addEventListener('mousedown', handler)
+                            return () => document.removeEventListener('mousedown', handler)
+                          }, [])
+                          const allItems: string[] = grouped
+                            ? (options as { category: string; items: string[] }[]).flatMap(g => g.items)
+                            : (options as string[])
+                          const filterBySearch = (items: string[]) =>
+                            searchText ? items.filter(i => i.toLowerCase().includes(searchText.toLowerCase())) : items
+                          return (
+                            <div ref={ref} className="relative">
+                              <button type="button" onClick={() => setOpen(!open)} className={`w-full px-2 py-1.5 border rounded-lg text-sm text-left flex items-center justify-between dark:bg-gray-700 dark:border-gray-600 ${selected.length > 0 ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}>
+                                <span className="truncate">{selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}</span>
+                                <span className="text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
+                              </button>
+                              {open && (
+                                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto min-w-[220px]">
+                                  <div className="flex gap-2 px-2 py-1.5 border-b bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+                                    <button type="button" onClick={() => { onChange([...allItems]); setAvailableLeadsPage(1) }} className="text-xs text-blue-600 hover:underline">All</button>
+                                    <button type="button" onClick={() => { onChange([]); setAvailableLeadsPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
+                                  </div>
+                                  <div className="px-2 py-1.5 border-b sticky top-[33px] bg-white dark:bg-gray-800 z-10">
+                                    <input type="text" placeholder="Search..." value={searchText} onChange={(e) => setSearchText(e.target.value)} className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded px-2 py-1 focus:outline-none focus:border-blue-400 dark:bg-gray-700" />
+                                  </div>
+                                  {grouped ? (
+                                    (options as { category: string; items: string[] }[]).map(group => {
+                                      const filtered = filterBySearch(group.items)
+                                      if (filtered.length === 0) return null
+                                      return (
+                                        <div key={group.category}>
+                                          <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">{group.category}</div>
+                                          {filtered.map(opt => (
+                                            <label key={opt} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm">
+                                              <input type="checkbox" checked={selected.includes(opt)} onChange={() => { onChange(selected.includes(opt) ? selected.filter(v => v !== opt) : [...selected, opt]); setAvailableLeadsPage(1) }} className="w-3.5 h-3.5 rounded" />
+                                              {opt}
+                                            </label>
+                                          ))}
+                                        </div>
+                                      )
+                                    })
+                                  ) : (
+                                    filterBySearch(allItems).map(opt => (
+                                      <label key={opt} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm">
+                                        <input type="checkbox" checked={selected.includes(opt)} onChange={() => { onChange(selected.includes(opt) ? selected.filter(v => v !== opt) : [...selected, opt]); setAvailableLeadsPage(1) }} className="w-3.5 h-3.5 rounded" />
+                                        {opt}
+                                      </label>
+                                    ))
+                                  )}
+                                  {allItems.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No options</div>}
+                                  {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No matches</div>}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
                         return (
                           <>
                             <WizardMultiSelect label="States" options={WIZARD_US_STATES} selected={alFilterState} onChange={setAlFilterState} />
                             <WizardMultiSelect label="Industries" options={alFilterOptions.industries} selected={alFilterIndustry} onChange={setAlFilterIndustry} />
                             <WizardMultiSelect label="Company Size" options={alFilterOptions.company_sizes} selected={alFilterCompanySize} onChange={setAlFilterCompanySize} />
+                            <WizardSearchableMultiSelect
+                              label="Exclusions"
+                              grouped
+                              options={[
+                                { category: 'IT / Tech', items: alFilterOptions.exclusion_keywords.it_keywords },
+                                { category: 'Staffing / Agency', items: alFilterOptions.exclusion_keywords.staffing_keywords },
+                              ]}
+                              selected={alFilterExcludeKeywords}
+                              onChange={setAlFilterExcludeKeywords}
+                            />
+                            <WizardSearchableMultiSelect
+                              label="Titles"
+                              options={alFilterOptions.job_titles}
+                              selected={alFilterTitle}
+                              onChange={setAlFilterTitle}
+                            />
                           </>
                         )
                       })()}

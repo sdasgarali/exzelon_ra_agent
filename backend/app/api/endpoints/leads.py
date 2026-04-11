@@ -80,6 +80,8 @@ async def list_leads(
     industry: Optional[List[str]] = Query(None),
     company_size: Optional[List[str]] = Query(None),
     data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
+    exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
+    title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
@@ -130,6 +132,14 @@ async def list_leads(
         )
     if data_type:
         query = query.filter(LeadDetails.data_type == data_type)
+
+    if exclude_keywords:
+        excl_conditions = [LeadDetails.job_title.ilike(f"%{kw}%") for kw in exclude_keywords]
+        excl_conditions += [LeadDetails.client_name.ilike(f"%{kw}%") for kw in exclude_keywords]
+        query = query.filter(~or_(*excl_conditions))
+
+    if title:
+        query = query.filter(or_(*[LeadDetails.job_title.ilike(f"%{t}%") for t in title]))
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -568,6 +578,9 @@ async def get_lead_filter_options(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get distinct values for lead filter dropdowns (industry/company_size from client_info)."""
+    from app.core.config import settings as app_settings
+    from app.core.settings_resolver import get_tenant_setting
+
     industry_query = db.query(ClientInfo.industry).filter(
         ClientInfo.industry.isnot(None), ClientInfo.industry != ""
     )
@@ -580,10 +593,40 @@ async def get_lead_filter_options(
     size_query = tenant_filter(size_query, ClientInfo, tenant_id)
     sizes = [r[0] for r in size_query.distinct().order_by(ClientInfo.company_size).all()]
 
+    # Exclusion keywords from tenant settings (with config defaults)
+    it_kw = get_tenant_setting(db, "exclude_it_keywords", tenant_id=tenant_id, default=app_settings.EXCLUDE_IT_KEYWORDS)
+    staffing_kw = get_tenant_setting(db, "exclude_staffing_keywords", tenant_id=tenant_id, default=app_settings.EXCLUDE_STAFFING_KEYWORDS)
+    if isinstance(it_kw, str):
+        import json as _json
+        try:
+            it_kw = _json.loads(it_kw)
+        except (ValueError, TypeError):
+            it_kw = app_settings.EXCLUDE_IT_KEYWORDS
+    if isinstance(staffing_kw, str):
+        import json as _json
+        try:
+            staffing_kw = _json.loads(staffing_kw)
+        except (ValueError, TypeError):
+            staffing_kw = app_settings.EXCLUDE_STAFFING_KEYWORDS
+
+    # Available job titles from tenant settings
+    avail_titles = get_tenant_setting(db, "available_job_titles", tenant_id=tenant_id, default=app_settings.AVAILABLE_JOB_TITLES)
+    if isinstance(avail_titles, str):
+        import json as _json
+        try:
+            avail_titles = _json.loads(avail_titles)
+        except (ValueError, TypeError):
+            avail_titles = app_settings.AVAILABLE_JOB_TITLES
+
     return {
         "industries": industries,
         "company_sizes": sizes,
         "data_types": ["test", "prod"],
+        "exclusion_keywords": {
+            "it_keywords": sorted(it_kw) if it_kw else [],
+            "staffing_keywords": sorted(staffing_kw) if staffing_kw else [],
+        },
+        "job_titles": sorted(avail_titles) if avail_titles else [],
     }
 
 

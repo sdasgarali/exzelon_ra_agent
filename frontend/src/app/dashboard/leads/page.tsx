@@ -30,6 +30,8 @@ interface LeadFilterOptions {
   industries: string[]
   company_sizes: string[]
   data_types: string[]
+  exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }
+  job_titles: string[]
 }
 
 interface Contact {
@@ -89,9 +91,11 @@ export default function LeadsPage() {
   const [filterIndustry, setFilterIndustry] = useState<string[]>([])
   const [filterCompanySize, setFilterCompanySize] = useState<string[]>([])
   const [filterDataType, setFilterDataType] = useState('')
+  const [filterExcludeKeywords, setFilterExcludeKeywords] = useState<string[]>([])
+  const [filterTitle, setFilterTitle] = useState<string[]>([])
 
   // Filter options from backend
-  const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [], data_types: [] })
+  const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [], data_types: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
 
   // Sorting
   const [sortBy, setSortBy] = useState<SortField>('created_at')
@@ -170,7 +174,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -191,6 +195,8 @@ export default function LeadsPage() {
       if (filterIndustry.length) params.industry = filterIndustry
       if (filterCompanySize.length) params.company_size = filterCompanySize
       if (filterDataType) params.data_type = filterDataType
+      if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
+      if (filterTitle.length) params.title = filterTitle
       if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
@@ -241,6 +247,8 @@ export default function LeadsPage() {
     setFilterIndustry([])
     setFilterCompanySize([])
     setFilterDataType('')
+    setFilterExcludeKeywords([])
+    setFilterTitle([])
     setShowArchived(false)
     setPage(1)
   }
@@ -594,8 +602,109 @@ export default function LeadsPage() {
     )
   }
 
+  // Searchable multi-select with optional grouped categories
+  const SearchableMultiSelect = ({ label, options, selected, onChange, grouped }: {
+    label: string
+    options: string[] | { category: string; items: string[] }[]
+    selected: string[]
+    onChange: (vals: string[]) => void
+    grouped?: boolean
+  }) => {
+    const [open, setOpen] = useState(false)
+    const [searchText, setSearchText] = useState('')
+    const ref = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      }
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const allItems: string[] = grouped
+      ? (options as { category: string; items: string[] }[]).flatMap(g => g.items)
+      : (options as string[])
+
+    const filterBySearch = (items: string[]) =>
+      searchText ? items.filter(i => i.toLowerCase().includes(searchText.toLowerCase())) : items
+
+    const toggle = (val: string) => {
+      onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val])
+      setPage(1)
+    }
+
+    return (
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={`input w-full text-left flex items-center justify-between ${selected.length > 0 ? 'border-blue-400 bg-blue-50' : ''}`}
+        >
+          <span className="truncate text-sm">
+            {selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}
+          </span>
+          <span className="text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
+        </button>
+        {open && (
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto min-w-[220px]">
+            <div className="flex gap-2 px-3 py-2 border-b bg-gray-50 sticky top-0 z-10">
+              <button type="button" onClick={() => { onChange([...allItems]); setPage(1) }} className="text-xs text-blue-600 hover:underline">Select All</button>
+              <button type="button" onClick={() => { onChange([]); setPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
+            </div>
+            <div className="px-3 py-2 border-b sticky top-[37px] bg-white z-10">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+              />
+            </div>
+            {grouped ? (
+              (options as { category: string; items: string[] }[]).map(group => {
+                const filtered = filterBySearch(group.items)
+                if (filtered.length === 0) return null
+                return (
+                  <div key={group.category}>
+                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase bg-gray-50 border-b">{group.category}</div>
+                    {filtered.map(opt => (
+                      <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(opt)}
+                          onChange={() => toggle(opt)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                )
+              })
+            ) : (
+              filterBySearch(allItems).map(opt => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(opt)}
+                    onChange={() => toggle(opt)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+                  />
+                  {opt}
+                </label>
+              ))
+            )}
+            {allItems.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No options available</div>}
+            {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No matches for &ldquo;{searchText}&rdquo;</div>}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterDataType, search].filter(Boolean).length
-    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
+    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -775,7 +884,7 @@ export default function LeadsPage() {
             onClick={() => setShowFilters(!showFilters)}
             className={`btn-secondary text-sm ${activeFiltersCount > 0 ? 'bg-blue-50 border-blue-300' : ''}`}
           >
-            Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+            Advance Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
           </button>
 
           {activeFiltersCount > 0 && (
@@ -788,7 +897,7 @@ export default function LeadsPage() {
         {/* Expanded Filters */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             <div>
               <label className="label text-sm">State</label>
               <MultiSelectDropdown
@@ -844,6 +953,28 @@ export default function LeadsPage() {
                 value={filterToDate}
                 onChange={(e) => { setFilterToDate(e.target.value); setPage(1); }}
                 className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Exclusion Keywords</label>
+              <SearchableMultiSelect
+                label="Exclusions"
+                grouped
+                options={[
+                  { category: 'IT / Tech', items: leadFilterOptions.exclusion_keywords.it_keywords },
+                  { category: 'Staffing / Agency', items: leadFilterOptions.exclusion_keywords.staffing_keywords },
+                ]}
+                selected={filterExcludeKeywords}
+                onChange={setFilterExcludeKeywords}
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Job Title</label>
+              <SearchableMultiSelect
+                label="Titles"
+                options={leadFilterOptions.job_titles}
+                selected={filterTitle}
+                onChange={setFilterTitle}
               />
             </div>
             <div>

@@ -6,7 +6,7 @@ from typing import Optional, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc
+from sqlalchemy import func, asc, desc, or_
 
 logger = structlog.get_logger()
 
@@ -255,6 +255,8 @@ def get_available_leads(
     industry: Optional[List[str]] = Query(None, description="Industry filter (multi-select)"),
     company_size: Optional[List[str]] = Query(None, description="Company size filter (multi-select)"),
     employment_type: Optional[str] = Query(None, description="Position type filter"),
+    exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
+    title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
     days: int = Query(7, ge=1, le=365, description="Leads from last N days"),
     sort_by: Optional[str] = Query("posting_date", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
@@ -333,6 +335,14 @@ def get_available_leads(
             (LeadDetails.company_size.in_(company_size)) |
             (LeadDetails.client_name.in_(matching_names) if matching_names else False)
         )
+
+    if exclude_keywords:
+        excl_conditions = [LeadDetails.job_title.ilike(f"%{kw}%") for kw in exclude_keywords]
+        excl_conditions += [LeadDetails.client_name.ilike(f"%{kw}%") for kw in exclude_keywords]
+        query = query.filter(~or_(*excl_conditions))
+
+    if title:
+        query = query.filter(or_(*[LeadDetails.job_title.ilike(f"%{t}%") for t in title]))
 
     total = query.count()
 
