@@ -44,6 +44,16 @@ def process_spintax(
 
     rng = random.Random(effective_seed)
 
+    # Temporarily replace template placeholders so they aren't processed as spintax.
+    # {{contact_first_name}} → \x00PLACEHOLDER_0\x00, etc.
+    placeholders: list[str] = []
+    def _stash_placeholder(m: re.Match) -> str:
+        idx = len(placeholders)
+        placeholders.append(m.group(0))
+        return f"\x00PH{idx}\x00"
+
+    text = re.sub(r"\{\{\w+\}\}", _stash_placeholder, text)
+
     # Resolve innermost patterns first, repeat until no patterns remain
     max_iterations = 50  # safety limit for deeply nested spintax
     for _ in range(max_iterations):
@@ -54,19 +64,26 @@ def process_spintax(
         chosen = rng.choice(options)
         text = text[:match.start()] + chosen + text[match.end():]
 
+    # Restore template placeholders
+    for idx, ph in enumerate(placeholders):
+        text = text.replace(f"\x00PH{idx}\x00", ph)
+
     return text
 
 
 def count_variants(text: str) -> int:
     """Count total possible variant combinations in spintax text.
 
-    Useful for showing users how many unique versions exist.
+    Template placeholders (``{{...}}``) are excluded from the count.
     """
     if not text or "{" not in text:
         return 1
 
+    # Strip template placeholders so {{var}} doesn't count as a 1-option group
+    cleaned = re.sub(r"\{\{\w+\}\}", "", text)
+
     total = 1
-    for match in _SPINTAX_PATTERN.finditer(text):
+    for match in _SPINTAX_PATTERN.finditer(cleaned):
         options = match.group(1).split("|")
         total *= len(options)
     return total
@@ -79,14 +96,20 @@ def validate_spintax(text: str) -> list[str]:
     - Unbalanced braces
     - Empty options
     - Single-option groups (pointless)
+
+    Template placeholders like ``{{contact_first_name}}`` are stripped before
+    validation so they are not mistakenly flagged as single-option spintax groups.
     """
     errors = []
     if not text:
         return errors
 
+    # Strip template placeholders ({{...}}) before validation — they are not spintax
+    cleaned = re.sub(r"\{\{\w+\}\}", "", text)
+
     # Check brace balance
     depth = 0
-    for i, ch in enumerate(text):
+    for i, ch in enumerate(cleaned):
         if ch == "{":
             depth += 1
         elif ch == "}":
@@ -99,7 +122,7 @@ def validate_spintax(text: str) -> list[str]:
         return errors
 
     # Check for empty options and single-option groups
-    for match in _SPINTAX_PATTERN.finditer(text):
+    for match in _SPINTAX_PATTERN.finditer(cleaned):
         options = match.group(1).split("|")
         if len(options) < 2:
             errors.append(f"Single-option group at position {match.start()}: {{{match.group(1)}}}")
