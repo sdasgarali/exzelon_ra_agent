@@ -222,7 +222,9 @@ export const leadsApi = {
     return response.data
   },
   campaignEligible: async (leadIds: number[]) => {
-    const response = await api.get('/leads/campaign-eligible', { params: { lead_ids: leadIds } })
+    const params = new URLSearchParams()
+    leadIds.forEach(id => params.append('lead_ids', String(id)))
+    const response = await api.get(`/leads/campaign-eligible?${params.toString()}`)
     return response.data
   },
   importPreview: async (file: File) => {
