@@ -938,24 +938,6 @@ export default function LeadsPage() {
               </select>
             </div>
             <div>
-              <label className="label text-sm">Posted From</label>
-              <input
-                type="date"
-                value={filterFromDate}
-                onChange={(e) => { setFilterFromDate(e.target.value); setPage(1); }}
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label text-sm">Posted To</label>
-              <input
-                type="date"
-                value={filterToDate}
-                onChange={(e) => { setFilterToDate(e.target.value); setPage(1); }}
-                className="input w-full"
-              />
-            </div>
-            <div>
               <label className="label text-sm">Exclusion Keywords</label>
               <SearchableMultiSelect
                 label="Exclusions"
@@ -975,6 +957,24 @@ export default function LeadsPage() {
                 options={leadFilterOptions.job_titles}
                 selected={filterTitle}
                 onChange={setFilterTitle}
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Posted From</label>
+              <input
+                type="date"
+                value={filterFromDate}
+                onChange={(e) => { setFilterFromDate(e.target.value); setPage(1); }}
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Posted To</label>
+              <input
+                type="date"
+                value={filterToDate}
+                onChange={(e) => { setFilterToDate(e.target.value); setPage(1); }}
+                className="input w-full"
               />
             </div>
             <div>

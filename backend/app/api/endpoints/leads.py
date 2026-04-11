@@ -593,28 +593,35 @@ async def get_lead_filter_options(
     size_query = tenant_filter(size_query, ClientInfo, tenant_id)
     sizes = [r[0] for r in size_query.distinct().order_by(ClientInfo.company_size).all()]
 
-    # Exclusion keywords from tenant settings (with config defaults)
-    it_kw = get_tenant_setting(db, "exclude_it_keywords", tenant_id=tenant_id, default=app_settings.EXCLUDE_IT_KEYWORDS)
-    staffing_kw = get_tenant_setting(db, "exclude_staffing_keywords", tenant_id=tenant_id, default=app_settings.EXCLUDE_STAFFING_KEYWORDS)
-    if isinstance(it_kw, str):
+    # Exclusion keywords from tenant settings — fall back to config defaults when DB has empty list
+    it_kw = get_tenant_setting(db, "exclude_it_keywords", tenant_id=tenant_id, default=None)
+    if not it_kw:
+        it_kw = app_settings.EXCLUDE_IT_KEYWORDS
+    elif isinstance(it_kw, str):
         import json as _json
         try:
-            it_kw = _json.loads(it_kw)
+            it_kw = _json.loads(it_kw) or app_settings.EXCLUDE_IT_KEYWORDS
         except (ValueError, TypeError):
             it_kw = app_settings.EXCLUDE_IT_KEYWORDS
-    if isinstance(staffing_kw, str):
+
+    staffing_kw = get_tenant_setting(db, "exclude_staffing_keywords", tenant_id=tenant_id, default=None)
+    if not staffing_kw:
+        staffing_kw = app_settings.EXCLUDE_STAFFING_KEYWORDS
+    elif isinstance(staffing_kw, str):
         import json as _json
         try:
-            staffing_kw = _json.loads(staffing_kw)
+            staffing_kw = _json.loads(staffing_kw) or app_settings.EXCLUDE_STAFFING_KEYWORDS
         except (ValueError, TypeError):
             staffing_kw = app_settings.EXCLUDE_STAFFING_KEYWORDS
 
     # Available job titles from tenant settings
-    avail_titles = get_tenant_setting(db, "available_job_titles", tenant_id=tenant_id, default=app_settings.AVAILABLE_JOB_TITLES)
-    if isinstance(avail_titles, str):
+    avail_titles = get_tenant_setting(db, "available_job_titles", tenant_id=tenant_id, default=None)
+    if not avail_titles:
+        avail_titles = app_settings.AVAILABLE_JOB_TITLES
+    elif isinstance(avail_titles, str):
         import json as _json
         try:
-            avail_titles = _json.loads(avail_titles)
+            avail_titles = _json.loads(avail_titles) or app_settings.AVAILABLE_JOB_TITLES
         except (ValueError, TypeError):
             avail_titles = app_settings.AVAILABLE_JOB_TITLES
 
