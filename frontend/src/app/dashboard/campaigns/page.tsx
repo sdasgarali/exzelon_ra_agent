@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi, api } from '@/lib/api'
+import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi, templatesApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
 import {
@@ -143,6 +143,19 @@ export default function CampaignsPage() {
   const [spintaxModal, setSpintaxModal] = useState<{ step: SequenceStep } | null>(null)
   const [spintaxVariants, setSpintaxVariants] = useState<string[]>([])
   const [loadingSpintax, setLoadingSpintax] = useState(false)
+
+  // Template selection for step modal
+  const [stepTemplates, setStepTemplates] = useState<any[]>([])
+  const [stepTemplatesLoading, setStepTemplatesLoading] = useState(false)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+  const [activeOutreachTemplateId, setActiveOutreachTemplateId] = useState<number | null>(null)
+  const [activeFollowupTemplateId, setActiveFollowupTemplateId] = useState<number | null>(null)
+
+  // Step-level spam + deliverability check in modal
+  const [modalSpamResult, setModalSpamResult] = useState<any>(null)
+  const [modalSpamLoading, setModalSpamLoading] = useState(false)
+  const [modalDeliverabilityResult, setModalDeliverabilityResult] = useState<any>(null)
+  const [modalDeliverabilityLoading, setModalDeliverabilityLoading] = useState(false)
 
   // Create/edit modals
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -809,6 +822,101 @@ export default function CampaignsPage() {
       fetchCampaigns()
     } catch { /* ignore */ }
     setBulkDeleting(false)
+  }
+
+  const openStepModal = (step: SequenceStep | null) => {
+    if (step) {
+      setEditingStep(step)
+      setStepForm({
+        step_type: step.step_type as any,
+        subject: step.subject || '',
+        body_html: step.body_html || '',
+        body_text: step.body_text || '',
+        delay_days: step.delay_days,
+        delay_hours: step.delay_hours,
+        reply_to_thread: step.reply_to_thread,
+        condition_type: step.condition_type || '',
+        condition_window_hours: step.condition_window_hours || 24,
+        variants_json: step.variants_json || '',
+      })
+      setSelectedTemplateId(step.template_id || null)
+    } else {
+      setEditingStep(null)
+      setStepForm(defaultStep)
+      setSelectedTemplateId(null)
+    }
+    // Reset modal checks
+    setModalSpamResult(null)
+    setModalDeliverabilityResult(null)
+    setShowStepModal(true)
+    // Fetch templates
+    setStepTemplatesLoading(true)
+    templatesApi.list().then((data: any) => {
+      setStepTemplates(data.items || [])
+      setActiveOutreachTemplateId(data.active_outreach_template_id || null)
+      setActiveFollowupTemplateId(data.active_followup_template_id || null)
+      // Auto-load template for new email steps
+      if (!step) {
+        const emailStepsCount = steps.filter(s => s.step_type === 'email').length
+        const autoTemplateId = emailStepsCount === 0
+          ? data.active_outreach_template_id
+          : data.active_followup_template_id
+        if (autoTemplateId) {
+          const tpl = (data.items || []).find((t: any) => t.template_id === autoTemplateId)
+          if (tpl) {
+            setSelectedTemplateId(tpl.template_id)
+            setStepForm(f => ({
+              ...f,
+              subject: tpl.subject || f.subject,
+              body_html: tpl.body_html || f.body_html,
+              body_text: tpl.body_text || f.body_text,
+            }))
+          }
+        }
+      }
+    }).catch(() => {}).finally(() => setStepTemplatesLoading(false))
+  }
+
+  const handleLoadTemplate = () => {
+    if (!selectedTemplateId) return
+    const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
+    if (tpl) {
+      setStepForm(f => ({
+        ...f,
+        subject: tpl.subject || '',
+        body_html: tpl.body_html || '',
+        body_text: tpl.body_text || '',
+      }))
+    }
+  }
+
+  const handleModalSpamCheck = async () => {
+    setModalSpamLoading(true)
+    setModalSpamResult(null)
+    try {
+      const result = await emailPreviewApi.spamCheck({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+      })
+      setModalSpamResult(result)
+    } catch { /* ignore */ }
+    setModalSpamLoading(false)
+  }
+
+  const handleModalDeliverabilityCheck = async () => {
+    setModalDeliverabilityLoading(true)
+    setModalDeliverabilityResult(null)
+    try {
+      // Use first assigned mailbox or 0 as fallback
+      const mailboxId = selectedMailboxIds[0] || 0
+      const result = await emailPreviewApi.deliverabilityScore({
+        mailbox_id: mailboxId,
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+      })
+      setModalDeliverabilityResult(result)
+    } catch { /* ignore */ }
+    setModalDeliverabilityLoading(false)
   }
 
   const handleAddStep = async () => {
@@ -2586,22 +2694,7 @@ export default function CampaignsPage() {
             <SequenceBuilder
               steps={steps}
               spamScores={stepSpamScores}
-              onEditStep={(step) => {
-                setEditingStep(step)
-                setStepForm({
-                  step_type: step.step_type as any,
-                  subject: step.subject || '',
-                  body_html: step.body_html || '',
-                  body_text: step.body_text || '',
-                  delay_days: step.delay_days,
-                  delay_hours: step.delay_hours,
-                  reply_to_thread: step.reply_to_thread,
-                  condition_type: step.condition_type || '',
-                  condition_window_hours: step.condition_window_hours || 24,
-                  variants_json: step.variants_json || '',
-                })
-                setShowStepModal(true)
-              }}
+              onEditStep={(step) => openStepModal(step)}
             />
           )}
 
@@ -2729,7 +2822,7 @@ export default function CampaignsPage() {
                         </button>
                       </>
                     )}
-                    <button onClick={() => { setEditingStep(step); setStepForm({ step_type: step.step_type as any, subject: step.subject || '', body_html: step.body_html || '', body_text: step.body_text || '', delay_days: step.delay_days, delay_hours: step.delay_hours, reply_to_thread: step.reply_to_thread, condition_type: step.condition_type || '', condition_window_hours: step.condition_window_hours || 24, variants_json: step.variants_json || '' }); setShowStepModal(true) }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <button onClick={() => openStepModal(step)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                       <Eye className="w-4 h-4 text-gray-400" />
                     </button>
                     <button onClick={() => handleDeleteStep(step.step_id)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
@@ -2740,7 +2833,7 @@ export default function CampaignsPage() {
               </div>
             ))
           )}
-          <button onClick={() => { setEditingStep(null); setStepForm(defaultStep); setShowStepModal(true) }} className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 hover:border-primary-500 hover:text-primary-600 flex items-center justify-center gap-2">
+          <button onClick={() => openStepModal(null)} className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 hover:border-primary-500 hover:text-primary-600 flex items-center justify-center gap-2">
             <Plus className="w-4 h-4" /> Add Step
           </button>
         </div>
@@ -3507,6 +3600,72 @@ export default function CampaignsPage() {
               </div>
               {stepForm.step_type === 'email' && (
                 <>
+                  {/* Template Selector */}
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Template</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedTemplateId || ''}
+                        onChange={e => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
+                        className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        disabled={stepTemplatesLoading}
+                      >
+                        <option value="">{stepTemplatesLoading ? 'Loading templates...' : 'Select a template...'}</option>
+                        {/* Outreach templates group */}
+                        {stepTemplates.filter((t: any) => t.category === 'outreach').length > 0 && (
+                          <optgroup label="Outreach">
+                            {stepTemplates
+                              .filter((t: any) => t.category === 'outreach')
+                              .sort((a: any, b: any) => (a.template_id === activeOutreachTemplateId ? -1 : b.template_id === activeOutreachTemplateId ? 1 : 0))
+                              .map((t: any) => (
+                                <option key={t.template_id} value={t.template_id}>
+                                  {t.template_id === activeOutreachTemplateId ? '\u2605 ' : ''}{t.name}{t.template_id === activeOutreachTemplateId ? ' (Active)' : ''}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {/* Follow-up templates group */}
+                        {stepTemplates.filter((t: any) => t.category === 'followup').length > 0 && (
+                          <optgroup label="Follow-up">
+                            {stepTemplates
+                              .filter((t: any) => t.category === 'followup')
+                              .sort((a: any, b: any) => (a.template_id === activeFollowupTemplateId ? -1 : b.template_id === activeFollowupTemplateId ? 1 : 0))
+                              .map((t: any) => (
+                                <option key={t.template_id} value={t.template_id}>
+                                  {t.template_id === activeFollowupTemplateId ? '\u2605 ' : ''}{t.name}{t.template_id === activeFollowupTemplateId ? ' (Active)' : ''}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {/* Ungrouped templates */}
+                        {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').length > 0 && (
+                          <optgroup label="Other">
+                            {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').map((t: any) => (
+                              <option key={t.template_id} value={t.template_id}>{t.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      <button
+                        onClick={handleLoadTemplate}
+                        disabled={!selectedTemplateId || stepTemplatesLoading}
+                        className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Load
+                      </button>
+                    </div>
+                    {selectedTemplateId && (() => {
+                      const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
+                      return tpl ? (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {tpl.category === 'outreach' && tpl.template_id === activeOutreachTemplateId && <span className="text-green-600 font-medium">Active Outreach</span>}
+                          {tpl.category === 'followup' && tpl.template_id === activeFollowupTemplateId && <span className="text-green-600 font-medium">Active Follow-up</span>}
+                          {tpl.description && <span className="ml-1">— {tpl.description}</span>}
+                        </p>
+                      ) : null
+                    })()}
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Subject</label>
                     <input value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
@@ -3515,6 +3674,77 @@ export default function CampaignsPage() {
                     <label className="block text-sm font-medium mb-1">Body (HTML)</label>
                     <textarea value={stepForm.body_html} onChange={e => setStepForm(f => ({ ...f, body_html: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 font-mono text-xs" rows={6} placeholder="<p>Hi {{first_name}},</p>" />
                   </div>
+
+                  {/* Spam Check + Deliverability Buttons */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleModalSpamCheck}
+                      disabled={modalSpamLoading || (!stepForm.subject && !stepForm.body_html)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
+                    >
+                      {modalSpamLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSearch className="w-3.5 h-3.5" />}
+                      Spam Check
+                    </button>
+                    <button
+                      onClick={handleModalDeliverabilityCheck}
+                      disabled={modalDeliverabilityLoading || (!stepForm.subject && !stepForm.body_html)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
+                    >
+                      {modalDeliverabilityLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BarChart3 className="w-3.5 h-3.5" />}
+                      Deliverability Score
+                    </button>
+                  </div>
+
+                  {/* Spam Check Results */}
+                  {modalSpamResult && (
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-xs space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Spam Score:</span>
+                        <span className={`px-2 py-0.5 rounded-full font-bold ${
+                          modalSpamResult.grade === 'A' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
+                          modalSpamResult.grade === 'B' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
+                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        }`}>
+                          {modalSpamResult.grade} ({modalSpamResult.score}/100)
+                        </span>
+                      </div>
+                      {modalSpamResult.flagged_words?.length > 0 && (
+                        <div>
+                          <span className="text-gray-500">Flagged words:</span>{' '}
+                          {modalSpamResult.flagged_words.map((w: string, i: number) => (
+                            <span key={i} className="inline-block bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded mr-1 mb-0.5">{w}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Deliverability Results */}
+                  {modalDeliverabilityResult && (
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-xs space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Deliverability:</span>
+                        <span className={`px-2 py-0.5 rounded-full font-bold ${
+                          (modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 0) >= 80 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
+                          (modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 0) >= 60 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
+                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        }`}>
+                          {modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 'N/A'}/100
+                        </span>
+                      </div>
+                      {modalDeliverabilityResult.breakdown && (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-600 dark:text-gray-400">
+                          {Object.entries(modalDeliverabilityResult.breakdown).map(([key, val]: [string, any]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="capitalize">{key.replace(/_/g, ' ')}:</span>
+                              <span className="font-medium text-gray-900 dark:text-gray-200">{typeof val === 'number' ? val : String(val)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={stepForm.reply_to_thread} onChange={e => setStepForm(f => ({ ...f, reply_to_thread: e.target.checked }))} />
                     <span className="text-sm">Reply to previous thread</span>

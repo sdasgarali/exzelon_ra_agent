@@ -738,8 +738,8 @@ export const templatesApi = {
     const response = await api.post('/templates/seed-library')
     return response.data
   },
-  importToStep: async (templateId: number, data: { campaign_id: number; step_id: number }) => {
-    const response = await api.post(`/templates/${templateId}/import-to-step`, data)
+  importToStep: async (templateId: number, stepId: number) => {
+    const response = await api.post(`/templates/${templateId}/import-to-step`, null, { params: { step_id: stepId } })
     return response.data
   },
 }
