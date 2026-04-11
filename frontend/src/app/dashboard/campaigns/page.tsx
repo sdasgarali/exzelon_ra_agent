@@ -301,7 +301,8 @@ export default function CampaignsPage() {
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
     try {
-      const params = { ...buildAlFilterParams(), page: availableLeadsPage, page_size: 50 }
+      const params: Record<string, any> = { ...buildAlFilterParams(), page: availableLeadsPage, page_size: 50 }
+      if (autoSelectLeadIds.length > 0) params.prioritize_ids = autoSelectLeadIds
       const data = await campaignsApi.getAvailableLeads(params)
       setAvailableLeads(data.items || [])
       setAvailableLeadsTotal(data.total || 0)

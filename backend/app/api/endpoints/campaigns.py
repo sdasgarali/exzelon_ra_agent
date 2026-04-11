@@ -6,7 +6,7 @@ from typing import Optional, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc, or_
+from sqlalchemy import func, asc, desc, or_, case, literal
 
 logger = structlog.get_logger()
 
@@ -260,6 +260,7 @@ def get_available_leads(
     days: int = Query(7, ge=1, le=365, description="Leads from last N days"),
     sort_by: Optional[str] = Query("posting_date", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
+    prioritize_ids: Optional[List[int]] = Query(None, description="Lead IDs to sort to the top of results"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -271,6 +272,7 @@ def get_available_leads(
     Returns leads NOT enrolled in any active campaign, posted within the last N days,
     and having at least one associated contact. Supports filtering by status, source,
     state, industry, company_size, employment_type, and sorting.
+    When prioritize_ids is provided, those leads are sorted to the top.
     """
     from app.db.models.lead import LeadDetails
     from app.db.models.contact import ContactDetails
@@ -346,7 +348,7 @@ def get_available_leads(
 
     total = query.count()
 
-    # Dynamic sorting
+    # Dynamic sorting — prioritized leads first when requested
     available_sort_columns = {
         "lead_id": LeadDetails.lead_id,
         "client_name": LeadDetails.client_name,
@@ -357,10 +359,21 @@ def get_available_leads(
         "employment_type": LeadDetails.employment_type,
     }
     sort_col = available_sort_columns.get(sort_by, LeadDetails.posting_date)
-    if sort_order == "asc":
-        query = query.order_by(asc(sort_col))
+
+    if prioritize_ids:
+        priority_expr = case(
+            (LeadDetails.lead_id.in_(prioritize_ids), literal(0)),
+            else_=literal(1),
+        )
+        if sort_order == "asc":
+            query = query.order_by(asc(priority_expr), asc(sort_col))
+        else:
+            query = query.order_by(asc(priority_expr), desc(sort_col))
     else:
-        query = query.order_by(desc(sort_col))
+        if sort_order == "asc":
+            query = query.order_by(asc(sort_col))
+        else:
+            query = query.order_by(desc(sort_col))
 
     leads = query.offset((page - 1) * page_size).limit(page_size).all()
 
