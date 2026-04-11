@@ -1174,7 +1174,7 @@ export default function CampaignsPage() {
         {showCreateModal && (
           <>
             <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
-            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[700px] max-w-[95vw] max-h-[85vh] overflow-y-auto">
+            <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-[95vw] max-h-[85vh] overflow-y-auto ${createStep === 'select_leads' ? 'w-[1100px]' : 'w-[700px]'}`}>
               {/* Header */}
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-3">

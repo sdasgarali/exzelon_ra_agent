@@ -961,7 +961,18 @@ export const campaignsApi = {
     return response.data
   },
   getAvailableLeads: async (params?: Record<string, any>) => {
-    const response = await api.get('/campaigns/available-leads', { params })
+    const qs = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, val]) => {
+        if (val === undefined || val === null || val === '') return
+        if (Array.isArray(val)) {
+          val.forEach(v => qs.append(key, String(v)))
+        } else {
+          qs.append(key, String(val))
+        }
+      })
+    }
+    const response = await api.get(`/campaigns/available-leads?${qs.toString()}`)
     return response.data
   },
   createFromLeads: async (data: { lead_ids: number[]; preview_mode?: boolean }) => {
