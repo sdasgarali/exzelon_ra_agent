@@ -91,7 +91,7 @@ export default function AutomationControlCenter() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(GROUP_ORDER))
-  const [canWrite, setCanWrite] = useState(true)
+  const [canWrite, setCanWrite] = useState(false)
   const { user } = useAuthStore()
 
   const fetchData = useCallback(async () => {
@@ -104,13 +104,17 @@ export default function AutomationControlCenter() {
       setEvents(eventsData.items || [])
       setError(null)
 
-      // Check module permission — if user has read-only, disable all toggles
-      if (user?.role !== 'super_admin') {
+      // Check module permission — super_admin always has full, others check DB
+      if (user?.role === 'super_admin') {
+        setCanWrite(true)
+      } else {
         try {
           const perms = await settingsApi.getMyPermissions()
-          const automationPerm = perms?.automation || 'full'
+          const automationPerm = perms?.automation || 'read'
           setCanWrite(automationPerm === 'full' || automationPerm === 'read_write')
-        } catch { /* default to writable */ }
+        } catch {
+          setCanWrite(false)
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load automation controls')

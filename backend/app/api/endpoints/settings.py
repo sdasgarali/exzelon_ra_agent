@@ -1,6 +1,9 @@
 """Settings management endpoints."""
 import json
+import structlog
 from typing import List, Optional, Dict
+
+logger = structlog.get_logger()
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -727,6 +730,15 @@ async def update_setting(
             if setting_in.description:
                 setting.description = setting_in.description
             setting.updated_by = current_user.email
+
+        # When saving role_permissions or user_permission_overrides globally,
+        # clear all tenant-level overrides so the new global value takes effect
+        # everywhere (prevents stale tenant overrides from shadowing the global).
+        if key in ('role_permissions', 'user_permission_overrides'):
+            from app.db.models.tenant_settings import TenantSettings
+            deleted = db.query(TenantSettings).filter(TenantSettings.key == key).delete()
+            if deleted:
+                logger.info("cleared_tenant_overrides", key=key, count=deleted)
 
         db.commit()
         db.refresh(setting)
