@@ -82,6 +82,7 @@ const statusColors: Record<string, string> = {
 }
 
 export default function CampaignsPage() {
+  const router = useRouter()
   const [view, setView] = useState<TabView>('list')
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -612,6 +613,24 @@ export default function CampaignsPage() {
       if (target) openDetail(target)
     }
   }, [campaigns, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-open wizard at select_leads step when navigated with ?create_from_leads=1,2,3
+  useEffect(() => {
+    const fromLeads = searchParams.get('create_from_leads')
+    if (fromLeads) {
+      const ids = fromLeads.split(',').map(Number).filter(n => !isNaN(n) && n > 0)
+      if (ids.length > 0) {
+        setAutoSelectLeadIds(ids)
+        setAvailableLeadsDays(365)
+        setShowCreateModal(true)
+        setCreateStep('select_leads')
+      }
+      // Clear the param from URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('create_from_leads')
+      router.replace(url.pathname + url.search, { scroll: false })
+    }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch feature status on mount
   useEffect(() => {

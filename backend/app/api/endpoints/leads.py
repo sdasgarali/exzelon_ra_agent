@@ -80,6 +80,7 @@ async def list_leads(
     industry: Optional[List[str]] = Query(None),
     company_size: Optional[List[str]] = Query(None),
     data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
+    employment_type: Optional[str] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
     exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
     title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
     from_date: Optional[date] = None,
@@ -132,6 +133,8 @@ async def list_leads(
         )
     if data_type:
         query = query.filter(LeadDetails.data_type == data_type)
+    if employment_type:
+        query = query.filter(LeadDetails.employment_type == employment_type)
 
     if exclude_keywords:
         excl_conditions = [LeadDetails.job_title.ilike(f"%{kw}%") for kw in exclude_keywords]
@@ -635,6 +638,66 @@ async def get_lead_filter_options(
         },
         "job_titles": sorted(avail_titles) if avail_titles else [],
     }
+
+
+@router.get("/campaign-eligible")
+async def check_campaign_eligible(
+    lead_ids: List[int] = Query(..., description="Lead IDs to check eligibility for"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Check which leads are eligible for campaign enrollment.
+
+    A lead is eligible if it has at least one contact AND is not already
+    enrolled in an active/draft campaign.
+    """
+    from app.db.models.campaign import Campaign, CampaignContact, CampaignStatus
+
+    if not lead_ids:
+        return {"eligible_lead_ids": [], "ineligible": {}}
+
+    # Subquery: leads enrolled in active/draft campaigns
+    enrolled_lead_ids_subq = db.query(CampaignContact.lead_id).join(
+        Campaign, CampaignContact.campaign_id == Campaign.campaign_id
+    ).filter(
+        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.DRAFT]),
+        Campaign.is_archived == False,
+        CampaignContact.lead_id.isnot(None),
+    ).distinct().subquery()
+
+    # Subquery: leads that have at least one contact
+    leads_with_contacts_subq = db.query(
+        LeadContactAssociation.lead_id
+    ).distinct().subquery()
+
+    # Fetch the leads
+    leads_q = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids))
+    leads_q = tenant_filter(leads_q, LeadDetails, tenant_id)
+    leads_found = leads_q.all()
+
+    # Build sets for fast lookup
+    enrolled_set = set(
+        r[0] for r in db.query(enrolled_lead_ids_subq.c.lead_id).all()
+    )
+    has_contacts_set = set(
+        r[0] for r in db.query(leads_with_contacts_subq.c.lead_id).filter(
+            leads_with_contacts_subq.c.lead_id.in_(lead_ids)
+        ).all()
+    )
+
+    eligible = []
+    ineligible = {}
+    for lead in leads_found:
+        lid = lead.lead_id
+        if lid in enrolled_set:
+            ineligible[lid] = "Already in active campaign"
+        elif lid not in has_contacts_set:
+            ineligible[lid] = "No contacts"
+        else:
+            eligible.append(lid)
+
+    return {"eligible_lead_ids": eligible, "ineligible": ineligible}
 
 
 @router.post("/import/preview")

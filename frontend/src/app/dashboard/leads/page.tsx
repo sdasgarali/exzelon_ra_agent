@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { leadsApi, pipelinesApi, api } from '@/lib/api'
 
 interface Lead {
@@ -70,7 +71,10 @@ const US_STATES = [
 type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size'
 type SortOrder = 'asc' | 'desc'
 
+const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
+
 export default function LeadsPage() {
+  const router = useRouter()
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -91,6 +95,7 @@ export default function LeadsPage() {
   const [filterIndustry, setFilterIndustry] = useState<string[]>([])
   const [filterCompanySize, setFilterCompanySize] = useState<string[]>([])
   const [filterDataType, setFilterDataType] = useState('')
+  const [filterEmploymentType, setFilterEmploymentType] = useState('')
   const [filterExcludeKeywords, setFilterExcludeKeywords] = useState<string[]>([])
   const [filterTitle, setFilterTitle] = useState<string[]>([])
 
@@ -149,6 +154,10 @@ export default function LeadsPage() {
   // Cache contact counts across pages so selection works when navigating
   const [contactCountCache, setContactCountCache] = useState<Record<number, number>>({})
 
+  // Campaign eligibility check
+  const [eligibleLeadIds, setEligibleLeadIds] = useState<number[]>([])
+  const [checkingEligibility, setCheckingEligibility] = useState(false)
+
   // Update cache whenever leads change (user browses pages)
   useEffect(() => {
     if (leads.length > 0) {
@@ -159,6 +168,26 @@ export default function LeadsPage() {
       })
     }
   }, [leads])
+
+  // Debounced campaign eligibility check when selection changes
+  useEffect(() => {
+    if (selectedIds.size === 0) {
+      setEligibleLeadIds([])
+      return
+    }
+    setCheckingEligibility(true)
+    const timer = setTimeout(async () => {
+      try {
+        const result = await leadsApi.campaignEligible(Array.from(selectedIds))
+        setEligibleLeadIds(result.eligible_lead_ids || [])
+      } catch {
+        setEligibleLeadIds([])
+      } finally {
+        setCheckingEligibility(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [selectedIds])
 
   // Load filter options on mount
   useEffect(() => {
@@ -174,7 +203,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -195,6 +224,7 @@ export default function LeadsPage() {
       if (filterIndustry.length) params.industry = filterIndustry
       if (filterCompanySize.length) params.company_size = filterCompanySize
       if (filterDataType) params.data_type = filterDataType
+      if (filterEmploymentType) params.employment_type = filterEmploymentType
       if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
       if (filterTitle.length) params.title = filterTitle
       if (showArchived) params.show_archived = true
@@ -247,6 +277,7 @@ export default function LeadsPage() {
     setFilterIndustry([])
     setFilterCompanySize([])
     setFilterDataType('')
+    setFilterEmploymentType('')
     setFilterExcludeKeywords([])
     setFilterTitle([])
     setShowArchived(false)
@@ -703,7 +734,7 @@ export default function LeadsPage() {
     )
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterDataType, search].filter(Boolean).length
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterDataType, filterEmploymentType, search].filter(Boolean).length
     + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   return (
@@ -769,6 +800,21 @@ export default function LeadsPage() {
                   Archive Selected ({selectedIds.size})
                 </button>
               )}
+              <button
+                onClick={() => {
+                  const ids = eligibleLeadIds.join(',')
+                  router.push(`/dashboard/campaigns?create_from_leads=${ids}`)
+                }}
+                disabled={eligibleLeadIds.length === 0 || checkingEligibility}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                title={eligibleLeadIds.length === 0 ? 'No selected leads are eligible (need contacts + not in active campaign)' : ''}
+              >
+                {checkingEligibility ? (
+                  <><span className="animate-spin">&#8635;</span> Checking...</>
+                ) : (
+                  <>Create Campaign ({eligibleLeadIds.length})</>
+                )}
+              </button>
             </>
           )}
           {/* Import Button */}
@@ -935,6 +981,19 @@ export default function LeadsPage() {
                 <option value="">All</option>
                 <option value="prod">Production</option>
                 <option value="test">Test</option>
+              </select>
+            </div>
+            <div>
+              <label className="label text-sm">Position Type</label>
+              <select
+                value={filterEmploymentType}
+                onChange={(e) => { setFilterEmploymentType(e.target.value); setPage(1); }}
+                className="input w-full"
+              >
+                <option value="">All</option>
+                {EMPLOYMENT_TYPE_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
               </select>
             </div>
             <div>

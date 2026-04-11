@@ -221,6 +221,10 @@ export const leadsApi = {
     const response = await api.get('/leads/filter-options')
     return response.data
   },
+  campaignEligible: async (leadIds: number[]) => {
+    const response = await api.get('/leads/campaign-eligible', { params: { lead_ids: leadIds } })
+    return response.data
+  },
   importPreview: async (file: File) => {
     const formData = new FormData()
     formData.append('file', file)
