@@ -1,9 +1,24 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 77: Added Exclusion Keywords + Job Title multi-select filters to both Leads page and Campaign Wizard. Backend: GET /leads/filter-options now returns exclusion_keywords (IT/Staffing grouped) and job_titles from tenant settings. GET /leads and GET /campaigns/available-leads accept exclude_keywords + title query params. Frontend: SearchableMultiSelect component with search + grouped categories on Leads page. WizardSearchableMultiSelect on Campaign Wizard. Renamed "Filters" → "Advance Filters" on Leads page. 930 tests pass, frontend builds clean. Ready for deploy.
+> Session 79: Added 6-tab intelligence panel to Templates create/edit modal (Vars, Spam, Render, Human, Spintax, Score), AI Rewrite button (heavy humanize), inline HTML preview toggle. Left sidebar widened from w-56 to w-72. All using existing backend APIs (emailPreviewApi + deliverabilityApi). Frontend-only change (1 file: templates/page.tsx), build clean.
 
 ## Immediate TODO
+- [x] Intelligence Panel + AI Rewrite + Preview in Templates Modal (2026-04-11)
+  - 6-tab sidebar replacing fixed placeholder panel: Placeholders, Spam Check, Rendering, Humanize, Spintax Preview, Deliverability Score
+  - Auto-load on tab switch for Rendering and Score tabs
+  - Spam tab: grade badge, flagged words, individual + batch fix via spamReduce API
+  - Humanize tab: light/medium/heavy intensity, burstiness comparison, Apply to Template
+  - AI Rewrite footer button (heavy humanize), Preview toggle (DOMPurify-sanitized HTML render)
+  - 1 file changed (templates/page.tsx), frontend builds clean
+- [x] Template Selector + Spam/Deliverability Checks in Campaign Step Modal (2026-04-11)
+  - Fixed importToStep API client: step_id sent as query param (was incorrectly in request body)
+  - Template dropdown in step modal: grouped by Outreach/Follow-up, active templates starred and sorted to top
+  - Auto-load: new email step 1 → active outreach template, step 2+ → active followup template
+  - Inline Spam Check button: grade badge (A/B/C) + score + flagged words panel
+  - Inline Deliverability Score button: composite score + breakdown grid
+  - Extracted openStepModal() helper replacing 3 inline modal openers
+  - 2 files changed (api.ts, campaigns/page.tsx), frontend builds clean, deployed (3f24bb0)
 - [x] Exclusion Keywords + Title Multi-Select Filters (2026-04-11)
   - Backend: GET /leads/filter-options extended with exclusion_keywords (it_keywords, staffing_keywords) + job_titles from tenant settings
   - Backend: GET /leads + GET /campaigns/available-leads: new exclude_keywords + title query params with ILIKE filtering
@@ -199,6 +214,10 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 78: Template Selector + Spam/Deliverability in Step Modal (2026-04-11)
+  - Fixed importToStep API (step_id as query param), template dropdown grouped by category with active badges
+  - Auto-load active outreach/followup template for new email steps, inline spam check + deliverability score
+  - Extracted openStepModal() helper, 2 files changed, deployed to VPS (3f24bb0)
 - [x] Session 62: AI Email Preview & Approve Workflow (2026-04-03)
   - New model: OutreachDraft (status lifecycle: pending→approved→rejected→sent→expired, source: campaign/pipeline/broadcast)
   - New service: email_preview_service.py — 12 functions: generate_campaign_drafts, generate_pipeline_drafts, generate_broadcast_drafts, ai_rewrite_draft, calculate_deliverability_score (composite: DNS 35% + spam 30% + blacklist 20% + reputation 15%), check_spam_and_suggest (AI replacement phrases), approve/reject/send drafts

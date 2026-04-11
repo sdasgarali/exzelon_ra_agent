@@ -94,6 +94,7 @@ Multi-step email sequence processor:
 - **Smart send scheduling**: `_advance_to_next_step()` uses `calculate_optimal_send_time()` to schedule next email at optimal local business hours (9-11 AM = best)
 - **Preview mode**: When `campaign.preview_mode=True`, generates OutreachDraft records instead of sending — enables human review via Email Preview page
 - **Lead-selection creation**: `POST /campaigns/from-leads` auto-generates campaign name, 3-step sequence (outreach + wait + followup), assigns all active mailboxes, enrolls contacts from selected leads
+- **Step modal template integration**: Sequence tab step modal loads templates via `templatesApi.list()`, grouped dropdown (Outreach/Follow-up) with active templates starred. Auto-loads active outreach template for first email step, followup for subsequent. Inline spam check + deliverability score buttons with results panel
 
 ### Unified Inbox (`services/inbox_syncer.py`)
 
@@ -183,7 +184,8 @@ Domain reputation management subsystem:
 - **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
 - **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment, slow ramp (enabled/increment/day), auto-pause thresholds (bounce/spam), AI auto-reply (enabled/delay/max), assignment mode (manual/round_robin/weighted), preview_mode (Boolean, generates drafts instead of sending)
-- **SequenceStep** -- campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats
+- **SequenceStep** -- campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats, optional template_id FK linking to source EmailTemplate
+- **EmailTemplate** -- reusable email templates with category (outreach/followup), status (active/inactive), subject, body_html, body_text, industry/goal targeting, is_system flag for seeded library; one active template per category per tenant
 - **CampaignContact** -- contact enrollment tracking with current_step, next_send_at, status
 - **InboxMessage** -- unified inbox messages with thread_id, direction, category, sentiment
 - **Deal** -- CRM deals with value, probability, stage, contact/client associations
@@ -286,6 +288,7 @@ Domain reputation management subsystem:
 | `/sms` | `api/endpoints/sms.py` | SMS outreach via Twilio (send, status check) |
 | `/objections` | `api/endpoints/objections.py` | AI objection template CRUD + seed + use-counter |
 | `/dfy` | `api/endpoints/dfy.py` | Done-For-You setup (domain suggestions, DNS setup, warmup estimates) |
+| `/templates` | `api/endpoints/templates.py` | Email template CRUD, activate, preview, duplicate, seed-library, import-to-step (copies template content to campaign sequence step). List response includes `active_outreach_template_id` + `active_followup_template_id` |
 | `/email-preview` | `api/endpoints/email_preview.py` | Draft generation, CRUD, approve/reject, batch send, AI rewrite, deliverability score, spam check + AI suggestions, spam fix (13 endpoints) |
 | `/clients/backfill-timezones` | `api/endpoints/clients.py` | Backfill IANA timezone from location_state for all clients missing timezone (Admin+) |
 | `/campaigns/available-leads` | `api/endpoints/campaigns.py` | Leads not in active campaigns (posted within N days), with contact counts for campaign creation |
