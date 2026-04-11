@@ -15,6 +15,7 @@ interface Lead {
   source: string
   employment_type: string | null
   lead_status: string
+  campaign_status?: string | null
   contact_email: string
   salary_min: number
   salary_max: number
@@ -56,7 +57,14 @@ const STATUS_OPTIONS = [
   { value: 'closed_hired', label: 'Closed-Hired', color: 'bg-blue-100 text-blue-800' },
   { value: 'closed_not_hired', label: 'Closed-Not-Hired', color: 'bg-gray-100 text-gray-800' },
   { value: 'closed_test', label: 'Closed-Test', color: 'bg-amber-100 text-amber-800' },
+  { value: 'campaign_draft', label: 'Campaign-Draft', color: 'bg-cyan-100 text-cyan-800' },
+  { value: 'campaign_active', label: 'Campaign-Active', color: 'bg-emerald-100 text-emerald-800' },
+  { value: 'campaign_paused', label: 'Campaign-Paused', color: 'bg-amber-200 text-amber-900' },
+  { value: 'campaign_completed', label: 'Campaign-Completed', color: 'bg-sky-100 text-sky-800' },
 ]
+
+// Pipeline statuses that can be set via the dropdown (excludes campaign-derived statuses)
+const PIPELINE_STATUS_OPTIONS = STATUS_OPTIONS.filter(s => !s.value.startsWith('campaign_'))
 
 const SOURCE_OPTIONS = ['jsearch', 'apollo', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
 
@@ -158,6 +166,9 @@ export default function LeadsPage() {
   const [eligibleLeadIds, setEligibleLeadIds] = useState<number[]>([])
   const [checkingEligibility, setCheckingEligibility] = useState(false)
 
+  // Status cards stats
+  const [leadStats, setLeadStats] = useState<{ total: number; by_status: Record<string, number>; by_campaign_status: Record<string, number> } | null>(null)
+
   // Update cache whenever leads change (user browses pages)
   useEffect(() => {
     if (leads.length > 0) {
@@ -193,6 +204,11 @@ export default function LeadsPage() {
   useEffect(() => {
     leadsApi.filterOptions().then(setLeadFilterOptions).catch(() => {})
   }, [])
+
+  // Fetch lead stats for status cards — refetch when leads change (covers mutations) or archive toggle
+  useEffect(() => {
+    leadsApi.stats({ show_archived: showArchived || undefined }).then(setLeadStats).catch(() => {})
+  }, [leads, showArchived])
 
   // Debounce search
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -553,6 +569,15 @@ export default function LeadsPage() {
     return statusOption?.color || 'bg-gray-100 text-gray-800'
   }
 
+  const getDisplayStatus = (lead: Lead): string =>
+    lead.campaign_status ? `campaign_${lead.campaign_status}` : lead.lead_status
+
+  const getDisplayStatusLabel = (lead: Lead): string => {
+    const displayStatus = getDisplayStatus(lead)
+    const opt = STATUS_OPTIONS.find(s => s.value === displayStatus)
+    return opt?.label || displayStatus
+  }
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-'
     try {
@@ -874,6 +899,68 @@ export default function LeadsPage() {
       {success && (
         <div className="bg-green-50 text-green-600 px-4 py-2 rounded-lg mb-4">
           {success}
+        </div>
+      )}
+
+      {/* Status Cards */}
+      {leadStats && leadStats.total > 0 && (
+        <div className="flex flex-wrap gap-3 mb-4">
+          {/* Total card */}
+          <button
+            onClick={() => { setFilterStatus(''); setPage(1) }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+              !filterStatus ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <span className="text-lg font-bold">{leadStats.total}</span>
+            <span>Total</span>
+          </button>
+
+          {/* Pipeline status cards — only show those with count > 0 */}
+          {PIPELINE_STATUS_OPTIONS.map(opt => {
+            const count = leadStats.by_status[opt.value] || 0
+            if (count === 0) return null
+            return (
+              <button
+                key={opt.value}
+                onClick={() => { setFilterStatus(filterStatus === opt.value ? '' : opt.value); setPage(1) }}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  filterStatus === opt.value ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <span className={`inline-block w-2.5 h-2.5 rounded-full ${opt.color.split(' ')[0]}`} />
+                <span>{opt.label}</span>
+                <span className="font-bold">{count}</span>
+                <span className="text-gray-400 font-normal">/ {leadStats.total}</span>
+              </button>
+            )
+          })}
+
+          {/* Campaign status cards — only show those with count > 0 */}
+          {leadStats.by_campaign_status && Object.keys(leadStats.by_campaign_status).length > 0 && (
+            <>
+              <div className="w-px bg-gray-200 self-stretch mx-1" />
+              {STATUS_OPTIONS.filter(s => s.value.startsWith('campaign_')).map(opt => {
+                const campKey = opt.value.replace('campaign_', '')
+                const count = leadStats.by_campaign_status[campKey] || 0
+                if (count === 0) return null
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => { setFilterStatus(filterStatus === opt.value ? '' : opt.value); setPage(1) }}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                      filterStatus === opt.value ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${opt.color.split(' ')[0]}`} />
+                    <span>{opt.label}</span>
+                    <span className="font-bold">{count}</span>
+                    <span className="text-gray-400 font-normal">/ {leadStats.total}</span>
+                  </button>
+                )
+              })}
+            </>
+          )}
         </div>
       )}
 
@@ -1240,18 +1327,27 @@ export default function LeadsPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        value={lead.lead_status}
-                        onChange={(e) => updateLeadStatus(lead.lead_id, e.target.value)}
-                        disabled={updating === lead.lead_id}
-                        className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer ${getStatusBadge(lead.lead_status)} ${updating === lead.lead_id ? 'opacity-50' : ''}`}
-                      >
-                        {STATUS_OPTIONS.map((status) => (
-                          <option key={status.value} value={status.value}>
-                            {status.label}
-                          </option>
-                        ))}
-                      </select>
+                      {lead.campaign_status ? (
+                        <span
+                          title="Status set by campaign"
+                          className={`text-xs px-2 py-1 rounded-full inline-block ${getStatusBadge(getDisplayStatus(lead))}`}
+                        >
+                          {getDisplayStatusLabel(lead)}
+                        </span>
+                      ) : (
+                        <select
+                          value={lead.lead_status}
+                          onChange={(e) => updateLeadStatus(lead.lead_id, e.target.value)}
+                          disabled={updating === lead.lead_id}
+                          className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer ${getStatusBadge(lead.lead_status)} ${updating === lead.lead_id ? 'opacity-50' : ''}`}
+                        >
+                          {PIPELINE_STATUS_OPTIONS.map((status) => (
+                            <option key={status.value} value={status.value}>
+                              {status.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                   </tr>
                 ))

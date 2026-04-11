@@ -173,8 +173,8 @@ export const leadsApi = {
   delete: async (id: number) => {
     await api.delete(`/leads/${id}`)
   },
-  stats: async () => {
-    const response = await api.get('/leads/stats/summary')
+  stats: async (params?: Record<string, any>) => {
+    const response = await api.get('/leads/stats', { params })
     return response.data
   },
   listWithContactCounts: async (params?: Record<string, any>) => {

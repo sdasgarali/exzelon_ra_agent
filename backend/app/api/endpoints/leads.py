@@ -72,7 +72,7 @@ async def list_leads(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     limit: Optional[int] = Query(None, ge=1, le=500),
-    status: Optional[LeadStatus] = None,
+    status: Optional[str] = Query(None, description="Lead status or campaign_* prefix for campaign statuses"),
     source: Optional[str] = None,
     state: Optional[List[str]] = Query(None),
     client_name: Optional[str] = None,
@@ -106,7 +106,20 @@ async def list_leads(
         query = query.filter(LeadDetails.is_archived == False)
 
     if status:
-        query = query.filter(LeadDetails.lead_status == status)
+        if status.startswith('campaign_'):
+            # Filter leads enrolled in campaigns with this status
+            camp_status_val = status.replace('campaign_', '')
+            from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+            camp_lead_ids_sq = db.query(_CC.lead_id).join(
+                _Camp, _CC.campaign_id == _Camp.campaign_id
+            ).filter(
+                _CC.lead_id.isnot(None),
+                _Camp.status == camp_status_val,
+                _Camp.is_archived == False,
+            ).distinct().subquery()
+            query = query.filter(LeadDetails.lead_id.in_(db.query(camp_lead_ids_sq)))
+        else:
+            query = query.filter(LeadDetails.lead_status == status)
     if source:
         query = query.filter(LeadDetails.source == source)
     if state:
@@ -238,6 +251,29 @@ async def list_leads(
         for name, ind, size in client_rows:
             client_info_map[name] = {"industry": ind, "company_size": size}
 
+    # Batch fetch campaign status for leads via campaign_contacts → campaigns
+    campaign_status_map: dict[int, str] = {}
+    if lead_ids:
+        from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+        camp_rows = db.query(
+            _CC.lead_id,
+            _Camp.status
+        ).join(
+            _Camp, _CC.campaign_id == _Camp.campaign_id
+        ).filter(
+            _CC.lead_id.in_(lead_ids),
+            _CC.lead_id.isnot(None),
+            _Camp.is_archived == False,
+        ).all()
+
+        # Pick highest-priority campaign status per lead
+        _priority = {'active': 0, 'paused': 1, 'draft': 2, 'completed': 3}
+        for lid, cstatus in camp_rows:
+            cstatus_val = cstatus.value if hasattr(cstatus, 'value') else cstatus
+            existing = campaign_status_map.get(lid)
+            if existing is None or _priority.get(cstatus_val, 99) < _priority.get(existing, 99):
+                campaign_status_map[lid] = cstatus_val
+
     lead_responses = []
     for lead in leads:
         lead_dict = LeadResponse.model_validate(lead).model_dump()
@@ -246,6 +282,7 @@ async def list_leads(
         lead_dict['industry'] = lead.industry or ci.get("industry")
         lead_dict['company_size'] = lead.company_size or ci.get("company_size")
         lead_dict['data_type'] = lead.data_type.value if hasattr(lead.data_type, 'value') else (lead.data_type or 'prod')
+        lead_dict['campaign_status'] = campaign_status_map.get(lead.lead_id)
         lead_responses.append(lead_dict)
 
     return {
@@ -401,10 +438,30 @@ async def get_lead_stats(
         func.count(LeadDetails.lead_id)
     ).group_by(LeadDetails.source).all()
 
+    # Campaign status counts: count leads per campaign status (via campaign_contacts → campaigns)
+    from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+    camp_status_q = db.query(
+        _Camp.status,
+        func.count(func.distinct(_CC.lead_id))
+    ).join(
+        _Camp, _CC.campaign_id == _Camp.campaign_id
+    ).filter(
+        _CC.lead_id.isnot(None),
+        _Camp.is_archived == False,
+    )
+    if tenant_id is not None:
+        camp_status_q = camp_status_q.filter(_Camp.tenant_id == tenant_id)
+    camp_status_rows = camp_status_q.group_by(_Camp.status).all()
+    by_campaign_status = {}
+    for cstatus, cnt in camp_status_rows:
+        key = cstatus.value if hasattr(cstatus, 'value') else cstatus
+        by_campaign_status[key] = cnt
+
     return {
         "total": total,
         "by_status": {s.value: c for s, c in by_status if s},
-        "by_source": {s: c for s, c in by_source if s}
+        "by_source": {s: c for s, c in by_source if s},
+        "by_campaign_status": by_campaign_status,
     }
 
 
