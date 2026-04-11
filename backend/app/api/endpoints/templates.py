@@ -1,7 +1,8 @@
 """Email template management endpoints."""
 import html
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role, get_current_tenant_id
@@ -15,6 +16,55 @@ from app.schemas.email_template import (
 )
 
 router = APIRouter(prefix="/templates", tags=["Email Templates"])
+
+
+# ─── Scorecard request schemas ──────────────────────────────────────────────
+
+class TemplateScoreRequest(BaseModel):
+    subject: str
+    body_html: str
+    body_text: Optional[str] = ""
+
+class ApplyFixesRequest(BaseModel):
+    subject: str
+    body_html: str
+    body_text: Optional[str] = ""
+    fix_ids: List[str]
+
+
+# ─── Scorecard endpoints ────────────────────────────────────────────────────
+
+@router.post("/score")
+async def score_template_endpoint(
+    data: TemplateScoreRequest,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Compute 10-dimension scorecard for template content."""
+    from app.services.template_scorer import score_template
+    return score_template(data.subject, data.body_html, data.body_text or "")
+
+
+@router.post("/fixes")
+async def get_template_fixes_endpoint(
+    data: TemplateScoreRequest,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get fix suggestions for template content."""
+    from app.services.template_scorer import get_fixes
+    return get_fixes(data.subject, data.body_html, data.body_text or "")
+
+
+@router.post("/apply-fixes")
+async def apply_template_fixes_endpoint(
+    data: ApplyFixesRequest,
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Apply selected fixes and return updated content + before/after scores."""
+    from app.services.template_scorer import apply_fixes
+    return apply_fixes(data.subject, data.body_html, data.body_text or "", data.fix_ids)
 
 
 @router.get("", response_model=EmailTemplateListResponse)

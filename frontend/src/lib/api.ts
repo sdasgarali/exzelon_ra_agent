@@ -742,6 +742,18 @@ export const templatesApi = {
     const response = await api.post(`/templates/${templateId}/import-to-step`, null, { params: { step_id: stepId } })
     return response.data
   },
+  score: async (data: { subject: string; body_html: string; body_text?: string }) => {
+    const response = await api.post('/templates/score', data)
+    return response.data
+  },
+  fixes: async (data: { subject: string; body_html: string; body_text?: string }) => {
+    const response = await api.post('/templates/fixes', data)
+    return response.data
+  },
+  applyFixes: async (data: { subject: string; body_html: string; body_text?: string; fix_ids: string[] }) => {
+    const response = await api.post('/templates/apply-fixes', data)
+    return response.data
+  },
 }
 
 // Users API (Admin+)

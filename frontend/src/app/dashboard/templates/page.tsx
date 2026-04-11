@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, DragEvent } from 'react'
 import DOMPurify from 'dompurify'
 import { templatesApi, emailPreviewApi, deliverabilityApi } from '@/lib/api'
-import type { RenderingCheckResult, HumanizeResult, SpintaxPreviewResult } from '@/types/api'
+import type { RenderingCheckResult, HumanizeResult, SpintaxPreviewResult, TemplateScorecardResult, TemplateFixesResult, ApplyFixesResult } from '@/types/api'
 import {
   Plus,
   Edit,
@@ -19,11 +19,13 @@ import {
   Monitor,
   Brain,
   Shuffle,
-  Shield,
   Loader2,
   RefreshCw,
   Sparkles,
   ChevronRight,
+  BarChart3,
+  Wrench,
+  ChevronDown,
 } from 'lucide-react'
 
 type TemplateCategory = 'outreach' | 'followup'
@@ -80,13 +82,23 @@ interface SpamSuggestion {
   replacement: string
 }
 
-interface DeliverabilityData {
-  overall_score: number
-  dns: { score: number; weight: number; spf: any; dkim: any; dmarc: any }
-  spam: { score: number; raw_score: number; weight: number; grade: string; flagged_words: any[] }
-  blacklist: { score: number; weight: number; is_clean: boolean; ip: string; total_checked: number; total_listed: number; results: any[] }
-  reputation: { score: number; weight: number; domain: string; bounce_rate: number; is_blacklisted: boolean }
+const DIMENSION_LABELS: Record<string, string> = {
+  spam_risk: 'Spam Risk',
+  rendering: 'Rendering',
+  humanization: 'Humanization',
+  personalization: 'Personalization',
+  subject_quality: 'Subject Quality',
+  clarity: 'Clarity',
+  cta_quality: 'CTA Quality',
+  compliance: 'Compliance',
+  content_entropy: 'Content Entropy',
+  word_count: 'Word Count',
 }
+
+const DIMENSION_ORDER = [
+  'spam_risk', 'rendering', 'humanization', 'personalization', 'subject_quality',
+  'clarity', 'cta_quality', 'compliance', 'content_entropy', 'word_count',
+]
 
 function spamBadgeColor(grade: string) {
   switch (grade) {
@@ -125,7 +137,7 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
   )
 }
 
-type IntelligenceTab = 'placeholders' | 'spam' | 'rendering' | 'humanize' | 'spintax' | 'score'
+type IntelligenceTab = 'placeholders' | 'scorecard' | 'fixes' | 'spam' | 'rendering' | 'humanize' | 'spintax'
 
 // ─── Main Component ────────────────────────────────────────────────
 
@@ -175,9 +187,17 @@ export default function TemplatesPage() {
   const [spintaxResult, setSpintaxResult] = useState<SpintaxPreviewResult | null>(null)
   const [loadingSpintax, setLoadingSpintax] = useState(false)
 
-  // Deliverability score tab
-  const [deliverabilityData, setDeliverabilityData] = useState<DeliverabilityData | null>(null)
-  const [loadingDeliverability, setLoadingDeliverability] = useState(false)
+  // Scorecard tab
+  const [scorecardResult, setScorecardResult] = useState<TemplateScorecardResult | null>(null)
+  const [loadingScorecard, setLoadingScorecard] = useState(false)
+  const [expandedDimensions, setExpandedDimensions] = useState<Set<string>>(new Set())
+
+  // Fixes tab
+  const [fixesResult, setFixesResult] = useState<TemplateFixesResult | null>(null)
+  const [loadingFixes, setLoadingFixes] = useState(false)
+  const [applyingFixes, setApplyingFixes] = useState(false)
+  const [selectedFixIds, setSelectedFixIds] = useState<Set<string>>(new Set())
+  const [applyResult, setApplyResult] = useState<ApplyFixesResult | null>(null)
 
   // AI Rewrite + inline preview
   const [rewriting, setRewriting] = useState(false)
@@ -191,7 +211,11 @@ export default function TemplatesPage() {
     setRenderingResult(null)
     setHumanizeResult(null)
     setSpintaxResult(null)
-    setDeliverabilityData(null)
+    setScorecardResult(null)
+    setFixesResult(null)
+    setSelectedFixIds(new Set())
+    setApplyResult(null)
+    setExpandedDimensions(new Set())
     setShowInlinePreview(false)
   }, [])
 
@@ -280,19 +304,54 @@ export default function TemplatesPage() {
     finally { setLoadingSpintax(false) }
   }, [form.body_html])
 
-  const handleDeliverabilityScore = useCallback(async () => {
+  const handleScorecard = useCallback(async () => {
     if (!form.subject && !form.body_html) return
-    setLoadingDeliverability(true)
+    setLoadingScorecard(true)
     try {
-      const data = await emailPreviewApi.deliverabilityScore({
-        mailbox_id: 0,
+      const data = await templatesApi.score({ subject: form.subject, body_html: form.body_html, body_text: form.body_text || '' })
+      setScorecardResult(data)
+    } catch (err) { console.error(err) }
+    finally { setLoadingScorecard(false) }
+  }, [form.subject, form.body_html, form.body_text])
+
+  const handleGetFixes = useCallback(async () => {
+    if (!form.subject && !form.body_html) return
+    setLoadingFixes(true)
+    setApplyResult(null)
+    try {
+      const data = await templatesApi.fixes({ subject: form.subject, body_html: form.body_html, body_text: form.body_text || '' })
+      setFixesResult(data)
+      // Pre-select all auto-fixable
+      const autoIds = new Set<string>(data.fixes.filter((f: any) => f.auto_fixable).map((f: any) => f.id))
+      setSelectedFixIds(autoIds)
+    } catch (err) { console.error(err) }
+    finally { setLoadingFixes(false) }
+  }, [form.subject, form.body_html, form.body_text])
+
+  const handleApplySelectedFixes = useCallback(async () => {
+    if (selectedFixIds.size === 0) return
+    setApplyingFixes(true)
+    try {
+      const data = await templatesApi.applyFixes({
         subject: form.subject,
         body_html: form.body_html,
+        body_text: form.body_text || '',
+        fix_ids: Array.from(selectedFixIds),
       })
-      setDeliverabilityData(data)
+      setForm(prev => ({
+        ...prev,
+        subject: data.subject,
+        body_html: data.body_html,
+        body_text: data.body_text || prev.body_text,
+      }))
+      setApplyResult(data)
+      setFixesResult(null)
+      setSelectedFixIds(new Set())
+      // Invalidate scorecard so user re-scores
+      setScorecardResult(null)
     } catch (err) { console.error(err) }
-    finally { setLoadingDeliverability(false) }
-  }, [form.subject, form.body_html])
+    finally { setApplyingFixes(false) }
+  }, [form.subject, form.body_html, form.body_text, selectedFixIds])
 
   const handleAiRewrite = useCallback(async () => {
     if (!form.body_html) return
@@ -319,7 +378,7 @@ export default function TemplatesPage() {
   useEffect(() => {
     if (!showModal || (!form.body_html && !form.subject)) return
     if (activeTab === 'rendering' && !renderingResult && !loadingRendering) handleRenderingCheck()
-    if (activeTab === 'score' && !deliverabilityData && !loadingDeliverability) handleDeliverabilityScore()
+    if (activeTab === 'scorecard' && !scorecardResult && !loadingScorecard) handleScorecard()
   }, [activeTab, showModal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Original handlers ──────────────────────────────────────
@@ -503,11 +562,12 @@ export default function TemplatesPage() {
 
   const INTEL_TABS: { id: IntelligenceTab; label: string; icon: typeof Info }[] = [
     { id: 'placeholders', label: 'Vars', icon: Info },
+    { id: 'scorecard', label: 'Score', icon: BarChart3 },
+    { id: 'fixes', label: 'Fixes', icon: Wrench },
     { id: 'spam', label: 'Spam', icon: AlertTriangle },
     { id: 'rendering', label: 'Render', icon: Monitor },
     { id: 'humanize', label: 'Human', icon: Brain },
     { id: 'spintax', label: 'Spintax', icon: Shuffle },
-    { id: 'score', label: 'Score', icon: Shield },
   ]
 
   return (
@@ -1108,92 +1168,265 @@ export default function TemplatesPage() {
                     </div>
                   )}
 
-                  {/* ─── Tab 6: Deliverability Score ─── */}
-                  {activeTab === 'score' && (
+                  {/* ─── Tab: Scorecard ─── */}
+                  {activeTab === 'scorecard' && (
                     <div>
-                      {loadingDeliverability ? (
+                      {loadingScorecard ? (
                         <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
-                      ) : deliverabilityData ? (
+                      ) : scorecardResult ? (
                         <>
                           <div className="flex justify-center py-4">
-                            <ScoreGauge score={deliverabilityData.overall_score} size={120} />
+                            <ScoreGauge score={scorecardResult.overall_score} size={120} />
                           </div>
-                          <p className="text-center text-xs text-gray-500 mb-4">Overall Score</p>
-                          <div className="px-4 space-y-3 pb-4">
-                            {/* DNS */}
-                            <div className="border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-700">DNS ({deliverabilityData.dns.weight}%)</span>
-                                <span className="text-xs font-bold" style={{ color: scoreColor(deliverabilityData.dns.score) }}>{deliverabilityData.dns.score}/100</span>
-                              </div>
-                              <div className="space-y-1.5">
-                                {['spf', 'dkim', 'dmarc'].map(type => {
-                                  const dnsData = deliverabilityData.dns[type as keyof typeof deliverabilityData.dns] as any
-                                  const valid = dnsData?.valid
-                                  return (
-                                    <div key={type} className="flex items-center justify-between text-xs">
-                                      <span className="uppercase text-gray-500">{type}</span>
-                                      <span className={valid ? 'text-green-600' : 'text-red-600'}>{valid ? 'Pass' : 'Fail'}</span>
+                          <div className="text-center mb-4">
+                            <span className="text-sm font-bold text-gray-700">Grade: {scorecardResult.overall_grade}</span>
+                            <div className={`mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                              scorecardResult.recommendation === 'SEND' ? 'bg-green-100 text-green-800' :
+                              scorecardResult.recommendation === 'REVIEW' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {scorecardResult.recommendation === 'SEND' && <CheckCircle className="w-3 h-3" />}
+                              {scorecardResult.recommendation === 'REVIEW' && <AlertTriangle className="w-3 h-3" />}
+                              {scorecardResult.recommendation === 'DO_NOT_SEND' && <X className="w-3 h-3" />}
+                              {scorecardResult.recommendation_label}
+                            </div>
+                          </div>
+
+                          {/* Dimension bars */}
+                          <div className="px-3 space-y-1.5 pb-3">
+                            {DIMENSION_ORDER.map(key => {
+                              const dim = scorecardResult.dimensions[key]
+                              if (!dim) return null
+                              const isExpanded = expandedDimensions.has(key)
+                              const barColor = dim.score >= 70 ? 'bg-green-500' : dim.score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                              return (
+                                <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <button
+                                    onClick={() => setExpandedDimensions(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(key)) next.delete(key); else next.add(key)
+                                      return next
+                                    })}
+                                    className="w-full px-2.5 py-2 flex items-center gap-2 hover:bg-gray-50 transition-colors"
+                                  >
+                                    <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                                    <span className="text-[11px] text-gray-600 flex-1 text-left truncate">{DIMENSION_LABELS[key] || key}</span>
+                                    <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                      <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${dim.score}%` }} />
                                     </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                            {/* Spam */}
-                            <div className="border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-700">Spam Filter ({deliverabilityData.spam.weight}%)</span>
-                                <span className="text-xs font-bold" style={{ color: scoreColor(deliverabilityData.spam.score) }}>{deliverabilityData.spam.score}/100</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${spamBadgeColor(deliverabilityData.spam.grade)}`}>{deliverabilityData.spam.grade}</span>
-                                <span className="text-xs text-gray-500">Raw: {deliverabilityData.spam.raw_score}</span>
-                              </div>
-                            </div>
-                            {/* Blacklist */}
-                            <div className="border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-700">Blacklist ({deliverabilityData.blacklist.weight}%)</span>
-                                <span className="text-xs font-bold" style={{ color: scoreColor(deliverabilityData.blacklist.score) }}>{deliverabilityData.blacklist.score}/100</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${deliverabilityData.blacklist.is_clean ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                  {deliverabilityData.blacklist.is_clean ? 'Clean' : 'Listed'}
-                                </span>
-                                {deliverabilityData.blacklist.ip && <span className="text-xs text-gray-500">IP: {deliverabilityData.blacklist.ip}</span>}
-                              </div>
-                              <p className="text-[10px] text-gray-400 mt-1">{deliverabilityData.blacklist.total_checked} checked, {deliverabilityData.blacklist.total_listed} listed</p>
-                            </div>
-                            {/* Reputation */}
-                            <div className="border border-gray-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-medium text-gray-700">Reputation ({deliverabilityData.reputation.weight}%)</span>
-                                <span className="text-xs font-bold" style={{ color: scoreColor(deliverabilityData.reputation.score) }}>{deliverabilityData.reputation.score}/100</span>
-                              </div>
-                              {deliverabilityData.reputation.domain && <p className="text-xs text-gray-500">Domain: {deliverabilityData.reputation.domain}</p>}
-                              <p className="text-xs text-gray-500">Bounce rate: {deliverabilityData.reputation.bounce_rate}%</p>
-                            </div>
+                                    <span className="text-[11px] font-medium w-6 text-right" style={{ color: scoreColor(dim.score) }}>{dim.score}</span>
+                                  </button>
+                                  {isExpanded && dim.issues.length > 0 && (
+                                    <div className="px-2.5 pb-2 space-y-1 border-t border-gray-100">
+                                      {dim.issues.map((issue, i) => (
+                                        <div key={i} className={`text-[10px] px-2 py-1 rounded mt-1 ${
+                                          issue.severity === 'high' ? 'bg-red-50 text-red-700' :
+                                          issue.severity === 'medium' ? 'bg-yellow-50 text-yellow-700' :
+                                          'bg-blue-50 text-blue-700'
+                                        }`}>
+                                          {issue.message}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
-                          <div className="px-4 pb-3">
+
+                          {/* Issue summary + link to fixes */}
+                          <div className="px-3 pb-3">
+                            <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                              <span>{scorecardResult.total_issues} issue{scorecardResult.total_issues !== 1 ? 's' : ''}</span>
+                              {scorecardResult.critical_issues > 0 && (
+                                <span className="text-red-600 font-medium">{scorecardResult.critical_issues} critical</span>
+                              )}
+                            </div>
+                            {scorecardResult.total_issues > 0 && (
+                              <button
+                                onClick={() => setActiveTab('fixes')}
+                                className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1"
+                              >
+                                <Wrench className="w-3 h-3" /> Go to Fixes tab
+                              </button>
+                            )}
                             <button
-                              onClick={() => { setDeliverabilityData(null); handleDeliverabilityScore() }}
-                              className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1"
+                              onClick={() => { setScorecardResult(null); handleScorecard() }}
+                              className="w-full text-xs py-1.5 text-gray-500 hover:underline flex items-center justify-center gap-1 mt-1"
                             >
-                              <RefreshCw className="w-3 h-3" /> Re-check
+                              <RefreshCw className="w-3 h-3" /> Re-score
                             </button>
                           </div>
                         </>
                       ) : (
-                        <div className="text-center py-8">
+                        <div className="text-center py-8 px-4">
+                          <BarChart3 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                          <p className="text-xs text-gray-500 mb-3">Score your template across 10 quality dimensions.</p>
                           <button
-                            onClick={handleDeliverabilityScore}
+                            onClick={handleScorecard}
                             disabled={!form.subject && !form.body_html}
-                            className="text-xs py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                            className="text-xs py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 mx-auto"
                           >
-                            Run Deliverability Score
+                            <BarChart3 className="w-3 h-3" /> Score Template
                           </button>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* ─── Tab: Fixes ─── */}
+                  {activeTab === 'fixes' && (
+                    <div>
+                      <div className="p-4 border-b border-gray-200">
+                        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                          <Wrench className="w-4 h-4 text-blue-500" />
+                          Fix Suggestions
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Auto-apply fixes to improve your template score.
+                        </p>
+                      </div>
+
+                      {/* Apply result banner */}
+                      {applyResult && (
+                        <div className="mx-3 mt-3 p-3 rounded-lg bg-gradient-to-r from-red-50 to-green-50 border border-gray-200">
+                          <div className="flex items-center justify-center gap-3">
+                            <div className="text-center">
+                              <div className="text-lg font-bold" style={{ color: scoreColor(applyResult.before_score) }}>{applyResult.before_score}</div>
+                              <div className="text-[10px] text-gray-500">Before</div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-gray-400" />
+                            <div className="text-center">
+                              <div className="text-lg font-bold" style={{ color: scoreColor(applyResult.after_score) }}>{applyResult.after_score}</div>
+                              <div className="text-[10px] text-gray-500">After</div>
+                            </div>
+                            <span className={`text-xs font-medium ${applyResult.delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {applyResult.delta >= 0 ? '+' : ''}{applyResult.delta}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-gray-500">
+                            <span>Applied: {applyResult.applied_fixes.length}</span>
+                            <span>Skipped: {applyResult.skipped_fixes.length}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="p-3 space-y-2">
+                        {!fixesResult ? (
+                          <button
+                            onClick={handleGetFixes}
+                            disabled={loadingFixes || (!form.subject && !form.body_html)}
+                            className="w-full text-xs py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                          >
+                            {loadingFixes ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />}
+                            Get Fix Suggestions
+                          </button>
+                        ) : loadingFixes ? (
+                          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                        ) : fixesResult.fixes.length === 0 ? (
+                          <div className="text-center py-4 text-gray-400">
+                            <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                            <p className="text-sm font-medium text-green-600">No fixes needed</p>
+                            <p className="text-xs mt-1">This template looks great!</p>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Summary + select all */}
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-gray-500">
+                                {fixesResult.fix_count} suggestion{fixesResult.fix_count !== 1 ? 's' : ''} ({fixesResult.auto_fixable_count} auto-fix)
+                              </span>
+                              {fixesResult.auto_fixable_count > 0 && (
+                                <button
+                                  onClick={() => {
+                                    const autoIds = new Set<string>(fixesResult.fixes.filter(f => f.auto_fixable).map(f => f.id))
+                                    setSelectedFixIds(prev => {
+                                      const allSelected = fixesResult.fixes.filter(f => f.auto_fixable).every(f => prev.has(f.id))
+                                      return allSelected ? new Set() : autoIds
+                                    })
+                                  }}
+                                  className="text-[10px] text-blue-600 hover:underline"
+                                >
+                                  {fixesResult.fixes.filter(f => f.auto_fixable).every(f => selectedFixIds.has(f.id)) ? 'Deselect All' : 'Select All Auto-Fix'}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Apply button */}
+                            {selectedFixIds.size > 0 && (
+                              <button
+                                onClick={handleApplySelectedFixes}
+                                disabled={applyingFixes}
+                                className="w-full text-xs py-2 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 font-medium mb-2"
+                              >
+                                {applyingFixes ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                                Apply {selectedFixIds.size} Selected Fix{selectedFixIds.size !== 1 ? 'es' : ''}
+                              </button>
+                            )}
+
+                            {/* Fix list */}
+                            {fixesResult.fixes.map(fix => {
+                              const isSelected = selectedFixIds.has(fix.id)
+                              const canToggle = fix.auto_fixable
+                              return (
+                                <div
+                                  key={fix.id}
+                                  onClick={() => {
+                                    if (!canToggle) return
+                                    setSelectedFixIds(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(fix.id)) next.delete(fix.id); else next.add(fix.id)
+                                      return next
+                                    })
+                                  }}
+                                  className={`p-2.5 border rounded-lg transition-colors ${
+                                    canToggle ? 'cursor-pointer hover:bg-gray-50' : 'opacity-70'
+                                  } ${isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      disabled={!canToggle}
+                                      onChange={() => {}}
+                                      className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                          fix.severity === 'high' ? 'bg-red-100 text-red-800' :
+                                          fix.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                          'bg-blue-100 text-blue-800'
+                                        }`}>
+                                          {fix.severity.toUpperCase()}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400">{DIMENSION_LABELS[fix.dimension] || fix.dimension}</span>
+                                        {!canToggle && <span className="text-[10px] text-gray-400 italic">manual</span>}
+                                      </div>
+                                      <p className="text-xs text-gray-700">{fix.message}</p>
+                                      {fix.original && fix.replacement && fix.auto_fixable && (
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 line-through">{fix.original}</span>
+                                          <ChevronRight className="w-2.5 h-2.5 text-gray-400" />
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700">{fix.replacement}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+
+                            {/* Re-check */}
+                            <button
+                              onClick={() => { setFixesResult(null); setApplyResult(null); handleGetFixes() }}
+                              className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1 mt-2"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Re-check fixes
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

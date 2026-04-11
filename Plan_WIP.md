@@ -1,9 +1,24 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 79: Added 6-tab intelligence panel to Templates create/edit modal (Vars, Spam, Render, Human, Spintax, Score), AI Rewrite button (heavy humanize), inline HTML preview toggle. Left sidebar widened from w-56 to w-72. All using existing backend APIs (emailPreviewApi + deliverabilityApi). Frontend-only change (1 file: templates/page.tsx), build clean.
+> Session 80: Implemented Template Scorecard — multi-dimension scoring + fix engine. New backend service `template_scorer.py` with 10-dimension scoring (spam_risk, rendering, humanization, personalization, subject_quality, clarity, cta_quality, compliance, content_entropy, word_count), fix suggestions with auto-apply, and before/after score tracking. 3 new endpoints on templates router (score, fixes, apply-fixes). Frontend: replaced old Score (deliverability) tab with Scorecard + Fixes tabs in templates modal. 7-tab sidebar: Vars|Score|Fixes|Spam|Render|Human|Spintax. Build clean, backend tested.
+
+## REVERT CHECKPOINT
+> **Commit:** `118fa13` — **Branch:** `master` — **Date:** 2026-04-11
+> **State:** Clean working tree (only untracked: `NeuraLeads-Requirements,.txt`). Deployed to VPS and verified healthy.
+> **To revert here:** `git reset --hard 118fa13` then redeploy.
 
 ## Immediate TODO
+- [x] Template Scorecard — Multi-Dimension Scoring + Fix Engine (2026-04-11)
+  - Backend: `services/template_scorer.py` — 10-dimension scoring (weighted sum), fix suggestions with spam replacement map, apply_fixes with before/after delta
+  - Backend: 3 new endpoints: POST /templates/score, POST /templates/fixes, POST /templates/apply-fixes
+  - Frontend types: 6 new interfaces (DimensionScore, ScoreIssue, TemplateScorecardResult, FixSuggestion, TemplateFixesResult, ApplyFixesResult)
+  - Frontend API: 3 new methods on templatesApi (score, fixes, applyFixes)
+  - Frontend UI: Replaced old Score (deliverability) tab → Scorecard + Fixes tabs. 7-tab sidebar.
+  - Scorecard: ScoreGauge + grade + recommendation badge + 10 expandable dimension bars with issues
+  - Fixes: checkbox list of suggestions, select-all auto-fixable, one-click apply, before/after delta banner
+  - No new DB tables, no new dependencies
+  - 5 files: 1 new (template_scorer.py), 4 modified (templates.py, api.ts, types/api.ts, templates/page.tsx)
 - [x] Intelligence Panel + AI Rewrite + Preview in Templates Modal (2026-04-11)
   - 6-tab sidebar replacing fixed placeholder panel: Placeholders, Spam Check, Rendering, Humanize, Spintax Preview, Deliverability Score
   - Auto-load on tab switch for Rendering and Score tabs

@@ -645,3 +645,56 @@ export interface EmailTemplateExtended extends EmailTemplate {
   goal: string | null;
   is_system: boolean;
 }
+
+// ─── Template Scorecard ─────────────────────────────────────────────
+
+export interface ScoreIssue {
+  severity: 'high' | 'medium' | 'low'
+  message: string
+}
+
+export interface DimensionScore {
+  score: number
+  grade: string
+  weight: number
+  issues: ScoreIssue[]
+}
+
+export interface TemplateScorecardResult {
+  overall_score: number
+  overall_grade: string
+  recommendation: 'SEND' | 'REVIEW' | 'DO_NOT_SEND'
+  recommendation_label: string
+  dimensions: Record<string, DimensionScore>
+  total_issues: number
+  critical_issues: number
+}
+
+export interface FixSuggestion {
+  id: string
+  dimension: string
+  severity: 'high' | 'medium' | 'low'
+  category: string
+  message: string
+  original: string
+  replacement: string
+  location: 'subject' | 'body'
+  auto_fixable: boolean
+}
+
+export interface TemplateFixesResult {
+  fixes: FixSuggestion[]
+  fix_count: number
+  auto_fixable_count: number
+}
+
+export interface ApplyFixesResult {
+  subject: string
+  body_html: string
+  body_text: string
+  applied_fixes: string[]
+  skipped_fixes: string[]
+  before_score: number
+  after_score: number
+  delta: number
+}
