@@ -267,6 +267,37 @@ async def bulk_delete_contacts(
     }
 
 
+@router.put("/bulk/restore")
+async def bulk_restore_contacts(
+    request: BulkContactIdsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Restore archived contacts (unarchive). Admin only."""
+    contact_ids = request.contact_ids
+    if not contact_ids:
+        raise HTTPException(status_code=400, detail="No contact IDs provided")
+
+    query = db.query(ContactDetails).filter(
+        ContactDetails.contact_id.in_(contact_ids),
+        ContactDetails.is_archived == True,
+    )
+    query = tenant_filter(query, ContactDetails, tenant_id)
+
+    try:
+        restored_count = query.update({ContactDetails.is_archived: False}, synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk restore failed: {str(e)}")
+
+    return {
+        "message": f"Successfully restored {restored_count} contact(s)",
+        "restored_count": restored_count,
+    }
+
+
 @router.put("/bulk/update")
 async def bulk_update_contacts(
     request: dict,

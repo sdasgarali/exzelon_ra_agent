@@ -347,6 +347,10 @@ export const contactsApi = {
     const response = await api.put('/contacts/bulk/update', { contact_ids: ids, updates })
     return response.data
   },
+  bulkRestore: async (ids: number[]) => {
+    const response = await api.put('/contacts/bulk/restore', { contact_ids: ids })
+    return response.data
+  },
 }
 
 // Dashboard API

@@ -80,6 +80,12 @@ export default function ContactsPage() {
   const [createForm, setCreateForm] = useState({ ...EMPTY_FORM })
   const [creating, setCreating] = useState(false)
 
+  // Edit contact modal
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingContactId, setEditingContactId] = useState<number | null>(null)
+  const [editForm, setEditForm] = useState({ ...EMPTY_FORM })
+  const [editing, setEditing] = useState(false)
+
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(timer)
@@ -191,6 +197,55 @@ export default function ContactsPage() {
       setError(err.response?.data?.detail || 'Failed to create contact')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleEditContact = async () => {
+    if (!editingContactId || !editForm.first_name || !editForm.last_name || !editForm.email) return
+    try {
+      setEditing(true)
+      setError('')
+      await contactsApi.update(editingContactId, editForm)
+      setSuccess('Contact updated successfully!')
+      setShowEditModal(false)
+      setEditingContactId(null)
+      setEditForm({ ...EMPTY_FORM })
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to update contact')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  const handleDeleteSingle = async (contactId: number) => {
+    if (!confirm('Archive this contact?')) return
+    try {
+      setError('')
+      await contactsApi.delete(contactId)
+      setSuccess('Contact archived successfully!')
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to archive contact')
+    }
+  }
+
+  const handleRestoreSelected = async () => {
+    try {
+      setDeleting(true)
+      setError('')
+      const response = await contactsApi.bulkRestore(Array.from(selectedIds))
+      const count = response?.restored_count || selectedIds.size
+      setSuccess(`${count} contact(s) restored successfully.`)
+      setSelectedIds(new Set())
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to restore contacts')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -369,6 +424,72 @@ export default function ContactsPage() {
         </div>
       )}
 
+      {/* Edit Contact Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Edit Contact</h3>
+              <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                  <input value={editForm.first_name} onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                  <input value={editForm.last_name} onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className="input w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company / Client Name</label>
+                <input value={editForm.client_name} onChange={e => setEditForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className="input w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input value={editForm.location_state} onChange={e => setEditForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
+                <select value={editForm.priority_level} onChange={e => setEditForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
+                  <option value="">-- Select --</option>
+                  <option value="p1_job_poster">P1 - Job Poster</option>
+                  <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
+                  <option value="p3_hr_manager">P3 - HR Manager</option>
+                  <option value="p4_ops_leader">P4 - Ops Leader</option>
+                  <option value="p5_functional_manager">P5 - Functional Manager</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button
+                  onClick={handleEditContact}
+                  disabled={!editForm.first_name || !editForm.last_name || !editForm.email || editing}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {editing ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -380,17 +501,28 @@ export default function ContactsPage() {
         <div className="flex gap-3">
           {selectedIds.size > 0 && (
             <>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
-                Archive Selected ({selectedIds.size})
-              </button>
-              {isSuperAdmin && (
+              {showArchived ? (
                 <button
-                  onClick={() => setShowBulkUpdateModal(true)}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
-                  Bulk Update ({selectedIds.size})
+                  onClick={handleRestoreSelected}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">
+                  {deleting ? 'Restoring...' : `Restore Selected (${selectedIds.size})`}
                 </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
+                    Archive Selected ({selectedIds.size})
+                  </button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => setShowBulkUpdateModal(true)}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
+                      Bulk Update ({selectedIds.size})
+                    </button>
+                  )}
+                </>
               )}
             </>
           )}
@@ -506,13 +638,14 @@ export default function ContactsPage() {
                     {col.label}{getSortIcon(col.key)}
                   </th>
                 ))}
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
+                <tr><td colSpan={13} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
+                <tr><td colSpan={13} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
               ) : (
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
@@ -572,6 +705,36 @@ export default function ContactsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {contact.unsubscribed_at ? new Date(contact.unsubscribed_at).toLocaleDateString() : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingContactId(contact.contact_id)
+                            setEditForm({
+                              first_name: contact.first_name || '',
+                              last_name: contact.last_name || '',
+                              email: contact.email || '',
+                              client_name: contact.client_name || '',
+                              title: contact.title || '',
+                              phone: contact.phone || '',
+                              location_state: contact.location_state || '',
+                              source: contact.source || 'manual',
+                              priority_level: contact.priority_level || '',
+                            })
+                            setShowEditModal(true)
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSingle(contact.contact_id)}
+                          className="text-xs text-red-500 hover:text-red-700 font-medium"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
