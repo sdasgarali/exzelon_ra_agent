@@ -62,7 +62,7 @@ docker-compose up api    # Backend only with dependencies
 - **Entry point**: `main.py` -- FastAPI app with lifespan handler that creates DB tables, seeds warmup profiles, starts APScheduler
 - **Config**: `core/config.py` -- Pydantic Settings loaded from `.env`; controls DB type (sqlite/mysql), provider selection, business rules
 - **API routes**: `api/endpoints/` -- all endpoints mounted under `/api/v1` via `api/router.py`
-- **Auth**: JWT tokens with refresh token rotation — 30-min access tokens + 7-day refresh tokens. POST `/auth/refresh` exchanges refresh token for new token pair. Frontend auto-refreshes silently on 401. Includes `tenant_id` + `plan` claims. Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Password policy: min 8 chars, 1 uppercase, 1 digit, 1 special character. Account lockout: 5 failed attempts → 15 min lockout. Super admin bypasses all role checks and can impersonate tenants via `X-Tenant-ID` header. Dependencies in `api/deps/auth.py` (`get_current_tenant_id()` extracts tenant context). Multi-tenant: each user belongs to a tenant, email verification required for new signups.
+- **Auth**: JWT tokens with refresh token rotation — 30-min access tokens + 7-day refresh tokens. POST `/auth/refresh` exchanges refresh token for new token pair. Frontend auto-refreshes silently on 401. Includes `tenant_id` + `plan` claims. `TenantInfo` schema in auth responses includes `industry` for tenant-aware frontend logic. Argon2 password hashing, RBAC with 4 roles: super_admin, admin, operator, viewer. Password policy: min 8 chars, 1 uppercase, 1 digit, 1 special character. Account lockout: 5 failed attempts → 15 min lockout. Super admin bypasses all role checks and can impersonate tenants via `X-Tenant-ID` header. Dependencies in `api/deps/auth.py` (`get_current_tenant_id()` extracts tenant context). Multi-tenant: each user belongs to a tenant, email verification required for new signups.
 - **Database**: SQLAlchemy 2.0 ORM, models in `db/models/`, base class in `db/base.py`. Auto-creates tables on startup. MySQL (`exzelon_ra_agent` on localhost:3306) is the active database. SQLite used for testing.
 
 ### Adapter Pattern (`services/adapters/`)
@@ -94,7 +94,7 @@ Multi-step email sequence processor:
 - **Smart send scheduling**: `_advance_to_next_step()` uses `calculate_optimal_send_time()` to schedule next email at optimal local business hours (9-11 AM = best)
 - **Preview mode**: When `campaign.preview_mode=True`, generates OutreachDraft records instead of sending — enables human review via Email Preview page
 - **Lead-selection creation**: `POST /campaigns/from-leads` auto-generates campaign name, 3-step sequence (outreach + wait + followup), assigns all active mailboxes, enrolls contacts from selected leads
-- **Step modal template integration**: Sequence tab step modal loads templates via `templatesApi.list()`, grouped dropdown (Outreach/Follow-up) with active templates starred. Auto-loads active outreach template for first email step, followup for subsequent. Inline spam check + deliverability score buttons with results panel
+- **Step modal template integration**: Sequence tab step modal loads templates via `templatesApi.list()`, grouped dropdown (Outreach/Follow-up) with active templates starred. Auto-loads active template matching **current tenant's industry** for first email step (outreach) and subsequent steps (followup), falling back to global active template if no industry match. Inline spam check + deliverability score buttons with results panel
 
 ### Unified Inbox (`services/inbox_syncer.py`)
 
@@ -174,7 +174,7 @@ Domain reputation management subsystem:
 
 ## Key Data Models
 
-- **Tenant** -- multi-tenant organization with TenantPlan enum (starter/professional/enterprise), plan limits (max_users, max_mailboxes, max_contacts, max_campaigns, max_leads), unique slug
+- **Tenant** -- multi-tenant organization with TenantPlan enum (starter/professional/enterprise), plan limits (max_users, max_mailboxes, max_contacts, max_campaigns, max_leads), unique slug, `website` (URL), `industry` (saas/recruiting/healthcare/ecommerce/finance/general)
 - **User** -- users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), account lockout (failed_login_count, locked_until), tenant relationship
 - **LeadDetails** -- job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
 - **ContactDetails** -- decision-makers with priority levels (P1 job poster through P5 functional manager)
@@ -275,7 +275,7 @@ Domain reputation management subsystem:
 | `/deals/{id}/tasks` | `api/endpoints/deal_tasks.py` | Deal task CRUD + my-tasks |
 | `/spam-check` | `api/endpoints/spam_check.py` | Email spam score checking |
 | `/tracking-domains` | `api/endpoints/tracking_domains.py` | Custom tracking domain CRUD + verify |
-| `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate) |
+| `/admin/tenants` | `api/endpoints/admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate). Tenant update supports `website` + `industry` fields |
 | `/billing` | `api/endpoints/billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
 | `/activity` | `api/endpoints/activity_log.py` | Login history (paginated, filterable), 24h stats, auth audit events, active users, my-login-history, unlock user. Super admin only (except my-login-history) |
 | `/onboarding` | `api/endpoints/onboarding.py` | 6-step onboarding status (auto-detected from data), dismiss, reset (super admin). Per-user dismiss, tenant-filtered queries |

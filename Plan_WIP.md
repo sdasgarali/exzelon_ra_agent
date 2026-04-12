@@ -1,14 +1,32 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 80: Implemented Template Scorecard — multi-dimension scoring + fix engine. New backend service `template_scorer.py` with 10-dimension scoring (spam_risk, rendering, humanization, personalization, subject_quality, clarity, cta_quality, compliance, content_entropy, word_count), fix suggestions with auto-apply, and before/after score tracking. 3 new endpoints on templates router (score, fixes, apply-fixes). Frontend: replaced old Score (deliverability) tab with Scorecard + Fixes tabs in templates modal. 7-tab sidebar: Vars|Score|Fixes|Spam|Render|Human|Spintax. Build clean, backend tested.
+> Session 81: Three features implemented and deployed:
+> 1. **Tenant website + industry columns** — added `website` (VARCHAR 500) and `industry` (VARCHAR 100) to Tenant model, ad-hoc migration, admin tenants API (list/detail/update), TenantInfo schema (auth response), frontend store, tenants admin page (table columns + edit form), TypeScript types. Campaign step modal now auto-selects templates matching tenant's industry instead of hardcoded 'recruiting'. (8 files, commit 048d3c4)
+> 2. **Template auto-load fix** — templates now load content immediately on dropdown selection (removed Load button). Editing existing steps with template_id auto-loads template content. Removed dead handleLoadTemplate function. (1 file, commit b962e0d)
+> 3. **Lead status reset on campaign archive** — archiving campaigns now resets freed leads' `lead_status` to `enriched` (single + bulk archive). Startup migration cleans orphaned campaign_contacts for archived campaigns. Archived 2 stale draft campaigns (IDs 15, 20) on VPS, freed 35 leads back to enriched. (2 files, commit bb2348c)
 
 ## REVERT CHECKPOINT
-> **Commit:** `118fa13` — **Branch:** `master` — **Date:** 2026-04-11
+> **Commit:** `bb2348c` — **Branch:** `master` — **Date:** 2026-04-12
 > **State:** Clean working tree (only untracked: `NeuraLeads-Requirements,.txt`). Deployed to VPS and verified healthy.
-> **To revert here:** `git reset --hard 118fa13` then redeploy.
+> **To revert here:** `git reset --hard bb2348c` then redeploy.
 
 ## Immediate TODO
+- [x] Tenant Website + Industry + Tenant-Aware Template Auto-Selection (2026-04-12)
+  - Backend: `website` (VARCHAR 500) + `industry` (VARCHAR 100) columns on Tenant model, ad-hoc migration in main.py
+  - Backend: TenantSummary/TenantUpdate schemas + list/detail/update handlers in admin_tenants.py, TenantInfo.industry in user.py
+  - Frontend: Tenant interface + TenantSummary type updated, tenants page table (Industry + Website columns) + edit form (URL input + industry dropdown)
+  - Campaign step modal: auto-selects active templates matching `user.tenant.industry` (was hardcoded 'recruiting'), fallback to global active
+  - 8 files changed, commit 048d3c4, deployed
+- [x] Template Auto-Load on Selection + Edit Step Auto-Load (2026-04-12)
+  - Template dropdown onChange now immediately loads subject/body into form (removed Load button + handleLoadTemplate)
+  - Editing existing step with template_id: auto-loads template content after templates fetched
+  - 1 file changed, commit b962e0d, deployed
+- [x] Lead Status Reset on Campaign Archive (2026-04-12)
+  - Single archive + bulk archive: collect lead_ids before deleting campaign_contacts, reset `lead_status` to `enriched` for leads not in other active campaigns
+  - Startup migration: cleans orphaned campaign_contacts for archived campaigns, resets freed leads
+  - VPS data fix: archived 2 stale draft campaigns (IDs 15, 20), freed 35 leads back to enriched
+  - 2 files changed, commit bb2348c, deployed, 930 tests pass
 - [x] Template Scorecard — Multi-Dimension Scoring + Fix Engine (2026-04-11)
   - Backend: `services/template_scorer.py` — 10-dimension scoring (weighted sum), fix suggestions with spam replacement map, apply_fixes with before/after delta
   - Backend: 3 new endpoints: POST /templates/score, POST /templates/fixes, POST /templates/apply-fixes
@@ -229,6 +247,11 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 81: Tenant Industry + Template Auto-Load + Lead Status Reset (2026-04-12)
+  - Added website + industry to Tenant model/API/frontend, tenant-aware template auto-selection in campaigns
+  - Template dropdown auto-loads on select (removed Load button), edit steps auto-load linked templates
+  - Campaign archive resets freed leads to enriched, startup migration cleans orphaned campaign_contacts
+  - VPS data fix: archived 2 stale drafts, freed 35 leads. 3 commits (048d3c4, b962e0d, bb2348c), 930 tests pass
 - [x] Session 78: Template Selector + Spam/Deliverability in Step Modal (2026-04-11)
   - Fixed importToStep API (step_id as query param), template dropdown grouped by category with active badges
   - Auto-load active outreach/followup template for new email steps, inline spam check + deliverability score
