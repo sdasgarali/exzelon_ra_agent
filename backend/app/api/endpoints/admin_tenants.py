@@ -31,6 +31,8 @@ class TenantSummary(BaseModel):
     slug: str
     plan: str
     is_active: bool
+    website: Optional[str] = None
+    industry: Optional[str] = None
     user_count: int
     lead_count: int
     contact_count: int
@@ -62,6 +64,8 @@ class TenantUpdate(BaseModel):
     max_contacts: Optional[int] = None
     max_campaigns: Optional[int] = None
     max_leads: Optional[int] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
 
 
 @router.get("", response_model=List[TenantSummary])
@@ -89,6 +93,8 @@ async def list_tenants(
             slug=t.slug,
             plan=t.plan.value if hasattr(t.plan, 'value') else str(t.plan),
             is_active=t.is_active,
+            website=t.website,
+            industry=t.industry,
             user_count=db.query(User).filter(User.tenant_id == t.tenant_id).count(),
             lead_count=db.query(LeadDetails).filter(LeadDetails.tenant_id == t.tenant_id).count(),
             contact_count=db.query(ContactDetails).filter(ContactDetails.tenant_id == t.tenant_id).count(),
@@ -131,6 +137,8 @@ async def get_tenant(
         slug=tenant.slug,
         plan=tenant.plan.value if hasattr(tenant.plan, 'value') else str(tenant.plan),
         is_active=tenant.is_active,
+        website=tenant.website,
+        industry=tenant.industry,
         domain=tenant.domain,
         logo_url=tenant.logo_url,
         max_users=tenant.max_users,
@@ -179,6 +187,10 @@ async def update_tenant(
         tenant.max_campaigns = data.max_campaigns
     if data.max_leads is not None:
         tenant.max_leads = data.max_leads
+    if data.website is not None:
+        tenant.website = data.website
+    if data.industry is not None:
+        tenant.industry = data.industry
 
     db.commit()
     db.refresh(tenant)

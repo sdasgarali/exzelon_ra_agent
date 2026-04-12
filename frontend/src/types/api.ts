@@ -434,6 +434,8 @@ export interface TenantSummary {
   slug: string;
   plan: string;
   is_active: boolean;
+  website: string | null;
+  industry: string | null;
   user_count: number;
   lead_count: number;
   contact_count: number;

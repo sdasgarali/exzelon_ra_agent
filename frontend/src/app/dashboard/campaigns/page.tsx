@@ -960,8 +960,8 @@ export default function CampaignsPage() {
       setActiveOutreachTemplateId(data.active_outreach_template_id || null)
       setActiveFollowupTemplateId(data.active_followup_template_id || null)
       // Auto-load template for new email steps
-      // Step 1 (first email) → active outreach template (prefer recruiting industry)
-      // Step 3+ (subsequent emails) → active followup template (prefer recruiting industry)
+      // Step 1 (first email) → active outreach template (prefer tenant's industry)
+      // Step 3+ (subsequent emails) → active followup template (prefer tenant's industry)
       if (!step) {
         const allItems = data.items || []
         const emailStepsCount = steps.filter(s => s.step_type === 'email').length
@@ -971,11 +971,14 @@ export default function CampaignsPage() {
           ? data.active_outreach_template_id
           : data.active_followup_template_id
 
-        // Prefer active template with recruiting industry in the target category
-        const recruitingActive = allItems.find(
-          (t: any) => t.status === 'active' && t.category === targetCategory && t.industry === 'recruiting'
-        )
-        const autoTemplateId = recruitingActive?.template_id || fallbackId
+        // Prefer active template matching tenant's industry in the target category
+        const tenantIndustry = user?.tenant?.industry
+        const industryActive = tenantIndustry
+          ? allItems.find(
+              (t: any) => t.status === 'active' && t.category === targetCategory && t.industry === tenantIndustry
+            )
+          : null
+        const autoTemplateId = industryActive?.template_id || fallbackId
 
         if (autoTemplateId) {
           const tpl = allItems.find((t: any) => t.template_id === autoTemplateId)

@@ -44,6 +44,10 @@ class Tenant(Base):
     custom_domain = Column(String(255), nullable=True)
     agency_mode = Column(Boolean, default=False, nullable=False)
 
+    # Tenant profile
+    website = Column(String(500), nullable=True)
+    industry = Column(String(100), nullable=True)
+
     # Billing
     monthly_price_cents = Column(Integer, default=0, nullable=False)
     billing_email = Column(String(255), nullable=True)

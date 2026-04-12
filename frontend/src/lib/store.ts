@@ -6,6 +6,7 @@ interface Tenant {
   name: string
   slug: string
   plan: string
+  industry: string | null
 }
 
 interface User {

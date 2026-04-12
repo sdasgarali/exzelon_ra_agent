@@ -33,6 +33,7 @@ class TenantInfo(BaseModel):
     name: str
     slug: str
     plan: str
+    industry: Optional[str] = None
 
     class Config:
         from_attributes = True

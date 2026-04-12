@@ -1384,6 +1384,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for preview_mode: {e}")
 
+    # Migration: add website + industry columns to tenants
+    try:
+        from sqlalchemy import text as sa_text_tenant_profile, inspect as sa_inspect_tenant_profile
+        with engine.connect() as conn:
+            inspector_tp = sa_inspect_tenant_profile(engine)
+            tenant_cols_tp = [c["name"] for c in inspector_tp.get_columns("tenants")]
+            for col_name, col_def in [("website", "VARCHAR(500) NULL"), ("industry", "VARCHAR(100) NULL")]:
+                if col_name not in tenant_cols_tp:
+                    try:
+                        conn.execute(sa_text_tenant_profile(f"ALTER TABLE tenants ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to tenants")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for tenant website/industry: {e}")
+
     # Migration: add composite indexes for hot-path queries
     try:
         from sqlalchemy import text as sa_text_idx

@@ -61,6 +61,8 @@ export default function TenantManagementPage() {
     max_contacts: 1000,
     max_campaigns: 5,
     max_leads: 5000,
+    website: '',
+    industry: '',
   })
   const [editFeatures, setEditFeatures] = useState({
     feature_email_validation_enabled: true,
@@ -142,6 +144,8 @@ export default function TenantManagementPage() {
         max_contacts: data.max_contacts,
         max_campaigns: data.max_campaigns,
         max_leads: data.max_leads,
+        website: data.website || '',
+        industry: data.industry || '',
       })
       setEditFeatures({
         feature_email_validation_enabled: features.feature_email_validation_enabled ?? true,
@@ -254,6 +258,8 @@ export default function TenantManagementPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tenant</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Plan</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Industry</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Website</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Users</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Leads</th>
@@ -267,13 +273,13 @@ export default function TenantManagementPage() {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     Loading tenants...
                   </td>
                 </tr>
               ) : tenants.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     No tenants found
                   </td>
                 </tr>
@@ -288,6 +294,16 @@ export default function TenantManagementPage() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${PLAN_COLORS[t.plan] || PLAN_COLORS.starter}`}>
                         {t.plan}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 capitalize">
+                      {t.industry || <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                      {t.website ? (
+                        <a href={t.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline truncate block max-w-[160px]">
+                          {t.website.replace(/^https?:\/\//, '')}
+                        </a>
+                      ) : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
@@ -433,6 +449,35 @@ export default function TenantManagementPage() {
               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
+              <input
+                type="url"
+                value={editForm.website}
+                onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
+                placeholder="https://example.com"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Industry</label>
+              <select
+                value={editForm.industry}
+                onChange={(e) => setEditForm({ ...editForm, industry: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">— Select —</option>
+                <option value="saas">SaaS</option>
+                <option value="recruiting">Recruiting</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="ecommerce">E-Commerce</option>
+                <option value="finance">Finance</option>
+                <option value="general">General</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
