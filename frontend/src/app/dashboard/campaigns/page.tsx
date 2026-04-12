@@ -960,13 +960,25 @@ export default function CampaignsPage() {
       setActiveOutreachTemplateId(data.active_outreach_template_id || null)
       setActiveFollowupTemplateId(data.active_followup_template_id || null)
       // Auto-load template for new email steps
+      // Step 1 (first email) → active outreach template (prefer recruiting industry)
+      // Step 3+ (subsequent emails) → active followup template (prefer recruiting industry)
       if (!step) {
+        const allItems = data.items || []
         const emailStepsCount = steps.filter(s => s.step_type === 'email').length
-        const autoTemplateId = emailStepsCount === 0
+        const isFirstEmail = emailStepsCount === 0
+        const targetCategory = isFirstEmail ? 'outreach' : 'followup'
+        const fallbackId = isFirstEmail
           ? data.active_outreach_template_id
           : data.active_followup_template_id
+
+        // Prefer active template with recruiting industry in the target category
+        const recruitingActive = allItems.find(
+          (t: any) => t.status === 'active' && t.category === targetCategory && t.industry === 'recruiting'
+        )
+        const autoTemplateId = recruitingActive?.template_id || fallbackId
+
         if (autoTemplateId) {
-          const tpl = (data.items || []).find((t: any) => t.template_id === autoTemplateId)
+          const tpl = allItems.find((t: any) => t.template_id === autoTemplateId)
           if (tpl) {
             setSelectedTemplateId(tpl.template_id)
             setStepForm(f => ({
