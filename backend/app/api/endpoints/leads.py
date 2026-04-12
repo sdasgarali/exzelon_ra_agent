@@ -1395,6 +1395,51 @@ async def bulk_update_status(
     return result
 
 
+@router.put("/bulk/update")
+async def bulk_update_leads(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Bulk update multiple leads. Super Admin only.
+
+    Body: { "lead_ids": [...], "updates": { "field": "value", ... } }
+    Only non-null fields in updates are applied.
+    """
+    lead_ids = request.get("lead_ids", [])
+    updates = request.get("updates", {})
+
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="No lead IDs provided")
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    ALLOWED_FIELDS = {"data_type"}
+    filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
+
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid update fields provided")
+
+    query = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids))
+    query = tenant_filter(query, LeadDetails, tenant_id)
+    leads = query.all()
+
+    if not leads:
+        raise HTTPException(status_code=404, detail="No leads found with provided IDs")
+
+    try:
+        for lead in leads:
+            for field, value in filtered.items():
+                setattr(lead, field, value)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
+
+    return {"message": f"Updated {len(leads)} lead(s)", "updated_count": len(leads)}
+
+
 @router.post("/bulk/enrich/preview")
 async def preview_bulk_enrichment(
     request: BulkLeadIdsRequest,

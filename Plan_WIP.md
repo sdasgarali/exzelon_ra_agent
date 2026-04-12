@@ -1,12 +1,10 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 83: Implemented shared ContactsWizard + clickable contacts in campaigns + email search.
-> Added `data_type` column to ContactDetails (enriched/test), ad-hoc migration in main.py.
-> New shared `ContactsWizard` component (`components/contacts-wizard.tsx`) — shows contacts with data_type badges, Add Contact form (creates test contacts).
-> Leads page: replaced inline contacts modal with shared ContactsWizard.
-> Campaigns page: contact count badge now clickable → opens ContactsWizard; search enhanced to include contact email.
-> Backend: available-leads endpoint now searches by job title, company, lead ID, or contact email.
+> Session 84: Implemented Super Admin Bulk Update for Mailboxes, Leads, Clients, Contacts.
+> Added `data_type` column to ClientInfo (enriched/test) + ad-hoc migration in main.py.
+> 4 new PUT /bulk/update endpoints (Super Admin only): mailboxes, leads, clients, contacts.
+> Frontend: bulkUpdate API methods + Bulk Update button (super_admin only) + modal on all 4 pages.
 > 930 tests pass, frontend builds clean. Ready to commit and deploy.
 
 ## REVERT CHECKPOINT

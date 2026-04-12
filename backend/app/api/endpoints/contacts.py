@@ -267,6 +267,60 @@ async def bulk_delete_contacts(
     }
 
 
+@router.put("/bulk/update")
+async def bulk_update_contacts(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Bulk update multiple contacts. Super Admin only.
+
+    Body: { "contact_ids": [...], "updates": { "field": "value", ... } }
+    Only non-null fields in updates are applied.
+    """
+    contact_ids = request.get("contact_ids", [])
+    updates = request.get("updates", {})
+
+    if not contact_ids:
+        raise HTTPException(status_code=400, detail="No contact IDs provided")
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    ALLOWED_FIELDS = {
+        "data_type", "first_name", "last_name", "client_name", "email",
+        "phone", "timezone", "lead_id", "outreach_status", "validation_status",
+        "priority_level",
+    }
+    filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
+
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid update fields provided")
+
+    query = db.query(ContactDetails).filter(ContactDetails.contact_id.in_(contact_ids))
+    query = tenant_filter(query, ContactDetails, tenant_id)
+    contacts = query.all()
+
+    if not contacts:
+        raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
+
+    try:
+        for contact in contacts:
+            for field, value in filtered.items():
+                if field == "priority_level":
+                    setattr(contact, field, PriorityLevel(value))
+                elif field == "lead_id":
+                    setattr(contact, field, int(value))
+                else:
+                    setattr(contact, field, value)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
+
+    return {"message": f"Updated {len(contacts)} contact(s)", "updated_count": len(contacts)}
+
+
 @router.get("/duplicates", tags=["Contacts"])
 async def find_duplicate_contacts(
     db: Session = Depends(get_db),

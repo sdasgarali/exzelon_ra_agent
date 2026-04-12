@@ -217,6 +217,10 @@ export const leadsApi = {
     const response = await api.put('/leads/bulk/unarchive', { lead_ids: leadIds })
     return response.data
   },
+  bulkUpdate: async (leadIds: number[], updates: Record<string, any>) => {
+    const response = await api.put('/leads/bulk/update', { lead_ids: leadIds, updates })
+    return response.data
+  },
   filterOptions: async () => {
     const response = await api.get('/leads/filter-options')
     return response.data
@@ -304,6 +308,10 @@ export const clientsApi = {
     const response = await api.post('/clients/bulk/enrich', { client_ids: ids })
     return response.data
   },
+  bulkUpdate: async (ids: number[], updates: Record<string, any>) => {
+    const response = await api.put('/clients/bulk/update', { client_ids: ids, updates })
+    return response.data
+  },
 }
 
 // Contacts API
@@ -333,6 +341,10 @@ export const contactsApi = {
   },
   replyPrediction: async (id: number) => {
     const response = await api.get(`/contacts/${id}/reply-prediction`)
+    return response.data
+  },
+  bulkUpdate: async (ids: number[], updates: Record<string, any>) => {
+    const response = await api.put('/contacts/bulk/update', { contact_ids: ids, updates })
     return response.data
   },
 }
@@ -557,6 +569,10 @@ export const mailboxesApi = {
   },
   oauthCallback: async (code: string, state: string) => {
     const response = await api.post('/mailboxes/oauth/callback', { code, state })
+    return response.data
+  },
+  bulkUpdate: async (ids: number[], updates: Record<string, any>) => {
+    const response = await api.put('/mailboxes/bulk/update', { mailbox_ids: ids, updates })
     return response.data
   },
 }

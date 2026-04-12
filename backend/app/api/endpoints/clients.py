@@ -328,6 +328,54 @@ async def bulk_enrich(
     return result
 
 
+@router.put("/bulk/update")
+async def bulk_update_clients(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Bulk update multiple clients. Super Admin only.
+
+    Body: { "client_ids": [...], "updates": { "field": "value", ... } }
+    Only non-null fields in updates are applied.
+    """
+    client_ids = request.get("client_ids", [])
+    updates = request.get("updates", {})
+
+    if not client_ids:
+        raise HTTPException(status_code=400, detail="No client IDs provided")
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    ALLOWED_FIELDS = {"data_type", "status", "industry", "company_size", "website", "linkedin_url", "timezone"}
+    filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
+
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid update fields provided")
+
+    query = db.query(ClientInfo).filter(ClientInfo.client_id.in_(client_ids))
+    query = tenant_filter(query, ClientInfo, tenant_id)
+    clients = query.all()
+
+    if not clients:
+        raise HTTPException(status_code=404, detail="No clients found with provided IDs")
+
+    try:
+        for client in clients:
+            for field, value in filtered.items():
+                if field == "status":
+                    setattr(client, field, ClientStatus(value))
+                else:
+                    setattr(client, field, value)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
+
+    return {"message": f"Updated {len(clients)} client(s)", "updated_count": len(clients)}
+
+
 @router.post("/{client_id}/enrich")
 async def enrich_single_client(
     client_id: int,

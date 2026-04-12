@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { contactsApi, api } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 
 interface Contact {
   contact_id: number
@@ -48,6 +49,7 @@ const EMPTY_FORM = {
 }
 
 export default function ContactsPage() {
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -69,6 +71,9 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false)
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [bulkUpdateForm, setBulkUpdateForm] = useState({ data_type: '', first_name: '', last_name: '', client_name: '', email: '', phone: '', timezone: '', lead_id: '', outreach_status: '', validation_status: '', priority_level: '' })
 
   // Create contact modal
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -143,6 +148,31 @@ export default function ContactsPage() {
       setShowDeleteModal(false)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleBulkUpdate = async () => {
+    const updates: Record<string, any> = {}
+    for (const [k, v] of Object.entries(bulkUpdateForm)) {
+      if (v !== '') {
+        updates[k] = k === 'lead_id' ? parseInt(v) : v
+      }
+    }
+    if (Object.keys(updates).length === 0) return
+    setBulkUpdating(true)
+    try {
+      await contactsApi.bulkUpdate(Array.from(selectedIds), updates)
+      setSuccess(`Updated ${selectedIds.size} contact(s)`)
+      setShowBulkUpdateModal(false)
+      setBulkUpdateForm({ data_type: '', first_name: '', last_name: '', client_name: '', email: '', phone: '', timezone: '', lead_id: '', outreach_status: '', validation_status: '', priority_level: '' })
+      setSelectedIds(new Set())
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Bulk update failed')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setBulkUpdating(false)
     }
   }
 
@@ -349,11 +379,20 @@ export default function ContactsPage() {
         </div>
         <div className="flex gap-3">
           {selectedIds.size > 0 && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
-              Archive Selected ({selectedIds.size})
-            </button>
+            <>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium">
+                Archive Selected ({selectedIds.size})
+              </button>
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setShowBulkUpdateModal(true)}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
+                  Bulk Update ({selectedIds.size})
+                </button>
+              )}
+            </>
           )}
           <button
             onClick={() => setShowCreateModal(true)}
@@ -555,6 +594,89 @@ export default function ContactsPage() {
           </div>
         </div>
       </div>
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Contact{selectedIds.size > 1 ? 's' : ''}</h2>
+            <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="enriched">Enriched</option>
+                  <option value="test">Test</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <input type="text" value={bulkUpdateForm.first_name} onChange={e => setBulkUpdateForm(f => ({ ...f, first_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <input type="text" value={bulkUpdateForm.last_name} onChange={e => setBulkUpdateForm(f => ({ ...f, last_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
+                <input type="text" value={bulkUpdateForm.client_name} onChange={e => setBulkUpdateForm(f => ({ ...f, client_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="text" value={bulkUpdateForm.email} onChange={e => setBulkUpdateForm(f => ({ ...f, email: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input type="text" value={bulkUpdateForm.phone} onChange={e => setBulkUpdateForm(f => ({ ...f, phone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                <input type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lead ID</label>
+                <input type="number" value={bulkUpdateForm.lead_id} onChange={e => setBulkUpdateForm(f => ({ ...f, lead_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Status</label>
+                <select value={bulkUpdateForm.outreach_status} onChange={e => setBulkUpdateForm(f => ({ ...f, outreach_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="unsubscribed">Unsubscribed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Validation Status</label>
+                <select value={bulkUpdateForm.validation_status} onChange={e => setBulkUpdateForm(f => ({ ...f, validation_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="valid">Valid</option>
+                  <option value="invalid">Invalid</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
+                <select value={bulkUpdateForm.priority_level} onChange={e => setBulkUpdateForm(f => ({ ...f, priority_level: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="P1">P1 - Job Poster</option>
+                  <option value="P2">P2 - Direct Report</option>
+                  <option value="P3">P3 - Department Head</option>
+                  <option value="P4">P4 - HR/Recruiting</option>
+                  <option value="P5">P5 - Functional Manager</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateForm({ data_type: '', first_name: '', last_name: '', client_name: '', email: '', phone: '', timezone: '', lead_id: '', outreach_status: '', validation_status: '', priority_level: '' }) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkUpdate} disabled={bulkUpdating || Object.values(bulkUpdateForm).every(v => v === '')} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                {bulkUpdating ? 'Updating...' : 'Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

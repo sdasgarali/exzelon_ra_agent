@@ -988,3 +988,55 @@ async def get_available_mailboxes_for_sending(
     ).limit(count).all()
 
     return [mailbox_to_response(m) for m in mailboxes]
+
+
+@router.put("/bulk/update")
+async def bulk_update_mailboxes(
+    request: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Bulk update multiple mailboxes. Super Admin only.
+
+    Body: { "mailbox_ids": [...], "updates": { "field": "value", ... } }
+    Only non-null fields in updates are applied.
+    """
+    mailbox_ids = request.get("mailbox_ids", [])
+    updates = request.get("updates", {})
+
+    if not mailbox_ids:
+        raise HTTPException(status_code=400, detail="No mailbox IDs provided")
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    ALLOWED_FIELDS = {"is_active", "daily_send_limit", "warmup_status"}
+    filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
+
+    if not filtered:
+        raise HTTPException(status_code=400, detail="No valid update fields provided")
+
+    query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
+    query = tenant_filter(query, SenderMailbox, tenant_id)
+    mailboxes = query.all()
+
+    if not mailboxes:
+        raise HTTPException(status_code=404, detail="No mailboxes found with provided IDs")
+
+    try:
+        for mailbox in mailboxes:
+            for field, value in filtered.items():
+                if field == "warmup_status":
+                    setattr(mailbox, field, WarmupStatus(value))
+                elif field == "daily_send_limit":
+                    setattr(mailbox, field, int(value))
+                elif field == "is_active":
+                    setattr(mailbox, field, value if isinstance(value, bool) else str(value).lower() == "true")
+                else:
+                    setattr(mailbox, field, value)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
+
+    return {"message": f"Updated {len(mailboxes)} mailbox(es)", "updated_count": len(mailboxes)}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { clientsApi, api } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 
 interface Client {
   client_id: number
@@ -61,6 +62,7 @@ type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'i
 type SortOrder = 'asc' | 'desc'
 
 export default function ClientsPage() {
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
   const [clients, setClients] = useState<Client[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -97,6 +99,9 @@ export default function ClientsPage() {
   const [togglingStatus, setTogglingStatus] = useState<number | null>(null)
   const [enrichingId, setEnrichingId] = useState<number | null>(null)
   const [bulkEnriching, setBulkEnriching] = useState(false)
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false)
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [bulkUpdateForm, setBulkUpdateForm] = useState({ data_type: '', status: '', industry: '', company_size: '', website: '', linkedin_url: '', timezone: '' })
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -264,6 +269,29 @@ export default function ClientsPage() {
     }
   }
 
+  const handleBulkUpdate = async () => {
+    const updates: Record<string, any> = {}
+    for (const [k, v] of Object.entries(bulkUpdateForm)) {
+      if (v !== '') updates[k] = v
+    }
+    if (Object.keys(updates).length === 0) return
+    setBulkUpdating(true)
+    try {
+      await clientsApi.bulkUpdate(Array.from(selectedIds), updates)
+      setSuccess(`Updated ${selectedIds.size} client(s)`)
+      setShowBulkUpdateModal(false)
+      setBulkUpdateForm({ data_type: '', status: '', industry: '', company_size: '', website: '', linkedin_url: '', timezone: '' })
+      setSelectedIds(new Set())
+      fetchClients()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Bulk update failed')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setBulkUpdating(false)
+    }
+  }
+
   const clearFilters = () => {
     setSearch('')
     setFilterStatus('')
@@ -338,6 +366,14 @@ export default function ClientsPage() {
               >
                 Archive Selected ({selectedIds.size})
               </button>
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setShowBulkUpdateModal(true)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium"
+                >
+                  Bulk Update ({selectedIds.size})
+                </button>
+              )}
             </>
           )}
           <button
@@ -794,6 +830,60 @@ export default function ClientsPage() {
                 className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
                 {deleting ? 'Archiving...' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+            <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Client{selectedIds.size > 1 ? 's' : ''}</h2>
+            <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="enriched">Enriched</option>
+                  <option value="test">Test</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={bulkUpdateForm.status} onChange={e => setBulkUpdateForm(f => ({ ...f, status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                <input type="text" value={bulkUpdateForm.industry} onChange={e => setBulkUpdateForm(f => ({ ...f, industry: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company Size</label>
+                <input type="text" value={bulkUpdateForm.company_size} onChange={e => setBulkUpdateForm(f => ({ ...f, company_size: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                <input type="text" value={bulkUpdateForm.website} onChange={e => setBulkUpdateForm(f => ({ ...f, website: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn URL</label>
+                <input type="text" value={bulkUpdateForm.linkedin_url} onChange={e => setBulkUpdateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                <input type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateForm({ data_type: '', status: '', industry: '', company_size: '', website: '', linkedin_url: '', timezone: '' }) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkUpdate} disabled={bulkUpdating || Object.values(bulkUpdateForm).every(v => v === '')} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                {bulkUpdating ? 'Updating...' : 'Update'}
               </button>
             </div>
           </div>

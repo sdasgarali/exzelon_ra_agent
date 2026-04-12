@@ -169,6 +169,9 @@ export default function MailboxesPage() {
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false)
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [bulkUpdateForm, setBulkUpdateForm] = useState({ is_active: '', daily_send_limit: '', warmup_status: '' })
 
   // Form state
   // Signature form state
@@ -414,6 +417,27 @@ export default function MailboxesPage() {
       message: `Archived ${deleted} mailbox${deleted !== 1 ? 'es' : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
     })
     fetchData()
+  }
+
+  const handleBulkUpdate = async () => {
+    const updates: Record<string, any> = {}
+    if (bulkUpdateForm.is_active !== '') updates.is_active = bulkUpdateForm.is_active === 'true'
+    if (bulkUpdateForm.daily_send_limit !== '') updates.daily_send_limit = parseInt(bulkUpdateForm.daily_send_limit)
+    if (bulkUpdateForm.warmup_status !== '') updates.warmup_status = bulkUpdateForm.warmup_status
+    if (Object.keys(updates).length === 0) return
+    setBulkUpdating(true)
+    try {
+      await mailboxesApi.bulkUpdate(Array.from(selectedIds), updates)
+      toast('success', `Updated ${selectedIds.size} mailbox(es)`)
+      setShowBulkUpdateModal(false)
+      setBulkUpdateForm({ is_active: '', daily_send_limit: '', warmup_status: '' })
+      setSelectedIds(new Set())
+      fetchData()
+    } catch (err: any) {
+      toast('error', err?.response?.data?.detail || 'Bulk update failed')
+    } finally {
+      setBulkUpdating(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -892,6 +916,52 @@ export default function MailboxesPage() {
             <button onClick={handleBulkDelete} disabled={bulkDeleting} className="px-3 py-1.5 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">
               {bulkDeleting ? 'Archiving...' : `Archive Selected (${selectedIds.size})`}
             </button>
+            {isSuperAdmin && (
+              <button onClick={() => setShowBulkUpdateModal(true)} className="px-3 py-1.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+                Bulk Update ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Mailbox{selectedIds.size > 1 ? 'es' : ''}</h2>
+            <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Active Status</label>
+                <select value={bulkUpdateForm.is_active} onChange={e => setBulkUpdateForm(f => ({ ...f, is_active: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
+                <input type="number" value={bulkUpdateForm.daily_send_limit} onChange={e => setBulkUpdateForm(f => ({ ...f, daily_send_limit: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
+                <select value={bulkUpdateForm.warmup_status} onChange={e => setBulkUpdateForm(f => ({ ...f, warmup_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="warming_up">Warming Up</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="cold_ready">Cold Ready</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateForm({ is_active: '', daily_send_limit: '', warmup_status: '' }) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkUpdate} disabled={bulkUpdating || (bulkUpdateForm.is_active === '' && bulkUpdateForm.daily_send_limit === '' && bulkUpdateForm.warmup_status === '')} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                {bulkUpdating ? 'Updating...' : 'Update'}
+              </button>
+            </div>
           </div>
         </div>
       )}

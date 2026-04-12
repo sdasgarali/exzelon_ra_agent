@@ -12,6 +12,7 @@ class ClientBase(BaseModel):
     industry: Optional[str] = None
     company_size: Optional[str] = None
     location_state: Optional[str] = None
+    data_type: Optional[str] = "enriched"
 
 
 class ClientCreate(ClientBase):

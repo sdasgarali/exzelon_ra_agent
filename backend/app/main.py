@@ -1636,6 +1636,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for timezone columns: {e}")
 
+    # Migration: add data_type to client_info
+    try:
+        from sqlalchemy import text as sa_text_cdt
+        with engine.connect() as conn:
+            ci_cols = [r[0].lower() for r in conn.execute(sa_text_cdt("SHOW COLUMNS FROM client_info")).fetchall()]
+            if "data_type" not in ci_cols:
+                conn.execute(sa_text_cdt("ALTER TABLE client_info ADD COLUMN data_type VARCHAR(20) DEFAULT 'enriched' NOT NULL"))
+                conn.commit()
+                logger.info("Migration: added data_type column to client_info")
+    except Exception as e:
+        logger.warning(f"Migration check for client_info.data_type: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

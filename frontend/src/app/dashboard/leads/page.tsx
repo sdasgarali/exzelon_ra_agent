@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { leadsApi, pipelinesApi, api } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import { ContactsWizard } from '@/components/contacts-wizard'
 
 interface Lead {
@@ -74,6 +75,7 @@ const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporar
 
 export default function LeadsPage() {
   const router = useRouter()
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -125,6 +127,9 @@ export default function LeadsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false)
+  const [bulkUpdating, setBulkUpdating] = useState(false)
+  const [bulkUpdateForm, setBulkUpdateForm] = useState({ data_type: '' })
 
   // Bulk outreach
   const [showOutreachModal, setShowOutreachModal] = useState(false)
@@ -406,6 +411,27 @@ export default function LeadsPage() {
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to restore leads')
       setTimeout(() => setError(''), 4000)
+    }
+  }
+
+  const handleBulkUpdate = async () => {
+    const updates: Record<string, any> = {}
+    if (bulkUpdateForm.data_type !== '') updates.data_type = bulkUpdateForm.data_type
+    if (Object.keys(updates).length === 0) return
+    setBulkUpdating(true)
+    try {
+      await leadsApi.bulkUpdate(Array.from(selectedIds), updates)
+      setSuccess(`Updated ${selectedIds.size} lead(s)`)
+      setShowBulkUpdateModal(false)
+      setBulkUpdateForm({ data_type: '' })
+      setSelectedIds(new Set())
+      fetchLeads()
+      setTimeout(() => setSuccess(''), 4000)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Bulk update failed')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setBulkUpdating(false)
     }
   }
 
@@ -802,6 +828,14 @@ export default function LeadsPage() {
                   className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
                 >
                   Archive Selected ({selectedIds.size})
+                </button>
+              )}
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setShowBulkUpdateModal(true)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium"
+                >
+                  Bulk Update ({selectedIds.size})
                 </button>
               )}
               <button
@@ -1463,6 +1497,32 @@ export default function LeadsPage() {
                 className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
                 {deleting ? 'Archiving...' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Update Modal */}
+      {showBulkUpdateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Lead{selectedIds.size > 1 ? 's' : ''}</h2>
+            <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
+                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                  <option value="">— No change —</option>
+                  <option value="test">Test</option>
+                  <option value="prod">Prod</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateForm({ data_type: '' }) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkUpdate} disabled={bulkUpdating || bulkUpdateForm.data_type === ''} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                {bulkUpdating ? 'Updating...' : 'Update'}
               </button>
             </div>
           </div>
