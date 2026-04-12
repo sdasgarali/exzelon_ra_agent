@@ -780,41 +780,6 @@ export default function LeadsPage() {
         <div className="flex gap-2">
           {selectedIds.size > 0 && (
             <>
-              <button
-                onClick={handleOpenEnrichPreview}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm font-medium"
-              >
-                Contact Enrich ({selectedIds.size})
-              </button>
-              <button
-                onClick={async () => {
-                  setOutreachDryRun(true)
-                  setShowOutreachModal(true)
-                  setLoadingPreview(true)
-                  try {
-                    const eligibleIds = Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0)
-                    if (eligibleIds.length > 0) {
-                      const preview = await leadsApi.previewOutreach(eligibleIds)
-                      setOutreachPreview(preview)
-                    }
-                  } catch (err: any) {
-                    setError(err.response?.data?.detail || 'Failed to load preview')
-                  } finally {
-                    setLoadingPreview(false)
-                  }
-                }}
-                disabled={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                title={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0 ? 'No selected leads have contacts' : ''}
-              >
-                Send Outreach ({Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length})
-              </button>
-              <button
-                onClick={() => setShowStatusModal(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
-              >
-                Update Status ({selectedIds.size})
-              </button>
               {showArchived ? (
                 <button
                   onClick={handleBulkUnarchive}
@@ -823,36 +788,73 @@ export default function LeadsPage() {
                   Restore Selected ({selectedIds.size})
                 </button>
               ) : (
-                <button
-                  onClick={() => setShowDeleteModal(true)}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
-                >
-                  Archive Selected ({selectedIds.size})
-                </button>
+                <>
+                  <button
+                    onClick={handleOpenEnrichPreview}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm font-medium"
+                  >
+                    Contact Enrich ({selectedIds.size})
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setOutreachDryRun(true)
+                      setShowOutreachModal(true)
+                      setLoadingPreview(true)
+                      try {
+                        const eligibleIds = Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0)
+                        if (eligibleIds.length > 0) {
+                          const preview = await leadsApi.previewOutreach(eligibleIds)
+                          setOutreachPreview(preview)
+                        }
+                      } catch (err: any) {
+                        setError(err.response?.data?.detail || 'Failed to load preview')
+                      } finally {
+                        setLoadingPreview(false)
+                      }
+                    }}
+                    disabled={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0 ? 'No selected leads have contacts' : ''}
+                  >
+                    Send Outreach ({Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length})
+                  </button>
+                  <button
+                    onClick={() => setShowStatusModal(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
+                  >
+                    Update Status ({selectedIds.size})
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm font-medium"
+                  >
+                    Archive Selected ({selectedIds.size})
+                  </button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => setShowBulkUpdateModal(true)}
+                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium"
+                    >
+                      Bulk Update ({selectedIds.size})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const ids = eligibleLeadIds.join(',')
+                      router.push(`/dashboard/campaigns?create_from_leads=${ids}`)
+                    }}
+                    disabled={eligibleLeadIds.length === 0 || checkingEligibility}
+                    className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={eligibleLeadIds.length === 0 ? 'No selected leads are eligible (need contacts + not in active campaign)' : ''}
+                  >
+                    {checkingEligibility ? (
+                      <><span className="animate-spin">&#8635;</span> Checking...</>
+                    ) : (
+                      <>Create Campaign ({eligibleLeadIds.length})</>
+                    )}
+                  </button>
+                </>
               )}
-              {isSuperAdmin && (
-                <button
-                  onClick={() => setShowBulkUpdateModal(true)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium"
-                >
-                  Bulk Update ({selectedIds.size})
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  const ids = eligibleLeadIds.join(',')
-                  router.push(`/dashboard/campaigns?create_from_leads=${ids}`)
-                }}
-                disabled={eligibleLeadIds.length === 0 || checkingEligibility}
-                className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                title={eligibleLeadIds.length === 0 ? 'No selected leads are eligible (need contacts + not in active campaign)' : ''}
-              >
-                {checkingEligibility ? (
-                  <><span className="animate-spin">&#8635;</span> Checking...</>
-                ) : (
-                  <>Create Campaign ({eligibleLeadIds.length})</>
-                )}
-              </button>
             </>
           )}
           {/* Import Button */}
