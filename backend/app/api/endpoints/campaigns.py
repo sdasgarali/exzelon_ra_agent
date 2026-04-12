@@ -625,6 +625,7 @@ def bulk_archive_campaigns(
 
     archived = 0
     errors = []
+    all_orphan_lead_ids: list[int] = []
 
     for cid in data.campaign_ids:
         campaign = db.query(Campaign).filter(Campaign.campaign_id == cid).first()
@@ -637,10 +638,37 @@ def bulk_archive_campaigns(
         if not validate_campaign_transition(campaign.status, CampaignStatus.ARCHIVED):
             errors.append({"campaign_id": cid, "error": f"Cannot archive campaign in '{campaign.status.value}' status"})
             continue
+        # Collect lead IDs before disassociation
+        orphan_ids = [
+            r[0] for r in db.query(CampaignContact.lead_id).filter(
+                CampaignContact.campaign_id == cid,
+                CampaignContact.lead_id.isnot(None),
+            ).all()
+        ]
+        all_orphan_lead_ids.extend(orphan_ids)
         db.query(CampaignContact).filter(CampaignContact.campaign_id == cid).delete()
         campaign.status = CampaignStatus.ARCHIVED
         campaign.is_archived = True
         archived += 1
+
+    # Reset lead_status to 'enriched' for leads no longer in any active campaign
+    if all_orphan_lead_ids:
+        from app.db.models.lead import LeadDetails, LeadStatus
+        unique_lead_ids = list(set(all_orphan_lead_ids))
+        still_enrolled = {
+            r[0] for r in db.query(CampaignContact.lead_id).join(
+                Campaign, CampaignContact.campaign_id == Campaign.campaign_id
+            ).filter(
+                CampaignContact.lead_id.in_(unique_lead_ids),
+                Campaign.is_archived == False,
+            ).all()
+        }
+        reset_ids = [lid for lid in unique_lead_ids if lid not in still_enrolled]
+        if reset_ids:
+            db.query(LeadDetails).filter(LeadDetails.lead_id.in_(reset_ids)).update(
+                {LeadDetails.lead_status: LeadStatus.ENRICHED}, synchronize_session=False
+            )
+            logger.info("bulk_archive: reset lead_status to enriched", count=len(reset_ids))
 
     db.commit()
     return {"archived": archived, "failed": len(errors), "errors": errors}
@@ -727,10 +755,37 @@ def archive_campaign(
             status_code=400,
             detail=f"Cannot archive campaign in '{campaign.status.value}' status",
         )
+    # Collect lead IDs before disassociation so we can reset their status
+    orphan_lead_ids = [
+        r[0] for r in db.query(CampaignContact.lead_id).filter(
+            CampaignContact.campaign_id == campaign_id,
+            CampaignContact.lead_id.isnot(None),
+        ).all()
+    ]
+
     # Disassociate contacts so they become available for other campaigns
     db.query(CampaignContact).filter(CampaignContact.campaign_id == campaign_id).delete()
     campaign.status = CampaignStatus.ARCHIVED
     campaign.is_archived = True
+
+    # Reset lead_status to 'enriched' for leads no longer in any active campaign
+    if orphan_lead_ids:
+        from app.db.models.lead import LeadDetails, LeadStatus
+        still_enrolled = {
+            r[0] for r in db.query(CampaignContact.lead_id).join(
+                Campaign, CampaignContact.campaign_id == Campaign.campaign_id
+            ).filter(
+                CampaignContact.lead_id.in_(orphan_lead_ids),
+                Campaign.is_archived == False,
+            ).all()
+        }
+        reset_ids = [lid for lid in orphan_lead_ids if lid not in still_enrolled]
+        if reset_ids:
+            db.query(LeadDetails).filter(LeadDetails.lead_id.in_(reset_ids)).update(
+                {LeadDetails.lead_status: LeadStatus.ENRICHED}, synchronize_session=False
+            )
+            logger.info("archive_campaign: reset lead_status to enriched", count=len(reset_ids), campaign_id=campaign_id)
+
     db.commit()
     return {"message": "Campaign archived"}
 

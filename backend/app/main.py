@@ -1401,6 +1401,46 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for tenant website/industry: {e}")
 
+    # Migration: cleanup orphaned campaign_contacts for archived campaigns
+    # and reset lead_status to 'enriched' for leads no longer in any active campaign
+    try:
+        from sqlalchemy import text as sa_text_orphan
+        with engine.connect() as conn:
+            # Find leads linked to archived campaigns via leftover campaign_contacts
+            orphan_rows = conn.execute(sa_text_orphan(
+                "SELECT DISTINCT cc.lead_id FROM campaign_contacts cc "
+                "JOIN campaigns c ON cc.campaign_id = c.campaign_id "
+                "WHERE c.is_archived = 1 AND cc.lead_id IS NOT NULL"
+            )).fetchall()
+            orphan_lead_ids = [r[0] for r in orphan_rows]
+            if orphan_lead_ids:
+                # Delete the orphaned campaign_contact records
+                conn.execute(sa_text_orphan(
+                    "DELETE cc FROM campaign_contacts cc "
+                    "JOIN campaigns c ON cc.campaign_id = c.campaign_id "
+                    "WHERE c.is_archived = 1"
+                ))
+                # Find which of those leads are still in a non-archived campaign
+                placeholders = ",".join(str(lid) for lid in orphan_lead_ids)
+                still_enrolled_rows = conn.execute(sa_text_orphan(
+                    f"SELECT DISTINCT cc.lead_id FROM campaign_contacts cc "
+                    f"JOIN campaigns c ON cc.campaign_id = c.campaign_id "
+                    f"WHERE cc.lead_id IN ({placeholders}) AND c.is_archived = 0"
+                )).fetchall()
+                still_enrolled = {r[0] for r in still_enrolled_rows}
+                reset_ids = [lid for lid in orphan_lead_ids if lid not in still_enrolled]
+                if reset_ids:
+                    reset_placeholders = ",".join(str(lid) for lid in reset_ids)
+                    conn.execute(sa_text_orphan(
+                        f"UPDATE lead_details SET lead_status = 'enriched' "
+                        f"WHERE lead_id IN ({reset_placeholders})"
+                    ))
+                    logger.info(f"Migration: reset {len(reset_ids)} leads to enriched (orphaned from archived campaigns)")
+                conn.commit()
+                logger.info(f"Migration: cleaned up campaign_contacts for {len(orphan_lead_ids)} leads in archived campaigns")
+    except Exception as e:
+        logger.warning(f"Migration check for orphaned campaign_contacts: {e}")
+
     # Migration: add composite indexes for hot-path queries
     try:
         from sqlalchemy import text as sa_text_idx
