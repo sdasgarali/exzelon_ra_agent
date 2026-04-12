@@ -1720,6 +1720,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"employment_type migration check: {e}")
 
+    # --- Migration: Add data_type column to contact_details ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as sa_text_datatype
+            contact_cols = [r[0].lower() for r in conn.execute(sa_text_datatype("SHOW COLUMNS FROM contact_details")).fetchall()]
+            if "data_type" not in contact_cols:
+                conn.execute(sa_text_datatype(
+                    "ALTER TABLE contact_details ADD COLUMN data_type VARCHAR(20) DEFAULT 'enriched' NOT NULL"
+                ))
+                conn.commit()
+                logger.info("Migration: Added data_type column to contact_details")
+    except Exception as e:
+        logger.debug(f"data_type migration check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

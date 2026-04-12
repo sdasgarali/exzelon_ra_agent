@@ -51,6 +51,7 @@ class ContactDetails(Base):
 
     # Discovery metadata
     source = Column(String(50), nullable=True)  # apollo, seamless
+    data_type = Column(String(20), nullable=False, server_default="enriched", default="enriched")  # enriched or test
     priority_level = Column(Enum(PriorityLevel, values_callable=lambda x: [e.value for e in x]), nullable=True)
 
     # Validation status (denormalized for convenience)

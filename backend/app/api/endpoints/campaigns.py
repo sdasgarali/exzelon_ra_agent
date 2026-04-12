@@ -305,12 +305,21 @@ def get_available_leads(
     ).distinct().subquery()
     query = query.filter(LeadDetails.lead_id.in_(leads_with_contacts_subq))
 
-    # Text search
+    # Text search (job title, company, lead ID, or contact email)
     if search:
-        query = query.filter(
-            (LeadDetails.job_title.ilike(f"%{search}%")) |
-            (LeadDetails.client_name.ilike(f"%{search}%"))
-        )
+        search_stripped = search.lstrip('#').strip()
+        if search_stripped.isdigit():
+            query = query.filter(LeadDetails.lead_id == int(search_stripped))
+        else:
+            contact_lead_ids = db.query(LeadContactAssociation.lead_id).join(
+                ContactDetails, ContactDetails.contact_id == LeadContactAssociation.contact_id
+            ).filter(ContactDetails.email.ilike(f"%{search}%")).distinct()
+
+            query = query.filter(
+                (LeadDetails.job_title.ilike(f"%{search}%")) |
+                (LeadDetails.client_name.ilike(f"%{search}%")) |
+                (LeadDetails.lead_id.in_(contact_lead_ids))
+            )
 
     # Filters
     if status:

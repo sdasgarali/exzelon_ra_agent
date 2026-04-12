@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { leadsApi, pipelinesApi, api } from '@/lib/api'
+import { ContactsWizard } from '@/components/contacts-wizard'
 
 interface Lead {
   lead_id: number
@@ -34,16 +35,6 @@ interface LeadFilterOptions {
   data_types: string[]
   exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }
   job_titles: string[]
-}
-
-interface Contact {
-  contact_id: number
-  lead_id: number
-  first_name: string
-  last_name: string
-  email: string
-  title: string
-  validation_status: string
 }
 
 const STATUS_OPTIONS = [
@@ -121,8 +112,6 @@ export default function LeadsPage() {
 
   // Contacts modal
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [leadContacts, setLeadContacts] = useState<Contact[]>([])
-  const [loadingContacts, setLoadingContacts] = useState(false)
 
   // Show archived toggle
   const [showArchived, setShowArchived] = useState(false)
@@ -364,22 +353,12 @@ export default function LeadsPage() {
     }
   }
 
-  const fetchContactsForLead = async (lead: Lead) => {
-    try {
-      setSelectedLead(lead)
-      setLoadingContacts(true)
-      const response = await api.get(`/contacts?lead_id=${lead.lead_id}`)
-      setLeadContacts(response.data.items || [])
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch contacts')
-    } finally {
-      setLoadingContacts(false)
-    }
+  const fetchContactsForLead = (lead: Lead) => {
+    setSelectedLead(lead)
   }
 
   const closeContactsModal = () => {
     setSelectedLead(null)
-    setLeadContacts([])
   }
 
   const toggleSelect = (id: number) => {
@@ -1967,93 +1946,13 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {/* Contacts Modal */}
+      {/* Contacts Wizard */}
       {selectedLead && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Contacts for {selectedLead.client_name}
-                </h3>
-                <p className="text-sm text-gray-500">{selectedLead.job_title}</p>
-              </div>
-              <button
-                onClick={closeContactsModal}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-              >
-                &times;
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="px-6 py-4 overflow-y-auto flex-1">
-              {loadingContacts ? (
-                <div className="text-center py-8 text-gray-500">
-                  Loading contacts...
-                </div>
-              ) : leadContacts.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="mb-2">No contacts found for this lead.</p>
-                  <p className="text-sm">Run the Contact Enrichment pipeline to discover contacts.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {leadContacts.map((contact) => (
-                    <div
-                      key={contact.contact_id}
-                      className="p-4 border rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {contact.first_name} {contact.last_name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {contact.title || 'No title'}
-                          </div>
-                          <a
-                            href={`mailto:${contact.email}`}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            {contact.email}
-                          </a>
-                        </div>
-                        <div>
-                          <span
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              contact.validation_status === 'valid'
-                                ? 'bg-green-100 text-green-800'
-                                : contact.validation_status === 'invalid'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-gray-100 text-gray-600'
-                            }`}
-                          >
-                            {contact.validation_status || 'Not validated'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center">
-              <span className="text-sm text-gray-500">
-                {leadContacts.length} contact{leadContacts.length !== 1 ? 's' : ''} linked to this lead
-              </span>
-              <button
-                onClick={closeContactsModal}
-                className="btn-secondary"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <ContactsWizard
+          lead={selectedLead}
+          onClose={closeContactsModal}
+          onContactAdded={() => fetchLeads()}
+        />
       )}
     </div>
   )

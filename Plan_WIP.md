@@ -1,10 +1,13 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 81: Three features implemented and deployed:
-> 1. **Tenant website + industry columns** — added `website` (VARCHAR 500) and `industry` (VARCHAR 100) to Tenant model, ad-hoc migration, admin tenants API (list/detail/update), TenantInfo schema (auth response), frontend store, tenants admin page (table columns + edit form), TypeScript types. Campaign step modal now auto-selects templates matching tenant's industry instead of hardcoded 'recruiting'. (8 files, commit 048d3c4)
-> 2. **Template auto-load fix** — templates now load content immediately on dropdown selection (removed Load button). Editing existing steps with template_id auto-loads template content. Removed dead handleLoadTemplate function. (1 file, commit b962e0d)
-> 3. **Lead status reset on campaign archive** — archiving campaigns now resets freed leads' `lead_status` to `enriched` (single + bulk archive). Startup migration cleans orphaned campaign_contacts for archived campaigns. Archived 2 stale draft campaigns (IDs 15, 20) on VPS, freed 35 leads back to enriched. (2 files, commit bb2348c)
+> Session 83: Implemented shared ContactsWizard + clickable contacts in campaigns + email search.
+> Added `data_type` column to ContactDetails (enriched/test), ad-hoc migration in main.py.
+> New shared `ContactsWizard` component (`components/contacts-wizard.tsx`) — shows contacts with data_type badges, Add Contact form (creates test contacts).
+> Leads page: replaced inline contacts modal with shared ContactsWizard.
+> Campaigns page: contact count badge now clickable → opens ContactsWizard; search enhanced to include contact email.
+> Backend: available-leads endpoint now searches by job title, company, lead ID, or contact email.
+> 930 tests pass, frontend builds clean. Ready to commit and deploy.
 
 ## REVERT CHECKPOINT
 > **Commit:** `bb2348c` — **Branch:** `master` — **Date:** 2026-04-12
@@ -22,6 +25,18 @@
   - Template dropdown onChange now immediately loads subject/body into form (removed Load button + handleLoadTemplate)
   - Editing existing step with template_id: auto-loads template content after templates fetched
   - 1 file changed, commit b962e0d, deployed
+- [x] Fix from-leads template auto-load (2026-04-12)
+  - Root cause: `active_outreach_template_id` / `active_followup_template_id` in settings table were NULL for all tenants
+  - Fix: Direct DB query for active templates with industry-aware matching (`_pick_template()` helper)
+  - Also replaced `int(outreach_template_id)` → `outreach_template.template_id` for type safety
+  - 1 file changed, commit f610e30, deployed, 930 tests pass
+- [x] Shared ContactsWizard + Clickable Contacts + Email Search (2026-04-12)
+  - Backend: `data_type` column on ContactDetails (enriched/test), migration, schema update
+  - Backend: available-leads search now includes contact email (+ lead ID by #)
+  - Frontend: new shared `ContactsWizard` component with Add Contact (test) form
+  - Leads page: replaced inline contacts modal with shared ContactsWizard
+  - Campaigns page: clickable contact count badge → opens ContactsWizard; updated search placeholder
+  - 7 files changed, 930 tests pass, frontend builds clean
 - [x] Lead Status Reset on Campaign Archive (2026-04-12)
   - Single archive + bulk archive: collect lead_ids before deleting campaign_contacts, reset `lead_status` to `enriched` for leads not in other active campaigns
   - Startup migration: cleans orphaned campaign_contacts for archived campaigns, resets freed leads

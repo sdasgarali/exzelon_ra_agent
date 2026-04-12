@@ -17,6 +17,7 @@ class ContactBase(BaseModel):
     phone: Optional[str] = None
     source: Optional[str] = None
     priority_level: Optional[PriorityLevel] = None
+    data_type: Optional[str] = "enriched"
 
 
 class ContactCreate(ContactBase):
@@ -49,6 +50,7 @@ class ContactResponse(ContactBase):
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
     outreach_status: Optional[str] = "active"
+    data_type: str = "enriched"
     unsubscribed_at: Optional[datetime] = None
     lead_ids: List[int] = []  # All associated lead IDs via junction table
     is_archived: bool = False

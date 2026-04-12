@@ -17,6 +17,7 @@ import {
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import { ContactsWizard } from '@/components/contacts-wizard'
 
 const SequenceBuilder = dynamic(() => import('@/components/sequence-builder'), { ssr: false })
 
@@ -184,6 +185,7 @@ export default function CampaignsPage() {
   const [selectedCreateLeadIds, setSelectedCreateLeadIds] = useState<Set<number>>(new Set())
   const [createPreviewMode, setCreatePreviewMode] = useState(false)
   const [creatingFromLeads, setCreatingFromLeads] = useState(false)
+  const [contactsWizardLead, setContactsWizardLead] = useState<{lead_id: number; client_name: string; job_title: string} | null>(null)
 
   // Available leads filters
   const [alFilterStatus, setAlFilterStatus] = useState('')
@@ -2133,7 +2135,7 @@ export default function CampaignsPage() {
                         value={availableLeadsSearch}
                         onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
                         className="w-full pl-9 pr-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                        placeholder="Search by job title or company..."
+                        placeholder="Search by job title, company, or contact email..."
                       />
                     </div>
                     <select
@@ -2415,7 +2417,16 @@ export default function CampaignsPage() {
                               </td>
                               <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
                               <td className="px-3 py-2 text-gray-500 text-xs">{lead.source || '-'}</td>
-                              <td className="px-3 py-2"><span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">{lead.contact_count}</span></td>
+                              <td className="px-3 py-2">
+                                <button type="button" onClick={(e) => {
+                                  e.stopPropagation()
+                                  setContactsWizardLead({ lead_id: lead.lead_id, client_name: lead.client_name, job_title: lead.job_title })
+                                }} className={`px-2 py-0.5 text-xs rounded-full cursor-pointer ${
+                                  lead.contact_count > 0 ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                }`}>
+                                  {lead.contact_count}
+                                </button>
+                              </td>
                             </tr>
                           ))
                         )}
@@ -2467,6 +2478,15 @@ export default function CampaignsPage() {
               )}
             </div>
           </>
+        )}
+
+        {/* Contacts Wizard for available-leads */}
+        {contactsWizardLead && (
+          <ContactsWizard
+            lead={contactsWizardLead}
+            onClose={() => setContactsWizardLead(null)}
+            onContactAdded={() => fetchAvailableLeads()}
+          />
         )}
       </div>
     )
