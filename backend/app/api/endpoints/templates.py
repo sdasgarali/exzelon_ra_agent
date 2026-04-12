@@ -17,6 +17,23 @@ from app.schemas.email_template import (
 
 router = APIRouter(prefix="/templates", tags=["Email Templates"])
 
+# ─── Goal → Category auto-derivation ────────────────────────────────────────
+
+GOAL_TO_CATEGORY = {
+    "cold_outreach": TemplateCategory.OUTREACH,
+    "demo_request": TemplateCategory.OUTREACH,
+    "event_invite": TemplateCategory.OUTREACH,
+    "follow_up": TemplateCategory.FOLLOWUP,
+    "re_engagement": TemplateCategory.FOLLOWUP,
+}
+
+
+def _derive_category(goal: Optional[str], fallback: TemplateCategory) -> TemplateCategory:
+    """Derive category from goal if possible, otherwise use fallback."""
+    if goal and goal in GOAL_TO_CATEGORY:
+        return GOAL_TO_CATEGORY[goal]
+    return fallback
+
 
 # ─── Scorecard request schemas ──────────────────────────────────────────────
 
@@ -165,6 +182,9 @@ async def create_template(
     """Create a new email template."""
     effective_tenant = tenant_id or 1
 
+    # Auto-derive category from goal
+    template_in.category = _derive_category(template_in.goal, template_in.category)
+
     # If creating as active, deactivate others in the SAME CATEGORY
     if template_in.status == TemplateStatus.ACTIVE:
         db.query(EmailTemplate).filter(
@@ -207,6 +227,12 @@ async def update_template(
         )
 
     update_data = template_in.model_dump(exclude_unset=True)
+
+    # Auto-derive category from goal if goal is being updated
+    if "goal" in update_data:
+        current_category = update_data.get("category", template.category)
+        derived = _derive_category(update_data["goal"], current_category)
+        update_data["category"] = derived
 
     # If setting to active, deactivate others in the SAME CATEGORY
     if update_data.get("status") == TemplateStatus.ACTIVE:

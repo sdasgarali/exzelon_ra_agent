@@ -40,6 +40,8 @@ interface EmailTemplate {
   category: TemplateCategory
   is_default: boolean
   description: string | null
+  goal: string | null
+  industry: string | null
   created_at: string
   updated_at: string
 }
@@ -52,6 +54,8 @@ interface TemplateForm {
   description: string
   status: 'active' | 'inactive'
   category: TemplateCategory
+  goal: string
+  industry: string
 }
 
 const emptyForm: TemplateForm = {
@@ -62,6 +66,40 @@ const emptyForm: TemplateForm = {
   description: '',
   status: 'inactive',
   category: 'outreach',
+  goal: '',
+  industry: '',
+}
+
+const GOAL_CATEGORY_MAP: Record<string, TemplateCategory> = {
+  cold_outreach: 'outreach',
+  demo_request: 'outreach',
+  event_invite: 'outreach',
+  follow_up: 'followup',
+  re_engagement: 'followup',
+}
+
+const GOAL_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'cold_outreach', label: 'Cold Outreach' },
+  { value: 'follow_up', label: 'Follow-up' },
+  { value: 're_engagement', label: 'Re-engagement' },
+  { value: 'event_invite', label: 'Event Invite' },
+  { value: 'demo_request', label: 'Demo Request' },
+]
+
+const INDUSTRY_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'saas', label: 'SaaS' },
+  { value: 'recruiting', label: 'Recruiting' },
+  { value: 'healthcare', label: 'Healthcare' },
+  { value: 'ecommerce', label: 'E-Commerce' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'general', label: 'General' },
+]
+
+function formatSnakeCase(val: string | null): string {
+  if (!val) return '\u2014'
+  return val.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 const PLACEHOLDERS = [
@@ -435,6 +473,8 @@ export default function TemplatesPage() {
       description: template.description || '',
       status: template.status,
       category: template.category || 'outreach',
+      goal: template.goal || '',
+      industry: template.industry || '',
     })
     setShowModal(true)
     setError('')
@@ -450,7 +490,12 @@ export default function TemplatesPage() {
     setSaving(true)
     setError('')
     try {
-      const { status: _status, ...payload } = form
+      const { status: _status, ...rest } = form
+      const payload = {
+        ...rest,
+        goal: rest.goal || null,
+        industry: rest.industry || null,
+      }
       if (editingId) {
         await templatesApi.update(editingId, payload)
       } else {
@@ -685,6 +730,12 @@ export default function TemplatesPage() {
                 Category
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Goal
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Industry
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Subject
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -701,7 +752,7 @@ export default function TemplatesPage() {
           <tbody className="bg-white divide-y divide-gray-200">
             {templates.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                   No templates yet. Create your first template to get started.
                 </td>
               </tr>
@@ -729,6 +780,12 @@ export default function TemplatesPage() {
                     >
                       {template.category === 'followup' ? 'Follow-up' : 'Outreach'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {formatSnakeCase(template.goal)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    {formatSnakeCase(template.industry)}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900 max-w-xs truncate">{template.subject}</div>
@@ -1453,14 +1510,53 @@ export default function TemplatesPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Category *
+                      {form.goal && <span className="text-xs text-gray-400 font-normal ml-1">(auto-set by goal)</span>}
+                    </label>
                     <select
                       value={form.category}
                       onChange={(e) => setForm({ ...form, category: e.target.value as TemplateCategory })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={!!form.goal && form.goal in GOAL_CATEGORY_MAP}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                     >
                       <option value="outreach">Outreach</option>
                       <option value="followup">Follow-up</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Goal</label>
+                    <select
+                      value={form.goal}
+                      onChange={(e) => {
+                        const goal = e.target.value
+                        const derived = GOAL_CATEGORY_MAP[goal]
+                        setForm(prev => ({
+                          ...prev,
+                          goal,
+                          ...(derived ? { category: derived } : {}),
+                        }))
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {GOAL_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                    <select
+                      value={form.industry}
+                      onChange={(e) => setForm({ ...form, industry: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      {INDUSTRY_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

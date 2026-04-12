@@ -3619,7 +3619,7 @@ export default function CampaignsPage() {
                               .sort((a: any, b: any) => (a.template_id === activeOutreachTemplateId ? -1 : b.template_id === activeOutreachTemplateId ? 1 : 0))
                               .map((t: any) => (
                                 <option key={t.template_id} value={t.template_id}>
-                                  {t.template_id === activeOutreachTemplateId ? '\u2605 ' : ''}{t.name}{t.template_id === activeOutreachTemplateId ? ' (Active)' : ''}
+                                  {t.template_id === activeOutreachTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeOutreachTemplateId ? ' - Active' : ''}
                                 </option>
                               ))}
                           </optgroup>
@@ -3632,7 +3632,7 @@ export default function CampaignsPage() {
                               .sort((a: any, b: any) => (a.template_id === activeFollowupTemplateId ? -1 : b.template_id === activeFollowupTemplateId ? 1 : 0))
                               .map((t: any) => (
                                 <option key={t.template_id} value={t.template_id}>
-                                  {t.template_id === activeFollowupTemplateId ? '\u2605 ' : ''}{t.name}{t.template_id === activeFollowupTemplateId ? ' (Active)' : ''}
+                                  {t.template_id === activeFollowupTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeFollowupTemplateId ? ' - Active' : ''}
                                 </option>
                               ))}
                           </optgroup>
@@ -3657,11 +3657,27 @@ export default function CampaignsPage() {
                     {selectedTemplateId && (() => {
                       const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
                       return tpl ? (
-                        <p className="text-xs text-gray-500 mt-1">
-                          {tpl.category === 'outreach' && tpl.template_id === activeOutreachTemplateId && <span className="text-green-600 font-medium">Active Outreach</span>}
-                          {tpl.category === 'followup' && tpl.template_id === activeFollowupTemplateId && <span className="text-green-600 font-medium">Active Follow-up</span>}
-                          {tpl.description && <span className="ml-1">— {tpl.description}</span>}
-                        </p>
+                        <div className="mt-1 space-y-1">
+                          <p className="text-xs text-gray-500">
+                            {tpl.category === 'outreach' && tpl.template_id === activeOutreachTemplateId && <span className="text-green-600 font-medium">Active Outreach</span>}
+                            {tpl.category === 'followup' && tpl.template_id === activeFollowupTemplateId && <span className="text-green-600 font-medium">Active Follow-up</span>}
+                            {tpl.description && <span className="ml-1">— {tpl.description}</span>}
+                          </p>
+                          {(tpl.goal || tpl.industry) && (
+                            <div className="flex items-center gap-1.5">
+                              {tpl.goal && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
+                                  {tpl.goal.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                                </span>
+                              )}
+                              {tpl.industry && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
+                                  {tpl.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       ) : null
                     })()}
                   </div>
