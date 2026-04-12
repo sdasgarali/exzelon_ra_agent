@@ -430,7 +430,7 @@ def create_campaign_from_leads(
     from app.db.models.lead_contact import LeadContactAssociation
     from app.db.models.sender_mailbox import SenderMailbox
     from app.db.models.email_template import EmailTemplate
-    from app.core.settings_resolver import get_tenant_setting
+    from app.db.models.tenant import Tenant
 
     check_plan_limit(db, tenant_id, "campaigns")
 
@@ -498,20 +498,28 @@ def create_campaign_from_leads(
     mailbox_ids = [m.mailbox_id for m in mailboxes]
     campaign.mailbox_ids_json = json.dumps(mailbox_ids)
 
-    # Fetch active templates from settings
-    outreach_template_id = get_tenant_setting(db, "active_outreach_template_id", tenant_id=tenant_id, default=None)
-    followup_template_id = get_tenant_setting(db, "active_followup_template_id", tenant_id=tenant_id, default=None)
+    # Fetch active templates from DB (prefer tenant industry match, fallback to any active)
+    from app.db.models.email_template import TemplateStatus, TemplateCategory
+    effective_tenant = tenant_id or user.tenant_id or 1
+    tenant_obj = db.query(Tenant).filter(Tenant.tenant_id == effective_tenant).first()
+    tenant_industry = tenant_obj.industry if tenant_obj else None
 
-    outreach_template = None
-    followup_template = None
-    if outreach_template_id:
-        outreach_template = db.query(EmailTemplate).filter(
-            EmailTemplate.template_id == int(outreach_template_id)
-        ).first()
-    if followup_template_id:
-        followup_template = db.query(EmailTemplate).filter(
-            EmailTemplate.template_id == int(followup_template_id)
-        ).first()
+    active_templates = db.query(EmailTemplate).filter(
+        EmailTemplate.tenant_id == effective_tenant,
+        EmailTemplate.status == TemplateStatus.ACTIVE,
+        EmailTemplate.is_archived == False,
+    ).all()
+
+    def _pick_template(templates, category, industry):
+        """Pick best template: industry match first, then any active in category."""
+        if industry:
+            match = next((t for t in templates if t.category == category and t.industry == industry), None)
+            if match:
+                return match
+        return next((t for t in templates if t.category == category), None)
+
+    outreach_template = _pick_template(active_templates, TemplateCategory.OUTREACH, tenant_industry)
+    followup_template = _pick_template(active_templates, TemplateCategory.FOLLOWUP, tenant_industry)
 
     # Create 3-step sequence
     step1 = SequenceStep(
@@ -521,7 +529,7 @@ def create_campaign_from_leads(
         subject=outreach_template.subject if outreach_template else "Reaching out re: {{job_title}}",
         body_html=outreach_template.body_html if outreach_template else "<p>Hi {{first_name}},</p>",
         body_text=outreach_template.body_text if outreach_template else "Hi {{first_name}},",
-        template_id=int(outreach_template_id) if outreach_template_id else None,
+        template_id=outreach_template.template_id if outreach_template else None,
         delay_days=0,
         delay_hours=0,
     )
@@ -539,7 +547,7 @@ def create_campaign_from_leads(
         subject=followup_template.subject if followup_template else "Re: Reaching out re: {{job_title}}",
         body_html=followup_template.body_html if followup_template else "<p>Hi {{first_name}}, following up...</p>",
         body_text=followup_template.body_text if followup_template else "Hi {{first_name}}, following up...",
-        template_id=int(followup_template_id) if followup_template_id else None,
+        template_id=followup_template.template_id if followup_template else None,
         delay_days=0,
         delay_hours=0,
         reply_to_thread=True,
