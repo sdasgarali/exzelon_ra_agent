@@ -108,6 +108,10 @@ class ContactRemove(BaseModel):
 class CreateFromLeads(BaseModel):
     lead_ids: List[int]
     preview_mode: bool = False
+    timezone: Optional[str] = None
+    send_window_start: Optional[str] = None
+    send_window_end: Optional[str] = None
+    send_days: Optional[List[str]] = None
 
 class BulkArchiveRequest(BaseModel):
     campaign_ids: List[int] = Field(..., min_length=1, max_length=100)
@@ -459,10 +463,10 @@ def create_campaign_from_leads(
     campaign = Campaign(
         name="(generating...)",
         status=CampaignStatus.DRAFT,
-        timezone="America/New_York",
-        send_window_start="09:00",
-        send_window_end="17:00",
-        send_days_json=json.dumps(["mon", "tue", "wed", "thu", "fri"]),
+        timezone=data.timezone or "America/New_York",
+        send_window_start=data.send_window_start or "09:00",
+        send_window_end=data.send_window_end or "17:00",
+        send_days_json=json.dumps(data.send_days if data.send_days else ["mon", "tue", "wed", "thu", "fri"]),
         daily_limit=30,
         created_by=user.user_id,
         tenant_id=tenant_id or 1,

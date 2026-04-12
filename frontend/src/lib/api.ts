@@ -1003,7 +1003,7 @@ export const campaignsApi = {
     const response = await api.get(`/campaigns/available-leads?${qs.toString()}`)
     return response.data
   },
-  createFromLeads: async (data: { lead_ids: number[]; preview_mode?: boolean }) => {
+  createFromLeads: async (data: { lead_ids: number[]; preview_mode?: boolean; timezone?: string; send_window_start?: string; send_window_end?: string; send_days?: string[] }) => {
     const response = await api.post('/campaigns/from-leads', data)
     return response.data
   },

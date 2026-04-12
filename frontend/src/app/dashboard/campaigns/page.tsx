@@ -77,6 +77,18 @@ const defaultStep: StepFormData = {
   variants_json: '',
 }
 
+const TIMEZONE_OPTIONS = [
+  { value: 'US/Eastern', label: 'Eastern (ET)' },
+  { value: 'US/Central', label: 'Central (CT)' },
+  { value: 'US/Mountain', label: 'Mountain (MT)' },
+  { value: 'US/Pacific', label: 'Pacific (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii (HT)' },
+  { value: 'UTC', label: 'UTC' },
+]
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
   active: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
@@ -185,6 +197,7 @@ export default function CampaignsPage() {
   const [selectedCreateLeadIds, setSelectedCreateLeadIds] = useState<Set<number>>(new Set())
   const [createPreviewMode, setCreatePreviewMode] = useState(false)
   const [creatingFromLeads, setCreatingFromLeads] = useState(false)
+  const [createScheduleExpanded, setCreateScheduleExpanded] = useState(false)
   const [contactsWizardLead, setContactsWizardLead] = useState<{lead_id: number; client_name: string; job_title: string} | null>(null)
 
   // Available leads filters
@@ -214,6 +227,16 @@ export default function CampaignsPage() {
   const [overviewEditing, setOverviewEditing] = useState(false)
   const [overviewForm, setOverviewForm] = useState({ name: '', description: '', sending_speed: 'normal' })
   const [overviewSaving, setOverviewSaving] = useState(false)
+
+  // Schedule edit state
+  const [scheduleEditing, setScheduleEditing] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState({
+    timezone: 'US/Eastern',
+    send_window_start: '09:00',
+    send_window_end: '17:00',
+    send_days: ['mon', 'tue', 'wed', 'thu', 'fri'] as string[],
+  })
+  const [scheduleSaving, setScheduleSaving] = useState(false)
 
   // Step spam scores
   const [stepSpamScores, setStepSpamScores] = useState<Record<number, { grade: string; score: number }>>({})
@@ -672,6 +695,10 @@ export default function CampaignsPage() {
       const data = await campaignsApi.createFromLeads({
         lead_ids: Array.from(selectedCreateLeadIds),
         preview_mode: createPreviewMode,
+        timezone: campaignForm.timezone,
+        send_window_start: campaignForm.send_window_start,
+        send_window_end: campaignForm.send_window_end,
+        send_days: campaignForm.send_days,
       })
       setShowCreateModal(false)
       setSelectedCreateLeadIds(new Set())
@@ -2458,6 +2485,88 @@ export default function CampaignsPage() {
                     </button>
                   </div>
 
+                  {/* Configure Schedule (collapsible) */}
+                  <div className="border dark:border-gray-700 rounded-lg mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setCreateScheduleExpanded(!createScheduleExpanded)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-400" />
+                        <span>Configure Schedule</span>
+                        <span className="text-xs text-gray-400 font-normal">
+                          {campaignForm.send_days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}, {campaignForm.send_window_start}-{campaignForm.send_window_end}, {TIMEZONE_OPTIONS.find(t => t.value === campaignForm.timezone)?.label || campaignForm.timezone}
+                        </span>
+                      </div>
+                      {createScheduleExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </button>
+                    {createScheduleExpanded && (
+                      <div className="px-3 pb-3 space-y-3 border-t dark:border-gray-700 pt-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
+                            <input
+                              type="time"
+                              value={campaignForm.send_window_start}
+                              onChange={e => setCampaignForm(f => ({ ...f, send_window_start: e.target.value }))}
+                              className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
+                            <input
+                              type="time"
+                              value={campaignForm.send_window_end}
+                              onChange={e => setCampaignForm(f => ({ ...f, send_window_end: e.target.value }))}
+                              className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Send Days</label>
+                          <div className="flex gap-1 flex-wrap">
+                            {DAY_LABELS.map(day => {
+                              const dayKey = day.toLowerCase().slice(0, 3)
+                              const isActive = campaignForm.send_days.includes(dayKey)
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => {
+                                    setCampaignForm(f => ({
+                                      ...f,
+                                      send_days: f.send_days.includes(dayKey)
+                                        ? f.send_days.filter(d => d !== dayKey)
+                                        : [...f.send_days, dayKey],
+                                    }))
+                                  }}
+                                  className={`px-2 py-0.5 text-xs rounded cursor-pointer hover:opacity-80 ${
+                                    isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'
+                                  }`}
+                                >
+                                  {day}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Timezone</label>
+                          <select
+                            value={campaignForm.timezone}
+                            onChange={e => setCampaignForm(f => ({ ...f, timezone: e.target.value }))}
+                            className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                          >
+                            {TIMEZONE_OPTIONS.map(tz => (
+                              <option key={tz.value} value={tz.value}>{tz.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Actions */}
                   <div className="flex items-center justify-between pt-2 border-t dark:border-gray-700">
                     <p className="text-sm text-gray-500">
@@ -2948,34 +3057,136 @@ export default function CampaignsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Send Window Config */}
             <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Send Window</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Send Window</h3>
+                {!scheduleEditing ? (
+                  <button
+                    onClick={() => {
+                      setScheduleForm({
+                        timezone: selectedCampaign.timezone || 'US/Eastern',
+                        send_window_start: selectedCampaign.send_window_start || '09:00',
+                        send_window_end: selectedCampaign.send_window_end || '17:00',
+                        send_days: selectedCampaign.send_days || ['mon', 'tue', 'wed', 'thu', 'fri'],
+                      })
+                      setScheduleEditing(true)
+                    }}
+                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setScheduleEditing(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      disabled={scheduleSaving}
+                      onClick={async () => {
+                        setScheduleSaving(true)
+                        try {
+                          const updated = await campaignsApi.update(selectedCampaign.campaign_id, {
+                            timezone: scheduleForm.timezone,
+                            send_window_start: scheduleForm.send_window_start,
+                            send_window_end: scheduleForm.send_window_end,
+                            send_days: scheduleForm.send_days,
+                          })
+                          setSelectedCampaign(updated)
+                          setCampaigns(prev => prev.map(c => c.campaign_id === updated.campaign_id ? updated : c))
+                          setScheduleEditing(false)
+                        } catch { /* toast handled by interceptor */ }
+                        setScheduleSaving(false)
+                      }}
+                      className="text-xs bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 disabled:opacity-50"
+                    >
+                      {scheduleSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Start / End Time */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
-                  <p className="text-sm">{selectedCampaign.send_window_start || '09:00'}</p>
+                  {scheduleEditing ? (
+                    <input
+                      type="time"
+                      value={scheduleForm.send_window_start}
+                      onChange={e => setScheduleForm(f => ({ ...f, send_window_start: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                  ) : (
+                    <p className="text-sm">{selectedCampaign.send_window_start || '09:00'}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
-                  <p className="text-sm">{selectedCampaign.send_window_end || '17:00'}</p>
+                  {scheduleEditing ? (
+                    <input
+                      type="time"
+                      value={scheduleForm.send_window_end}
+                      onChange={e => setScheduleForm(f => ({ ...f, send_window_end: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                  ) : (
+                    <p className="text-sm">{selectedCampaign.send_window_end || '17:00'}</p>
+                  )}
                 </div>
               </div>
+
+              {/* Send Days */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Send Days</label>
                 <div className="flex gap-1 flex-wrap">
-                  {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => {
+                  {DAY_LABELS.map(day => {
                     const dayKey = day.toLowerCase().slice(0, 3)
-                    const isActive = (selectedCampaign.send_days || []).includes(dayKey)
+                    const isActive = scheduleEditing
+                      ? scheduleForm.send_days.includes(dayKey)
+                      : (selectedCampaign.send_days || []).includes(dayKey)
                     return (
-                      <span key={day} className={`px-2 py-0.5 text-xs rounded ${isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'}`}>
+                      <button
+                        key={day}
+                        type="button"
+                        disabled={!scheduleEditing}
+                        onClick={() => {
+                          if (!scheduleEditing) return
+                          setScheduleForm(f => ({
+                            ...f,
+                            send_days: f.send_days.includes(dayKey)
+                              ? f.send_days.filter(d => d !== dayKey)
+                              : [...f.send_days, dayKey],
+                          }))
+                        }}
+                        className={`px-2 py-0.5 text-xs rounded ${
+                          isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'
+                        } ${scheduleEditing ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                      >
                         {day}
-                      </span>
+                      </button>
                     )
                   })}
                 </div>
               </div>
+
+              {/* Timezone */}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Campaign Timezone</label>
-                <p className="text-sm">{selectedCampaign.timezone || 'UTC'}</p>
+                {scheduleEditing ? (
+                  <select
+                    value={scheduleForm.timezone}
+                    onChange={e => setScheduleForm(f => ({ ...f, timezone: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  >
+                    {TIMEZONE_OPTIONS.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-sm">{selectedCampaign.timezone || 'UTC'}</p>
+                )}
               </div>
             </div>
 
