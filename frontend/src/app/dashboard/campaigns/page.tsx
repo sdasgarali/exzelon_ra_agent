@@ -959,11 +959,11 @@ export default function CampaignsPage() {
       setStepTemplates(data.items || [])
       setActiveOutreachTemplateId(data.active_outreach_template_id || null)
       setActiveFollowupTemplateId(data.active_followup_template_id || null)
-      // Auto-load template for new email steps
-      // Step 1 (first email) → active outreach template (prefer tenant's industry)
-      // Step 3+ (subsequent emails) → active followup template (prefer tenant's industry)
+      const allItems = data.items || []
       if (!step) {
-        const allItems = data.items || []
+        // Auto-load template for new email steps
+        // Step 1 (first email) → active outreach template (prefer tenant's industry)
+        // Step 3+ (subsequent emails) → active followup template (prefer tenant's industry)
         const emailStepsCount = steps.filter(s => s.step_type === 'email').length
         const isFirstEmail = emailStepsCount === 0
         const targetCategory = isFirstEmail ? 'outreach' : 'followup'
@@ -992,21 +992,19 @@ export default function CampaignsPage() {
             }))
           }
         }
+      } else if (step.template_id) {
+        // Editing existing step with a linked template — auto-load its content
+        const tpl = allItems.find((t: any) => t.template_id === step.template_id)
+        if (tpl) {
+          setStepForm(f => ({
+            ...f,
+            subject: tpl.subject || f.subject,
+            body_html: tpl.body_html || f.body_html,
+            body_text: tpl.body_text || f.body_text,
+          }))
+        }
       }
     }).catch(() => {}).finally(() => setStepTemplatesLoading(false))
-  }
-
-  const handleLoadTemplate = () => {
-    if (!selectedTemplateId) return
-    const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
-    if (tpl) {
-      setStepForm(f => ({
-        ...f,
-        subject: tpl.subject || '',
-        body_html: tpl.body_html || '',
-        body_text: tpl.body_text || '',
-      }))
-    }
   }
 
   const handleModalSpamCheck = async () => {
@@ -4412,7 +4410,21 @@ export default function CampaignsPage() {
                         <div className="flex gap-2">
                           <select
                             value={selectedTemplateId || ''}
-                            onChange={e => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
+                            onChange={e => {
+                              const id = e.target.value ? Number(e.target.value) : null
+                              setSelectedTemplateId(id)
+                              if (id) {
+                                const tpl = stepTemplates.find((t: any) => t.template_id === id)
+                                if (tpl) {
+                                  setStepForm(f => ({
+                                    ...f,
+                                    subject: tpl.subject || '',
+                                    body_html: tpl.body_html || '',
+                                    body_text: tpl.body_text || '',
+                                  }))
+                                }
+                              }
+                            }}
                             className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
                             disabled={stepTemplatesLoading}
                           >
@@ -4443,9 +4455,6 @@ export default function CampaignsPage() {
                               </optgroup>
                             )}
                           </select>
-                          <button onClick={handleLoadTemplate} disabled={!selectedTemplateId || stepTemplatesLoading} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
-                            <Download className="w-3.5 h-3.5" /> Load
-                          </button>
                         </div>
                         {selectedTemplateId && (() => {
                           const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
