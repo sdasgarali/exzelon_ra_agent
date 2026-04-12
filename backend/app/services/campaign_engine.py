@@ -13,7 +13,7 @@ import structlog
 from sqlalchemy.orm import Session
 
 from app.db.models.campaign import (
-    Campaign, SequenceStep, CampaignContact,
+    Campaign, CampaignSchedule, SequenceStep, CampaignContact,
     CampaignStatus, StepType, CampaignContactStatus,
 )
 from app.db.models.contact import ContactDetails
@@ -76,10 +76,19 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
 
     campaign_ids = [c.campaign_id for c in active_campaigns]
 
+    # Pre-fetch all CampaignSchedule rows for active campaigns
+    all_schedules = db.query(CampaignSchedule).filter(
+        CampaignSchedule.campaign_id.in_(campaign_ids),
+        CampaignSchedule.is_archived == False,
+    ).order_by(CampaignSchedule.schedule_order).all()
+    schedules_map: Dict[int, List[CampaignSchedule]] = {}
+    for sched in all_schedules:
+        schedules_map.setdefault(sched.campaign_id, []).append(sched)
+
     # Check send window per campaign
     eligible_campaign_ids = []
     for campaign in active_campaigns:
-        if _is_within_send_window(campaign, now):
+        if _is_within_send_window(campaign, now, schedules=schedules_map.get(campaign.campaign_id)):
             eligible_campaign_ids.append(campaign.campaign_id)
 
     if not eligible_campaign_ids:
@@ -144,7 +153,8 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                     ContactDetails.timezone
                 ).filter(ContactDetails.contact_id == cc.contact_id).first()
                 if contact_for_tz and contact_for_tz.timezone:
-                    if not _is_within_send_window(campaign, now, contact_timezone=contact_for_tz.timezone):
+                    if not _is_within_send_window(campaign, now, contact_timezone=contact_for_tz.timezone,
+                                                  schedules=schedules_map.get(cc.campaign_id)):
                         results["skipped"] += 1
                         results["processed"] += 1
                         continue
@@ -264,17 +274,61 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     return results
 
 
-def _is_within_send_window(campaign: Campaign, now: datetime, contact_timezone: Optional[str] = None) -> bool:
+def _is_within_send_window(
+    campaign: Campaign,
+    now: datetime,
+    contact_timezone: Optional[str] = None,
+    schedules: Optional[List[Any]] = None,
+) -> bool:
     """Check if current time falls within send window.
 
-    Uses contact's timezone if available, otherwise falls back to campaign timezone.
-    This enables per-contact timezone-aware scheduling — emails only send during
-    business hours in the recipient's local timezone.
+    If schedule entries are provided, checks each entry whose date range covers today.
+    Returns True if ANY schedule matches. Falls back to legacy campaign columns
+    when no schedule entries exist.
+
+    Uses contact's timezone if available, otherwise falls back to schedule/campaign timezone.
     """
     try:
         from zoneinfo import ZoneInfo
 
-        # Prefer contact timezone over campaign timezone
+        if schedules:
+            # Multi-schedule mode: check each schedule entry
+            for sched in schedules:
+                try:
+                    # Check date range
+                    today_str = now.strftime("%Y-%m-%d")
+                    if sched.start_date and today_str < sched.start_date:
+                        continue  # Schedule hasn't started yet
+                    if sched.end_date and today_str > sched.end_date:
+                        continue  # Schedule has expired
+
+                    # Resolve timezone
+                    tz_name = contact_timezone or sched.timezone or "UTC"
+                    try:
+                        tz = ZoneInfo(tz_name)
+                    except (KeyError, Exception):
+                        tz = ZoneInfo("UTC")
+
+                    local_now = now.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+                    current_time = local_now.strftime("%H:%M")
+
+                    # Check day of week
+                    days_json = sched.send_days_json or '["mon","tue","wed","thu","fri"]'
+                    send_days = json.loads(days_json)
+                    day_abbr = local_now.strftime("%a").lower()[:3]
+                    if day_abbr not in send_days:
+                        continue
+
+                    # Check time window
+                    start = sched.send_window_start or "09:00"
+                    end = sched.send_window_end or "17:00"
+                    if start <= current_time <= end:
+                        return True
+                except Exception:
+                    continue  # Skip broken schedule entries
+            return False  # No schedule matched
+
+        # Legacy fallback: use campaign-level columns
         tz_name = contact_timezone or campaign.timezone or "UTC"
         try:
             tz = ZoneInfo(tz_name)

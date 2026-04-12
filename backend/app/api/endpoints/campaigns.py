@@ -17,7 +17,7 @@ from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.campaign import (
-    Campaign, SequenceStep, CampaignContact,
+    Campaign, CampaignSchedule, SequenceStep, CampaignContact,
     CampaignStatus, StepType, CampaignContactStatus,
 )
 
@@ -98,6 +98,24 @@ class StepUpdate(BaseModel):
 class StepReorder(BaseModel):
     step_ids: List[int]  # ordered list of step_ids
 
+class ScheduleCreate(BaseModel):
+    start_date: str  # YYYY-MM-DD
+    end_date: Optional[str] = None  # NULL = perpetual
+    send_window_start: str = "09:00"
+    send_window_end: str = "17:00"
+    send_days: List[str] = ["mon", "tue", "wed", "thu", "fri"]
+    timezone: str = "US/Eastern"
+    label: Optional[str] = None
+
+class ScheduleUpdate(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    send_window_start: Optional[str] = None
+    send_window_end: Optional[str] = None
+    send_days: Optional[List[str]] = None
+    timezone: Optional[str] = None
+    label: Optional[str] = None
+
 class ContactEnroll(BaseModel):
     contact_ids: List[int]
 
@@ -166,6 +184,11 @@ def _campaign_to_dict(c: Campaign, include_steps: bool = False, db: Session = No
             SequenceStep.campaign_id == c.campaign_id
         ).order_by(SequenceStep.step_order).all()
         d["steps"] = [_step_to_dict(s) for s in steps]
+        schedules = db.query(CampaignSchedule).filter(
+            CampaignSchedule.campaign_id == c.campaign_id,
+            CampaignSchedule.is_archived == False,
+        ).order_by(CampaignSchedule.schedule_order).all()
+        d["schedules"] = [_schedule_to_dict(s) for s in schedules]
     return d
 
 
@@ -193,6 +216,23 @@ def _step_to_dict(s: SequenceStep) -> dict:
         "total_replied": s.total_replied,
         "total_bounced": s.total_bounced,
         "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+def _schedule_to_dict(s: CampaignSchedule) -> dict:
+    return {
+        "schedule_id": s.schedule_id,
+        "campaign_id": s.campaign_id,
+        "start_date": s.start_date,
+        "end_date": s.end_date,
+        "send_window_start": s.send_window_start,
+        "send_window_end": s.send_window_end,
+        "send_days": json.loads(s.send_days_json) if s.send_days_json else ["mon", "tue", "wed", "thu", "fri"],
+        "timezone": s.timezone,
+        "schedule_order": s.schedule_order,
+        "label": s.label,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
     }
 
 
@@ -591,6 +631,22 @@ def create_campaign_from_leads(
         enrolled_count += 1
 
     campaign.total_contacts = enrolled_count
+
+    # Create default CampaignSchedule entry
+    default_schedule = CampaignSchedule(
+        campaign_id=campaign.campaign_id,
+        tenant_id=campaign.tenant_id,
+        start_date=datetime.utcnow().strftime("%Y-%m-%d"),
+        end_date=None,
+        send_window_start=campaign.send_window_start or "09:00",
+        send_window_end=campaign.send_window_end or "17:00",
+        send_days_json=campaign.send_days_json or '["mon","tue","wed","thu","fri"]',
+        timezone=campaign.timezone or "US/Eastern",
+        schedule_order=1,
+        label="Default",
+    )
+    db.add(default_schedule)
+
     db.commit()
     db.refresh(campaign)
 
@@ -1212,6 +1268,150 @@ def reorder_steps(
             step.step_order = new_order
     db.commit()
     return {"message": "Steps reordered"}
+
+
+# ─── Campaign Schedules ───────────────────────────────────────────
+
+@router.get("/{campaign_id}/schedules")
+def list_schedules(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List all schedule entries for a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    schedules = db.query(CampaignSchedule).filter(
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).order_by(CampaignSchedule.schedule_order).all()
+    return {"schedules": [_schedule_to_dict(s) for s in schedules]}
+
+
+@router.post("/{campaign_id}/schedules")
+def add_schedule(
+    campaign_id: int,
+    data: ScheduleCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Add a new schedule entry to a campaign."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Auto-increment schedule_order
+    max_order = db.query(func.max(CampaignSchedule.schedule_order)).filter(
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).scalar() or 0
+
+    schedule = CampaignSchedule(
+        campaign_id=campaign_id,
+        tenant_id=campaign.tenant_id,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        send_window_start=data.send_window_start,
+        send_window_end=data.send_window_end,
+        send_days_json=json.dumps(data.send_days),
+        timezone=data.timezone,
+        schedule_order=max_order + 1,
+        label=data.label,
+    )
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    return _schedule_to_dict(schedule)
+
+
+@router.put("/{campaign_id}/schedules/{schedule_id}")
+def update_schedule(
+    campaign_id: int,
+    schedule_id: int,
+    data: ScheduleUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Update an existing schedule entry."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    schedule = db.query(CampaignSchedule).filter(
+        CampaignSchedule.schedule_id == schedule_id,
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    if data.start_date is not None:
+        schedule.start_date = data.start_date
+    if data.end_date is not None:
+        schedule.end_date = data.end_date if data.end_date != "" else None
+    if data.send_window_start is not None:
+        schedule.send_window_start = data.send_window_start
+    if data.send_window_end is not None:
+        schedule.send_window_end = data.send_window_end
+    if data.send_days is not None:
+        schedule.send_days_json = json.dumps(data.send_days)
+    if data.timezone is not None:
+        schedule.timezone = data.timezone
+    if data.label is not None:
+        schedule.label = data.label if data.label != "" else None
+
+    db.commit()
+    db.refresh(schedule)
+    return _schedule_to_dict(schedule)
+
+
+@router.delete("/{campaign_id}/schedules/{schedule_id}")
+def delete_schedule(
+    campaign_id: int,
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Delete a schedule entry and reorder remaining entries."""
+    campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if tenant_id is not None and campaign.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    schedule = db.query(CampaignSchedule).filter(
+        CampaignSchedule.schedule_id == schedule_id,
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    db.delete(schedule)
+    db.flush()
+
+    # Reorder remaining schedules
+    remaining = db.query(CampaignSchedule).filter(
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).order_by(CampaignSchedule.schedule_order).all()
+    for idx, s in enumerate(remaining, start=1):
+        s.schedule_order = idx
+
+    db.commit()
+    return {"message": "Schedule deleted"}
 
 
 # ─── Campaign Contacts ────────────────────────────────────────────
@@ -1874,6 +2074,26 @@ def duplicate_campaign(
             variants_json=s.variants_json,
         )
         db.add(new_step)
+
+    # Clone schedules
+    orig_schedules = db.query(CampaignSchedule).filter(
+        CampaignSchedule.campaign_id == campaign_id,
+        CampaignSchedule.is_archived == False,
+    ).order_by(CampaignSchedule.schedule_order).all()
+    for sched in orig_schedules:
+        new_sched = CampaignSchedule(
+            campaign_id=clone.campaign_id,
+            tenant_id=clone.tenant_id,
+            start_date=sched.start_date,
+            end_date=sched.end_date,
+            send_window_start=sched.send_window_start,
+            send_window_end=sched.send_window_end,
+            send_days_json=sched.send_days_json,
+            timezone=sched.timezone,
+            schedule_order=sched.schedule_order,
+            label=sched.label,
+        )
+        db.add(new_sched)
 
     db.commit()
     db.refresh(clone)

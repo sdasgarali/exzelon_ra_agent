@@ -1746,6 +1746,43 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"data_type migration check: {e}")
 
+    # --- Migration: Backfill campaign_schedules from legacy campaign columns ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as sa_text_cs
+            # Check if table exists and is empty
+            try:
+                count_row = conn.execute(sa_text_cs("SELECT COUNT(*) FROM campaign_schedules")).fetchone()
+                cs_count = count_row[0] if count_row else 0
+            except Exception:
+                cs_count = -1  # Table doesn't exist yet (create_all will handle it)
+
+            if cs_count == 0:
+                # Backfill: create one schedule row per non-archived campaign
+                campaigns_rows = conn.execute(sa_text_cs(
+                    "SELECT campaign_id, tenant_id, timezone, send_window_start, send_window_end, "
+                    "send_days_json, created_at FROM campaigns WHERE is_archived = 0"
+                )).fetchall()
+                for row in campaigns_rows:
+                    cid, tid, tz, sw_start, sw_end, days_json, created_at = row
+                    start_date = created_at.strftime("%Y-%m-%d") if created_at else "2024-01-01"
+                    conn.execute(sa_text_cs(
+                        "INSERT INTO campaign_schedules "
+                        "(campaign_id, tenant_id, start_date, end_date, send_window_start, "
+                        "send_window_end, send_days_json, timezone, schedule_order, label) "
+                        "VALUES (:cid, :tid, :sd, NULL, :sws, :swe, :dj, :tz, 1, 'Default')"
+                    ), {
+                        "cid": cid, "tid": tid, "sd": start_date,
+                        "sws": sw_start or "09:00", "swe": sw_end or "17:00",
+                        "dj": days_json or '["mon","tue","wed","thu","fri"]',
+                        "tz": tz or "UTC",
+                    })
+                conn.commit()
+                if campaigns_rows:
+                    logger.info(f"Migration: Backfilled {len(campaigns_rows)} campaign_schedules rows")
+    except Exception as e:
+        logger.debug(f"campaign_schedules backfill check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

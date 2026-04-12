@@ -228,13 +228,21 @@ export default function CampaignsPage() {
   const [overviewForm, setOverviewForm] = useState({ name: '', description: '', sending_speed: 'normal' })
   const [overviewSaving, setOverviewSaving] = useState(false)
 
-  // Schedule edit state
-  const [scheduleEditing, setScheduleEditing] = useState(false)
-  const [scheduleForm, setScheduleForm] = useState({
-    timezone: 'US/Eastern',
+  // Multi-schedule state
+  const [campaignSchedules, setCampaignSchedules] = useState<any[]>([])
+  const [schedulesLoading, setSchedulesLoading] = useState(false)
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
+  const [scheduleModalMode, setScheduleModalMode] = useState<'add' | 'edit'>('add')
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null)
+  const [scheduleFormData, setScheduleFormData] = useState({
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: '',
     send_window_start: '09:00',
     send_window_end: '17:00',
     send_days: ['mon', 'tue', 'wed', 'thu', 'fri'] as string[],
+    timezone: 'US/Eastern',
+    label: '',
+    no_end_date: true,
   })
   const [scheduleSaving, setScheduleSaving] = useState(false)
 
@@ -711,6 +719,19 @@ export default function CampaignsPage() {
       alert(err?.response?.data?.detail || 'Failed to create campaign')
     } finally {
       setCreatingFromLeads(false)
+    }
+  }
+
+  // Fetch campaign schedule entries
+  const fetchSchedules = async (campaignId: number) => {
+    setSchedulesLoading(true)
+    try {
+      const data = await campaignsApi.listSchedules(campaignId)
+      setCampaignSchedules(data.schedules || [])
+    } catch {
+      setCampaignSchedules([])
+    } finally {
+      setSchedulesLoading(false)
     }
   }
 
@@ -2655,7 +2676,7 @@ export default function CampaignsPage() {
             if (tab.key === 'analytics' && selectedCampaign) loadAnalytics(selectedCampaign.campaign_id)
             if (tab.key === 'activity' && selectedCampaign) fetchActivity(selectedCampaign.campaign_id, activityFilter)
             if (tab.key === 'leads_contacts' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
-            if (tab.key === 'schedule' && selectedCampaign) fetchContactSchedule(selectedCampaign.campaign_id)
+            if (tab.key === 'schedule' && selectedCampaign) { fetchSchedules(selectedCampaign.campaign_id); fetchContactSchedule(selectedCampaign.campaign_id) }
             if (tab.key === 'mailboxes' && selectedCampaign) fetchMailboxStats(selectedCampaign.campaign_id)
           }}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${detailTab === tab.key ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -3054,143 +3075,109 @@ export default function CampaignsPage() {
       {/* Schedule Tab */}
       {detailTab === 'schedule' && selectedCampaign && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Send Window Config */}
-            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Send Window</h3>
-                {!scheduleEditing ? (
-                  <button
-                    onClick={() => {
-                      setScheduleForm({
-                        timezone: selectedCampaign.timezone || 'US/Eastern',
-                        send_window_start: selectedCampaign.send_window_start || '09:00',
-                        send_window_end: selectedCampaign.send_window_end || '17:00',
-                        send_days: selectedCampaign.send_days || ['mon', 'tue', 'wed', 'thu', 'fri'],
-                      })
-                      setScheduleEditing(true)
-                    }}
-                    className="text-xs text-primary-600 hover:text-primary-700 font-medium"
-                  >
-                    Edit
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setScheduleEditing(false)}
-                      className="text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      disabled={scheduleSaving}
-                      onClick={async () => {
-                        setScheduleSaving(true)
-                        try {
-                          const updated = await campaignsApi.update(selectedCampaign.campaign_id, {
-                            timezone: scheduleForm.timezone,
-                            send_window_start: scheduleForm.send_window_start,
-                            send_window_end: scheduleForm.send_window_end,
-                            send_days: scheduleForm.send_days,
-                          })
-                          setSelectedCampaign(updated)
-                          setCampaigns(prev => prev.map(c => c.campaign_id === updated.campaign_id ? updated : c))
-                          setScheduleEditing(false)
-                        } catch { /* toast handled by interceptor */ }
-                        setScheduleSaving(false)
-                      }}
-                      className="text-xs bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-700 disabled:opacity-50"
-                    >
-                      {scheduleSaving ? 'Saving...' : 'Save'}
-                    </button>
-                  </div>
-                )}
-              </div>
+          {/* Header with Add button */}
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100">Schedules</h3>
+            <button
+              onClick={() => {
+                setScheduleModalMode('add')
+                setEditingScheduleId(null)
+                setScheduleFormData({
+                  start_date: new Date().toISOString().split('T')[0],
+                  end_date: '',
+                  send_window_start: '09:00',
+                  send_window_end: '17:00',
+                  send_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
+                  timezone: selectedCampaign.timezone || 'US/Eastern',
+                  label: '',
+                  no_end_date: true,
+                })
+                setScheduleModalOpen(true)
+              }}
+              className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-700 flex items-center gap-1"
+            >
+              <span>+</span> Add Schedule
+            </button>
+          </div>
 
-              {/* Start / End Time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
-                  {scheduleEditing ? (
-                    <input
-                      type="time"
-                      value={scheduleForm.send_window_start}
-                      onChange={e => setScheduleForm(f => ({ ...f, send_window_start: e.target.value }))}
-                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  ) : (
-                    <p className="text-sm">{selectedCampaign.send_window_start || '09:00'}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
-                  {scheduleEditing ? (
-                    <input
-                      type="time"
-                      value={scheduleForm.send_window_end}
-                      onChange={e => setScheduleForm(f => ({ ...f, send_window_end: e.target.value }))}
-                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    />
-                  ) : (
-                    <p className="text-sm">{selectedCampaign.send_window_end || '17:00'}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Send Days */}
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Send Days</label>
-                <div className="flex gap-1 flex-wrap">
-                  {DAY_LABELS.map(day => {
-                    const dayKey = day.toLowerCase().slice(0, 3)
-                    const isActive = scheduleEditing
-                      ? scheduleForm.send_days.includes(dayKey)
-                      : (selectedCampaign.send_days || []).includes(dayKey)
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        disabled={!scheduleEditing}
-                        onClick={() => {
-                          if (!scheduleEditing) return
-                          setScheduleForm(f => ({
-                            ...f,
-                            send_days: f.send_days.includes(dayKey)
-                              ? f.send_days.filter(d => d !== dayKey)
-                              : [...f.send_days, dayKey],
-                          }))
-                        }}
-                        className={`px-2 py-0.5 text-xs rounded ${
-                          isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'
-                        } ${scheduleEditing ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
-                      >
-                        {day}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Timezone */}
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Campaign Timezone</label>
-                {scheduleEditing ? (
-                  <select
-                    value={scheduleForm.timezone}
-                    onChange={e => setScheduleForm(f => ({ ...f, timezone: e.target.value }))}
-                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                  >
-                    {TIMEZONE_OPTIONS.map(tz => (
-                      <option key={tz.value} value={tz.value}>{tz.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <p className="text-sm">{selectedCampaign.timezone || 'UTC'}</p>
-                )}
-              </div>
+          {/* Schedule Cards */}
+          {schedulesLoading ? (
+            <div className="text-sm text-gray-500 py-4 text-center">Loading schedules...</div>
+          ) : campaignSchedules.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-6 text-center">
+              <p className="text-sm text-gray-500">No schedules configured. Add one to control when emails are sent.</p>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {campaignSchedules.map((sched: any) => {
+                const today = new Date().toISOString().split('T')[0]
+                const isExpired = sched.end_date && sched.end_date < today
+                const isFuture = sched.start_date > today
+                const isActive = !isExpired && !isFuture
+                const statusLabel = isExpired ? 'Expired' : isFuture ? 'Future' : 'Active'
+                const statusColor = isExpired ? 'text-red-600 bg-red-50' : isFuture ? 'text-yellow-600 bg-yellow-50' : 'text-green-600 bg-green-50'
+                const sendDays = sched.send_days || []
+                const dayDisplay = sendDays.length === 7 ? 'Every day' : sendDays.length === 5 && !sendDays.includes('sat') && !sendDays.includes('sun') ? 'Mon-Fri' : sendDays.map((d: string) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')
+                const tzLabel = TIMEZONE_OPTIONS.find(t => t.value === sched.timezone)?.label || sched.timezone
 
-            {/* Smart Schedule Info */}
+                return (
+                  <div key={sched.schedule_id} className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm text-gray-900 dark:text-gray-100">{sched.label || 'Schedule'}</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setScheduleModalMode('edit')
+                            setEditingScheduleId(sched.schedule_id)
+                            setScheduleFormData({
+                              start_date: sched.start_date || '',
+                              end_date: sched.end_date || '',
+                              send_window_start: sched.send_window_start || '09:00',
+                              send_window_end: sched.send_window_end || '17:00',
+                              send_days: sched.send_days || ['mon', 'tue', 'wed', 'thu', 'fri'],
+                              timezone: sched.timezone || 'US/Eastern',
+                              label: sched.label || '',
+                              no_end_date: !sched.end_date,
+                            })
+                            setScheduleModalOpen(true)
+                          }}
+                          className="text-xs text-primary-600 hover:text-primary-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Delete this schedule?')) return
+                            try {
+                              await campaignsApi.deleteSchedule(selectedCampaign.campaign_id, sched.schedule_id)
+                              setCampaignSchedules(prev => prev.filter(s => s.schedule_id !== sched.schedule_id))
+                            } catch { /* interceptor */ }
+                          }}
+                          className="text-xs text-red-500 hover:text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {sched.start_date ? new Date(sched.start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                      {' → '}
+                      {sched.end_date ? new Date(sched.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No end date'}
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      {sched.send_window_start} - {sched.send_window_end} · {dayDisplay} · {tzLabel}
+                    </div>
+                    <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${statusColor}`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Smart Scheduling + Timezone Distribution */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100">Smart Scheduling</h3>
               <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3">
@@ -3199,28 +3186,188 @@ export default function CampaignsPage() {
                   Peak windows: 9-11 AM (highest), 2-3:30 PM (second), 7:30-9 AM (third).
                 </p>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Timezone Distribution</label>
-                {contactSchedule.length > 0 ? (
-                  <div className="space-y-1">
-                    {Object.entries(
-                      contactSchedule.reduce((acc: Record<string, number>, cs: any) => {
-                        acc[cs.timezone_label] = (acc[cs.timezone_label] || 0) + 1
-                        return acc
-                      }, {})
-                    ).map(([tz, count]) => (
-                      <div key={tz} className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">{tz}</span>
-                        <span className="font-medium">{count as number} contact{(count as number) !== 1 ? 's' : ''}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No contacts enrolled</p>
-                )}
-              </div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Timezone Distribution</h3>
+              {contactSchedule.length > 0 ? (
+                <div className="space-y-1">
+                  {Object.entries(
+                    contactSchedule.reduce((acc: Record<string, number>, cs: any) => {
+                      acc[cs.timezone_label] = (acc[cs.timezone_label] || 0) + 1
+                      return acc
+                    }, {})
+                  ).map(([tz, count]) => (
+                    <div key={tz} className="flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">{tz}</span>
+                      <span className="font-medium">{count as number} contact{(count as number) !== 1 ? 's' : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No contacts enrolled</p>
+              )}
             </div>
           </div>
+
+          {/* Schedule Add/Edit Modal */}
+          {scheduleModalOpen && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setScheduleModalOpen(false)}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  {scheduleModalMode === 'add' ? 'Add Schedule' : 'Edit Schedule'}
+                </h3>
+
+                {/* Label */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Label (optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Morning shift, Weekend promo"
+                    value={scheduleFormData.label}
+                    onChange={e => setScheduleFormData(f => ({ ...f, label: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  />
+                </div>
+
+                {/* Date Range */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={scheduleFormData.start_date}
+                      onChange={e => setScheduleFormData(f => ({ ...f, start_date: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={scheduleFormData.no_end_date ? '' : scheduleFormData.end_date}
+                      disabled={scheduleFormData.no_end_date}
+                      onChange={e => setScheduleFormData(f => ({ ...f, end_date: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 disabled:opacity-50"
+                    />
+                    <label className="flex items-center gap-1 mt-1 text-xs text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={scheduleFormData.no_end_date}
+                        onChange={e => setScheduleFormData(f => ({ ...f, no_end_date: e.target.checked, end_date: '' }))}
+                        className="rounded"
+                      />
+                      No end date
+                    </label>
+                  </div>
+                </div>
+
+                {/* Time Window */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
+                    <input
+                      type="time"
+                      value={scheduleFormData.send_window_start}
+                      onChange={e => setScheduleFormData(f => ({ ...f, send_window_start: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
+                    <input
+                      type="time"
+                      value={scheduleFormData.send_window_end}
+                      onChange={e => setScheduleFormData(f => ({ ...f, send_window_end: e.target.value }))}
+                      className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                  </div>
+                </div>
+
+                {/* Send Days */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Send Days</label>
+                  <div className="flex gap-1 flex-wrap">
+                    {DAY_LABELS.map(day => {
+                      const dayKey = day.toLowerCase().slice(0, 3)
+                      const isActive = scheduleFormData.send_days.includes(dayKey)
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            setScheduleFormData(f => ({
+                              ...f,
+                              send_days: f.send_days.includes(dayKey)
+                                ? f.send_days.filter(d => d !== dayKey)
+                                : [...f.send_days, dayKey],
+                            }))
+                          }}
+                          className={`px-2.5 py-1 text-xs rounded cursor-pointer hover:opacity-80 ${
+                            isActive ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Timezone */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Timezone</label>
+                  <select
+                    value={scheduleFormData.timezone}
+                    onChange={e => setScheduleFormData(f => ({ ...f, timezone: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  >
+                    {TIMEZONE_OPTIONS.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setScheduleModalOpen(false)}
+                    className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={scheduleSaving || !scheduleFormData.start_date}
+                    onClick={async () => {
+                      setScheduleSaving(true)
+                      try {
+                        const payload = {
+                          start_date: scheduleFormData.start_date,
+                          end_date: scheduleFormData.no_end_date ? null : (scheduleFormData.end_date || null),
+                          send_window_start: scheduleFormData.send_window_start,
+                          send_window_end: scheduleFormData.send_window_end,
+                          send_days: scheduleFormData.send_days,
+                          timezone: scheduleFormData.timezone,
+                          label: scheduleFormData.label || null,
+                        }
+                        if (scheduleModalMode === 'add') {
+                          const created = await campaignsApi.addSchedule(selectedCampaign.campaign_id, payload)
+                          setCampaignSchedules(prev => [...prev, created])
+                        } else if (editingScheduleId) {
+                          const updated = await campaignsApi.updateSchedule(selectedCampaign.campaign_id, editingScheduleId, payload)
+                          setCampaignSchedules(prev => prev.map(s => s.schedule_id === editingScheduleId ? updated : s))
+                        }
+                        setScheduleModalOpen(false)
+                      } catch { /* interceptor */ }
+                      setScheduleSaving(false)
+                    }}
+                    className="text-sm bg-primary-600 text-white px-4 py-1.5 rounded hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {scheduleSaving ? 'Saving...' : scheduleModalMode === 'add' ? 'Add Schedule' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

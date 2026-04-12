@@ -118,6 +118,36 @@ class Campaign(Base):
         return f"<Campaign(campaign_id={self.campaign_id}, name='{self.name}', status='{self.status}')>"
 
 
+class CampaignSchedule(Base):
+    """A date-range-aware schedule entry for a campaign.
+
+    Each campaign can have multiple schedule entries, each with its own
+    start/end dates, send window, send days, and timezone.
+    """
+
+    __tablename__ = "campaign_schedules"
+
+    schedule_id = Column(Integer, primary_key=True, autoincrement=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.campaign_id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+    start_date = Column(String(10), nullable=False)       # YYYY-MM-DD
+    end_date = Column(String(10), nullable=True)           # NULL = no end date (perpetual)
+    send_window_start = Column(String(5), default="09:00", nullable=False)
+    send_window_end = Column(String(5), default="17:00", nullable=False)
+    send_days_json = Column(Text, default='["mon","tue","wed","thu","fri"]', nullable=False)
+    timezone = Column(String(50), default="UTC", nullable=False)
+    schedule_order = Column(Integer, default=1, nullable=False)
+    label = Column(String(100), nullable=True)  # Optional: "Morning shift", "Weekend promo"
+
+    __table_args__ = (
+        Index("idx_cs_campaign", "campaign_id"),
+        Index("idx_cs_dates", "campaign_id", "start_date", "end_date"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CampaignSchedule(schedule_id={self.schedule_id}, campaign_id={self.campaign_id}, label='{self.label}')>"
+
+
 class SequenceStep(Base):
     """A single step in a campaign sequence (email, wait, or condition)."""
 

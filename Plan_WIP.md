@@ -1,18 +1,35 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 84: Implemented Super Admin Bulk Update for Mailboxes, Leads, Clients, Contacts.
-> Added `data_type` column to ClientInfo (enriched/test) + ad-hoc migration in main.py.
-> 4 new PUT /bulk/update endpoints (Super Admin only): mailboxes, leads, clients, contacts.
-> Frontend: bulkUpdate API methods + Bulk Update button (super_admin only) + modal on all 4 pages.
-> 930 tests pass, frontend builds clean. Ready to commit and deploy.
+> Session 86: Implemented Multiple Campaign Schedules with Date Ranges.
+> New `CampaignSchedule` model (campaign_schedules table) — multiple schedule entries per campaign,
+> each with start/end dates, send window, send days, timezone, label.
+> 4 CRUD endpoints (GET/POST/PUT/DELETE /{campaign_id}/schedules).
+> Campaign engine `_is_within_send_window()` rewritten for multi-schedule support with pre-fetch optimization.
+> Backfill migration: creates one "Default" schedule row per existing campaign from legacy columns.
+> `duplicate_campaign` clones schedules, `from-leads` creates default schedule.
+> Frontend: Schedule tab rewritten with card list view, add/edit modal, delete, status badges (Active/Future/Expired).
+> All 930 tests pass, frontend build OK.
+> Files changed: campaign.py (model), __init__.py, campaigns.py (endpoints), campaign_engine.py, main.py, api.ts, page.tsx.
 
 ## REVERT CHECKPOINT
-> **Commit:** `bb2348c` — **Branch:** `master` — **Date:** 2026-04-12
+> **Commit:** `120e65a` — **Branch:** `master` — **Date:** 2026-04-12
 > **State:** Clean working tree (only untracked: `NeuraLeads-Requirements,.txt`). Deployed to VPS and verified healthy.
-> **To revert here:** `git reset --hard bb2348c` then redeploy.
+> **To revert here:** `git reset --hard 120e65a` then redeploy.
 
 ## Immediate TODO
+- [x] Multiple Campaign Schedules with Date Ranges (2026-04-12)
+  - New CampaignSchedule model: schedule_id, campaign_id, tenant_id, start_date, end_date, send_window, send_days, timezone, label
+  - 4 CRUD endpoints on /campaigns/{id}/schedules (list, add, update, delete)
+  - Campaign engine multi-schedule: checks all schedule entries whose date range covers today
+  - Backfill migration from legacy campaign columns, duplicate/from-leads support
+  - Frontend: card-based schedule list, add/edit modal, delete, Active/Future/Expired status badges
+- [x] Editable Campaign Schedule Tab + Schedule Config in Create Wizard (2026-04-12)
+  - Schedule tab: inline Edit/Save/Cancel for timezone, send window start/end, send days (same pattern as Overview tab edit)
+  - Create wizard: collapsible "Configure Schedule" section with time inputs, day toggles, timezone dropdown
+  - Backend: CreateFromLeads schema extended with optional schedule fields, endpoint uses them if provided
+  - Frontend API client updated to pass schedule fields on campaign creation
+  - 3 files changed (campaigns.py, page.tsx, api.ts), commit 120e65a, deployed
 - [x] Tenant Website + Industry + Tenant-Aware Template Auto-Selection (2026-04-12)
   - Backend: `website` (VARCHAR 500) + `industry` (VARCHAR 100) columns on Tenant model, ad-hoc migration in main.py
   - Backend: TenantSummary/TenantUpdate schemas + list/detail/update handlers in admin_tenants.py, TenantInfo.industry in user.py
@@ -260,6 +277,11 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 85: Editable Campaign Schedule + Create Wizard Schedule Config (2026-04-12)
+  - Schedule tab: Edit/Save/Cancel inline editing for timezone, send window, send days
+  - Create wizard: collapsible "Configure Schedule" section defaults collapsed showing current values
+  - Backend: CreateFromLeads now accepts optional timezone/send_window_start/send_window_end/send_days
+  - 3 files changed, commit 120e65a, deployed to VPS
 - [x] Session 81: Tenant Industry + Template Auto-Load + Lead Status Reset (2026-04-12)
   - Added website + industry to Tenant model/API/frontend, tenant-aware template auto-selection in campaigns
   - Template dropdown auto-loads on select (removed Load button), edit steps auto-load linked templates

@@ -93,7 +93,7 @@ Multi-step email sequence processor:
 - **Per-contact timezone-aware send windows**: `_is_within_send_window()` checks contact's timezone (from `ContactDetails.timezone`), falls back to campaign timezone
 - **Smart send scheduling**: `_advance_to_next_step()` uses `calculate_optimal_send_time()` to schedule next email at optimal local business hours (9-11 AM = best)
 - **Preview mode**: When `campaign.preview_mode=True`, generates OutreachDraft records instead of sending — enables human review via Email Preview page
-- **Lead-selection creation**: `POST /campaigns/from-leads` auto-generates campaign name, 3-step sequence (outreach + wait + followup), assigns all active mailboxes, enrolls contacts from selected leads
+- **Lead-selection creation**: `POST /campaigns/from-leads` auto-generates campaign name, 3-step sequence (outreach + wait + followup), assigns all active mailboxes, enrolls contacts from selected leads. Accepts optional `timezone`, `send_window_start`, `send_window_end`, `send_days` to override defaults
 - **Step modal template integration**: Sequence tab step modal loads templates via `templatesApi.list()`, grouped dropdown (Outreach/Follow-up) with active templates starred. Auto-loads active template matching **current tenant's industry** for first email step (outreach) and subsequent steps (followup), falling back to global active template if no industry match. Inline spam check + deliverability score buttons with results panel
 
 ### Unified Inbox (`services/inbox_syncer.py`)
@@ -184,6 +184,7 @@ Domain reputation management subsystem:
 - **OutreachEvent** -- email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index
 - **WarmupProfile** -- warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
 - **Campaign** -- multi-step email campaigns with status, send window, timezone, mailbox assignment, slow ramp (enabled/increment/day), auto-pause thresholds (bounce/spam), AI auto-reply (enabled/delay/max), assignment mode (manual/round_robin/weighted), preview_mode (Boolean, generates drafts instead of sending)
+- **CampaignSchedule** -- date-range-aware schedule entries per campaign (schedule_id, campaign_id, tenant_id, start_date YYYY-MM-DD, end_date nullable, send_window_start/end, send_days_json, timezone, schedule_order, label). Multiple entries per campaign; engine checks all whose date range covers today. CASCADE delete with campaign
 - **SequenceStep** -- campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats, optional template_id FK linking to source EmailTemplate
 - **EmailTemplate** -- reusable email templates with category (outreach/followup), status (active/inactive), subject, body_html, body_text, industry/goal targeting, is_system flag for seeded library; one active template per category per tenant
 - **CampaignContact** -- contact enrollment tracking with current_step, next_send_at, status
@@ -292,7 +293,8 @@ Domain reputation management subsystem:
 | `/email-preview` | `api/endpoints/email_preview.py` | Draft generation, CRUD, approve/reject, batch send, AI rewrite, deliverability score, spam check + AI suggestions, spam fix (13 endpoints) |
 | `/clients/backfill-timezones` | `api/endpoints/clients.py` | Backfill IANA timezone from location_state for all clients missing timezone (Admin+) |
 | `/campaigns/available-leads` | `api/endpoints/campaigns.py` | Leads not in active campaigns (posted within N days), with contact counts for campaign creation |
-| `/campaigns/from-leads` | `api/endpoints/campaigns.py` | Create campaign from selected leads: auto-name, 3-step sequence, mailbox assignment, contact enrollment |
+| `/campaigns/from-leads` | `api/endpoints/campaigns.py` | Create campaign from selected leads: auto-name, 3-step sequence, mailbox assignment, contact enrollment. Optional schedule fields (timezone, send_window_start/end, send_days) |
+| `/campaigns/{id}/schedules` | `api/endpoints/campaigns.py` | Campaign schedule CRUD (GET list, POST add, PUT update, DELETE remove). Multiple date-range-aware schedule entries per campaign |
 | `/campaigns/{id}/contact-schedule` | `api/endpoints/campaigns.py` | Timezone-aware contact send schedule ordered East→West with optimal send times |
 | `/campaigns/{id}/ai-enhance` | `api/endpoints/campaigns.py` | LLM-based campaign name/description improvement with rule-based fallback |
 | `/campaigns/{id}/ai-suggest-subjects` | `api/endpoints/campaigns.py` | LLM-based subject line generation (5 A/B variants) with rule-based fallback |

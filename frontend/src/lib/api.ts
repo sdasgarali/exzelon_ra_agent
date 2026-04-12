@@ -1023,6 +1023,22 @@ export const campaignsApi = {
     const response = await api.post(`/campaigns/${campaignId}/ai-suggest-subjects`)
     return response.data
   },
+  // Schedules
+  listSchedules: async (campaignId: number) => {
+    const response = await api.get(`/campaigns/${campaignId}/schedules`)
+    return response.data
+  },
+  addSchedule: async (campaignId: number, data: any) => {
+    const response = await api.post(`/campaigns/${campaignId}/schedules`, data)
+    return response.data
+  },
+  updateSchedule: async (campaignId: number, scheduleId: number, data: any) => {
+    const response = await api.put(`/campaigns/${campaignId}/schedules/${scheduleId}`, data)
+    return response.data
+  },
+  deleteSchedule: async (campaignId: number, scheduleId: number) => {
+    await api.delete(`/campaigns/${campaignId}/schedules/${scheduleId}`)
+  },
 }
 
 // Inbox API (Unibox)
