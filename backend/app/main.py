@@ -1769,8 +1769,10 @@ async def lifespan(app: FastAPI):
                     conn.execute(sa_text_cs(
                         "INSERT INTO campaign_schedules "
                         "(campaign_id, tenant_id, start_date, end_date, send_window_start, "
-                        "send_window_end, send_days_json, timezone, schedule_order, label) "
-                        "VALUES (:cid, :tid, :sd, NULL, :sws, :swe, :dj, :tz, 1, 'Default')"
+                        "send_window_end, send_days_json, timezone, schedule_order, label, "
+                        "created_at, updated_at, is_archived) "
+                        "VALUES (:cid, :tid, :sd, NULL, :sws, :swe, :dj, :tz, 1, 'Default', "
+                        "NOW(), NOW(), 0)"
                     ), {
                         "cid": cid, "tid": tid, "sd": start_date,
                         "sws": sw_start or "09:00", "swe": sw_end or "17:00",
