@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import DOMPurify from 'dompurify'
 import { campaignsApi, contactsApi, leadsApi, mailboxesApi, emailPreviewApi, pipelinesApi, deliverabilityApi, templatesApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import type { Campaign, SequenceStep, CampaignContact } from '@/types/api'
+import type { Campaign, SequenceStep, CampaignContact, RenderingCheckResult, HumanizeResult, SpintaxPreviewResult, TemplateScorecardResult, TemplateFixesResult, ApplyFixesResult } from '@/types/api'
 import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
@@ -12,6 +13,8 @@ import {
   MousePointerClick, Reply, Activity, LayoutList, Workflow,
   Brain, Upload, PenLine, Table2, ArrowLeft, CheckCircle2, XCircle, FileText, Link2, Download,
   Filter, ChevronUp, ChevronsUpDown,
+  Sparkles, RefreshCw, Wrench, Monitor, Info, GripVertical, CheckCircle,
+  Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Palette,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
@@ -79,6 +82,78 @@ const statusColors: Record<string, string> = {
   paused: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
   completed: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
   archived: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+}
+
+// ─── Step Modal Intelligence Panel Constants ─────────────────────
+const STEP_PLACEHOLDERS = [
+  { tag: '{{contact_first_name}}', label: 'Recipient first name' },
+  { tag: '{{sender_first_name}}', label: 'Sender first name' },
+  { tag: '{{job_title}}', label: 'Job title from lead' },
+  { tag: '{{job_location}}', label: 'Job location' },
+  { tag: '{{company_name}}', label: 'Company name' },
+  { tag: '{{signature}}', label: 'Mailbox email signature' },
+  { tag: '{{logo_url}}', label: 'Company logo URL' },
+  { tag: '{{unsubscribe_link}}', label: 'Unsubscribe link' },
+]
+
+const STEP_DIMENSION_LABELS: Record<string, string> = {
+  spam_risk: 'Spam Risk', rendering: 'Rendering', humanization: 'Humanization',
+  personalization: 'Personalization', subject_quality: 'Subject Quality',
+  clarity: 'Clarity', cta_quality: 'CTA Quality', compliance: 'Compliance',
+  content_entropy: 'Content Entropy', word_count: 'Word Count',
+}
+
+const STEP_DIMENSION_ORDER = [
+  'spam_risk', 'rendering', 'humanization', 'personalization', 'subject_quality',
+  'clarity', 'cta_quality', 'compliance', 'content_entropy', 'word_count',
+]
+
+type StepIntelligenceTab = 'placeholders' | 'scorecard' | 'fixes' | 'spam' | 'rendering' | 'humanize' | 'spintax'
+
+const STEP_INTEL_TABS: { id: StepIntelligenceTab; label: string; icon: typeof Info }[] = [
+  { id: 'placeholders', label: 'Vars', icon: Info },
+  { id: 'scorecard', label: 'Score', icon: BarChart3 },
+  { id: 'fixes', label: 'Fixes', icon: Wrench },
+  { id: 'spam', label: 'Spam', icon: AlertTriangle },
+  { id: 'rendering', label: 'Render', icon: Monitor },
+  { id: 'humanize', label: 'Human', icon: Brain },
+  { id: 'spintax', label: 'Spintax', icon: Shuffle },
+]
+
+function stepSpamBadgeColor(grade: string) {
+  switch (grade) {
+    case 'clean': return 'bg-green-100 text-green-800'
+    case 'low_risk': return 'bg-yellow-100 text-yellow-800'
+    case 'medium_risk': return 'bg-orange-100 text-orange-800'
+    case 'high_risk': return 'bg-red-100 text-red-800'
+    case 'spam': return 'bg-red-200 text-red-900'
+    default: return 'bg-gray-100 text-gray-700'
+  }
+}
+
+function stepScoreColor(score: number): string {
+  if (score >= 80) return '#22c55e'
+  if (score >= 60) return '#eab308'
+  if (score >= 40) return '#f97316'
+  return '#ef4444'
+}
+
+function StepScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
+  const radius = (size - 16) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (score / 100) * circumference
+  const color = stepScoreColor(score)
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e5e7eb" strokeWidth="8" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth="8" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-700" />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color }}>{Math.round(score)}</span>
+      </div>
+    </div>
+  )
 }
 
 export default function CampaignsPage() {
@@ -156,6 +231,34 @@ export default function CampaignsPage() {
   const [modalSpamLoading, setModalSpamLoading] = useState(false)
   const [modalDeliverabilityResult, setModalDeliverabilityResult] = useState<any>(null)
   const [modalDeliverabilityLoading, setModalDeliverabilityLoading] = useState(false)
+
+  // Step intelligence panel state
+  const [stepIntelTab, setStepIntelTab] = useState<StepIntelligenceTab>('placeholders')
+  const [stepSpamSuggestions, setStepSpamSuggestions] = useState<{original: string; replacement: string}[]>([])
+  const [stepSpamReduceResult, setStepSpamReduceResult] = useState<{before_score: number; after_score: number; before_grade: string; after_grade: string; delta: number} | null>(null)
+  const [stepRenderingResult, setStepRenderingResult] = useState<RenderingCheckResult | null>(null)
+  const [stepRenderingLoading, setStepRenderingLoading] = useState(false)
+  const [stepHumanizeResult, setStepHumanizeResult] = useState<HumanizeResult | null>(null)
+  const [stepHumanizeLoading, setStepHumanizeLoading] = useState(false)
+  const [stepHumanizeIntensity, setStepHumanizeIntensity] = useState<string>('medium')
+  const [stepSpintaxResult, setStepSpintaxResult] = useState<SpintaxPreviewResult | null>(null)
+  const [stepSpintaxLoading, setStepSpintaxLoading] = useState(false)
+  const [stepScorecardResult, setStepScorecardResult] = useState<TemplateScorecardResult | null>(null)
+  const [stepScorecardLoading, setStepScorecardLoading] = useState(false)
+  const [stepExpandedDimensions, setStepExpandedDimensions] = useState<Set<string>>(new Set())
+  const [stepFixesResult, setStepFixesResult] = useState<TemplateFixesResult | null>(null)
+  const [stepFixesLoading, setStepFixesLoading] = useState(false)
+  const [stepApplyingFixes, setStepApplyingFixes] = useState(false)
+  const [stepSelectedFixIds, setStepSelectedFixIds] = useState<Set<string>>(new Set())
+  const [stepApplyResult, setStepApplyResult] = useState<ApplyFixesResult | null>(null)
+  const [stepRewriting, setStepRewriting] = useState(false)
+  const [stepShowPreview, setStepShowPreview] = useState(false)
+  const [stepSpamResult, setStepSpamResult] = useState<{score: number; grade: string; flagged_words: any[]; suggestions: {original: string; replacement: string}[]} | null>(null)
+  const [stepSpamLoading, setStepSpamLoading] = useState(false)
+
+  // Refs for step modal fields
+  const stepBodyRef = useRef<HTMLTextAreaElement>(null)
+  const stepSubjectRef = useRef<HTMLInputElement>(null)
 
   // Create/edit modals
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -848,6 +951,7 @@ export default function CampaignsPage() {
     // Reset modal checks
     setModalSpamResult(null)
     setModalDeliverabilityResult(null)
+    resetStepIntelligence()
     setShowStepModal(true)
     // Fetch templates
     setStepTemplatesLoading(true)
@@ -918,6 +1022,218 @@ export default function CampaignsPage() {
     } catch { /* ignore */ }
     setModalDeliverabilityLoading(false)
   }
+
+  // ─── Step Intelligence Panel Handlers ──────────────────────────
+  const resetStepIntelligence = useCallback(() => {
+    setStepSpamResult(null)
+    setStepSpamReduceResult(null)
+    setStepRenderingResult(null)
+    setStepHumanizeResult(null)
+    setStepSpintaxResult(null)
+    setStepScorecardResult(null)
+    setStepFixesResult(null)
+    setStepSelectedFixIds(new Set())
+    setStepApplyResult(null)
+    setStepExpandedDimensions(new Set())
+    setStepShowPreview(false)
+    setStepIntelTab('placeholders')
+  }, [])
+
+  const handleStepSpamCheck = useCallback(async () => {
+    if (!stepForm.subject && !stepForm.body_html) return
+    setStepSpamLoading(true)
+    try {
+      const data = await emailPreviewApi.spamCheck({ subject: stepForm.subject, body_html: stepForm.body_html })
+      setStepSpamResult(data)
+    } catch (err) { console.error(err) }
+    finally { setStepSpamLoading(false) }
+  }, [stepForm.subject, stepForm.body_html])
+
+  const handleStepApplyAllSpamFixes = useCallback(async () => {
+    if (!stepSpamResult?.suggestions || stepSpamResult.suggestions.length === 0) return
+    try {
+      const data = await deliverabilityApi.spamReduce({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+        replacements: stepSpamResult.suggestions.map(s => ({ original: s.original, replacement: s.replacement })),
+      })
+      setStepSpamReduceResult({ before_score: data.before_score, after_score: data.after_score, before_grade: data.before_grade, after_grade: data.after_grade, delta: data.delta })
+      setStepForm(prev => ({ ...prev, subject: data.new_subject, body_html: data.new_body_html }))
+      setStepSpamResult(prev => prev ? { ...prev, suggestions: [] } : null)
+    } catch (err) { console.error(err) }
+  }, [stepForm.subject, stepForm.body_html, stepSpamResult])
+
+  const handleStepSingleSpamFix = useCallback(async (original: string, replacement: string) => {
+    try {
+      const data = await deliverabilityApi.spamReduce({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+        replacements: [{ original, replacement }],
+      })
+      setStepForm(prev => ({ ...prev, subject: data.new_subject, body_html: data.new_body_html }))
+      setStepSpamResult(prev => {
+        if (!prev) return null
+        return { ...prev, suggestions: prev.suggestions.filter(s => s.original !== original) }
+      })
+    } catch (err) { console.error(err) }
+  }, [stepForm.subject, stepForm.body_html])
+
+  const handleStepRenderingCheck = useCallback(async () => {
+    if (!stepForm.body_html) return
+    setStepRenderingLoading(true)
+    try {
+      const data = await deliverabilityApi.renderingCheck({ body_html: stepForm.body_html })
+      setStepRenderingResult(data)
+    } catch (err) { console.error(err) }
+    finally { setStepRenderingLoading(false) }
+  }, [stepForm.body_html])
+
+  const handleStepHumanize = useCallback(async () => {
+    if (!stepForm.body_html) return
+    setStepHumanizeLoading(true)
+    try {
+      const data = await deliverabilityApi.humanize({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+        body_text: stepForm.body_text || '',
+        intensity: stepHumanizeIntensity,
+      })
+      setStepHumanizeResult(data)
+    } catch (err) { console.error(err) }
+    finally { setStepHumanizeLoading(false) }
+  }, [stepForm.subject, stepForm.body_html, stepForm.body_text, stepHumanizeIntensity])
+
+  const handleStepApplyHumanize = useCallback(() => {
+    if (!stepHumanizeResult) return
+    setStepForm(prev => ({
+      ...prev,
+      subject: stepHumanizeResult.subject,
+      body_html: stepHumanizeResult.body_html,
+      body_text: stepHumanizeResult.body_text || prev.body_text,
+    }))
+    resetStepIntelligence()
+  }, [stepHumanizeResult, resetStepIntelligence])
+
+  const handleStepSpintaxPreview = useCallback(async () => {
+    if (!stepForm.body_html) return
+    setStepSpintaxLoading(true)
+    try {
+      const data = await deliverabilityApi.spintaxPreview({ text: stepForm.body_html, count: 5 })
+      setStepSpintaxResult(data)
+    } catch (err) { console.error(err) }
+    finally { setStepSpintaxLoading(false) }
+  }, [stepForm.body_html])
+
+  const handleStepScorecard = useCallback(async () => {
+    if (!stepForm.subject && !stepForm.body_html) return
+    setStepScorecardLoading(true)
+    try {
+      const data = await templatesApi.score({ subject: stepForm.subject, body_html: stepForm.body_html, body_text: stepForm.body_text || '' })
+      setStepScorecardResult(data)
+    } catch (err) { console.error(err) }
+    finally { setStepScorecardLoading(false) }
+  }, [stepForm.subject, stepForm.body_html, stepForm.body_text])
+
+  const handleStepGetFixes = useCallback(async () => {
+    if (!stepForm.subject && !stepForm.body_html) return
+    setStepFixesLoading(true)
+    setStepApplyResult(null)
+    try {
+      const data = await templatesApi.fixes({ subject: stepForm.subject, body_html: stepForm.body_html, body_text: stepForm.body_text || '' })
+      setStepFixesResult(data)
+      const autoIds = new Set<string>(data.fixes.filter((f: any) => f.auto_fixable).map((f: any) => f.id))
+      setStepSelectedFixIds(autoIds)
+    } catch (err) { console.error(err) }
+    finally { setStepFixesLoading(false) }
+  }, [stepForm.subject, stepForm.body_html, stepForm.body_text])
+
+  const handleStepApplySelectedFixes = useCallback(async () => {
+    if (stepSelectedFixIds.size === 0) return
+    setStepApplyingFixes(true)
+    try {
+      const data = await templatesApi.applyFixes({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+        body_text: stepForm.body_text || '',
+        fix_ids: Array.from(stepSelectedFixIds),
+      })
+      setStepForm(prev => ({
+        ...prev,
+        subject: data.subject,
+        body_html: data.body_html,
+        body_text: data.body_text || prev.body_text,
+      }))
+      setStepApplyResult(data)
+      setStepFixesResult(null)
+      setStepSelectedFixIds(new Set())
+      setStepScorecardResult(null)
+    } catch (err) { console.error(err) }
+    finally { setStepApplyingFixes(false) }
+  }, [stepForm.subject, stepForm.body_html, stepForm.body_text, stepSelectedFixIds])
+
+  const handleStepAiRewrite = useCallback(async () => {
+    if (!stepForm.body_html) return
+    setStepRewriting(true)
+    try {
+      const data = await deliverabilityApi.humanize({
+        subject: stepForm.subject,
+        body_html: stepForm.body_html,
+        body_text: stepForm.body_text || '',
+        intensity: 'heavy',
+      })
+      setStepForm(prev => ({
+        ...prev,
+        subject: data.subject,
+        body_html: data.body_html,
+        body_text: data.body_text || prev.body_text,
+      }))
+      resetStepIntelligence()
+    } catch (err) { console.error(err) }
+    finally { setStepRewriting(false) }
+  }, [stepForm.subject, stepForm.body_html, stepForm.body_text, resetStepIntelligence])
+
+  const applyStepFormatting = useCallback((tag: string, attr?: string) => {
+    const el = stepBodyRef.current
+    if (!el) return
+    const start = el.selectionStart ?? 0
+    const end = el.selectionEnd ?? 0
+    if (start === end) return
+    const selected = el.value.slice(start, end)
+    const openTag = attr ? `<${tag} ${attr}>` : `<${tag}>`
+    const closeTag = `</${tag}>`
+    const newVal = el.value.slice(0, start) + openTag + selected + closeTag + el.value.slice(end)
+    setStepForm(prev => ({ ...prev, body_html: newVal }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const newPos = start + openTag.length + selected.length + closeTag.length
+      el.setSelectionRange(newPos, newPos)
+    })
+  }, [])
+
+  const handleStepPlaceholderClick = useCallback((tag: string) => {
+    const el = stepBodyRef.current
+    if (!el) {
+      setStepForm(prev => ({ ...prev, body_html: prev.body_html + tag }))
+      return
+    }
+    const start = el.selectionStart ?? el.value.length
+    const end = el.selectionEnd ?? start
+    const before = el.value.slice(0, start)
+    const after = el.value.slice(end)
+    setStepForm(prev => ({ ...prev, body_html: before + tag + after }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + tag.length
+      el.setSelectionRange(pos, pos)
+    })
+  }, [])
+
+  // Auto-load intelligence tab data
+  useEffect(() => {
+    if (!showStepModal || (!stepForm.body_html && !stepForm.subject)) return
+    if (stepIntelTab === 'rendering' && !stepRenderingResult && !stepRenderingLoading) handleStepRenderingCheck()
+    if (stepIntelTab === 'scorecard' && !stepScorecardResult && !stepScorecardLoading) handleStepScorecard()
+  }, [stepIntelTab, showStepModal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAddStep = async () => {
     if (!selectedCampaign) return
@@ -3577,256 +3893,718 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* Step Modal */}
+      {/* Step Modal — Rich Two-Panel Editor */}
       {showStepModal && (
-        <>
-          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowStepModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[550px] max-w-[90vw] max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingStep ? 'Edit Step' : 'Add Step'}</h2>
-              <button onClick={() => setShowStepModal(false)}><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowStepModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <h2 className="text-lg font-bold dark:text-gray-100">{editingStep ? 'Edit Step' : 'Add Step'}</h2>
+              <button onClick={() => setShowStepModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-5 h-5" /></button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Step Type</label>
-                <select value={stepForm.step_type} onChange={e => setStepForm(f => ({ ...f, step_type: e.target.value as any }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
-                  <option value="email">Email</option>
-                  <option value="wait">Wait</option>
-                  <option value="condition">Condition</option>
-                  <option value="sms">SMS</option>
-                  <option value="call">Call</option>
-                  <option value="linkedin">LinkedIn</option>
-                </select>
-              </div>
+
+            {/* Body */}
+            <div className="flex flex-1 overflow-hidden min-h-0">
+              {/* Left: Intelligence Panel (email only) */}
               {stepForm.step_type === 'email' && (
-                <>
-                  {/* Template Selector */}
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Template</label>
-                    <div className="flex gap-2">
-                      <select
-                        value={selectedTemplateId || ''}
-                        onChange={e => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
-                        className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
-                        disabled={stepTemplatesLoading}
-                      >
-                        <option value="">{stepTemplatesLoading ? 'Loading templates...' : 'Select a template...'}</option>
-                        {/* Outreach templates group */}
-                        {stepTemplates.filter((t: any) => t.category === 'outreach').length > 0 && (
-                          <optgroup label="Outreach">
-                            {stepTemplates
-                              .filter((t: any) => t.category === 'outreach')
-                              .sort((a: any, b: any) => (a.template_id === activeOutreachTemplateId ? -1 : b.template_id === activeOutreachTemplateId ? 1 : 0))
-                              .map((t: any) => (
-                                <option key={t.template_id} value={t.template_id}>
-                                  {t.template_id === activeOutreachTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeOutreachTemplateId ? ' - Active' : ''}
-                                </option>
-                              ))}
-                          </optgroup>
-                        )}
-                        {/* Follow-up templates group */}
-                        {stepTemplates.filter((t: any) => t.category === 'followup').length > 0 && (
-                          <optgroup label="Follow-up">
-                            {stepTemplates
-                              .filter((t: any) => t.category === 'followup')
-                              .sort((a: any, b: any) => (a.template_id === activeFollowupTemplateId ? -1 : b.template_id === activeFollowupTemplateId ? 1 : 0))
-                              .map((t: any) => (
-                                <option key={t.template_id} value={t.template_id}>
-                                  {t.template_id === activeFollowupTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeFollowupTemplateId ? ' - Active' : ''}
-                                </option>
-                              ))}
-                          </optgroup>
-                        )}
-                        {/* Ungrouped templates */}
-                        {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').length > 0 && (
-                          <optgroup label="Other">
-                            {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').map((t: any) => (
-                              <option key={t.template_id} value={t.template_id}>{t.name}</option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </select>
+                <div className="w-72 shrink-0 bg-gray-50 dark:bg-gray-900/50 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+                  {/* Tab bar */}
+                  <div className="border-b border-gray-200 dark:border-gray-700 px-1 flex flex-wrap">
+                    {STEP_INTEL_TABS.map(tab => (
                       <button
-                        onClick={handleLoadTemplate}
-                        disabled={!selectedTemplateId || stepTemplatesLoading}
-                        className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                        key={tab.id}
+                        onClick={() => setStepIntelTab(tab.id)}
+                        className={`flex items-center gap-1 px-2 py-2 text-[10px] font-medium border-b-2 whitespace-nowrap transition-colors ${
+                          stepIntelTab === tab.id
+                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                        }`}
                       >
-                        <Download className="w-3.5 h-3.5" /> Load
+                        <tab.icon className="w-3 h-3" />
+                        {tab.label}
                       </button>
-                    </div>
-                    {selectedTemplateId && (() => {
-                      const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
-                      return tpl ? (
-                        <div className="mt-1 space-y-1">
-                          <p className="text-xs text-gray-500">
-                            {tpl.category === 'outreach' && tpl.template_id === activeOutreachTemplateId && <span className="text-green-600 font-medium">Active Outreach</span>}
-                            {tpl.category === 'followup' && tpl.template_id === activeFollowupTemplateId && <span className="text-green-600 font-medium">Active Follow-up</span>}
-                            {tpl.description && <span className="ml-1">— {tpl.description}</span>}
-                          </p>
-                          {(tpl.goal || tpl.industry) && (
-                            <div className="flex items-center gap-1.5">
-                              {tpl.goal && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
-                                  {tpl.goal.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                                </span>
-                              )}
-                              {tpl.industry && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
-                                  {tpl.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                                </span>
-                              )}
+                    ))}
+                  </div>
+
+                  {/* Tab content */}
+                  <div className="flex-1 overflow-y-auto">
+
+                    {/* ─── Placeholders Tab ─── */}
+                    {stepIntelTab === 'placeholders' && (
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Info className="w-4 h-4 text-blue-600" />
+                          <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Placeholders</h4>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">Click to insert into body at cursor position.</p>
+                        <div className="space-y-1.5">
+                          {STEP_PLACEHOLDERS.map(({ tag, label }) => (
+                            <div
+                              key={tag}
+                              onClick={() => handleStepPlaceholderClick(tag)}
+                              className="flex items-center gap-2 px-2.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md cursor-pointer hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group select-none"
+                              title={`Click to insert ${tag}`}
+                            >
+                              <GripVertical className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-xs font-mono text-blue-700 dark:text-blue-400 truncate">{tag}</div>
+                                <div className="text-[10px] text-gray-500 truncate">{label}</div>
+                              </div>
                             </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── Scorecard Tab ─── */}
+                    {stepIntelTab === 'scorecard' && (
+                      <div>
+                        {stepScorecardLoading ? (
+                          <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                        ) : stepScorecardResult ? (
+                          <>
+                            <div className="flex justify-center py-4">
+                              <StepScoreGauge score={stepScorecardResult.overall_score} size={120} />
+                            </div>
+                            <div className="text-center mb-4">
+                              <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Grade: {stepScorecardResult.overall_grade}</span>
+                              <div className={`mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                                stepScorecardResult.recommendation === 'SEND' ? 'bg-green-100 text-green-800' :
+                                stepScorecardResult.recommendation === 'REVIEW' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {stepScorecardResult.recommendation === 'SEND' && <CheckCircle className="w-3 h-3" />}
+                                {stepScorecardResult.recommendation === 'REVIEW' && <AlertTriangle className="w-3 h-3" />}
+                                {stepScorecardResult.recommendation === 'DO_NOT_SEND' && <X className="w-3 h-3" />}
+                                {stepScorecardResult.recommendation_label}
+                              </div>
+                            </div>
+                            <div className="px-3 space-y-1.5 pb-3">
+                              {STEP_DIMENSION_ORDER.map(key => {
+                                const dim = stepScorecardResult.dimensions[key]
+                                if (!dim) return null
+                                const isExpanded = stepExpandedDimensions.has(key)
+                                const barColor = dim.score >= 70 ? 'bg-green-500' : dim.score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                                return (
+                                  <div key={key} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                    <button
+                                      onClick={() => setStepExpandedDimensions(prev => {
+                                        const next = new Set(prev)
+                                        if (next.has(key)) next.delete(key); else next.add(key)
+                                        return next
+                                      })}
+                                      className="w-full px-2.5 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                                    >
+                                      <ChevronDown className={`w-3 h-3 text-gray-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                                      <span className="text-[11px] text-gray-600 dark:text-gray-400 flex-1 text-left truncate">{STEP_DIMENSION_LABELS[key] || key}</span>
+                                      <div className="w-16 h-1.5 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
+                                        <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${dim.score}%` }} />
+                                      </div>
+                                      <span className="text-[11px] font-medium w-6 text-right" style={{ color: stepScoreColor(dim.score) }}>{dim.score}</span>
+                                    </button>
+                                    {isExpanded && dim.issues.length > 0 && (
+                                      <div className="px-2.5 pb-2 space-y-1 border-t border-gray-100 dark:border-gray-700">
+                                        {dim.issues.map((issue: any, i: number) => (
+                                          <div key={i} className={`text-[10px] px-2 py-1 rounded mt-1 ${
+                                            issue.severity === 'high' ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                                            issue.severity === 'medium' ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
+                                            'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                          }`}>{issue.message}</div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <div className="px-3 pb-3">
+                              <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                                <span>{stepScorecardResult.total_issues} issue{stepScorecardResult.total_issues !== 1 ? 's' : ''}</span>
+                                {stepScorecardResult.critical_issues > 0 && <span className="text-red-600 font-medium">{stepScorecardResult.critical_issues} critical</span>}
+                              </div>
+                              {stepScorecardResult.total_issues > 0 && (
+                                <button onClick={() => setStepIntelTab('fixes')} className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                  <Wrench className="w-3 h-3" /> Go to Fixes tab
+                                </button>
+                              )}
+                              <button onClick={() => { setStepScorecardResult(null); handleStepScorecard() }} className="w-full text-xs py-1.5 text-gray-500 hover:underline flex items-center justify-center gap-1 mt-1">
+                                <RefreshCw className="w-3 h-3" /> Re-score
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center py-8 px-4">
+                            <BarChart3 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                            <p className="text-xs text-gray-500 mb-3">Score your email across 10 quality dimensions.</p>
+                            <button onClick={handleStepScorecard} disabled={!stepForm.subject && !stepForm.body_html} className="text-xs py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 mx-auto">
+                              <BarChart3 className="w-3 h-3" /> Score Email
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ─── Fixes Tab ─── */}
+                    {stepIntelTab === 'fixes' && (
+                      <div>
+                        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                            <Wrench className="w-4 h-4 text-blue-500" /> Fix Suggestions
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-1">Auto-apply fixes to improve your email score.</p>
+                        </div>
+                        {stepApplyResult && (
+                          <div className="mx-3 mt-3 p-3 rounded-lg bg-gradient-to-r from-red-50 to-green-50 dark:from-red-900/20 dark:to-green-900/20 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-center gap-3">
+                              <div className="text-center">
+                                <div className="text-lg font-bold" style={{ color: stepScoreColor(stepApplyResult.before_score) }}>{stepApplyResult.before_score}</div>
+                                <div className="text-[10px] text-gray-500">Before</div>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                              <div className="text-center">
+                                <div className="text-lg font-bold" style={{ color: stepScoreColor(stepApplyResult.after_score) }}>{stepApplyResult.after_score}</div>
+                                <div className="text-[10px] text-gray-500">After</div>
+                              </div>
+                              <span className={`text-xs font-medium ${stepApplyResult.delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {stepApplyResult.delta >= 0 ? '+' : ''}{stepApplyResult.delta}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-gray-500">
+                              <span>Applied: {stepApplyResult.applied_fixes.length}</span>
+                              <span>Skipped: {stepApplyResult.skipped_fixes.length}</span>
+                            </div>
+                          </div>
+                        )}
+                        <div className="p-3 space-y-2">
+                          {!stepFixesResult ? (
+                            <button onClick={handleStepGetFixes} disabled={stepFixesLoading || (!stepForm.subject && !stepForm.body_html)} className="w-full text-xs py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                              {stepFixesLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />} Get Fix Suggestions
+                            </button>
+                          ) : stepFixesLoading ? (
+                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                          ) : stepFixesResult.fixes.length === 0 ? (
+                            <div className="text-center py-4 text-gray-400">
+                              <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                              <p className="text-sm font-medium text-green-600">No fixes needed</p>
+                              <p className="text-xs mt-1">This email looks great!</p>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-gray-500">{stepFixesResult.fix_count} suggestion{stepFixesResult.fix_count !== 1 ? 's' : ''} ({stepFixesResult.auto_fixable_count} auto-fix)</span>
+                                {stepFixesResult.auto_fixable_count > 0 && (
+                                  <button onClick={() => {
+                                    const autoIds = new Set<string>(stepFixesResult.fixes.filter((f: any) => f.auto_fixable).map((f: any) => f.id))
+                                    setStepSelectedFixIds(prev => {
+                                      const allSelected = stepFixesResult.fixes.filter((f: any) => f.auto_fixable).every((f: any) => prev.has(f.id))
+                                      return allSelected ? new Set() : autoIds
+                                    })
+                                  }} className="text-[10px] text-blue-600 hover:underline">
+                                    {stepFixesResult.fixes.filter((f: any) => f.auto_fixable).every((f: any) => stepSelectedFixIds.has(f.id)) ? 'Deselect All' : 'Select All Auto-Fix'}
+                                  </button>
+                                )}
+                              </div>
+                              {stepSelectedFixIds.size > 0 && (
+                                <button onClick={handleStepApplySelectedFixes} disabled={stepApplyingFixes} className="w-full text-xs py-2 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 font-medium mb-2">
+                                  {stepApplyingFixes ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                                  Apply {stepSelectedFixIds.size} Selected Fix{stepSelectedFixIds.size !== 1 ? 'es' : ''}
+                                </button>
+                              )}
+                              {stepFixesResult.fixes.map((fix: any) => {
+                                const isSelected = stepSelectedFixIds.has(fix.id)
+                                const canToggle = fix.auto_fixable
+                                return (
+                                  <div key={fix.id} onClick={() => { if (!canToggle) return; setStepSelectedFixIds(prev => { const next = new Set(prev); if (next.has(fix.id)) next.delete(fix.id); else next.add(fix.id); return next }) }} className={`p-2.5 border rounded-lg transition-colors ${canToggle ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50' : 'opacity-70'} ${isSelected ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700'}`}>
+                                    <div className="flex items-start gap-2">
+                                      <input type="checkbox" checked={isSelected} disabled={!canToggle} onChange={() => {}} className="mt-0.5 w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40" />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fix.severity === 'high' ? 'bg-red-100 text-red-800' : fix.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}>{fix.severity.toUpperCase()}</span>
+                                          <span className="text-[10px] text-gray-400">{STEP_DIMENSION_LABELS[fix.dimension] || fix.dimension}</span>
+                                          {!canToggle && <span className="text-[10px] text-gray-400 italic">manual</span>}
+                                        </div>
+                                        <p className="text-xs text-gray-700 dark:text-gray-300">{fix.message}</p>
+                                        {fix.original && fix.replacement && fix.auto_fixable && (
+                                          <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 line-through">{fix.original}</span>
+                                            <ChevronRight className="w-2.5 h-2.5 text-gray-400" />
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700">{fix.replacement}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              <button onClick={() => { setStepFixesResult(null); setStepApplyResult(null); handleStepGetFixes() }} className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1 mt-2">
+                                <RefreshCw className="w-3 h-3" /> Re-check fixes
+                              </button>
+                            </>
                           )}
                         </div>
-                      ) : null
-                    })()}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Subject</label>
-                    <input value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Body (HTML)</label>
-                    <textarea value={stepForm.body_html} onChange={e => setStepForm(f => ({ ...f, body_html: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 font-mono text-xs" rows={6} placeholder="<p>Hi {{first_name}},</p>" />
-                  </div>
-
-                  {/* Spam Check + Deliverability Buttons */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleModalSpamCheck}
-                      disabled={modalSpamLoading || (!stepForm.subject && !stepForm.body_html)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
-                    >
-                      {modalSpamLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSearch className="w-3.5 h-3.5" />}
-                      Spam Check
-                    </button>
-                    <button
-                      onClick={handleModalDeliverabilityCheck}
-                      disabled={modalDeliverabilityLoading || (!stepForm.subject && !stepForm.body_html)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
-                    >
-                      {modalDeliverabilityLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BarChart3 className="w-3.5 h-3.5" />}
-                      Deliverability Score
-                    </button>
-                  </div>
-
-                  {/* Spam Check Results */}
-                  {modalSpamResult && (
-                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-xs space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">Spam Score:</span>
-                        <span className={`px-2 py-0.5 rounded-full font-bold ${
-                          modalSpamResult.grade === 'A' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                          modalSpamResult.grade === 'B' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
-                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                        }`}>
-                          {modalSpamResult.grade} ({modalSpamResult.score}/100)
-                        </span>
                       </div>
-                      {modalSpamResult.flagged_words?.length > 0 && (
-                        <div>
-                          <span className="text-gray-500">Flagged words:</span>{' '}
-                          {modalSpamResult.flagged_words.map((w: string, i: number) => (
-                            <span key={i} className="inline-block bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded mr-1 mb-0.5">{w}</span>
-                          ))}
+                    )}
+
+                    {/* ─── Spam Tab ─── */}
+                    {stepIntelTab === 'spam' && (
+                      <div>
+                        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-500" /> Spam Free Maker
+                          </h3>
+                          <p className="text-xs text-gray-500 mt-1">Check for spam trigger words and get fix suggestions.</p>
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Deliverability Results */}
-                  {modalDeliverabilityResult && (
-                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-xs space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">Deliverability:</span>
-                        <span className={`px-2 py-0.5 rounded-full font-bold ${
-                          (modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 0) >= 80 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                          (modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 0) >= 60 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
-                          'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                        }`}>
-                          {modalDeliverabilityResult.composite_score ?? modalDeliverabilityResult.score ?? 'N/A'}/100
-                        </span>
-                      </div>
-                      {modalDeliverabilityResult.breakdown && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-gray-600 dark:text-gray-400">
-                          {Object.entries(modalDeliverabilityResult.breakdown).map(([key, val]: [string, any]) => (
-                            <div key={key} className="flex justify-between">
-                              <span className="capitalize">{key.replace(/_/g, ' ')}:</span>
-                              <span className="font-medium text-gray-900 dark:text-gray-200">{typeof val === 'number' ? val : String(val)}</span>
+                        {stepSpamReduceResult && (
+                          <div className="mx-3 mt-3 p-3 rounded-lg bg-gradient-to-r from-red-50 to-green-50 dark:from-red-900/20 dark:to-green-900/20 border border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center justify-center gap-3">
+                              <div className="text-center">
+                                <div className={`text-lg font-bold ${stepSpamBadgeColor(stepSpamReduceResult.before_grade).split(' ')[1]}`}>{stepSpamReduceResult.before_score}</div>
+                                <div className="text-[10px] text-gray-500">{stepSpamReduceResult.before_grade}</div>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                              <div className="text-center">
+                                <div className={`text-lg font-bold ${stepSpamBadgeColor(stepSpamReduceResult.after_grade).split(' ')[1]}`}>{stepSpamReduceResult.after_score}</div>
+                                <div className="text-[10px] text-gray-500">{stepSpamReduceResult.after_grade}</div>
+                              </div>
+                              <span className="text-xs font-medium text-green-600">-{stepSpamReduceResult.delta}pts</span>
                             </div>
+                          </div>
+                        )}
+                        <div className="p-3 space-y-2">
+                          {!stepSpamResult ? (
+                            <button onClick={handleStepSpamCheck} disabled={stepSpamLoading || (!stepForm.subject && !stepForm.body_html)} className="w-full text-xs py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                              {stepSpamLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />} Check Spam Score
+                            </button>
+                          ) : stepSpamLoading ? (
+                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stepSpamBadgeColor(stepSpamResult.grade)}`}>{stepSpamResult.grade?.replace('_', ' ')}</span>
+                                <span className="text-xs text-gray-500">Score: {stepSpamResult.score}</span>
+                              </div>
+                              {stepSpamResult.flagged_words?.length === 0 && stepSpamResult.suggestions?.length === 0 ? (
+                                <div className="text-center py-4 text-gray-400">
+                                  <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                                  <p className="text-sm font-medium text-green-600">No spam words detected</p>
+                                  <p className="text-xs mt-1">This email looks clean</p>
+                                </div>
+                              ) : (
+                                <>
+                                  {stepSpamResult.suggestions?.length > 1 && (
+                                    <button onClick={handleStepApplyAllSpamFixes} className="w-full text-xs py-2 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-1 font-medium">
+                                      <Zap className="w-3 h-3" /> Apply All {stepSpamResult.suggestions.length} Fixes
+                                    </button>
+                                  )}
+                                  {stepSpamResult.suggestions?.map((s: any, idx: number) => (
+                                    <button key={idx} onClick={() => handleStepSingleSpamFix(s.original, s.replacement)} className="w-full text-left p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 line-through">{s.original}</span>
+                                        <ChevronRight className="w-3 h-3 text-gray-400 group-hover:text-blue-500" />
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">{s.replacement}</span>
+                                      </div>
+                                    </button>
+                                  ))}
+                                  {stepSpamResult.flagged_words?.filter((fw: any) => !stepSpamResult.suggestions?.some((s: any) => s.original === fw.word) && !fw.word?.startsWith('[pattern:')).map((fw: any, idx: number) => (
+                                    <div key={`fw-${idx}`} className="p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg opacity-70">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800">{fw.word}</span>
+                                        <span className="text-[10px] text-gray-400">{fw.severity} | {fw.location} | {fw.points}pts</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                              <button onClick={() => { setStepSpamResult(null); setStepSpamReduceResult(null); handleStepSpamCheck() }} className="w-full text-xs py-2 text-center text-blue-600 hover:underline flex items-center justify-center gap-1">
+                                <RefreshCw className="w-3 h-3" /> Re-check spam
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ─── Rendering Tab ─── */}
+                    {stepIntelTab === 'rendering' && (
+                      <div className="p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                          <Monitor className="w-4 h-4 text-blue-500" /> Rendering Check
+                        </h3>
+                        {stepRenderingLoading ? (
+                          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                        ) : stepRenderingResult ? (
+                          <>
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className={`text-2xl font-bold ${stepRenderingResult.score >= 80 ? 'text-green-600' : stepRenderingResult.score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                {stepRenderingResult.score}/100
+                              </div>
+                              <div className="flex-1 h-2 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
+                                <div className={`h-full rounded-full ${stepRenderingResult.score >= 80 ? 'bg-green-500' : stepRenderingResult.score >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${stepRenderingResult.score}%` }} />
+                              </div>
+                            </div>
+                            {stepRenderingResult.warnings?.length === 0 ? (
+                              <div className="text-center py-4">
+                                <CheckCircle className="w-6 h-6 mx-auto mb-1 text-green-500" />
+                                <p className="text-xs text-green-600">No rendering issues</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {stepRenderingResult.warnings?.map((w: any, i: number) => (
+                                  <div key={i} className={`p-2.5 rounded-lg border text-xs ${w.severity === 'high' ? 'border-red-200 bg-red-50' : w.severity === 'medium' ? 'border-yellow-200 bg-yellow-50' : 'border-blue-200 bg-blue-50'}`}>
+                                    <div className="flex items-start gap-2">
+                                      <AlertTriangle className={`w-3 h-3 mt-0.5 flex-shrink-0 ${w.severity === 'high' ? 'text-red-500' : w.severity === 'medium' ? 'text-yellow-500' : 'text-blue-500'}`} />
+                                      <div>
+                                        <p className="text-gray-700">{w.message}</p>
+                                        <span className="text-[10px] text-gray-400 mt-0.5 inline-block">{w.client}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {stepRenderingResult.stats && (
+                              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-400">Images</div></div>
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-400">Links</div></div>
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-400">HTML Size</div></div>
+                              </div>
+                            )}
+                            <button onClick={() => { setStepRenderingResult(null); handleStepRenderingCheck() }} className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1 mt-2">
+                              <RefreshCw className="w-3 h-3" /> Re-check
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={handleStepRenderingCheck} disabled={!stepForm.body_html} className="w-full text-xs py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Check Rendering</button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ─── Humanize Tab ─── */}
+                    {stepIntelTab === 'humanize' && (
+                      <div className="p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                          <Brain className="w-4 h-4 text-purple-500" /> AI Detection Shield
+                        </h3>
+                        <div className="flex gap-2">
+                          {(['light', 'medium', 'heavy'] as const).map(level => (
+                            <button key={level} onClick={() => setStepHumanizeIntensity(level)} className={`flex-1 text-xs py-1.5 rounded border transition-colors capitalize ${stepHumanizeIntensity === level ? 'bg-purple-100 border-purple-400 text-purple-700' : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'}`}>{level}</button>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
+                        <button onClick={handleStepHumanize} disabled={stepHumanizeLoading || !stepForm.body_html} className="w-full text-xs py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                          {stepHumanizeLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Brain className="w-3 h-3" />} Humanize
+                        </button>
+                        {stepHumanizeResult && (
+                          <>
+                            <div className="p-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <p className="text-[10px] text-gray-500 mb-2 uppercase tracking-wide">Burstiness Score</p>
+                              <div className="flex items-center gap-3">
+                                <div className="text-center">
+                                  <div className={`text-sm font-bold ${stepHumanizeResult.burstiness_before < 0.4 ? 'text-red-500' : 'text-green-500'}`}>{stepHumanizeResult.burstiness_before}</div>
+                                  <div className="text-[10px] text-gray-400">Before</div>
+                                </div>
+                                <ChevronRight className="w-3 h-3 text-gray-400" />
+                                <div className="text-center">
+                                  <div className={`text-sm font-bold ${stepHumanizeResult.burstiness_after < 0.4 ? 'text-red-500' : 'text-green-500'}`}>{stepHumanizeResult.burstiness_after}</div>
+                                  <div className="text-[10px] text-gray-400">After</div>
+                                </div>
+                              </div>
+                              <div className="mt-1.5 flex gap-2 text-[10px]">
+                                <span className="text-red-400">AI-like: 0.2-0.4</span>
+                                <span className="text-green-400">Human: 0.5-0.8</span>
+                              </div>
+                            </div>
+                            {stepHumanizeResult.modifications?.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Modifications</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {stepHumanizeResult.modifications.map((m: string, i: number) => (
+                                    <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">{m}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <button onClick={handleStepApplyHumanize} className="w-full text-xs py-2 border border-purple-400 text-purple-700 rounded hover:bg-purple-50 dark:hover:bg-purple-900/20">
+                              Apply to Email
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
 
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={stepForm.reply_to_thread} onChange={e => setStepForm(f => ({ ...f, reply_to_thread: e.target.checked }))} />
-                    <span className="text-sm">Reply to previous thread</span>
-                  </label>
-                </>
+                    {/* ─── Spintax Tab ─── */}
+                    {stepIntelTab === 'spintax' && (
+                      <div className="p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                          <Shuffle className="w-4 h-4 text-orange-500" /> Content Variations
+                        </h3>
+                        <button onClick={handleStepSpintaxPreview} disabled={stepSpintaxLoading || !stepForm.body_html} className="w-full text-xs py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                          {stepSpintaxLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Shuffle className="w-3 h-3" />} Preview Variations
+                        </button>
+                        {stepSpintaxResult && (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 font-medium">{stepSpintaxResult.total_variants} unique versions</span>
+                              {stepSpintaxResult.errors?.length > 0 && <span className="text-[10px] text-red-500">{stepSpintaxResult.errors.length} errors</span>}
+                            </div>
+                            {stepSpintaxResult.total_variants <= 1 ? (
+                              <div className="text-center py-4 text-gray-400">
+                                <p className="text-xs">No spintax patterns found</p>
+                                <p className="text-[10px] mt-1">Use {'{option1|option2}'} syntax for variations</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {stepSpintaxResult.variants.map((v: string, i: number) => (
+                                  <div key={i} className="p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                    <div className="text-[10px] text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
+                                    <div className="text-xs text-gray-700 dark:text-gray-300 max-h-24 overflow-y-auto" dangerouslySetInnerHTML={{ __html: v }} />
+                                  </div>
+                                ))}
+                                <button onClick={handleStepSpintaxPreview} className="w-full text-xs py-1.5 text-orange-600 hover:underline flex items-center justify-center gap-1">
+                                  <RefreshCw className="w-3 h-3" /> Show More
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                  </div>
+                </div>
               )}
-              {stepForm.step_type === 'condition' && (
-                <>
+
+              {/* Right: Form Fields */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="space-y-4">
+                  {/* Step Type */}
                   <div>
-                    <label className="block text-sm font-medium mb-1">Condition</label>
-                    <select value={stepForm.condition_type} onChange={e => setStepForm(f => ({ ...f, condition_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
-                      <option value="">Select condition...</option>
-                      <option value="opened">Email Opened</option>
-                      <option value="clicked">Link Clicked</option>
-                      <option value="replied">Replied</option>
-                      <option value="no_action">No Action</option>
+                    <label className="block text-sm font-medium mb-1 dark:text-gray-200">Step Type</label>
+                    <select value={stepForm.step_type} onChange={e => setStepForm(f => ({ ...f, step_type: e.target.value as any }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                      <option value="email">Email</option>
+                      <option value="wait">Wait</option>
+                      <option value="condition">Condition</option>
+                      <option value="sms">SMS</option>
+                      <option value="call">Call</option>
+                      <option value="linkedin">LinkedIn</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Window (hours)</label>
-                    <input type="number" value={stepForm.condition_window_hours} onChange={e => setStepForm(f => ({ ...f, condition_window_hours: parseInt(e.target.value) || 24 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+
+                  {stepForm.step_type === 'email' && (
+                    <>
+                      {/* Template Selector */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1 dark:text-gray-200">Template</label>
+                        <div className="flex gap-2">
+                          <select
+                            value={selectedTemplateId || ''}
+                            onChange={e => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
+                            className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                            disabled={stepTemplatesLoading}
+                          >
+                            <option value="">{stepTemplatesLoading ? 'Loading templates...' : 'Select a template...'}</option>
+                            {stepTemplates.filter((t: any) => t.category === 'outreach').length > 0 && (
+                              <optgroup label="Outreach">
+                                {stepTemplates.filter((t: any) => t.category === 'outreach').sort((a: any, b: any) => (a.template_id === activeOutreachTemplateId ? -1 : b.template_id === activeOutreachTemplateId ? 1 : 0)).map((t: any) => (
+                                  <option key={t.template_id} value={t.template_id}>
+                                    {t.template_id === activeOutreachTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeOutreachTemplateId ? ' - Active' : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {stepTemplates.filter((t: any) => t.category === 'followup').length > 0 && (
+                              <optgroup label="Follow-up">
+                                {stepTemplates.filter((t: any) => t.category === 'followup').sort((a: any, b: any) => (a.template_id === activeFollowupTemplateId ? -1 : b.template_id === activeFollowupTemplateId ? 1 : 0)).map((t: any) => (
+                                  <option key={t.template_id} value={t.template_id}>
+                                    {t.template_id === activeFollowupTemplateId ? '\u2605 ' : ''}{t.name}{t.industry ? ` (${t.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())})` : ''}{t.template_id === activeFollowupTemplateId ? ' - Active' : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').length > 0 && (
+                              <optgroup label="Other">
+                                {stepTemplates.filter((t: any) => t.category !== 'outreach' && t.category !== 'followup').map((t: any) => (
+                                  <option key={t.template_id} value={t.template_id}>{t.name}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                          <button onClick={handleLoadTemplate} disabled={!selectedTemplateId || stepTemplatesLoading} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+                            <Download className="w-3.5 h-3.5" /> Load
+                          </button>
+                        </div>
+                        {selectedTemplateId && (() => {
+                          const tpl = stepTemplates.find((t: any) => t.template_id === selectedTemplateId)
+                          return tpl ? (
+                            <div className="mt-1 space-y-1">
+                              <p className="text-xs text-gray-500">
+                                {tpl.category === 'outreach' && tpl.template_id === activeOutreachTemplateId && <span className="text-green-600 font-medium">Active Outreach</span>}
+                                {tpl.category === 'followup' && tpl.template_id === activeFollowupTemplateId && <span className="text-green-600 font-medium">Active Follow-up</span>}
+                                {tpl.description && <span className="ml-1">— {tpl.description}</span>}
+                              </p>
+                              {(tpl.goal || tpl.industry) && (
+                                <div className="flex items-center gap-1.5">
+                                  {tpl.goal && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">{tpl.goal.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>}
+                                  {tpl.industry && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">{tpl.industry.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>}
+                                </div>
+                              )}
+                            </div>
+                          ) : null
+                        })()}
+                      </div>
+
+                      {/* Email Headers Display */}
+                      <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-2.5 space-y-1.5">
+                        <div className="flex items-center text-xs">
+                          <span className="text-gray-400 w-10 shrink-0">To:</span>
+                          <span className="text-gray-600 dark:text-gray-400 font-mono text-[11px]">{'{{contact_email}}'}</span>
+                        </div>
+                        <div className="flex items-center text-xs">
+                          <span className="text-gray-400 w-10 shrink-0">CC:</span>
+                          <span className="text-gray-400 italic text-[11px]">None</span>
+                        </div>
+                        <div className="flex items-center text-xs">
+                          <span className="text-gray-400 w-10 shrink-0">BCC:</span>
+                          <span className="text-gray-400 italic text-[11px]">None</span>
+                        </div>
+                      </div>
+
+                      {/* Subject */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1 dark:text-gray-200">Subject</label>
+                        <input ref={stepSubjectRef} value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
+                      </div>
+
+                      {/* Formatting Toolbar */}
+                      <div className="flex items-center gap-0.5 px-1 py-1 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900/30 flex-wrap">
+                        <button type="button" onClick={() => applyStepFormatting('b')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Bold"><Bold className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => applyStepFormatting('i')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Italic"><Italic className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => applyStepFormatting('u')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Underline"><Underline className="w-3.5 h-3.5" /></button>
+                        <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
+                        <button type="button" onClick={() => applyStepFormatting('span', 'style="color:#2563eb"')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Color (Blue)"><Palette className="w-3.5 h-3.5" /></button>
+                        <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
+                        <button type="button" onClick={() => applyStepFormatting('div', 'style="text-align:left"')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Align Left"><AlignLeft className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => applyStepFormatting('div', 'style="text-align:center"')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Align Center"><AlignCenter className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => applyStepFormatting('div', 'style="text-align:right"')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Align Right"><AlignRight className="w-3.5 h-3.5" /></button>
+                        <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
+                        <button type="button" onClick={() => applyStepFormatting('li')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Bullet List"><List className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => applyStepFormatting('li')} className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400" title="Numbered List"><ListOrdered className="w-3.5 h-3.5" /></button>
+                      </div>
+
+                      {/* Body Editor / Preview Toggle */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1 dark:text-gray-200">Body (HTML)</label>
+                        {stepShowPreview ? (
+                          <div
+                            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-3 min-h-[200px] bg-white dark:bg-gray-700 text-sm prose prose-sm max-w-none overflow-y-auto"
+                            style={{ maxHeight: '300px' }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(stepForm.body_html) }}
+                          />
+                        ) : (
+                          <textarea
+                            ref={stepBodyRef}
+                            value={stepForm.body_html}
+                            onChange={e => setStepForm(f => ({ ...f, body_html: e.target.value }))}
+                            className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 font-mono text-xs"
+                            rows={10}
+                            placeholder="<p>Hi {{contact_first_name}},</p>"
+                          />
+                        )}
+                      </div>
+
+                      {/* Attachment info */}
+                      <p className="text-[11px] text-gray-400 italic flex items-center gap-1.5">
+                        <Info className="w-3 h-3" /> Attachments not supported in cold email (improves deliverability)
+                      </p>
+
+                      {/* Reply to thread */}
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={stepForm.reply_to_thread} onChange={e => setStepForm(f => ({ ...f, reply_to_thread: e.target.checked }))} />
+                        <span className="text-sm dark:text-gray-200">Reply to previous thread</span>
+                      </label>
+                    </>
+                  )}
+
+                  {/* Non-email step types (unchanged logic) */}
+                  {stepForm.step_type === 'condition' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium mb-1 dark:text-gray-200">Condition</label>
+                        <select value={stepForm.condition_type} onChange={e => setStepForm(f => ({ ...f, condition_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                          <option value="">Select condition...</option>
+                          <option value="opened">Email Opened</option>
+                          <option value="clicked">Link Clicked</option>
+                          <option value="replied">Replied</option>
+                          <option value="no_action">No Action</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1 dark:text-gray-200">Window (hours)</label>
+                        <input type="number" value={stepForm.condition_window_hours} onChange={e => setStepForm(f => ({ ...f, condition_window_hours: parseInt(e.target.value) || 24 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                      </div>
+                    </>
+                  )}
+                  {stepForm.step_type === 'sms' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1 dark:text-gray-200">SMS Body</label>
+                      <textarea value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" rows={4} placeholder="Hi {{first_name}}, ..." />
+                      <p className="text-xs text-gray-400 mt-1">Max 160 chars recommended. Supports {'{{first_name}}'}, {'{{company}}'} placeholders and {'{'} spintax {'}'}</p>
+                    </div>
+                  )}
+                  {stepForm.step_type === 'call' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1 dark:text-gray-200">TwiML URL or Script</label>
+                      <input value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="https://your-domain.com/twiml/script" />
+                      <p className="text-xs text-gray-400 mt-1">URL to TwiML instructions for the call, or leave empty for a simple dial</p>
+                    </div>
+                  )}
+                  {stepForm.step_type === 'linkedin' && (
+                    <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3">
+                      <p className="text-sm text-sky-700 dark:text-sky-300 flex items-center gap-2">
+                        <Linkedin className="w-4 h-4" /> LinkedIn automation requires a browser extension (coming soon)
+                      </p>
+                      <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">The campaign engine will skip this step and advance to the next one until the extension is configured.</p>
+                    </div>
+                  )}
+
+                  {/* Delay fields */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1 dark:text-gray-200">Delay (days)</label>
+                      <input type="number" value={stepForm.delay_days} onChange={e => setStepForm(f => ({ ...f, delay_days: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 dark:text-gray-200">Delay (hours)</label>
+                      <input type="number" value={stepForm.delay_hours} onChange={e => setStepForm(f => ({ ...f, delay_hours: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    </div>
                   </div>
-                </>
-              )}
-              {stepForm.step_type === 'sms' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">SMS Body</label>
-                  <textarea value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" rows={4} placeholder="Hi {{first_name}}, ..." />
-                  <p className="text-xs text-gray-400 mt-1">Max 160 chars recommended. Supports {'{{first_name}}'}, {'{{company}}'} placeholders and {'{'} spintax {'}'}</p>
-                </div>
-              )}
-              {stepForm.step_type === 'call' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">TwiML URL or Script</label>
-                  <input value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="https://your-domain.com/twiml/script" />
-                  <p className="text-xs text-gray-400 mt-1">URL to TwiML instructions for the call, or leave empty for a simple dial</p>
-                </div>
-              )}
-              {stepForm.step_type === 'linkedin' && (
-                <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3">
-                  <p className="text-sm text-sky-700 dark:text-sky-300 flex items-center gap-2">
-                    <Linkedin className="w-4 h-4" />
-                    LinkedIn automation requires a browser extension (coming soon)
-                  </p>
-                  <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">The campaign engine will skip this step and advance to the next one until the extension is configured.</p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Delay (days)</label>
-                  <input type="number" value={stepForm.delay_days} onChange={e => setStepForm(f => ({ ...f, delay_days: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Delay (hours)</label>
-                  <input type="number" value={stepForm.delay_hours} onChange={e => setStepForm(f => ({ ...f, delay_hours: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowStepModal(false)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
-                <button onClick={handleAddStep} disabled={saving} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 shrink-0">
+              <div className="flex items-center gap-2">
+                {stepForm.step_type === 'email' && (
+                  <>
+                    <button onClick={handleStepAiRewrite} disabled={stepRewriting || !stepForm.body_html} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                      {stepRewriting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      {stepRewriting ? 'Rewriting...' : 'AI Rewrite'}
+                    </button>
+                    <button onClick={() => setStepShowPreview(!stepShowPreview)} disabled={!stepForm.body_html} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors">
+                      <Eye className="w-3.5 h-3.5" /> {stepShowPreview ? 'Edit' : 'Preview'}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setShowStepModal(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300">Cancel</button>
+                <button onClick={handleAddStep} disabled={saving} className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">
                   {saving ? 'Saving...' : editingStep ? 'Update Step' : 'Add Step'}
                 </button>
               </div>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {/* Enroll Modal — Lead-based contact selection */}
