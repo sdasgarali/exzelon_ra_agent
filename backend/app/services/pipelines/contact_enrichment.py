@@ -344,7 +344,7 @@ def run_contact_enrichment_pipeline(
             )
             if tenant_id is not None:
                 q = q.filter(LeadDetails.tenant_id == tenant_id)
-            leads = q.limit(100).all()
+            leads = q.limit(500).all()
 
         logger.info(f"Found {len(leads)} leads to enrich")
         batch_lead_ids = {l.lead_id for l in leads}
@@ -456,6 +456,11 @@ def run_contact_enrichment_pipeline(
                 if not contacts:
                     counters["skipped"] += 1
                     adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
+                    # Mark lead as skipped so it doesn't re-enter the queue on
+                    # subsequent runs — prevents the same un-enrichable leads
+                    # from consuming batch capacity every time.
+                    lead.lead_status = LeadStatus.SKIPPED
+                    lead.skip_reason = f"No contacts found via {adapter_names}"
                     lead_results.append({
                         "lead_id": lead.lead_id, "client_name": lead.client_name,
                         "status": "skipped", "contacts_found": 0, "contacts_reused": reused,
