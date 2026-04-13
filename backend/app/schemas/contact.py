@@ -15,6 +15,7 @@ class ContactBase(BaseModel):
     email: str  # Use str instead of EmailStr to avoid crashing on slightly malformed existing data
     location_state: Optional[str] = None
     phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
     source: Optional[str] = None
     priority_level: Optional[PriorityLevel] = None
     data_type: Optional[str] = "enriched"
@@ -36,6 +37,7 @@ class ContactUpdate(BaseModel):
     email: Optional[EmailStr] = None
     location_state: Optional[str] = None
     phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
     source: Optional[str] = None
     priority_level: Optional[PriorityLevel] = None
     validation_status: Optional[str] = None

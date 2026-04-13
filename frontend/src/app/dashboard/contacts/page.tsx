@@ -15,6 +15,7 @@ interface Contact {
   title: string
   email: string
   phone: string
+  linkedin_url: string | null
   location_state: string
   timezone: string | null
   priority_level: string
@@ -44,7 +45,7 @@ function formatTimezone(tz: string | null): string {
 
 const EMPTY_FORM = {
   first_name: '', last_name: '', email: '', client_name: '',
-  title: '', phone: '', location_state: '', source: 'manual',
+  title: '', phone: '', linkedin_url: '', location_state: '', source: 'manual',
   priority_level: '',
 }
 
@@ -400,6 +401,10 @@ export default function ContactsPage() {
                 </div>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile</label>
+                <input value={createForm.linkedin_url} onChange={e => setCreateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
                 <select value={createForm.priority_level} onChange={e => setCreateForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
                   <option value="">-- Select --</option>
@@ -464,6 +469,10 @@ export default function ContactsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
                   <input value={editForm.location_state} onChange={e => setEditForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile</label>
+                <input value={editForm.linkedin_url} onChange={e => setEditForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
@@ -626,6 +635,7 @@ export default function ContactsPage() {
                   { key: 'company', label: 'Company' },
                   { key: 'email', label: 'Email' },
                   { key: 'phone', label: 'Phone' },
+                  { key: 'linkedin_url', label: 'LinkedIn' },
                   { key: 'timezone', label: 'Timezone' },
                   { key: 'priority', label: 'Priority' },
                   { key: 'validation', label: 'Validation' },
@@ -643,9 +653,9 @@ export default function ContactsPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={13} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-gray-500">Loading contacts...</td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={13} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-gray-500">No contacts found. Run Contact Enrichment pipeline to discover contacts.</td></tr>
               ) : (
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
@@ -665,6 +675,11 @@ export default function ContactsPage() {
                     <td className="px-4 py-3 text-sm">
                       {contact.phone ? (
                         <a href={'tel:' + contact.phone} className="text-blue-600 hover:underline">{contact.phone}</a>
+                      ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {contact.linkedin_url ? (
+                        <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Profile</a>
                       ) : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500" title={contact.timezone || ''}>
@@ -718,6 +733,7 @@ export default function ContactsPage() {
                               client_name: contact.client_name || '',
                               title: contact.title || '',
                               phone: contact.phone || '',
+                              linkedin_url: contact.linkedin_url || '',
                               location_state: contact.location_state || '',
                               source: contact.source || 'manual',
                               priority_level: contact.priority_level || '',

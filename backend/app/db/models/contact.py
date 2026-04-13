@@ -48,6 +48,7 @@ class ContactDetails(Base):
     email = Column(String(255), nullable=False, index=True)
     location_state = Column(String(50), nullable=True)  # 2-letter state code
     phone = Column(String(50), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
 
     # Discovery metadata
     source = Column(String(50), nullable=True)  # apollo, seamless

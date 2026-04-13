@@ -1,23 +1,39 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 86: Implemented Multiple Campaign Schedules with Date Ranges.
-> New `CampaignSchedule` model (campaign_schedules table) — multiple schedule entries per campaign,
-> each with start/end dates, send window, send days, timezone, label.
-> 4 CRUD endpoints (GET/POST/PUT/DELETE /{campaign_id}/schedules).
-> Campaign engine `_is_within_send_window()` rewritten for multi-schedule support with pre-fetch optimization.
-> Backfill migration: creates one "Default" schedule row per existing campaign from legacy columns.
-> `duplicate_campaign` clones schedules, `from-leads` creates default schedule.
-> Frontend: Schedule tab rewritten with card list view, add/edit modal, delete, status badges (Active/Future/Expired).
-> All 930 tests pass, frontend build OK.
-> Files changed: campaign.py (model), __init__.py, campaigns.py (endpoints), campaign_engine.py, main.py, api.ts, page.tsx.
+> Session 87: UI polish + data ops session.
+> 1. Contacts page: archived contacts show "Restore Selected" (green) instead of "Archive Selected",
+>    "Bulk Update" hidden when archived. Per-row Edit and Delete action buttons added for every contact.
+>    Edit Contact modal with all fields. Backend: PUT /contacts/bulk/restore endpoint. Commit 58bbec1, deployed.
+> 2. Leads page: archived leads show ONLY "Restore Selected" button — all other bulk buttons
+>    (Contact Enrich, Send Outreach, Update Status, Archive, Bulk Update, Create Campaign) hidden.
+>    Commit 1179998, deployed.
+> 3. Database ops (direct MySQL on VPS, no code changes):
+>    - Permanently deleted contacts #1 (ali.infy@gmail.com) and #2 (ali.aitechs@gmail.com)
+>      along with their FK references (outreach_events, inbox_messages, outreach_drafts, deals).
+>    - Re-created both contacts linked to Lead #4639 (Pinnacle Engineering Group):
+>      Contact #2445 ali.infy@gmail.com (Ali Khan, HR Director, TX)
+>      Contact #2446 ali.aitechs@gmail.com (Asgar Ali, HR Director, NY)
 
 ## REVERT CHECKPOINT
-> **Commit:** `120e65a` — **Branch:** `master` — **Date:** 2026-04-12
+> **Commit:** `1179998` — **Branch:** `master` — **Date:** 2026-04-12
 > **State:** Clean working tree (only untracked: `NeuraLeads-Requirements,.txt`). Deployed to VPS and verified healthy.
-> **To revert here:** `git reset --hard 120e65a` then redeploy.
+> **To revert here:** `git reset --hard 1179998` then redeploy.
 
 ## Immediate TODO
+- [x] Contacts: archived bulk restore + per-row edit/delete actions (2026-04-12)
+  - Archived contacts: "Restore Selected" (green) replaces "Archive Selected", "Bulk Update" hidden
+  - Per-row Edit (pencil) and Delete (trash) buttons in new Actions column
+  - Edit Contact modal with all fields (name, email, title, phone, priority, client, state, source, status)
+  - Backend: PUT /contacts/bulk/restore endpoint (Admin only, sets is_archived=False)
+  - Commit 58bbec1, deployed
+- [x] Leads: archived bulk buttons — only Restore Selected shown (2026-04-12)
+  - When showArchived=true, all bulk buttons hidden except green "Restore Selected"
+  - Hidden: Contact Enrich, Send Outreach, Update Status, Archive Selected, Bulk Update, Create Campaign
+  - Commit 1179998, deployed
+- [x] DB ops: permanently deleted + re-created contacts for Lead #4639 (2026-04-12)
+  - Hard deleted contacts #1 (ali.infy@gmail.com) + #2 (ali.aitechs@gmail.com) and all FK refs
+  - Re-created as #2445 + #2446 linked to Lead #4639 (Pinnacle Engineering Group)
 - [x] Multiple Campaign Schedules with Date Ranges (2026-04-12)
   - New CampaignSchedule model: schedule_id, campaign_id, tenant_id, start_date, end_date, send_window, send_days, timezone, label
   - 4 CRUD endpoints on /campaigns/{id}/schedules (list, add, update, delete)
@@ -277,6 +293,15 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 87: Contacts/Leads archived bulk actions + contact edit/delete + DB ops (2026-04-12)
+  - Contacts page: "Restore Selected" for archived, per-row Edit/Delete actions, Edit Contact modal
+  - Leads page: archived shows only "Restore Selected", all other bulk buttons hidden
+  - DB: permanently deleted contacts #1 & #2, re-created as #2445 & #2446 on Lead #4639
+  - Commits: 58bbec1, 1179998. Deployed to VPS.
+- [x] Session 86: Multiple Campaign Schedules with Date Ranges (2026-04-12)
+  - CampaignSchedule model, 4 CRUD endpoints, multi-schedule engine, backfill migration
+  - Schedule tab: card list, add/edit modal, Active/Future/Expired badges
+  - Backfill fix for MySQL strict mode (created_at/updated_at). Commits: 5cdf95b, 7bad164. Deployed.
 - [x] Session 85: Editable Campaign Schedule + Create Wizard Schedule Config (2026-04-12)
   - Schedule tab: Edit/Save/Cancel inline editing for timezone, send window, send days
   - Create wizard: collapsible "Configure Schedule" section defaults collapsed showing current values

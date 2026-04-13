@@ -1785,6 +1785,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"campaign_schedules backfill check: {e}")
 
+    # --- Add linkedin_url column to contact_details ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as _li_text
+            cols = [r[0] for r in conn.execute(_li_text("SHOW COLUMNS FROM contact_details")).fetchall()]
+            if "linkedin_url" not in cols:
+                conn.execute(_li_text("ALTER TABLE contact_details ADD COLUMN linkedin_url VARCHAR(500) NULL AFTER phone"))
+                conn.commit()
+                logger.info("Migration: Added linkedin_url column to contact_details")
+    except Exception as e:
+        logger.debug(f"linkedin_url migration check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

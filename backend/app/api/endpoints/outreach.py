@@ -11,6 +11,7 @@ from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChanne
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.sender_mailbox import SenderMailbox
+from app.db.models.inbox_message import InboxMessage
 from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse, OutreachThreadResponse
 from app.db.query_helpers import tenant_filter
 
@@ -155,9 +156,17 @@ async def bulk_delete_outreach_events(
     if not event_ids:
         raise HTTPException(status_code=400, detail="No event IDs provided")
 
+    # Scope to tenant
     query = db.query(OutreachEvent).filter(OutreachEvent.event_id.in_(event_ids))
     query = tenant_filter(query, OutreachEvent, tenant_id)
-    deleted_count = query.delete(synchronize_session=False)
+    scoped_ids = [e.event_id for e in query.all()]
+
+    if not scoped_ids:
+        return {"message": "No matching outreach events found", "deleted_count": 0}
+
+    # Delete child inbox_messages first (FK constraint)
+    db.query(InboxMessage).filter(InboxMessage.outreach_event_id.in_(scoped_ids)).delete(synchronize_session=False)
+    deleted_count = db.query(OutreachEvent).filter(OutreachEvent.event_id.in_(scoped_ids)).delete(synchronize_session=False)
 
     db.commit()
 
@@ -186,6 +195,8 @@ async def delete_outreach_event(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Outreach event not found"
         )
+    # Delete child inbox_messages first (FK constraint)
+    db.query(InboxMessage).filter(InboxMessage.outreach_event_id == event_id).delete(synchronize_session=False)
     db.delete(event)
     db.commit()
 
