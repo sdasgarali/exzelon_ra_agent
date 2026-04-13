@@ -553,76 +553,149 @@ async def export_leads_csv(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Export leads to CSV file."""
-    query = db.query(LeadDetails)
-    query = tenant_filter(query, LeadDetails, tenant_id)
+    """Export leads with all associated contacts to CSV.
+
+    Each row is a Lead+Contact combination. A lead with 4 contacts produces
+    4 rows, all sharing the same lead fields but with different contact fields.
+    Leads with no contacts still produce one row with empty contact columns.
+    """
+    # Build lead query with filters
+    lead_query = db.query(LeadDetails)
+    lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
 
     if show_archived:
-        query = query.filter(LeadDetails.is_archived == True)
+        lead_query = lead_query.filter(LeadDetails.is_archived == True)
     else:
-        query = query.filter(LeadDetails.is_archived == False)
+        lead_query = lead_query.filter(LeadDetails.is_archived == False)
 
     if lead_status:
-        query = query.filter(LeadDetails.lead_status == lead_status)
+        lead_query = lead_query.filter(LeadDetails.lead_status == lead_status)
     if source:
-        query = query.filter(LeadDetails.source == source)
+        lead_query = lead_query.filter(LeadDetails.source == source)
     if state:
-        query = query.filter(LeadDetails.state == state)
+        lead_query = lead_query.filter(LeadDetails.state == state)
     if from_date:
-        query = query.filter(LeadDetails.posting_date >= from_date)
+        lead_query = lead_query.filter(LeadDetails.posting_date >= from_date)
     if to_date:
-        query = query.filter(LeadDetails.posting_date <= to_date)
+        lead_query = lead_query.filter(LeadDetails.posting_date <= to_date)
     if search:
-        query = query.filter(
+        lead_query = lead_query.filter(
             (LeadDetails.client_name.ilike(f"%{search}%")) |
             (LeadDetails.job_title.ilike(f"%{search}%"))
         )
 
     def generate_csv():
-        """Stream CSV data in batches to avoid loading all records into memory."""
+        """Stream Lead×Contact CSV rows in batches."""
         output = io.StringIO()
         writer = csv.writer(output)
 
-        # Write header
+        # Header: all lead fields + all contact fields
         writer.writerow([
-            "Lead ID", "Company Name", "Job Title", "State", "Position Type",
-            "Posting Date", "Job Link", "Source", "Status", "Salary Min",
-            "Salary Max", "Contact Email", "Created At"
+            # Lead fields
+            "Lead ID", "Company Name", "Job Title", "State", "City",
+            "Position Type", "Posting Date", "Job Link", "Source",
+            "Lead Status", "Salary Min", "Salary Max", "Industry",
+            "Company Size", "Employer LinkedIn", "Employer Website",
+            "Lead Created At",
+            # Contact fields
+            "Contact ID", "Contact First Name", "Contact Last Name",
+            "Contact Title", "Contact Email", "Contact Phone",
+            "Contact LinkedIn", "Contact Location State",
+            "Contact Source", "Priority Level", "Validation Status",
+            "Outreach Status", "Contact Created At",
         ])
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
 
-        # Stream data in batches
-        batch_size = 1000
+        batch_size = 500
         offset = 0
-        ordered_query = query.order_by(LeadDetails.created_at.desc())
+        ordered_query = lead_query.order_by(LeadDetails.created_at.desc())
         while True:
-            batch = ordered_query.offset(offset).limit(batch_size).all()
-            if not batch:
+            leads = ordered_query.offset(offset).limit(batch_size).all()
+            if not leads:
                 break
-            for lead in batch:
-                writer.writerow([
+
+            lead_ids = [ld.lead_id for ld in leads]
+
+            # Fetch all contacts linked to this batch via junction table
+            assocs = db.query(
+                LeadContactAssociation.lead_id,
+                LeadContactAssociation.contact_id,
+            ).filter(
+                LeadContactAssociation.lead_id.in_(lead_ids),
+                LeadContactAssociation.is_archived == False,
+            ).all()
+
+            contact_ids = list({a.contact_id for a in assocs})
+
+            # Build lead_id -> [contact_id, ...] map
+            lead_contact_map: dict[int, list[int]] = {}
+            for a in assocs:
+                lead_contact_map.setdefault(a.lead_id, []).append(a.contact_id)
+
+            # Fetch contact objects in bulk
+            contacts_by_id: dict[int, ContactDetails] = {}
+            if contact_ids:
+                contacts = db.query(ContactDetails).filter(
+                    ContactDetails.contact_id.in_(contact_ids),
+                    ContactDetails.is_archived == False,
+                ).all()
+                contacts_by_id = {c.contact_id: c for c in contacts}
+
+            for lead in leads:
+                cids = lead_contact_map.get(lead.lead_id, [])
+                lead_row = [
                     lead.lead_id,
                     lead.client_name,
                     lead.job_title,
                     lead.state,
+                    lead.city or "",
                     lead.employment_type or "",
                     lead.posting_date.isoformat() if lead.posting_date else "",
-                    lead.job_link,
-                    lead.source,
+                    lead.job_link or "",
+                    lead.source or "",
                     lead.lead_status.value if lead.lead_status else "",
-                    lead.salary_min,
-                    lead.salary_max,
-                    lead.contact_email,
-                    lead.created_at.isoformat() if lead.created_at else ""
-                ])
+                    lead.salary_min or "",
+                    lead.salary_max or "",
+                    lead.industry or "",
+                    lead.company_size or "",
+                    lead.employer_linkedin_url or "",
+                    lead.employer_website or "",
+                    lead.created_at.isoformat() if lead.created_at else "",
+                ]
+
+                if not cids:
+                    # Lead with no contacts — one row, empty contact columns
+                    writer.writerow(lead_row + [""] * 13)
+                else:
+                    for cid in cids:
+                        c = contacts_by_id.get(cid)
+                        if not c:
+                            writer.writerow(lead_row + [""] * 13)
+                            continue
+                        writer.writerow(lead_row + [
+                            c.contact_id,
+                            c.first_name or "",
+                            c.last_name or "",
+                            c.title or "",
+                            c.email or "",
+                            c.phone or "",
+                            c.linkedin_url or "",
+                            c.location_state or "",
+                            c.source or "",
+                            c.priority_level.value if c.priority_level else "",
+                            c.validation_status or "",
+                            c.outreach_status or "",
+                            c.created_at.isoformat() if c.created_at else "",
+                        ])
+
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
             offset += batch_size
 
-    filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"leads_contacts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
     return StreamingResponse(
         generate_csv(),
