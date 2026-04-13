@@ -1603,6 +1603,10 @@ export const emailPreviewApi = {
     const response = await api.post(`/email-preview/drafts/${id}/spam-fix`, { replacements })
     return response.data
   },
+  bulkDeleteDrafts: async (draftIds: number[]) => {
+    const response = await api.delete('/email-preview/drafts/bulk', { data: { draft_ids: draftIds } })
+    return response.data
+  },
 }
 
 export const deliverabilityApi = {

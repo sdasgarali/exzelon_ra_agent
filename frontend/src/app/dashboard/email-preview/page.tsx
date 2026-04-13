@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { emailPreviewApi, mailboxesApi, deliverabilityApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 import type { RenderingCheckResult, HumanizeResult, SpintaxPreviewResult, SendGateResult } from '@/types/api'
 import {
   Search, RefreshCw, CheckCircle, XCircle, Send, Sparkles,
@@ -116,6 +117,7 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
 export default function EmailPreviewPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
 
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(true)
@@ -166,6 +168,10 @@ export default function EmailPreviewPage() {
   const [sendingBatch, setSendingBatch] = useState(false)
   const [sendError, setSendError] = useState('')
 
+  // Multi-select for bulk delete (Super Admin)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
   // Stats
   const pendingCount = drafts.filter(d => d.status === 'pending').length
   const approvedCount = drafts.filter(d => d.status === 'approved').length
@@ -182,6 +188,7 @@ export default function EmailPreviewPage() {
       setDrafts(data.drafts || [])
       setTotal(data.total || 0)
       setTotalPages(data.pages || 1)
+      setSelectedIds(new Set())
     } catch (err) {
       console.error('Failed to fetch drafts:', err)
     } finally {
@@ -465,6 +472,38 @@ export default function EmailPreviewPage() {
     setEditing(true)
   }
 
+  const toggleSelectDraft = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredDrafts.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredDrafts.map(d => d.draft_id)))
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Permanently delete ${selectedIds.size} draft(s)? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      await emailPreviewApi.bulkDeleteDrafts(Array.from(selectedIds))
+      setSelectedIds(new Set())
+      if (selectedDraft && selectedIds.has(selectedDraft.draft_id)) {
+        setSelectedDraft(null)
+      }
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setBulkDeleting(false) }
+  }
+
   // Filter drafts by search
   const filteredDrafts = drafts.filter(d => {
     if (!search) return true
@@ -491,7 +530,7 @@ export default function EmailPreviewPage() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Stats */}
           <span className="text-xs text-gray-500 dark:text-gray-400">{total} drafts</span>
           <span className={`text-xs px-2 py-0.5 rounded-full ${statusBadgeColor('pending')}`}>{pendingCount} pending</span>
@@ -511,9 +550,22 @@ export default function EmailPreviewPage() {
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="sent">Sent</option>
+            <option value="expired">Expired</option>
           </select>
 
-          {/* Bulk actions */}
+          {/* Source filter */}
+          <select
+            className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+            value={sourceFilter}
+            onChange={e => { setSourceFilter(e.target.value); setPage(1) }}
+          >
+            <option value="">All sources</option>
+            <option value="campaign">Campaign</option>
+            <option value="pipeline">Pipeline</option>
+            <option value="broadcast">Broadcast</option>
+          </select>
+
+          {/* Batch actions */}
           {batchId && pendingCount > 0 && (
             <button
               onClick={handleApproveAll}
@@ -535,6 +587,18 @@ export default function EmailPreviewPage() {
             </button>
           )}
 
+          {/* Bulk delete — Super Admin only */}
+          {isSuperAdmin && selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+            >
+              {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+              Delete Selected ({selectedIds.size})
+            </button>
+          )}
+
           <button onClick={fetchDrafts} className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -545,8 +609,8 @@ export default function EmailPreviewPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel — Draft List */}
         <div className="w-[320px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900">
-          {/* Search */}
-          <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+          {/* Search + Select All */}
+          <div className="p-2 border-b border-gray-200 dark:border-gray-700 space-y-1.5">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
               <input
@@ -557,6 +621,17 @@ export default function EmailPreviewPage() {
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400"
               />
             </div>
+            {isSuperAdmin && filteredDrafts.length > 0 && (
+              <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 px-1">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size === filteredDrafts.length && filteredDrafts.length > 0}
+                  onChange={toggleSelectAll}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                Select all ({filteredDrafts.length})
+              </label>
+            )}
           </div>
 
           {/* Draft cards */}
@@ -583,6 +658,15 @@ export default function EmailPreviewPage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2 min-w-0">
+                      {isSuperAdmin && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(draft.draft_id)}
+                          onChange={(e) => { e.stopPropagation(); toggleSelectDraft(draft.draft_id) }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500 shrink-0"
+                        />
+                      )}
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center text-white text-xs font-medium shrink-0">
                         {draft.contact?.first_name?.[0] || '?'}
                       </div>

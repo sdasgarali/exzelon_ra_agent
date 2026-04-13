@@ -479,14 +479,24 @@ def run_contact_enrichment_pipeline(
                     else:
                         val_status = "pending"
 
+                        # Defensive: skip contacts missing required fields
+                    c_first = contact_data.get("first_name") or ""
+                    c_last = contact_data.get("last_name") or ""
+                    c_email = contact_data.get("email")
+                    if not c_email:
+                        continue
+                    # Ensure at least one name part exists
+                    if not c_first and not c_last:
+                        c_first = c_email.split("@")[0].capitalize()
+
                     contact = ContactDetails(
                         tenant_id=tenant_id or lead.tenant_id or 1,
                         lead_id=lead.lead_id,
                         client_name=lead.client_name,
-                        first_name=contact_data["first_name"],
-                        last_name=contact_data["last_name"],
+                        first_name=c_first,
+                        last_name=c_last,
                         title=contact_data.get("title"),
-                        email=contact_data["email"],
+                        email=c_email,
                         location_state=contact_data.get("location_state") or lead.state,
                         phone=contact_data.get("phone"),
                         source=contact_source,
@@ -507,10 +517,10 @@ def run_contact_enrichment_pipeline(
 
                 if contacts:
                     first_contact = contacts[0]
-                    lead.first_name = first_contact["first_name"]
-                    lead.last_name = first_contact["last_name"]
+                    lead.first_name = first_contact.get("first_name") or first_contact.get("email", "").split("@")[0].capitalize()
+                    lead.last_name = first_contact.get("last_name") or ""
                     lead.contact_title = first_contact.get("title")
-                    lead.contact_email = first_contact["email"]
+                    lead.contact_email = first_contact.get("email")
                     lead.contact_phone = first_contact.get("phone")
                     lead.contact_source = first_contact.get("source")
                     lead.lead_status = LeadStatus.ENRICHED
@@ -546,6 +556,7 @@ def run_contact_enrichment_pipeline(
                 })
                 break
             except Exception as e:
+                db.rollback()  # Rollback dirty session state from failed flush/insert
                 logger.error("Error enriching lead", error=str(e), lead_id=lead.lead_id)
                 counters["errors"] += 1
                 lead_results.append({

@@ -39,6 +39,9 @@ class UpdateDraftRequest(BaseModel):
 class ApproveAllRequest(BaseModel):
     batch_id: str
 
+class BulkDeleteDraftsRequest(BaseModel):
+    draft_ids: List[int]
+
 class SendBatchRequest(BaseModel):
     batch_id: str
 
@@ -343,6 +346,29 @@ def apply_spam_fixes(
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
+
+
+@router.delete("/drafts/bulk")
+def bulk_delete_drafts(
+    data: BulkDeleteDraftsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Permanently delete multiple drafts. Super Admin only."""
+    if not data.draft_ids:
+        raise HTTPException(400, "No draft IDs provided")
+
+    query = db.query(OutreachDraft).filter(OutreachDraft.draft_id.in_(data.draft_ids))
+    if tenant_id is not None:
+        query = query.filter(OutreachDraft.tenant_id == tenant_id)
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "message": f"Successfully deleted {deleted_count} draft(s)",
+        "deleted_count": deleted_count,
+    }
 
 
 # ─── Helpers ───────────────────────────────────────────────────────

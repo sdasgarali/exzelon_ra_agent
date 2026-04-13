@@ -1797,6 +1797,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"linkedin_url migration check: {e}")
 
+    # --- Make last_name nullable in contact_details ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as _ln_text
+            # Check current nullability
+            row = conn.execute(_ln_text(
+                "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'contact_details' AND COLUMN_NAME = 'last_name'"
+            )).fetchone()
+            if row and row[0] == "NO":
+                conn.execute(_ln_text("UPDATE contact_details SET last_name = '' WHERE last_name IS NULL"))
+                conn.execute(_ln_text("ALTER TABLE contact_details MODIFY COLUMN last_name VARCHAR(100) NULL"))
+                conn.commit()
+                logger.info("Migration: Made last_name nullable in contact_details")
+    except Exception as e:
+        logger.debug(f"last_name nullable migration check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

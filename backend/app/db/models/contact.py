@@ -43,7 +43,7 @@ class ContactDetails(Base):
 
     # Contact information
     first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=True)
     title = Column(String(255), nullable=True)
     email = Column(String(255), nullable=False, index=True)
     location_state = Column(String(50), nullable=True)  # 2-letter state code
