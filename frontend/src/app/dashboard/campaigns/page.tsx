@@ -95,6 +95,34 @@ const statusColors: Record<string, string> = {
   paused: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
   completed: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
   archived: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+  previewing: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+  sending: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
+}
+
+/** Compute a user-friendly display label that combines status + preview_mode */
+function getCampaignDisplayStatus(c: { status: string; preview_mode?: boolean }): { label: string; colorKey: string; description: string } {
+  if (c.status === 'active' && c.preview_mode) {
+    return { label: 'Previewing', colorKey: 'previewing', description: 'Generating drafts for review' }
+  }
+  if (c.status === 'active') {
+    return { label: 'Sending', colorKey: 'sending', description: 'Sending emails to contacts' }
+  }
+  if (c.status === 'paused' && c.preview_mode) {
+    return { label: 'Paused', colorKey: 'paused', description: 'Preview mode — paused' }
+  }
+  if (c.status === 'paused') {
+    return { label: 'Paused', colorKey: 'paused', description: 'Campaign paused' }
+  }
+  if (c.status === 'draft') {
+    return { label: 'Draft', colorKey: 'draft', description: 'Not yet activated' }
+  }
+  if (c.status === 'completed') {
+    return { label: 'Completed', colorKey: 'completed', description: 'All contacts processed' }
+  }
+  if (c.status === 'archived') {
+    return { label: 'Archived', colorKey: 'archived', description: 'Campaign archived' }
+  }
+  return { label: c.status, colorKey: c.status, description: '' }
 }
 
 // ─── Step Modal Intelligence Panel Constants ─────────────────────
@@ -1659,7 +1687,15 @@ export default function CampaignsPage() {
                         {c.description && <div className="text-xs text-gray-500 truncate max-w-xs">{c.description}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[c.status] || ''}`}>{c.status}</span>
+                        {(() => {
+                          const ds = getCampaignDisplayStatus(c)
+                          return (
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusColors[ds.colorKey] || ''}`} title={ds.description}>
+                              {c.preview_mode && c.status !== 'completed' && c.status !== 'archived' && <Eye className="w-3 h-3" />}
+                              {ds.label}
+                            </span>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-right">{c.total_contacts}</td>
                       <td className="px-4 py-3 text-right">{c.total_sent}</td>
@@ -2686,9 +2722,17 @@ export default function CampaignsPage() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selectedCampaign?.name}</h1>
           <div className="flex items-center gap-3 mt-1">
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[selectedCampaign?.status || ''] || ''}`}>{selectedCampaign?.status}</span>
-            {(selectedCampaign as any)?.preview_mode && (
-              <span className="px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">Preview Mode</span>
+            {(() => {
+              const ds = getCampaignDisplayStatus(selectedCampaign as any || { status: '' })
+              return (
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusColors[ds.colorKey] || ''}`} title={ds.description}>
+                  {(selectedCampaign as any)?.preview_mode && selectedCampaign?.status !== 'completed' && selectedCampaign?.status !== 'archived' && <Eye className="w-3 h-3" />}
+                  {ds.label}
+                </span>
+              )
+            })()}
+            {(selectedCampaign as any)?.preview_mode && selectedCampaign?.status === 'active' && (
+              <span className="text-xs text-teal-600 dark:text-teal-400">Drafts generated for review — not sending</span>
             )}
             <span className="text-sm text-gray-500">{selectedCampaign?.total_contacts} contacts</span>
             <span className="text-sm text-gray-500">{selectedCampaign?.total_sent} sent</span>
@@ -2847,27 +2891,22 @@ export default function CampaignsPage() {
                 )}
               </div>
 
-              {/* Status & Mode + Action Buttons */}
+              {/* Campaign State + Action Buttons */}
               <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                      selectedCampaign.status === 'active' ? 'bg-green-100 text-green-800' :
-                      selectedCampaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
-                      selectedCampaign.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                      selectedCampaign.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {selectedCampaign.status}
-                    </span>
-                  </div>
-                  {selectedCampaign.preview_mode && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Mode</label>
-                      <span className="px-2 py-1 text-xs rounded-full bg-teal-100 text-teal-800">Preview & Approve</span>
-                    </div>
-                  )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Campaign State</label>
+                  {(() => {
+                    const ds = getCampaignDisplayStatus(selectedCampaign)
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium ${statusColors[ds.colorKey] || ''}`}>
+                          {selectedCampaign.preview_mode && selectedCampaign.status !== 'completed' && selectedCampaign.status !== 'archived' && <Eye className="w-3 h-3" />}
+                          {ds.label}
+                        </span>
+                        <span className="text-xs text-gray-500">{ds.description}</span>
+                      </div>
+                    )
+                  })()}
                 </div>
                 {/* Status action buttons — based on allowed transitions */}
                 <div className="flex items-center gap-2 flex-wrap">
