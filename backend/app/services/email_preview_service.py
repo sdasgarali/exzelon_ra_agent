@@ -948,7 +948,9 @@ def _substitute_placeholders(
         "sender": {
             "name": mailbox.display_name or "",
             "email": mailbox.email or "",
+            "first_name": mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0],
         },
+        "sender_first_name": mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0],
     }
 
     try:
@@ -957,17 +959,22 @@ def _substitute_placeholders(
         body_html = Jinja2Template(body_html).render(**template_context)
         body_text = Jinja2Template(body_text).render(**template_context)
     except Exception:
-        placeholders = {
-            "{{contact_first_name}}": contact.first_name or "",
-            "{{contact_last_name}}": contact.last_name or "",
-            "{{company_name}}": _company,
-            "{{contact_title}}": contact.title or "",
-            "{{job_title}}": _job_title,
-            "{{job_location}}": _job_location,
-        }
-        for ph, val in placeholders.items():
-            subject = subject.replace(ph, val)
-            body_html = body_html.replace(ph, val)
-            body_text = body_text.replace(ph, val)
+        pass
+
+    # Always do string replacement for {{placeholder}} style
+    _sfn = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
+    _ph_map = {
+        "{{contact_first_name}}": contact.first_name or "",
+        "{{contact_last_name}}": contact.last_name or "",
+        "{{company_name}}": _company,
+        "{{contact_title}}": contact.title or "",
+        "{{job_title}}": _job_title,
+        "{{job_location}}": _job_location,
+        "{{sender_first_name}}": _sfn,
+    }
+    for ph, val in _ph_map.items():
+        subject = subject.replace(ph, val)
+        body_html = body_html.replace(ph, val)
+        body_text = body_text.replace(ph, val)
 
     return subject, body_html, body_text

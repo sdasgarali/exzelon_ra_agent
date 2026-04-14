@@ -301,12 +301,8 @@ def generate_unsub_footer(tracking_id: str, base_url: str = "") -> Dict[str, str
 def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png", unsub_url=""):
     """Render an email template with placeholder substitution."""
 
-    # Determine sender first name
-    sender_first = ""
-    if mailbox.display_name:
-        sender_first = mailbox.display_name.split()[0]
-    else:
-        sender_first = mailbox.email.split("@")[0]
+    # Determine sender first name (prefer explicit field, fall back to display_name split)
+    sender_first = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
 
     # Build placeholder map
     placeholders = {

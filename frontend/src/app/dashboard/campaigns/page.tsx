@@ -1291,6 +1291,60 @@ export default function CampaignsPage() {
     })
   }, [])
 
+  // Drag-and-drop handlers for placeholders
+  const handlePlaceholderDragStart = useCallback((e: React.DragEvent, tag: string) => {
+    e.dataTransfer.setData('text/plain', tag)
+    e.dataTransfer.effectAllowed = 'copy'
+  }, [])
+
+  const handleDropOnBody = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const tag = e.dataTransfer.getData('text/plain')
+    if (!tag) return
+    const el = stepBodyRef.current
+    if (!el) {
+      setStepForm(prev => ({ ...prev, body_html: prev.body_html + tag }))
+      return
+    }
+    // Get drop position from caret position in textarea
+    el.focus()
+    const start = el.selectionStart ?? el.value.length
+    const before = el.value.slice(0, start)
+    const after = el.value.slice(start)
+    setStepForm(prev => ({ ...prev, body_html: before + tag + after }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + tag.length
+      el.setSelectionRange(pos, pos)
+    })
+  }, [])
+
+  const handleDropOnSubject = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const tag = e.dataTransfer.getData('text/plain')
+    if (!tag) return
+    const el = stepSubjectRef.current
+    if (!el) {
+      setStepForm(prev => ({ ...prev, subject: prev.subject + tag }))
+      return
+    }
+    el.focus()
+    const start = el.selectionStart ?? el.value.length
+    const before = el.value.slice(0, start)
+    const after = el.value.slice(start)
+    setStepForm(prev => ({ ...prev, subject: before + tag + after }))
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + tag.length
+      el.setSelectionRange(pos, pos)
+    })
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
   // Auto-load intelligence tab data
   useEffect(() => {
     if (!showStepModal || (!stepForm.body_html && !stepForm.subject)) return
@@ -4327,14 +4381,16 @@ export default function CampaignsPage() {
                           <Info className="w-4 h-4 text-blue-600" />
                           <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Placeholders</h4>
                         </div>
-                        <p className="text-xs text-gray-500 mb-3">Click to insert into body at cursor position.</p>
+                        <p className="text-xs text-gray-500 mb-3">Drag into subject/body, or click to insert at cursor.</p>
                         <div className="space-y-1.5">
                           {STEP_PLACEHOLDERS.map(({ tag, label }) => (
                             <div
                               key={tag}
+                              draggable
+                              onDragStart={(e) => handlePlaceholderDragStart(e, tag)}
                               onClick={() => handleStepPlaceholderClick(tag)}
-                              className="flex items-center gap-2 px-2.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md cursor-pointer hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group select-none"
-                              title={`Click to insert ${tag}`}
+                              className="flex items-center gap-2 px-2.5 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group select-none"
+                              title={`Drag or click to insert ${tag}`}
                             >
                               <GripVertical className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 shrink-0" />
                               <div className="min-w-0">
@@ -4873,7 +4929,7 @@ export default function CampaignsPage() {
                       {/* Subject */}
                       <div>
                         <label className="block text-sm font-medium mb-1 dark:text-gray-200">Subject</label>
-                        <input ref={stepSubjectRef} value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
+                        <input ref={stepSubjectRef} value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} onDrop={handleDropOnSubject} onDragOver={handleDragOver} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
                       </div>
 
                       {/* Formatting Toolbar */}
@@ -4906,6 +4962,8 @@ export default function CampaignsPage() {
                             ref={stepBodyRef}
                             value={stepForm.body_html}
                             onChange={e => setStepForm(f => ({ ...f, body_html: e.target.value }))}
+                            onDrop={handleDropOnBody}
+                            onDragOver={handleDragOver}
                             className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 font-mono text-xs"
                             rows={10}
                             placeholder="<p>Hi {{contact_first_name}},</p>"

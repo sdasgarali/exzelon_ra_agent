@@ -452,6 +452,7 @@ def _execute_email_step(
     _job_title = (contact_lead.job_title if contact_lead and contact_lead.job_title else "")
     _job_location = (contact_lead.state if contact_lead and contact_lead.state else "")
     _company = (contact_lead.client_name if contact_lead and contact_lead.client_name else (contact.client_name or ""))
+    _sender_first = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
     template_context = {
         "contact_first_name": contact.first_name or "",
         "contact_last_name": contact.last_name or "",
@@ -459,6 +460,7 @@ def _execute_email_step(
         "contact_title": contact.title or "",
         "job_title": _job_title,
         "job_location": _job_location,
+        "sender_first_name": _sender_first,
         "contact": {
             "first_name": contact.first_name or "",
             "last_name": contact.last_name or "",
@@ -474,6 +476,7 @@ def _execute_email_step(
         "sender": {
             "name": mailbox.display_name or "",
             "email": mailbox.email or "",
+            "first_name": _sender_first,
         },
     }
     try:
@@ -482,19 +485,22 @@ def _execute_email_step(
         body_html = Jinja2Template(body_html).render(**template_context)
         body_text = Jinja2Template(body_text).render(**template_context)
     except Exception:
-        # Fallback to manual placeholder replacement
-        placeholders = {
-            "{{contact_first_name}}": contact.first_name or "",
-            "{{contact_last_name}}": contact.last_name or "",
-            "{{company_name}}": _company,
-            "{{contact_title}}": contact.title or "",
-            "{{job_title}}": _job_title,
-            "{{job_location}}": _job_location,
-        }
-        for ph, val in placeholders.items():
-            subject = subject.replace(ph, val)
-            body_html = body_html.replace(ph, val)
-            body_text = body_text.replace(ph, val)
+        pass
+
+    # Always do string replacement for {{placeholder}} style (covers both Jinja2 and fallback)
+    _placeholders = {
+        "{{contact_first_name}}": contact.first_name or "",
+        "{{contact_last_name}}": contact.last_name or "",
+        "{{company_name}}": _company,
+        "{{contact_title}}": contact.title or "",
+        "{{job_title}}": _job_title,
+        "{{job_location}}": _job_location,
+        "{{sender_first_name}}": _sender_first,
+    }
+    for ph, val in _placeholders.items():
+        subject = subject.replace(ph, val)
+        body_html = body_html.replace(ph, val)
+        body_text = body_text.replace(ph, val)
 
     # Content uniqueness check (monitoring-only -- log but don't block)
     try:

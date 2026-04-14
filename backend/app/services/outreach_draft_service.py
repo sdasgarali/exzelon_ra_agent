@@ -156,6 +156,7 @@ def _gather_context(
     # Sender info from mailbox
     if mailbox:
         ctx["sender_name"] = mailbox.display_name or mailbox.email.split("@")[0]
+        ctx["sender_first_name"] = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
         ctx["sender_title"] = "Account Executive"
 
     return ctx

@@ -1814,6 +1814,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.debug(f"last_name nullable migration check: {e}")
 
+    # --- Add sender_first_name / sender_last_name to sender_mailboxes ---
+    try:
+        with engine.connect() as conn:
+            from sqlalchemy import text as _sfn_text
+            mb_cols_sfn = [r[0] for r in conn.execute(_sfn_text("SHOW COLUMNS FROM sender_mailboxes")).fetchall()]
+            if "sender_first_name" not in mb_cols_sfn:
+                conn.execute(_sfn_text("ALTER TABLE sender_mailboxes ADD COLUMN sender_first_name VARCHAR(100) NULL AFTER display_name"))
+                conn.execute(_sfn_text("ALTER TABLE sender_mailboxes ADD COLUMN sender_last_name VARCHAR(100) NULL AFTER sender_first_name"))
+                conn.commit()
+                logger.info("Migration: added sender_first_name, sender_last_name to sender_mailboxes")
+            if "linkedin_url" not in mb_cols_sfn:
+                conn.execute(_sfn_text("ALTER TABLE sender_mailboxes ADD COLUMN linkedin_url VARCHAR(500) NULL AFTER sender_last_name"))
+                conn.commit()
+                logger.info("Migration: added linkedin_url to sender_mailboxes")
+            # Backfill from display_name where sender_first_name is still NULL
+            conn.execute(_sfn_text(
+                "UPDATE sender_mailboxes "
+                "SET sender_first_name = SUBSTRING_INDEX(display_name, ' ', 1), "
+                "    sender_last_name = CASE WHEN display_name LIKE '% %' "
+                "        THEN TRIM(SUBSTRING(display_name, LOCATE(' ', display_name) + 1)) "
+                "        ELSE NULL END "
+                "WHERE sender_first_name IS NULL AND display_name IS NOT NULL AND display_name != ''"
+            ))
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"sender_first_name migration check: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

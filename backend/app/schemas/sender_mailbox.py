@@ -27,6 +27,9 @@ class SenderMailboxBase(BaseModel):
     """Base schema for sender mailbox."""
     email: EmailStr
     display_name: Optional[str] = None
+    sender_first_name: Optional[str] = None
+    sender_last_name: Optional[str] = None
+    linkedin_url: Optional[str] = None
     provider: EmailProviderEnum = EmailProviderEnum.MICROSOFT_365
     smtp_host: Optional[str] = None
     smtp_port: int = 587
@@ -51,6 +54,9 @@ class SenderMailboxUpdate(BaseModel):
     """Schema for updating a sender mailbox."""
     email: Optional[EmailStr] = None
     display_name: Optional[str] = None
+    sender_first_name: Optional[str] = None
+    sender_last_name: Optional[str] = None
+    linkedin_url: Optional[str] = None
     password: Optional[str] = None
     auth_method: Optional[str] = None
     oauth_tenant_id: Optional[str] = None

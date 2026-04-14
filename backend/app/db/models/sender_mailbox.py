@@ -38,6 +38,9 @@ class SenderMailbox(Base):
     # Email account details
     email = Column(String(255), unique=True, nullable=False, index=True)
     display_name = Column(String(255), nullable=True)
+    sender_first_name = Column(String(100), nullable=True)
+    sender_last_name = Column(String(100), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
 
     # Authentication
     password = Column(String(500), nullable=True)  # Nullable for OAuth2-only mailboxes
@@ -108,6 +111,24 @@ class SenderMailbox(Base):
 
     def __repr__(self):
         return f"<SenderMailbox {self.email} ({self.warmup_status.value})>"
+
+    @property
+    def resolved_first_name(self) -> str:
+        """Get sender first name: explicit field → display_name split → email prefix."""
+        if self.sender_first_name:
+            return self.sender_first_name
+        if self.display_name:
+            return self.display_name.split()[0]
+        return self.email.split("@")[0]
+
+    @property
+    def resolved_last_name(self) -> str:
+        """Get sender last name: explicit field → display_name split → empty."""
+        if self.sender_last_name:
+            return self.sender_last_name
+        if self.display_name and " " in self.display_name:
+            return " ".join(self.display_name.split()[1:])
+        return ""
 
     @property
     def can_send(self) -> bool:

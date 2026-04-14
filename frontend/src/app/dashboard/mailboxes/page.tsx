@@ -11,6 +11,9 @@ interface Mailbox {
   mailbox_id: number
   email: string
   display_name: string | null
+  sender_first_name: string | null
+  sender_last_name: string | null
+  linkedin_url: string | null
   provider: string
   smtp_host: string | null
   smtp_port: number
@@ -188,6 +191,9 @@ export default function MailboxesPage() {
   const [formData, setFormData] = useState({
     email: '',
     display_name: '',
+    sender_first_name: '',
+    sender_last_name: '',
+    linkedin_url: '',
     password: '',
     provider: 'microsoft_365',
     smtp_host: '',
@@ -483,6 +489,9 @@ export default function MailboxesPage() {
     setFormData({
       email: mailbox.email,
       display_name: mailbox.display_name || '',
+      sender_first_name: mailbox.sender_first_name || '',
+      sender_last_name: mailbox.sender_last_name || '',
+      linkedin_url: mailbox.linkedin_url || '',
       password: '',
       provider: mailbox.provider,
       smtp_host: mailbox.smtp_host || '',
@@ -621,6 +630,9 @@ export default function MailboxesPage() {
     setFormData({
       email: '',
       display_name: '',
+      sender_first_name: '',
+      sender_last_name: '',
+      linkedin_url: '',
       password: '',
       provider: 'microsoft_365',
       smtp_host: '',
@@ -1193,9 +1205,19 @@ export default function MailboxesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                 <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="sender@example.com" />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <input type="text" value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
+                </div>
+              </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian from NeuraLeads" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile URL</label>
+                <input type="url" value={formData.linkedin_url} onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="https://linkedin.com/in/username" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
@@ -1853,9 +1875,15 @@ export default function MailboxesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                     <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@gmail.com" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                    <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="First Last" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                      <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                      <input type="text" value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">App Password *</label>
@@ -1948,9 +1976,15 @@ export default function MailboxesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                     <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@company.com" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                    <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="First Last" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                      <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                      <input type="text" value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Azure AD Tenant ID (optional)</label>
@@ -1974,6 +2008,8 @@ export default function MailboxesPage() {
                           const createData: Record<string, any> = {
                             email: formData.email,
                             display_name: formData.display_name || undefined,
+                            sender_first_name: formData.sender_first_name || undefined,
+                            sender_last_name: formData.sender_last_name || undefined,
                             provider: 'microsoft_365',
                             auth_method: 'oauth2',
                             smtp_host: 'smtp.office365.com',
@@ -2079,9 +2115,15 @@ export default function MailboxesPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                           <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@example.com" />
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                          <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="First Last" />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                            <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                            <input type="text" value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
+                          </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Password / App Password *</label>
