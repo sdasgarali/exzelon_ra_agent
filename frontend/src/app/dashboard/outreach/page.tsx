@@ -27,6 +27,7 @@ interface OutreachEvent {
   reply_subject: string | null
   reply_detected_at: string | null
   sender_mailbox_id: number | null
+  sender_email: string | null
 }
 
 interface ThreadData {
@@ -423,6 +424,7 @@ export default function OutreachPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sent At</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Channel</th>
@@ -431,9 +433,9 @@ export default function OutreachPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Loading events...</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">Loading events...</td></tr>
               ) : events.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No outreach events found. Run the outreach pipeline to send emails.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No outreach events found. Run the outreach pipeline to send emails.</td></tr>
               ) : (
                 events.map((event) => (
                   <tr key={event.event_id} className={'hover:bg-gray-50' + (selectedIds.has(event.event_id) ? ' bg-blue-50' : '')}>
@@ -443,13 +445,21 @@ export default function OutreachPage() {
                     <td className="px-4 py-3 text-sm text-gray-900 cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.contact_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.client_name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-mono cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.email || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 font-mono max-w-[180px] truncate" title={event.sender_email || ''}>{event.sender_email || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate cursor-pointer" onClick={() => event.event_id && openThread(event.event_id)}>{event.subject || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{event.date_sent ? new Date(event.date_sent).toLocaleString() : '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{event.channel || '-'}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(event.status)}`}>
-                        {event.status || '-'}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`px-2 py-1 text-xs rounded-full inline-block w-fit ${getStatusBadge(event.status)}`}>
+                          {event.status || '-'}
+                        </span>
+                        {event.reply_detected_at && (
+                          <span className="text-xs text-purple-600" title={`Replied ${new Date(event.reply_detected_at).toLocaleString()}`}>
+                            &#8617; {new Date(event.reply_detected_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

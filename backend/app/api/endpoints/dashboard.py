@@ -199,12 +199,24 @@ async def get_outreach_sent(
 
     events = query.order_by(OutreachEvent.sent_at.desc()).limit(limit).all()
 
+    # Batch-load contacts (fix N+1 query)
+    contact_ids = {e.contact_id for e in events if e.contact_id}
+    contact_map = {}
+    if contact_ids:
+        contacts = db.query(ContactDetails).filter(ContactDetails.contact_id.in_(contact_ids)).all()
+        contact_map = {c.contact_id: c for c in contacts}
+
+    # Batch-load sender mailboxes
+    sender_ids = {e.sender_mailbox_id for e in events if e.sender_mailbox_id}
+    sender_map = {}
+    if sender_ids:
+        senders = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id.in_(sender_ids)).all()
+        sender_map = {s.mailbox_id: s for s in senders}
+
     results = []
     for e in events:
-        # Join with contact for name/email
-        contact = db.query(ContactDetails).filter(
-            ContactDetails.contact_id == e.contact_id
-        ).first() if e.contact_id else None
+        contact = contact_map.get(e.contact_id)
+        sender = sender_map.get(e.sender_mailbox_id)
 
         results.append({
             "event_id": e.event_id,
@@ -222,6 +234,7 @@ async def get_outreach_sent(
             "reply_subject": e.reply_subject,
             "reply_detected_at": e.reply_detected_at.isoformat() if e.reply_detected_at else None,
             "sender_mailbox_id": e.sender_mailbox_id,
+            "sender_email": sender.email if sender else None,
         })
     return results
 
