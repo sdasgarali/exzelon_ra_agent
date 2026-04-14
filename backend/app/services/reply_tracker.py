@@ -54,9 +54,43 @@ def _extract_text_body(msg: email.message.Message) -> str:
             return str(msg.get_payload(decode=True))
 
 
+def _strip_quoted_content(body: str) -> str:
+    """Strip quoted/forwarded content from a reply email body.
+
+    Removes everything after common quote markers so that keyword detection
+    only runs against the sender's actual reply text, not the quoted original.
+    """
+    lines = body.split("\n")
+    result_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Stop at horizontal rule separators (Outlook-style)
+        if re.match(r'^[-_]{3,}\s*$', stripped):
+            break
+        # Stop at "From: ..." header block (quoted original)
+        if re.match(r'^From:\s+', stripped, re.IGNORECASE):
+            break
+        # Stop at "On ... wrote:" pattern (Gmail-style)
+        if re.match(r'^On\s+.+wrote:\s*$', stripped, re.IGNORECASE):
+            break
+        # Stop at "Sent from ..." (mobile signatures before quote)
+        if re.match(r'^Sent from\s+(my\s+)?(iPhone|iPad|Galaxy|Android|Mail)', stripped, re.IGNORECASE):
+            break
+        # Skip individual quoted lines (> prefix)
+        if stripped.startswith(">"):
+            continue
+        result_lines.append(line)
+    return "\n".join(result_lines)
+
+
 def _is_unsubscribe(subject: str, body: str) -> bool:
-    """Check if the reply is an unsubscribe request."""
-    text = f"{subject} {body}".lower()
+    """Check if the reply is an unsubscribe request.
+
+    Only checks the actual reply text — quoted/forwarded content is stripped
+    first to avoid false positives from our own email footer.
+    """
+    reply_body = _strip_quoted_content(body)
+    text = f"{subject} {reply_body}".lower()
     for pattern in UNSUBSCRIBE_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             return True

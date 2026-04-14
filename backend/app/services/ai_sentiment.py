@@ -1,9 +1,39 @@
 """AI sentiment analysis for inbox replies."""
+import re
 import structlog
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
+
+
+def _strip_quoted_content(body: str) -> str:
+    """Strip quoted/forwarded content from a reply email body.
+
+    Removes everything after common quote markers so that keyword detection
+    only runs against the sender's actual reply text, not the quoted original.
+    """
+    lines = body.split("\n")
+    result_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Stop at horizontal rule separators (Outlook-style)
+        if re.match(r'^[-_]{3,}\s*$', stripped):
+            break
+        # Stop at "From: ..." header block (quoted original)
+        if re.match(r'^From:\s+', stripped, re.IGNORECASE):
+            break
+        # Stop at "On ... wrote:" pattern (Gmail-style)
+        if re.match(r'^On\s+.+wrote:\s*$', stripped, re.IGNORECASE):
+            break
+        # Stop at "Sent from ..." (mobile signatures before quote)
+        if re.match(r'^Sent from\s+(my\s+)?(iPhone|iPad|Galaxy|Android|Mail)', stripped, re.IGNORECASE):
+            break
+        # Skip individual quoted lines (> prefix)
+        if stripped.startswith(">"):
+            continue
+        result_lines.append(line)
+    return "\n".join(result_lines)
 
 # Category mapping
 CATEGORIES = [
@@ -21,13 +51,21 @@ def analyze_reply_sentiment(body: str, subject: str = "", db: Optional[Session] 
     if not body:
         return {"category": "other", "sentiment": "neutral", "confidence": 0.0}
 
-    body_lower = body.lower().strip()
+    # Strip quoted/forwarded content so keywords in the original email
+    # (e.g. "opt out" in our own footer) don't cause false positives
+    reply_only = _strip_quoted_content(body)
+    body_lower = reply_only.lower().strip()
 
     # Rule-based quick checks before hitting AI
     if any(kw in body_lower for kw in ["out of office", "away from", "automatic reply", "auto-reply", "ooo"]):
         return {"category": "ooo", "sentiment": "neutral", "confidence": 0.9}
 
-    if any(kw in body_lower for kw in ["unsubscribe", "remove me", "stop emailing", "do not contact", "opt out"]):
+    # Use word-boundary regex for unsubscribe detection to avoid substring false positives
+    unsub_patterns = [
+        r'\bunsubscribe\b', r'\bremove\s+me\b', r'\bstop\s+emailing\b',
+        r'\bdo\s+not\s+contact\b', r'\bopt\s*out\b',
+    ]
+    if any(re.search(p, body_lower) for p in unsub_patterns):
         return {"category": "do_not_contact", "sentiment": "negative", "confidence": 0.95}
 
     if any(kw in body_lower for kw in ["not interested", "no thank", "not looking", "no need", "pass on this"]):
