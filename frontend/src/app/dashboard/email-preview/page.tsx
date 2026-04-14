@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { emailPreviewApi, mailboxesApi, deliverabilityApi } from '@/lib/api'
+import { emailPreviewApi, mailboxesApi, deliverabilityApi, campaignsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import type { RenderingCheckResult, HumanizeResult, SpintaxPreviewResult, SendGateResult } from '@/types/api'
 import {
@@ -126,10 +126,13 @@ export default function EmailPreviewPage() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [batchId, setBatchId] = useState(searchParams.get('batch_id') || '')
   const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '')
+  const [campaignFilter, setCampaignFilter] = useState(searchParams.get('campaign_id') || '')
+  const [mailboxFilter, setMailboxFilter] = useState(searchParams.get('mailbox_id') || '')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [mailboxes, setMailboxes] = useState<{ mailbox_id: number; email: string; display_name: string }[]>([])
+  const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
 
   // Right panel state — tabbed interface
   const [rightTab, setRightTab] = useState<'spam' | 'rendering' | 'humanize' | 'spintax' | 'gate' | 'score'>('spam')
@@ -184,6 +187,8 @@ export default function EmailPreviewPage() {
       if (batchId) params.batch_id = batchId
       if (statusFilter) params.status = statusFilter
       if (sourceFilter) params.source = sourceFilter
+      if (campaignFilter) params.campaign_id = Number(campaignFilter)
+      if (mailboxFilter) params.mailbox_id = Number(mailboxFilter)
       const data = await emailPreviewApi.listDrafts(params)
       setDrafts(data.drafts || [])
       setTotal(data.total || 0)
@@ -194,7 +199,7 @@ export default function EmailPreviewPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, batchId, statusFilter, sourceFilter])
+  }, [page, batchId, statusFilter, sourceFilter, campaignFilter, mailboxFilter])
 
   useEffect(() => { fetchDrafts() }, [fetchDrafts])
   useEffect(() => {
@@ -203,6 +208,12 @@ export default function EmailPreviewPage() {
         mailbox_id: m.mailbox_id,
         email: m.email,
         display_name: m.display_name || m.email,
+      })))
+    }).catch(() => {})
+    campaignsApi.list().then((data: any) => {
+      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+        campaign_id: c.campaign_id,
+        name: c.name,
       })))
     }).catch(() => {})
   }, [])
@@ -563,6 +574,30 @@ export default function EmailPreviewPage() {
             <option value="campaign">Campaign</option>
             <option value="pipeline">Pipeline</option>
             <option value="broadcast">Broadcast</option>
+          </select>
+
+          {/* Campaign filter */}
+          <select
+            className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 max-w-[160px]"
+            value={campaignFilter}
+            onChange={e => { setCampaignFilter(e.target.value); setPage(1) }}
+          >
+            <option value="">All campaigns</option>
+            {campaigns.map(c => (
+              <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
+            ))}
+          </select>
+
+          {/* Mailbox filter */}
+          <select
+            className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 max-w-[180px]"
+            value={mailboxFilter}
+            onChange={e => { setMailboxFilter(e.target.value); setPage(1) }}
+          >
+            <option value="">All mailboxes</option>
+            {mailboxes.map(m => (
+              <option key={m.mailbox_id} value={m.mailbox_id}>{m.email}</option>
+            ))}
           </select>
 
           {/* Batch actions */}

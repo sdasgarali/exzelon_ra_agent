@@ -1544,6 +1544,7 @@ export const emailPreviewApi = {
     status?: string
     source?: string
     campaign_id?: number
+    mailbox_id?: number
     page?: number
     per_page?: number
   }) => {

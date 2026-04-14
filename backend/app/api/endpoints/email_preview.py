@@ -103,6 +103,7 @@ def list_drafts(
     status: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     campaign_id: Optional[int] = Query(None),
+    mailbox_id: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -120,6 +121,8 @@ def list_drafts(
         query = query.filter(OutreachDraft.source == source)
     if campaign_id:
         query = query.filter(OutreachDraft.campaign_id == campaign_id)
+    if mailbox_id:
+        query = query.filter(OutreachDraft.mailbox_id == mailbox_id)
 
     query = query.filter(OutreachDraft.is_archived == False)
 
