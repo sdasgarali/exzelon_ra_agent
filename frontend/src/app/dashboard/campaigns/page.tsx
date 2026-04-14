@@ -10,7 +10,7 @@ import {
   Plus, Search, MoreVertical, Play, Pause, Copy, Trash2, ChevronDown, ChevronRight,
   Mail, Clock, GitBranch, ArrowUp, ArrowDown, X, Zap, Users, BarChart3, Eye, Settings,
   FileSearch, Loader2, AlertTriangle, Shuffle, MessageSquare, Phone, Linkedin,
-  MousePointerClick, Reply, Activity, LayoutList, Workflow,
+  MousePointerClick, Reply, Activity, LayoutList, Workflow, Send,
   Brain, Upload, PenLine, Table2, ArrowLeft, CheckCircle2, XCircle, FileText, Link2, Download,
   Filter, ChevronUp, ChevronsUpDown,
   Sparkles, RefreshCw, Wrench, Monitor, Info, GripVertical, CheckCircle,
@@ -973,6 +973,14 @@ export default function CampaignsPage() {
         const updated = await campaignsApi.get(id)
         setSelectedCampaign(updated)
       }
+    } catch { /* ignore */ }
+  }
+
+  const togglePreviewMode = async (campaignId: number, currentPreviewMode: boolean) => {
+    try {
+      const updated = await campaignsApi.update(campaignId, { preview_mode: !currentPreviewMode })
+      setSelectedCampaign(updated)
+      setCampaigns(prev => prev.map(c => c.campaign_id === updated.campaign_id ? updated : c))
     } catch { /* ignore */ }
   }
 
@@ -2738,7 +2746,26 @@ export default function CampaignsPage() {
             <span className="text-sm text-gray-500">{selectedCampaign?.total_sent} sent</span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Preview/Live mode toggle — available when active or paused */}
+          {selectedCampaign && (selectedCampaign.status === 'active' || selectedCampaign.status === 'paused') && (
+            <button
+              onClick={() => togglePreviewMode(selectedCampaign.campaign_id, (selectedCampaign as any).preview_mode)}
+              className={`px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-medium border transition-colors ${
+                (selectedCampaign as any)?.preview_mode
+                  ? 'border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-700 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/30'
+                  : 'border-green-300 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-300 dark:hover:bg-green-900/30'
+              }`}
+              title={(selectedCampaign as any)?.preview_mode ? 'Click to switch to Live Sending mode' : 'Click to switch to Preview & Approve mode'}
+            >
+              {(selectedCampaign as any)?.preview_mode ? (
+                <><Eye className="w-4 h-4" /> Preview Mode</>
+              ) : (
+                <><Send className="w-4 h-4" /> Live Sending</>
+              )}
+            </button>
+          )}
+          <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" />
           {selectedCampaign?.status === 'draft' && (
             <button onClick={() => handleAction('activate', selectedCampaign.campaign_id)} disabled={!campaignsEnabled} className={`px-4 py-2 text-white rounded-lg flex items-center gap-2 ${!campaignsEnabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`} title={!campaignsEnabled ? 'Campaign execution is disabled for your organization' : ''}>
               <Play className="w-4 h-4" /> Activate
@@ -2891,7 +2918,7 @@ export default function CampaignsPage() {
                 )}
               </div>
 
-              {/* Campaign State + Action Buttons */}
+              {/* Campaign State + Mode Toggle + Action Buttons */}
               <div className="space-y-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Campaign State</label>
@@ -2908,6 +2935,33 @@ export default function CampaignsPage() {
                     )
                   })()}
                 </div>
+                {/* Send Mode toggle */}
+                {(selectedCampaign.status === 'active' || selectedCampaign.status === 'paused' || selectedCampaign.status === 'draft') && (
+                  <div className="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div>
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                        {selectedCampaign.preview_mode ? 'Preview & Approve Mode' : 'Live Sending Mode'}
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                        {selectedCampaign.preview_mode
+                          ? 'Generates drafts for review before sending'
+                          : 'Sends emails directly to contacts'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => togglePreviewMode(selectedCampaign.campaign_id, selectedCampaign.preview_mode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        selectedCampaign.preview_mode ? 'bg-teal-600' : 'bg-green-600'
+                      }`}
+                      title={selectedCampaign.preview_mode ? 'Switch to Live Sending' : 'Switch to Preview & Approve'}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        selectedCampaign.preview_mode ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </div>
+                )}
                 {/* Status action buttons — based on allowed transitions */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {selectedCampaign.status === 'draft' && (
