@@ -1843,7 +1843,9 @@ async def lifespan(app: FastAPI):
         logger.debug(f"last_name nullable migration check: {e}")
 
     # Migration: widen external_job_id from VARCHAR(255) to VARCHAR(1024)
-    # SerpAPI returns base64-encoded job IDs that exceed 255 chars
+    # SerpAPI returns base64-encoded job IDs that exceed 255 chars.
+    # Must drop full-column index first (utf8mb4 * 1024 > 3072 byte key limit),
+    # then re-create as prefix index on first 255 chars.
     try:
         from sqlalchemy import text as _ejid_text
         with engine.connect() as conn:
@@ -1852,14 +1854,24 @@ async def lifespan(app: FastAPI):
                 "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lead_details' "
                 "AND COLUMN_NAME = 'external_job_id'"
             )).fetchone()
-            if row and row[0] and row[0] < 1024:
+            if row and row[0] and int(row[0]) < 1024:
+                try:
+                    conn.execute(_ejid_text("DROP INDEX idx_lead_external_job_id ON lead_details"))
+                except Exception:
+                    pass  # Index might not exist or have a different name
                 conn.execute(_ejid_text(
                     "ALTER TABLE lead_details MODIFY COLUMN external_job_id VARCHAR(1024) NULL"
                 ))
+                try:
+                    conn.execute(_ejid_text(
+                        "CREATE INDEX idx_lead_external_job_id ON lead_details(external_job_id(255))"
+                    ))
+                except Exception:
+                    pass  # Index might already exist
                 conn.commit()
-                logger.info("Migration: widened external_job_id to VARCHAR(1024)")
+                logger.info("Migration: widened external_job_id to VARCHAR(1024) with prefix index")
     except Exception as e:
-        logger.debug(f"external_job_id widen migration check: {e}")
+        logger.warning(f"external_job_id widen migration: {e}")
 
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:

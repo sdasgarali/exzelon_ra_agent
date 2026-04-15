@@ -72,7 +72,7 @@ class LeadDetails(Base):
     employment_type = Column(String(50), nullable=True)  # Full-time, Part-time, Contract, Temporary, Internship
 
     # Enhanced deduplication fields
-    external_job_id = Column(String(1024), nullable=True, index=True)  # JSearch/SerpAPI job_id for cross-run dedup
+    external_job_id = Column(String(1024), nullable=True)  # JSearch/SerpAPI job_id for cross-run dedup (prefix-indexed via migration)
     city = Column(String(100), nullable=True)  # City name (more granular than state)
     employer_linkedin_url = Column(String(500), nullable=True)  # Company LinkedIn URL for identity matching
     employer_website = Column(String(500), nullable=True)  # Company website URL
