@@ -347,9 +347,20 @@ export default function SettingsPage() {
   // Test results
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
+  // Company profile (tenant-level)
+  const [companyProfile, setCompanyProfile] = useState({ name: '', website: '', industry: '', company_address: '' })
+  const [companyProfileLoaded, setCompanyProfileLoaded] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+
   useEffect(() => {
     loadTabPermissions()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'business' && !companyProfileLoaded) {
+      loadCompanyProfile()
+    }
+  }, [activeTab])
 
   const loadTabPermissions = async () => {
     try {
@@ -535,6 +546,35 @@ export default function SettingsPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCompanyProfile = async () => {
+    try {
+      const data = await settingsApi.getCompanyProfile()
+      setCompanyProfile({
+        name: data.name || '',
+        website: data.website || '',
+        industry: data.industry || '',
+        company_address: data.company_address || '',
+      })
+      setCompanyProfileLoaded(true)
+    } catch {
+      // Non-admin users won't have access — silently ignore
+    }
+  }
+
+  const saveCompanyProfile = async () => {
+    try {
+      setSavingProfile(true)
+      setError('')
+      await settingsApi.updateCompanyProfile(companyProfile)
+      setSuccess('Company profile saved!')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to save company profile')
+    } finally {
+      setSavingProfile(false)
     }
   }
 
@@ -2721,6 +2761,60 @@ export default function SettingsPage() {
               You have read-only access to this tab. Contact a super admin to request edit access.
             </div>
           )}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">Company Profile</h3>
+            <p className="text-sm text-gray-500 mb-4">Used to auto-populate email signatures when creating mailboxes.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Company Name</label>
+                <input
+                  type="text"
+                  value={companyProfile.name}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, name: e.target.value })}
+                  className="input"
+                  placeholder="Your Company Inc."
+                />
+              </div>
+              <div>
+                <label className="label">Website</label>
+                <input
+                  type="text"
+                  value={companyProfile.website}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, website: e.target.value })}
+                  className="input"
+                  placeholder="https://yourcompany.com"
+                />
+              </div>
+              <div>
+                <label className="label">Industry</label>
+                <input
+                  type="text"
+                  value={companyProfile.industry}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, industry: e.target.value })}
+                  className="input"
+                  placeholder="Technology, Healthcare, etc."
+                />
+              </div>
+              <div>
+                <label className="label">Company Address</label>
+                <input
+                  type="text"
+                  value={companyProfile.company_address}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, company_address: e.target.value })}
+                  className="input"
+                  placeholder="123 Business Ave, Suite 100, City, State 12345"
+                />
+              </div>
+            </div>
+            {canWriteTab('business') && (
+              <div className="flex justify-end mt-4">
+                <button onClick={saveCompanyProfile} disabled={savingProfile} className="btn-primary">
+                  {savingProfile ? 'Saving...' : 'Save Company Profile'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Outreach Limits</h3>
             <div className="grid grid-cols-2 gap-6">

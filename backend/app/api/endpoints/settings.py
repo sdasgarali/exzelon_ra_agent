@@ -16,8 +16,10 @@ from app.core.settings_resolver import (
     delete_tenant_setting,
     get_tenant_overrides,
 )
+from pydantic import BaseModel as PydanticBaseModel
 from app.db.models.user import User, UserRole
 from app.db.models.settings import Settings
+from app.db.models.tenant import Tenant
 from app.schemas.settings import SettingUpdate, SettingResponse
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -591,6 +593,69 @@ async def list_tenant_overrides(
     if tenant_id is None:
         return {}
     return get_tenant_overrides(db, tenant_id)
+
+
+class CompanyProfileUpdate(PydanticBaseModel):
+    name: Optional[str] = None
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_address: Optional[str] = None
+
+
+@router.get("/company-profile")
+async def get_company_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get the current tenant's company profile."""
+    if tenant_id is None:
+        raise HTTPException(status_code=400, detail="No tenant context")
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return {
+        "name": tenant.name,
+        "website": tenant.website,
+        "industry": tenant.industry,
+        "company_address": tenant.company_address,
+    }
+
+
+@router.put("/company-profile")
+async def update_company_profile(
+    data: CompanyProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Update the current tenant's company profile (admin+)."""
+    if tenant_id is None:
+        raise HTTPException(status_code=400, detail="No tenant context")
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    if data.name is not None:
+        tenant.name = data.name
+    if data.website is not None:
+        tenant.website = data.website
+    if data.industry is not None:
+        tenant.industry = data.industry
+    if data.company_address is not None:
+        tenant.company_address = data.company_address
+
+    db.commit()
+    db.refresh(tenant)
+
+    # Update the user's in-memory tenant info for next token refresh
+    return {
+        "message": "Company profile updated",
+        "name": tenant.name,
+        "website": tenant.website,
+        "industry": tenant.industry,
+        "company_address": tenant.company_address,
+    }
 
 
 @router.get("/{key}", response_model=SettingResponse)

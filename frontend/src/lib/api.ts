@@ -503,6 +503,14 @@ export const settingsApi = {
     const response = await api.get('/settings/my-permissions')
     return response.data
   },
+  getCompanyProfile: async () => {
+    const response = await api.get('/settings/company-profile')
+    return response.data
+  },
+  updateCompanyProfile: async (data: { name?: string; website?: string; industry?: string; company_address?: string }) => {
+    const response = await api.put('/settings/company-profile', data)
+    return response.data
+  },
 }
 
 // Mailboxes API
