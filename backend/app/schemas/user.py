@@ -34,6 +34,9 @@ class TenantInfo(BaseModel):
     slug: str
     plan: str
     industry: Optional[str] = None
+    website: Optional[str] = None
+    company_address: Optional[str] = None
+    logo_url: Optional[str] = None
 
     class Config:
         from_attributes = True

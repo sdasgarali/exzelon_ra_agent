@@ -188,6 +188,24 @@ export default function MailboxesPage() {
     address: '',
   })
 
+  // Auto-populate signature fields from tenant data and mailbox info
+  const autoPopulateSigData = (
+    existingSig: typeof sigData,
+    mailboxEmail: string,
+    displayName: string,
+  ) => {
+    const tenant = useAuthStore.getState().user?.tenant
+    return {
+      sender_name: existingSig.sender_name || displayName || '',
+      title: existingSig.title || '',
+      phone: existingSig.phone || '',
+      email: existingSig.email || mailboxEmail || '',
+      company: existingSig.company || tenant?.name || '',
+      website: existingSig.website || tenant?.website || '',
+      address: existingSig.address || tenant?.company_address || '',
+    }
+  }
+
   const [formData, setFormData] = useState({
     email: '',
     display_name: '',
@@ -507,11 +525,13 @@ export default function MailboxesPage() {
       oauth_tenant_id: mailbox.oauth_tenant_id || '',
       outreach_role_id: mailbox.outreach_role_id,
     })
-    // Populate signature fields from saved JSON
+    // Populate signature fields from saved JSON, backfill empty fields from tenant
+    const displayName = mailbox.display_name || [mailbox.sender_first_name, mailbox.sender_last_name].filter(Boolean).join(' ')
+    let parsedSig = { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' }
     if (mailbox.email_signature_json) {
       try {
         const sig = JSON.parse(mailbox.email_signature_json)
-        setSigData({
+        parsedSig = {
           sender_name: sig.sender_name || '',
           title: sig.title || '',
           phone: sig.phone || '',
@@ -519,11 +539,10 @@ export default function MailboxesPage() {
           company: sig.company || '',
           website: sig.website || '',
           address: sig.address || '',
-        })
-      } catch { setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' }) }
-    } else {
-      setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
+        }
+      } catch { /* keep defaults */ }
     }
+    setSigData(autoPopulateSigData(parsedSig, mailbox.email, displayName))
     setShowAddModal(true)
   }
 
@@ -648,7 +667,10 @@ export default function MailboxesPage() {
       oauth_tenant_id: '',
       outreach_role_id: null,
     })
-    setSigData({ sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' })
+    setSigData(autoPopulateSigData(
+      { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' },
+      '', ''
+    ))
     setWizardStep('select_provider')
     setCreatedMailboxId(null)
     setWizardSubmitting(false)
@@ -681,6 +703,9 @@ export default function MailboxesPage() {
       } catch {
         setWizardTestResult({ success: false, message: 'Mailbox created but connection test failed' })
       }
+      // Auto-populate signature with display name + email now that they're known
+      const displayName = formData.display_name || [formData.sender_first_name, formData.sender_last_name].filter(Boolean).join(' ')
+      setSigData(prev => autoPopulateSigData(prev, formData.email, displayName))
       setWizardStep('settings')
       fetchData()
     } catch (error: any) {
@@ -1328,34 +1353,34 @@ export default function MailboxesPage() {
                 <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
               </div>
               <div className="border-t pt-4 mt-4">
-                <h3 className="text-md font-semibold text-gray-800 mb-3">Email Signature</h3>
+                <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name</label>
-                    <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
-                  </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
                     <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number</label>
                     <input type="text" value={sigData.phone} onChange={(e) => setSigData({ ...sigData, phone: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="+1-555-1234" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                    <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name <span className="text-gray-400 font-normal">(auto from display name)</span></label>
+                    <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email <span className="text-gray-400 font-normal">(auto from mailbox)</span></label>
+                    <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
                     <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
                     <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
                     <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
                   </div>
                 </div>
@@ -1367,8 +1392,8 @@ export default function MailboxesPage() {
                         {sigData.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigData.sender_name}</div>}
                         {sigData.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.title}</div>}
                         {sigData.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.company}</div>}
-                        {(sigData.phone || (sigData.email || formData.email)) && (
-                          <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email || formData.email].filter(Boolean).join(' | ')}</div>
+                        {(sigData.phone || sigData.email) && (
+                          <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email].filter(Boolean).join(' | ')}</div>
                         )}
                         {sigData.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigData.website}</span></div>}
                         {sigData.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigData.address}</div>}
@@ -2228,59 +2253,57 @@ export default function MailboxesPage() {
                     <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
                   </div>
 
-                  {/* Collapsible Email Signature */}
-                  <details className="border rounded-lg">
-                    <summary className="p-3 cursor-pointer font-semibold text-gray-800 hover:bg-gray-50">Email Signature</summary>
-                    <div className="px-3 pb-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name</label>
-                          <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
-                          <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-                          <input type="text" value={sigData.phone} onChange={(e) => setSigData({ ...sigData, phone: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="+1-555-1234" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                          <input type="email" value={sigData.email || formData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
-                          <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Website URL</label>
-                          <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
-                          <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
-                        </div>
+                  {/* Sender Profile & Email Signature */}
+                  <div className="border rounded-lg p-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
+                        <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
                       </div>
-                      {Object.values(sigData).some(v => v.trim() !== '') && (
-                        <div className="mt-3">
-                          <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview</label>
-                          <div className="border rounded-lg p-3 bg-gray-50">
-                            <div style={{ borderTop: '1px solid #cccccc', paddingTop: '10px', fontFamily: 'Arial, sans-serif' }}>
-                              {sigData.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigData.sender_name}</div>}
-                              {sigData.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.title}</div>}
-                              {sigData.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.company}</div>}
-                              {(sigData.phone || (sigData.email || formData.email)) && (
-                                <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email || formData.email].filter(Boolean).join(' | ')}</div>
-                              )}
-                              {sigData.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigData.website}</span></div>}
-                              {sigData.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigData.address}</div>}
-                            </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number</label>
+                        <input type="text" value={sigData.phone} onChange={(e) => setSigData({ ...sigData, phone: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="+1-555-1234" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name <span className="text-gray-400 font-normal">(auto from display name)</span></label>
+                        <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email <span className="text-gray-400 font-normal">(auto from mailbox)</span></label>
+                        <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
+                        <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
+                        <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
+                        <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                      </div>
+                    </div>
+                    {Object.values(sigData).some(v => v.trim() !== '') && (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview</label>
+                        <div className="border rounded-lg p-3 bg-gray-50">
+                          <div style={{ borderTop: '1px solid #cccccc', paddingTop: '10px', fontFamily: 'Arial, sans-serif' }}>
+                            {sigData.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigData.sender_name}</div>}
+                            {sigData.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.title}</div>}
+                            {sigData.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.company}</div>}
+                            {(sigData.phone || sigData.email) && (
+                              <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email].filter(Boolean).join(' | ')}</div>
+                            )}
+                            {sigData.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigData.website}</span></div>}
+                            {sigData.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigData.address}</div>}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </details>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex justify-end space-x-3 pt-2">
                     <button onClick={handleWizardSkipSettings} className="px-4 py-2 text-gray-600 hover:text-gray-900 border rounded-lg hover:bg-gray-50">Skip for now</button>

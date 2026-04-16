@@ -66,6 +66,7 @@ class TenantUpdate(BaseModel):
     max_leads: Optional[int] = None
     website: Optional[str] = None
     industry: Optional[str] = None
+    company_address: Optional[str] = None
 
 
 @router.get("", response_model=List[TenantSummary])
@@ -191,6 +192,8 @@ async def update_tenant(
         tenant.website = data.website
     if data.industry is not None:
         tenant.industry = data.industry
+    if data.company_address is not None:
+        tenant.company_address = data.company_address
 
     db.commit()
     db.refresh(tenant)

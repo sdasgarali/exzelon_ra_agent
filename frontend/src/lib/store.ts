@@ -7,6 +7,9 @@ interface Tenant {
   slug: string
   plan: string
   industry: string | null
+  website: string | null
+  company_address: string | null
+  logo_url: string | null
 }
 
 interface User {
