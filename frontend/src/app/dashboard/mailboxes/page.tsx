@@ -793,7 +793,7 @@ export default function MailboxesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Sender Mailboxes</h1>
           <p className="text-gray-500">Manage email accounts used for outreach</p>
@@ -873,7 +873,7 @@ export default function MailboxesPage() {
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          <div className="w-40">
+          <div className="w-full sm:w-40">
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
               <option value="">All Statuses</option>
@@ -886,7 +886,7 @@ export default function MailboxesPage() {
               <option value="blacklisted">Blacklisted</option>
             </select>
           </div>
-          <div className="w-40">
+          <div className="w-full sm:w-40">
             <label className="block text-sm font-medium text-gray-700 mb-1">Connection</label>
             <select value={connectionFilter} onChange={(e) => setConnectionFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
               <option value="">All Connections</option>
@@ -895,7 +895,7 @@ export default function MailboxesPage() {
               <option value="untested">Not Tested</option>
             </select>
           </div>
-          <div className="w-40">
+          <div className="w-full sm:w-40">
             <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
             <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
               <option value="">All Providers</option>
@@ -906,7 +906,7 @@ export default function MailboxesPage() {
             </select>
           </div>
 
-          <div className="w-40 flex items-end">
+          <div className="w-full sm:w-40 flex items-end">
             <label className="flex items-center gap-2 cursor-pointer pb-2">
               <input
                 type="checkbox"
@@ -1230,7 +1230,7 @@ export default function MailboxesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                 <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="sender@example.com" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                   <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
@@ -1297,7 +1297,7 @@ export default function MailboxesPage() {
                 </div>
               )}
               {(formData.provider === 'smtp' || formData.provider === 'other') && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
                     <input type="text" value={formData.smtp_host} onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="smtp.example.com" />
@@ -1316,7 +1316,7 @@ export default function MailboxesPage() {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
                   <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600" title={WARMUP_STATUS_LABELS[formData.warmup_status]?.tooltip || ''}>
@@ -1354,7 +1354,7 @@ export default function MailboxesPage() {
               </div>
               <div className="border-t pt-4 mt-4">
                 <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
                     <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
@@ -1465,7 +1465,7 @@ export default function MailboxesPage() {
                     return (
                       <div className="space-y-5">
                         {/* Stat cards */}
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div className="bg-blue-50 rounded-lg p-4">
                             <div className="text-2xl font-bold text-blue-700">{mb.outreach_emails_sent}</div>
                             <div className="text-xs text-blue-600 mt-1">Outreach Emails</div>
@@ -1497,7 +1497,7 @@ export default function MailboxesPage() {
                         {health && (
                           <div className="bg-white border rounded-lg p-4">
                             <h4 className="text-sm font-medium text-gray-700 mb-3">Deliverability Health</h4>
-                            <div className="grid grid-cols-4 gap-3 text-center">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                               <div>
                                 <div className="text-lg font-bold text-gray-900">{health.health_score}</div>
                                 <div className="text-xs text-gray-500">Health Score</div>
@@ -1521,7 +1521,7 @@ export default function MailboxesPage() {
                         {/* Outreach Breakdown */}
                         <div className="bg-white border rounded-lg p-4">
                           <h4 className="text-sm font-medium text-gray-700 mb-3">Outreach Breakdown</h4>
-                          <div className="grid grid-cols-4 gap-3 text-center">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                             <div>
                               <div className="text-lg font-bold text-gray-900">{os.sent}</div>
                               <div className="text-xs text-gray-500">Sent</div>
@@ -1593,7 +1593,7 @@ export default function MailboxesPage() {
                       <div className="space-y-4">
                         {/* Warmup summary */}
                         <div className="bg-white border rounded-lg p-4">
-                          <div className="grid grid-cols-4 gap-3 text-center">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                             <div>
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${WARMUP_STATUS_LABELS[mb.warmup_status]?.color || 'bg-gray-100'}`}>
                                 {WARMUP_STATUS_LABELS[mb.warmup_status]?.label || mb.warmup_status}
@@ -1778,7 +1778,7 @@ export default function MailboxesPage() {
               {wizardStep === 'select_provider' && (
                 <div>
                   <p className="text-gray-600 mb-6">Choose your email provider to get started</p>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {/* Google Card */}
                     <button
                       onClick={() => {
@@ -1900,7 +1900,7 @@ export default function MailboxesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                     <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@gmail.com" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                       <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
@@ -2001,7 +2001,7 @@ export default function MailboxesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                     <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@company.com" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                       <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
@@ -2132,7 +2132,7 @@ export default function MailboxesPage() {
               {/* ── Step: SMTP Form ── */}
               {wizardStep === 'smtp_form' && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="col-span-2 md:col-span-1">
                       <h4 className="text-sm font-semibold text-gray-800 mb-3">Account</h4>
                       <div className="space-y-3">
@@ -2140,7 +2140,7 @@ export default function MailboxesPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                           <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="user@example.com" />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                             <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
@@ -2159,7 +2159,7 @@ export default function MailboxesPage() {
                     <div className="col-span-2 md:col-span-1">
                       <h4 className="text-sm font-semibold text-gray-800 mb-3">Server Settings</h4>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div className="col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Host *</label>
                             <input type="text" required value={formData.imap_host} onChange={(e) => setFormData({ ...formData, imap_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="imap.example.com" />
@@ -2169,7 +2169,7 @@ export default function MailboxesPage() {
                             <input type="number" required value={formData.imap_port} onChange={(e) => setFormData({ ...formData, imap_port: parseInt(e.target.value) || 993 })} className="w-full px-3 py-2 border rounded-lg" />
                           </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div className="col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host *</label>
                             <input type="text" required value={formData.smtp_host} onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="smtp.example.com" />
@@ -2215,7 +2215,7 @@ export default function MailboxesPage() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
                       <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
@@ -2256,7 +2256,7 @@ export default function MailboxesPage() {
                   {/* Sender Profile & Email Signature */}
                   <div className="border rounded-lg p-4">
                     <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
                         <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />

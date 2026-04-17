@@ -997,7 +997,7 @@ export default function LeadsPage() {
           <select
             value={filterStatus}
             onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-            className="input w-40"
+            className="input w-full sm:w-40"
           >
             <option value="">All Statuses</option>
             {STATUS_OPTIONS.map(s => (
@@ -1681,7 +1681,7 @@ export default function LeadsPage() {
             </div>
             <div className="px-6 py-4 overflow-y-auto flex-1">
               {/* Summary Cards */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                   <div className="text-2xl font-bold text-green-700">{outreachResults.summary?.total_sent || 0}</div>
                   <div className="text-xs text-green-600">Sent</div>
@@ -1747,7 +1747,7 @@ export default function LeadsPage() {
               ) : enrichPreview ? (
                 <>
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-purple-700">{enrichPreview.summary?.will_enrich || 0}</div>
                       <div className="text-xs text-purple-600">Will Enrich</div>

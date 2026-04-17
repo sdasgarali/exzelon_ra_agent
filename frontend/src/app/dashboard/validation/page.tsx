@@ -420,7 +420,7 @@ export default function ValidationPage() {
           <select
             value={filterValidation}
             onChange={(e) => { setFilterValidation(e.target.value); setPage(1); }}
-            className="input w-44">
+            className="input w-full sm:w-44">
             <option value="">All Statuses</option>
             <option value="valid">Valid</option>
             <option value="invalid">Invalid</option>

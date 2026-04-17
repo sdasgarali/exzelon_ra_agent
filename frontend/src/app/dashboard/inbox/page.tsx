@@ -9,7 +9,7 @@ import {
   Clock, Tag, ThumbsUp, ThumbsDown, Minus, AlertCircle,
   Phone, Building, Briefcase, ExternalLink, Filter, Info,
   Bot, Zap, Activity, Trash2, CheckSquare, Square, CheckCheck,
-  FileText, Check, Edit3, XCircle, ChevronUp, Loader2,
+  FileText, Check, Edit3, XCircle, ChevronUp, Loader2, ArrowLeft,
 } from 'lucide-react'
 
 // ─── Category & sentiment config ────────────────────────────────────
@@ -350,7 +350,7 @@ export default function InboxPage() {
   return (
     <div className="h-[calc(100vh-120px)] flex flex-col">
       {/* ─── Header ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <MessageSquare className="w-5 h-5 text-white" />
@@ -363,7 +363,7 @@ export default function InboxPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Mailbox Filter Dropdown */}
           {mailboxes.length > 0 && (
             <div className="relative">
@@ -564,7 +564,7 @@ export default function InboxPage() {
       <div className="flex-1 flex rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700">
 
         {/* ── Left: Thread List ──────────────────────────────────────── */}
-        <div className="w-[340px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50/50 dark:bg-gray-900/30">
+        <div className={`w-full md:w-[340px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50/50 dark:bg-gray-900/30 ${selectedThreadId ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-3 border-b border-gray-200 dark:border-gray-700">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -679,7 +679,7 @@ export default function InboxPage() {
         </div>
 
         {/* ── Center: Message Thread ─────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className={`flex-1 flex flex-col min-w-0 ${selectedThreadId ? 'flex' : 'hidden md:flex'}`}>
           {!selectedThread ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
@@ -693,7 +693,14 @@ export default function InboxPage() {
           ) : (
             <>
               {/* Thread header */}
-              <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-3">
+              <div className="px-3 sm:px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-3">
+                {/* Mobile back button */}
+                <button
+                  onClick={() => { setSelectedThreadId(null); setSelectedThread(null) }}
+                  className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
                     {selectedThread.messages?.[0]?.subject || '(no subject)'}
@@ -748,7 +755,7 @@ export default function InboxPage() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-gray-50/50 dark:bg-gray-900/20">
+              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-4 bg-gray-50/50 dark:bg-gray-900/20">
                 {selectedThread.messages?.map((msg: InboxMessage, idx: number) => {
                   const isSent = msg.direction === 'sent'
                   const msgCat = msg.category ? categoryConfig[msg.category] : null
@@ -761,7 +768,7 @@ export default function InboxPage() {
                           <span className="text-[10px] font-bold text-white">{msg.from_email?.[0]?.toUpperCase() || '?'}</span>
                         </div>
                       )}
-                      <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-sm ${
+                      <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-3 shadow-sm ${
                         isSent
                           ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-br-md'
                           : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-bl-md'
@@ -859,7 +866,7 @@ export default function InboxPage() {
               )}
 
               {/* Reply Composer */}
-              <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+              <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 sm:p-4">
                 {replyError && (
                   <div className="mb-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-700 rounded-lg text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
                     <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -940,7 +947,7 @@ export default function InboxPage() {
 
         {/* ── Right: Contact Panel ───────────────────────────────────── */}
         {showContactPanel && selectedThread?.contact && (
-          <div className="w-72 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
+          <div className="hidden lg:flex w-72 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-col">
             {/* Contact Header with gradient */}
             <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center mx-auto mb-3 ring-2 ring-white/30">

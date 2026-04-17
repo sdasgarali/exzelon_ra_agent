@@ -305,12 +305,12 @@ export default function WarmupEnginePage() {
       {activeTab === 'overview' && status && (
         <div className="space-y-6">
           {/* header row */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Warmup Engine</h1>
               <p className="text-gray-500 mt-1">Automated mailbox warmup management</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {unreadCount > 0 && <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">{unreadCount} unread alert{unreadCount > 1 ? 's' : ''}</span>}
               {canWrite && <button onClick={handleAssessAll} disabled={assessing} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium">{assessing ? 'Assessing...' : 'Assess All'}</button>}
               {canWrite && <button onClick={handleTriggerCycle} disabled={triggering} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium">{triggering ? 'Triggering...' : 'Trigger Warmup Cycle'}</button>}
@@ -499,7 +499,7 @@ export default function WarmupEnginePage() {
       {/* ANALYTICS TAB */}
       {activeTab === 'analytics' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-gray-900">Warmup Analytics</h2>
             <div className="flex gap-2">
               {[7, 14, 30, 90].map(d => (
@@ -922,7 +922,7 @@ function EmailThreadsTab({
             ))}
           </select>
         </div>
-        <div className="w-40">
+        <div className="w-full sm:w-40">
           <label className="block text-sm font-medium text-gray-700 mb-1">Direction</label>
           <select value={emailDirectionFilter} onChange={(e) => { setEmailDirectionFilter(e.target.value); setEmailPage(() => 1) }} className="w-full px-3 py-2 border rounded-lg text-sm">
             <option value="all">All</option>

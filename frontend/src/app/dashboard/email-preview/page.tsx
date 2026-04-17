@@ -1101,7 +1101,7 @@ export default function EmailPreviewPage() {
                         </div>
                       )}
                       {renderingResult.stats && (
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
                           <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-400">Images</div></div>
                           <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-400">Links</div></div>
                           <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-400">HTML Size</div></div>

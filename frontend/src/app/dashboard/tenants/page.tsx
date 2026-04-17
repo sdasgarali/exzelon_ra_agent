@@ -451,7 +451,7 @@ export default function TenantManagementPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
               <input
@@ -480,7 +480,7 @@ export default function TenantManagementPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan</label>
               <select
@@ -509,7 +509,7 @@ export default function TenantManagementPage() {
 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Plan Limits</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { key: 'max_users', label: 'Max Users' },
                 { key: 'max_mailboxes', label: 'Max Mailboxes' },

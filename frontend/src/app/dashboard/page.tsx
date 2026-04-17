@@ -1204,7 +1204,7 @@ export default function DashboardPage() {
               <select
                 value={selectorStatus}
                 onChange={(e) => { setSelectorStatus(e.target.value); setSelectorPage(1) }}
-                className="input w-40"
+                className="input w-full sm:w-40"
               >
                 <option value="">All Statuses</option>
                 <option value="new">New</option>
@@ -1348,7 +1348,7 @@ export default function DashboardPage() {
               <select
                 value={contactSelectorValidationStatus}
                 onChange={(e) => { setContactSelectorValidationStatus(e.target.value); setContactSelectorPage(1) }}
-                className="input w-40"
+                className="input w-full sm:w-40"
               >
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>

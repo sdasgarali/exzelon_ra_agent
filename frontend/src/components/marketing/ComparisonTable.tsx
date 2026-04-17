@@ -142,7 +142,7 @@ export default function ComparisonTable({ compact = false }: { compact?: boolean
     <div>
       {/* Score summary */}
       <ScrollReveal>
-        <div className="grid grid-cols-4 gap-4 max-w-3xl mx-auto mb-12">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto mb-12">
           {[
             { name: 'NeuraLeads', score: totalScores.exzelon, max: categories.length * 10, highlight: true },
             { name: 'Flat-Fee Tool', score: totalScores.instantly, max: categories.length * 10 },

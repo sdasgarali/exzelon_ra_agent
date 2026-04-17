@@ -618,7 +618,7 @@ export default function TemplatesPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Email Templates</h1>
           <p className="text-gray-500 mt-1">
@@ -719,7 +719,7 @@ export default function TemplatesPage() {
       )}
 
       {/* Templates Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -1077,7 +1077,7 @@ export default function TemplatesPage() {
                             </div>
                           )}
                           {renderingResult.stats && (
-                            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-200 mt-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-gray-200 mt-2">
                               <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-400">Images</div></div>
                               <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-400">Links</div></div>
                               <div className="text-center"><div className="text-xs font-medium">{renderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-400">HTML Size</div></div>
@@ -1497,7 +1497,7 @@ export default function TemplatesPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
                     <input
@@ -1526,7 +1526,7 @@ export default function TemplatesPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Goal</label>
                     <select
@@ -1682,7 +1682,7 @@ export default function TemplatesPage() {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-2">Archive Template</h3>
             <p className="text-gray-600 mb-4">
               Are you sure you want to archive this template? It can be restored later.

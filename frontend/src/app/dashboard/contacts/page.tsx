@@ -368,7 +368,7 @@ export default function ContactsPage() {
               <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
                   <input value={createForm.first_name} onChange={e => setCreateForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" placeholder="John" />
@@ -390,7 +390,7 @@ export default function ContactsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
                 <input value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} className="input w-full" placeholder="HR Manager" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                   <input value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+1 555-0123" />
@@ -438,7 +438,7 @@ export default function ContactsPage() {
               <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
                   <input value={editForm.first_name} onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" />
@@ -460,7 +460,7 @@ export default function ContactsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
                 <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className="input w-full" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                   <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" />
@@ -500,7 +500,7 @@ export default function ContactsPage() {
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Contacts</h1>
           <p className="text-gray-500 text-sm mt-1">
@@ -563,7 +563,7 @@ export default function ContactsPage() {
           <div className="flex-1 min-w-64">
             <input type="text" placeholder="Search name, email, or company..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="input w-full" />
           </div>
-          <select value={filterPriority} onChange={(e) => { setFilterPriority(e.target.value); setPage(1); }} className="input w-44">
+          <select value={filterPriority} onChange={(e) => { setFilterPriority(e.target.value); setPage(1); }} className="input w-full sm:w-44">
             <option value="">All Priorities</option>
             <option value="p1_job_poster">P1 - Job Poster</option>
             <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
@@ -571,14 +571,14 @@ export default function ContactsPage() {
             <option value="p4_ops_leader">P4 - Ops Leader</option>
             <option value="p5_functional_manager">P5 - Func. Mgr</option>
           </select>
-          <select value={filterValidation} onChange={(e) => { setFilterValidation(e.target.value); setPage(1); }} className="input w-40">
+          <select value={filterValidation} onChange={(e) => { setFilterValidation(e.target.value); setPage(1); }} className="input w-full sm:w-40">
             <option value="">All Validation</option>
             <option value="valid">Valid</option>
             <option value="invalid">Invalid</option>
             <option value="pending">Pending</option>
             <option value="unknown">Unknown</option>
           </select>
-          <select value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-44">
+          <select value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-full sm:w-44">
             <option value="">All Sources</option>
             <option value="mock">Mock</option>
             <option value="apollo">Apollo</option>
@@ -589,7 +589,7 @@ export default function ContactsPage() {
             <option value="pdl">People Data Labs</option>
             <option value="proxycurl">Proxycurl</option>
           </select>
-          <select value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-40">
+          <select value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-full sm:w-40">
             <option value="">All Status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -777,10 +777,10 @@ export default function ContactsPage() {
       {/* Bulk Update Modal */}
       {showBulkUpdateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Contact{selectedIds.size > 1 ? 's' : ''}</h2>
             <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
                 <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">

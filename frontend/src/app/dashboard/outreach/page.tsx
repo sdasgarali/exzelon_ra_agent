@@ -339,7 +339,7 @@ export default function OutreachPage() {
 
       <div className="card p-6 mb-6">
         <h3 className="font-semibold text-gray-800 mb-4">Run Outreach</h3>
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div>
             <label className="label">Outreach Mode</label>
             <select value={mode} onChange={(e) => setMode(e.target.value as 'mailmerge' | 'send')} className="input">
@@ -366,7 +366,7 @@ export default function OutreachPage() {
         </div>
         <div className="mt-4 p-3 bg-gray-50 rounded-lg">
           <h4 className="text-sm font-medium text-gray-700 mb-2">Business Rules Applied:</h4>
-          <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-gray-600">
             <div>Daily Limit: <span className="font-mono">{settings.daily_send_limit || 30}</span></div>
             <div>Cooldown: <span className="font-mono">{settings.cooldown_days || 10} days</span></div>
             <div>Max per Job: <span className="font-mono">{settings.max_contacts_per_company_job || 4}</span></div>
@@ -472,7 +472,7 @@ export default function OutreachPage() {
       {/* Thread Modal */}
       {threadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-start">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">Email Thread</h3>

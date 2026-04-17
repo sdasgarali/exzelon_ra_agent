@@ -1587,7 +1587,7 @@ export default function CampaignsPage() {
   if (view === 'list') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Campaigns</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">Multi-step email sequences</p>
@@ -1807,7 +1807,7 @@ export default function CampaignsPage() {
               {/* Step: Source Selection */}
               {createStep === 'source' && (
                 <div>
-                  <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     {/* AI Lead Hunting Agent */}
                     <button
                       onClick={handleAiLeadCheck}
@@ -2024,7 +2024,7 @@ export default function CampaignsPage() {
                   </div>
 
                   {/* Stats */}
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
                       <p className="text-2xl font-bold text-blue-600">{csvPreviewData.total_rows}</p>
                       <p className="text-xs text-gray-500">Total Rows</p>
@@ -2104,7 +2104,7 @@ export default function CampaignsPage() {
                         </div>
                         {/* Contact fields — primary */}
                         <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Contact Details</p>
-                        <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                           <input value={entry.first_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], first_name: e.target.value }; setManualEntries(v) }}
                             placeholder="First Name *" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
                           <input value={entry.last_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], last_name: e.target.value }; setManualEntries(v) }}
@@ -2116,7 +2116,7 @@ export default function CampaignsPage() {
                         </div>
                         {/* Lead fields */}
                         <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Lead / Job Details</p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <input value={entry.client_name} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], client_name: e.target.value }; setManualEntries(v) }}
                             placeholder="Company Name *" className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
                           <input value={entry.job_title} onChange={e => { const v = [...manualEntries]; v[idx] = { ...v[idx], job_title: e.target.value }; setManualEntries(v) }}
@@ -2196,7 +2196,7 @@ export default function CampaignsPage() {
               {createStep === 'google_preview' && googleSheetPreview && (
                 <div>
                   {/* Stats */}
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                     <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-center">
                       <p className="text-2xl font-bold text-blue-600">{googleSheetPreview.total_rows}</p>
                       <p className="text-xs text-gray-500">Total Rows</p>
@@ -2622,7 +2622,7 @@ export default function CampaignsPage() {
                     </button>
                     {createScheduleExpanded && (
                       <div className="px-3 pb-3 space-y-3 border-t dark:border-gray-700 pt-3">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
                             <input
@@ -3024,7 +3024,7 @@ export default function CampaignsPage() {
             {/* Quick Stats Card */}
             <div className="bg-white dark:bg-gray-800 border rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100">Quick Stats</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selectedCampaign.total_contacts || 0}</p>
                   <p className="text-xs text-gray-500">Contacts</p>
@@ -3359,7 +3359,7 @@ export default function CampaignsPage() {
           {/* Schedule Add/Edit Modal */}
           {scheduleModalOpen && (
             <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setScheduleModalOpen(false)}>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-5 space-y-4" onClick={e => e.stopPropagation()}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-5 space-y-4" onClick={e => e.stopPropagation()}>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {scheduleModalMode === 'add' ? 'Add Schedule' : 'Edit Schedule'}
                 </h3>
@@ -3377,7 +3377,7 @@ export default function CampaignsPage() {
                 </div>
 
                 {/* Date Range */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
                     <input
@@ -3409,7 +3409,7 @@ export default function CampaignsPage() {
                 </div>
 
                 {/* Time Window */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
                     <input
@@ -4365,7 +4365,7 @@ export default function CampaignsPage() {
             </div>
 
             {/* Numeric fields */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Min Lead Score</label>
                 <input
@@ -4803,7 +4803,7 @@ export default function CampaignsPage() {
                               </div>
                             )}
                             {stepRenderingResult.stats && (
-                              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
                                 <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-400">Images</div></div>
                                 <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-400">Links</div></div>
                                 <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-400">HTML Size</div></div>
@@ -5120,7 +5120,7 @@ export default function CampaignsPage() {
                   )}
 
                   {/* Delay fields */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1 dark:text-gray-200">Delay (days)</label>
                       <input type="number" value={stepForm.delay_days} onChange={e => setStepForm(f => ({ ...f, delay_days: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />

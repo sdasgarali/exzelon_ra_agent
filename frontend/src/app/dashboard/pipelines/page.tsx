@@ -688,7 +688,7 @@ export default function PipelinesPage() {
       </div>
 
       {/* Pipeline Control Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {/* Lead Sourcing */}
         <div className="card p-4 border-t-4 border-indigo-500">
           <h4 className="font-semibold text-gray-800 mb-2">Lead Sourcing</h4>
@@ -771,7 +771,7 @@ export default function PipelinesPage() {
       {/* Business Rules Info */}
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <h4 className="font-semibold text-yellow-800 mb-2">Business Rules Applied</h4>
-        <div className="grid grid-cols-4 gap-4 text-sm text-yellow-700">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm text-yellow-700">
           <div>
             <span className="font-medium">Bounce Rate Target:</span>
             <span className="ml-1">&lt; {businessRules.warmup_bounce_rate_good}%</span>
@@ -1035,7 +1035,7 @@ export default function PipelinesPage() {
               <select
                 value={selectorStatus}
                 onChange={(e) => { setSelectorStatus(e.target.value); setSelectorPage(1) }}
-                className="input w-40"
+                className="input w-full sm:w-40"
               >
                 <option value="">All Statuses</option>
                 <option value="new">New</option>
@@ -1213,7 +1213,7 @@ export default function PipelinesPage() {
               <select
                 value={contactSelectorValidationStatus}
                 onChange={(e) => { setContactSelectorValidationStatus(e.target.value); setContactSelectorPage(1) }}
-                className="input w-40"
+                className="input w-full sm:w-40"
               >
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>

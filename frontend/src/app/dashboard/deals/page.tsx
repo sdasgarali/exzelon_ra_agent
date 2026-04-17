@@ -226,7 +226,7 @@ export default function DealsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Deals</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">CRM Pipeline</p>
@@ -354,7 +354,7 @@ export default function DealsPage() {
       {showCreateModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] max-h-[90vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold dark:text-gray-100">New Deal</h2>
               <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>
@@ -434,7 +434,7 @@ export default function DealsPage() {
                   {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1">Value ($)</label>
                   <input type="number" value={dealForm.value} onChange={e => setDealForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
@@ -480,7 +480,7 @@ export default function DealsPage() {
                 <button onClick={() => setShowDetailDrawer(false)}><X className="w-5 h-5" /></button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <span className="text-xs text-gray-400 uppercase">Value</span>
                   <p className="text-lg font-bold">{formatCurrency(selectedDeal.value)}</p>

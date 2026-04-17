@@ -1149,7 +1149,7 @@ export default function SettingsPage() {
               <span className="text-sm font-semibold text-gray-700">No Preference</span>
               <span className="text-xs text-gray-500">— Accept all company sizes, no priority matching</span>
             </label>
-            <div className={`grid grid-cols-3 gap-4 ${jobSourceConfig.company_size_no_preference ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${jobSourceConfig.company_size_no_preference ? 'opacity-50 pointer-events-none' : ''}`}>
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <h4 className="font-medium text-green-700 mb-2">Priority 1 (Preferred)</h4>
                 <label className="label text-sm">Max Employees</label>
@@ -1214,7 +1214,7 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {/* IT/Tech Role Keywords */}
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -1491,7 +1491,7 @@ export default function SettingsPage() {
             </p>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label className="label">Job Source Provider</label>
                   <select
@@ -1576,7 +1576,7 @@ export default function SettingsPage() {
                   Enable multiple lead sources to maximize coverage. Duplicates are automatically removed based on company name normalization.
                 </p>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <label className="label">Enabled Lead Sources</label>
                     <div className="space-y-2 border rounded-lg p-3 bg-gray-50">
@@ -1846,7 +1846,7 @@ export default function SettingsPage() {
               Configure AI provider for email content generation, lead qualification, and other AI-powered features
             </p>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">AI Provider</label>
                 <select
@@ -2535,7 +2535,7 @@ export default function SettingsPage() {
             </p>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label className="label">Send Mode</label>
                   <select
@@ -2584,7 +2584,7 @@ export default function SettingsPage() {
                       Go to Microsoft 365 Admin Center → Users → Select User → Mail → Email apps → Enable Authenticated SMTP.
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">M365 Admin Email</label>
                       <input
@@ -2649,7 +2649,7 @@ export default function SettingsPage() {
               {outreachConfig.email_send_mode === 'smtp' && (
                 <div className="border-t pt-4 mt-4">
                   <h4 className="font-medium text-gray-700 mb-3">Custom SMTP Configuration</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">SMTP Host</label>
                       <input
@@ -2764,7 +2764,7 @@ export default function SettingsPage() {
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-1">Company Profile</h3>
             <p className="text-sm text-gray-500 mb-4">Used to auto-populate email signatures when creating mailboxes.</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="label">Company Name</label>
                 <input
@@ -2817,7 +2817,7 @@ export default function SettingsPage() {
 
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Outreach Limits</h3>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">Daily Send Limit</label>
                 <input
@@ -2861,7 +2861,7 @@ export default function SettingsPage() {
 
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Email Policies</h3>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">Catch-All Email Policy</label>
                 <select
@@ -2894,7 +2894,7 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-4">
               Controls how clients are auto-classified as Regular, Occasional, or Prospect based on their job posting frequency.
             </p>
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div>
                 <label className="label">Lookback Window (Days)</label>
                 <input
@@ -2943,7 +2943,7 @@ export default function SettingsPage() {
           {/* Advanced Delivery & Safety */}
           <div className="border-t border-gray-200 pt-6 mt-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Delivery & Safety</h3>
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div>
                 <label className="label">Domain Daily Limit (General)</label>
                 <input
@@ -2978,7 +2978,7 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500 mt-1">Cross-campaign cap per company</p>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-6 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-4">
               <div>
                 <label className="label">Send Delay Min (seconds)</label>
                 <input

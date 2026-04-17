@@ -425,7 +425,7 @@ export default function ClientsPage() {
           <select
             value={filterStatus}
             onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
-            className="input w-40"
+            className="input w-full sm:w-40"
           >
             <option value="">All Statuses</option>
             {STATUS_OPTIONS.map(s => (
@@ -436,7 +436,7 @@ export default function ClientsPage() {
           <select
             value={filterCategory}
             onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
-            className="input w-40"
+            className="input w-full sm:w-40"
           >
             <option value="">All Categories</option>
             {CATEGORY_OPTIONS.map(c => (
@@ -448,7 +448,7 @@ export default function ClientsPage() {
             <select
               value={filterIndustry}
               onChange={(e) => { setFilterIndustry(e.target.value); setPage(1); }}
-              className="input w-44"
+              className="input w-full sm:w-44"
             >
               <option value="">All Industries</option>
               {filterOptions.industries.map(i => (
@@ -842,7 +842,7 @@ export default function ClientsPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
             <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Client{selectedIds.size > 1 ? 's' : ''}</h2>
             <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
                 <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
