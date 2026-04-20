@@ -486,6 +486,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for summary_json: {e}")
 
+    # Migration: widen job_runs JSON columns from TEXT to LONGTEXT (avoid Data too long errors)
+    if settings.DB_TYPE == "mysql":
+        try:
+            from sqlalchemy import text as sa_text_lt
+            with engine.connect() as conn:
+                conn.execute(sa_text_lt("ALTER TABLE job_runs MODIFY COLUMN lead_results_json LONGTEXT"))
+                conn.execute(sa_text_lt("ALTER TABLE job_runs MODIFY COLUMN counters_json LONGTEXT"))
+                conn.execute(sa_text_lt("ALTER TABLE job_runs MODIFY COLUMN summary_json LONGTEXT"))
+                conn.commit()
+                logger.info("Migration: widened job_runs JSON columns to LONGTEXT")
+        except Exception as e:
+            logger.warning(f"Migration check for job_runs LONGTEXT: {e}")
+
     # Migration: add industry and company_size columns to lead_details
     try:
         from sqlalchemy import text as sa_text_ind, inspect as sa_inspect_ind

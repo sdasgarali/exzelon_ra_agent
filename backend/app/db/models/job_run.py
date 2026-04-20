@@ -2,6 +2,7 @@
 from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, Index, ForeignKey
+from sqlalchemy.dialects.mysql import LONGTEXT
 from app.db.base import Base
 
 
@@ -25,14 +26,14 @@ class JobRun(Base):
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     ended_at = Column(DateTime, nullable=True)
     status = Column(Enum(JobStatus, values_callable=lambda x: [e.value for e in x]), default=JobStatus.PENDING, nullable=False)
-    counters_json = Column(Text, nullable=True)  # JSON with inserted/updated/skipped counts
-    lead_results_json = Column(Text, nullable=True)  # JSON array of per-lead enrichment results
+    counters_json = Column(LONGTEXT().with_variant(Text, "sqlite"), nullable=True)  # JSON with inserted/updated/skipped counts
+    lead_results_json = Column(LONGTEXT().with_variant(Text, "sqlite"), nullable=True)  # JSON array of per-lead enrichment results
     logs_path = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)
     triggered_by = Column(String(100), nullable=True)  # user email or "scheduler"
     progress_pct = Column(Integer, default=0, nullable=False)  # 0-100 progress percentage
     is_cancel_requested = Column(Integer, default=0, nullable=False)  # 0=no, 1=cancel requested
-    summary_json = Column(Text, nullable=True)  # Cached AI-generated summary report
+    summary_json = Column(LONGTEXT().with_variant(Text, "sqlite"), nullable=True)  # Cached AI-generated summary report
 
     __table_args__ = (
         Index('idx_job_pipeline', 'pipeline_name'),
