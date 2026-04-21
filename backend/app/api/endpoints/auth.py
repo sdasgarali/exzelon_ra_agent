@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.rate_limiter import limiter
 from app.db.models.user import User, UserRole
 from app.db.models.login_history import LoginHistory
-from app.schemas.user import UserCreate, UserResponse, Token
+from app.schemas.user import UserCreate, UserResponse, Token, ForgotPasswordRequest, ResetPasswordRequest
 from app.schemas.tenant import SignupRequest, SignupResponse, VerifyResponse
 from app.services.audit_helper import write_audit_log, get_client_ip
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -57,7 +57,7 @@ async def login(
         db.commit()
         raise HTTPException(
             status_code=423,
-            detail=f"Account locked due to too many failed attempts. Try again after {user.locked_until.strftime('%H:%M UTC')}.",
+            detail="Account locked due to too many failed attempts. Contact Super Admin to unlock your account.",
         )
 
     # Check credentials
@@ -319,6 +319,36 @@ async def refresh_token(
         refresh_token=new_refresh,
         user=UserResponse.model_validate(user),
     )
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/hour")
+async def forgot_password(
+    request: Request,
+    data: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Request a password reset email. Always returns 200 to prevent email enumeration."""
+    from app.services.password_reset import generate_and_send_reset
+
+    generate_and_send_reset(data.email, db)
+    return {"message": "If an account exists with that email, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+@limiter.limit("10/hour")
+async def reset_password_endpoint(
+    request: Request,
+    data: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Reset password using token from email link."""
+    from app.services.password_reset import reset_password
+
+    success, message = reset_password(data.token, data.new_password, db)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
+    return {"message": message}
 
 
 @router.post("/logout")

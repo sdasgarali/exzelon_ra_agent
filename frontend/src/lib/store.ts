@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 
 interface Tenant {
   tenant_id: number
@@ -34,7 +34,8 @@ interface AuthState {
   refreshToken: string | null
   user: User | null
   impersonation: Impersonation | null
-  setAuth: (token: string, user: User, refreshToken?: string) => void
+  rememberMe: boolean
+  setAuth: (token: string, user: User, refreshToken?: string, rememberMe?: boolean) => void
   setTokens: (token: string, refreshToken: string) => void
   logout: () => void
   isAuthenticated: () => boolean
@@ -45,6 +46,43 @@ interface AuthState {
   isImpersonating: () => boolean
 }
 
+const STORAGE_KEY = 'auth-storage'
+
+/**
+ * Custom storage that writes to localStorage when "Remember Me" is checked,
+ * and sessionStorage otherwise. On read, checks both (localStorage first)
+ * so tokens are found regardless of where they were stored.
+ */
+const dualStorage: StateStorage = {
+  getItem: (name: string): string | null => {
+    if (typeof window === 'undefined') return null
+    // Check localStorage first (remember me), then sessionStorage
+    return localStorage.getItem(name) ?? sessionStorage.getItem(name)
+  },
+  setItem: (name: string, value: string): void => {
+    if (typeof window === 'undefined') return
+    // Determine current rememberMe preference from the state being persisted
+    try {
+      const parsed = JSON.parse(value)
+      const rememberMe = parsed?.state?.rememberMe ?? true
+      if (rememberMe) {
+        localStorage.setItem(name, value)
+        sessionStorage.removeItem(name)
+      } else {
+        sessionStorage.setItem(name, value)
+        localStorage.removeItem(name)
+      }
+    } catch {
+      localStorage.setItem(name, value)
+    }
+  },
+  removeItem: (name: string): void => {
+    if (typeof window === 'undefined') return
+    localStorage.removeItem(name)
+    sessionStorage.removeItem(name)
+  },
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -52,22 +90,29 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       user: null,
       impersonation: null,
-      setAuth: (token: string, user: User, refreshToken?: string) => set({
+      rememberMe: true,
+      setAuth: (token: string, user: User, refreshToken?: string, rememberMe?: boolean) => set({
         token,
         refreshToken: refreshToken || null,
         user,
         impersonation: null,
+        rememberMe: rememberMe ?? get().rememberMe,
       }),
       setTokens: (token: string, refreshToken: string) => set({
         token,
         refreshToken,
       }),
-      logout: () => set({
-        token: null,
-        refreshToken: null,
-        user: null,
-        impersonation: null,
-      }),
+      logout: () => {
+        // Clear both storages on logout
+        localStorage.removeItem(STORAGE_KEY)
+        sessionStorage.removeItem(STORAGE_KEY)
+        set({
+          token: null,
+          refreshToken: null,
+          user: null,
+          impersonation: null,
+        })
+      },
       isAuthenticated: () => !!get().token,
       isSuperAdmin: () => {
         const role = get().user?.role
@@ -86,7 +131,8 @@ export const useAuthStore = create<AuthState>()(
       isImpersonating: () => !!get().impersonation,
     }),
     {
-      name: 'auth-storage',
+      name: STORAGE_KEY,
+      storage: createJSONStorage(() => dualStorage),
     }
   )
 )

@@ -150,6 +150,14 @@ export const authApi = {
     const response = await api.post('/auth/resend-verification', { email })
     return response.data
   },
+  forgotPassword: async (email: string) => {
+    const response = await api.post('/auth/forgot-password', { email })
+    return response.data
+  },
+  resetPassword: async (token: string, new_password: string) => {
+    const response = await api.post('/auth/reset-password', { token, new_password })
+    return response.data
+  },
 }
 
 // Leads API

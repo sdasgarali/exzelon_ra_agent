@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
-import { Brain, CheckCircle } from 'lucide-react'
+import { Brain, CheckCircle, Eye, EyeOff } from 'lucide-react'
 
 function LoginContent() {
   const router = useRouter()
@@ -14,6 +14,8 @@ function LoginContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [verified, setVerified] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(true)
 
   const [formData, setFormData] = useState({
     email: '',
@@ -33,7 +35,7 @@ function LoginContent() {
 
     try {
       const response = await authApi.login(formData.email, formData.password)
-      setAuth(response.access_token, response.user, response.refresh_token)
+      setAuth(response.access_token, response.user, response.refresh_token, rememberMe)
       router.push('/dashboard')
     } catch (err: any) {
       setError(err.response?.data?.detail || 'An error occurred')
@@ -80,14 +82,39 @@ function LoginContent() {
 
             <div>
               <label className="label">Password</label>
-              <input
-                type="password"
-                className="input"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Enter password"
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="input pr-10"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Enter password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600">Remember me</span>
+              </label>
+              <Link href="/forgot-password" className="text-sm text-primary-600 hover:text-primary-700">
+                Forgot password?
+              </Link>
             </div>
 
             {error && (

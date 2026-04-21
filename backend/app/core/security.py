@@ -96,3 +96,39 @@ def decode_verification_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def create_password_reset_token(email: str, expires_delta: Optional[timedelta] = None) -> str:
+    """Create a JWT token for password reset.
+
+    Args:
+        email: The user's email address.
+        expires_delta: Custom expiry. Defaults to 1 hour.
+
+    Returns:
+        Signed JWT string.
+    """
+    if expires_delta is None:
+        expires_delta = timedelta(hours=1)
+    expire = datetime.utcnow() + expires_delta
+    to_encode = {
+        "sub": email,
+        "purpose": "password_reset",
+        "exp": expire,
+    }
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> Optional[dict]:
+    """Decode and validate a password reset token.
+
+    Returns:
+        The token payload dict if valid, None if expired or invalid.
+    """
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            return None
+        return payload
+    except JWTError:
+        return None

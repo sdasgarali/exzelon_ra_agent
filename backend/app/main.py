@@ -1898,6 +1898,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"external_job_id widen migration: {e}")
 
+    # Migration: add password_reset_token and password_reset_sent_at to users
+    try:
+        from sqlalchemy import text as sa_text_pwreset, inspect as sa_inspect_pwreset
+        with engine.connect() as conn:
+            inspector_pwr = sa_inspect_pwreset(engine)
+            user_cols_pwr = [c["name"] for c in inspector_pwr.get_columns("users")]
+            for col_name, col_def in [
+                ("password_reset_token", "VARCHAR(500) NULL"),
+                ("password_reset_sent_at", "DATETIME NULL"),
+            ]:
+                if col_name not in user_cols_pwr:
+                    try:
+                        conn.execute(sa_text_pwreset(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to users")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for password reset columns: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:

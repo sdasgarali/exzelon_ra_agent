@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { usersApi } from '@/lib/api';
+import { usersApi, activityApi } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
 interface User {
@@ -14,6 +14,8 @@ interface User {
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
+  locked_until: string | null;
+  failed_login_count: number | null;
 }
 
 interface UserFormData {
@@ -69,6 +71,7 @@ export default function UsersPage() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [unlocking, setUnlocking] = useState<number | null>(null);
 
   const roleOptions = isSuperAdmin
     ? ['super_admin', 'admin', 'operator', 'viewer']
@@ -248,6 +251,25 @@ export default function UsersPage() {
     return colors[role] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
   };
 
+  const isLocked = (u: User) => u.locked_until && new Date(u.locked_until) > new Date();
+
+  const handleUnlock = async (userId: number) => {
+    setUnlocking(userId);
+    try {
+      await activityApi.unlockUser(userId);
+      setSuccess('User account unlocked successfully.');
+      fetchUsers();
+    } catch (err: unknown) {
+      const detail =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : undefined;
+      setError(detail || 'Failed to unlock user.');
+    } finally {
+      setUnlocking(null);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -394,7 +416,14 @@ export default function UsersPage() {
                   <tr key={u.user_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono">{u.user_id}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 dark:text-white font-medium">
-                      {u.full_name || '-'}
+                      <span className="flex items-center gap-2">
+                        {u.full_name || '-'}
+                        {isLocked(u) && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                            Locked
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{u.email}</td>
                     <td className="px-4 py-3">
@@ -416,6 +445,15 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{formatDate(u.last_login_at)}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{formatDate(u.created_at)}</td>
                     <td className="px-4 py-3 text-right space-x-2">
+                      {isLocked(u) && isSuperAdmin && (
+                        <button
+                          onClick={() => handleUnlock(u.user_id)}
+                          disabled={unlocking === u.user_id}
+                          className="text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {unlocking === u.user_id ? 'Unlocking...' : 'Unlock'}
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditModal(u)}
                         disabled={u.role === 'super_admin' && !isSuperAdmin}

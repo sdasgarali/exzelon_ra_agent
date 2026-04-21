@@ -51,6 +51,8 @@ class UserResponse(UserBase):
     is_verified: bool = True
     tenant_id: Optional[int] = None
     tenant: Optional[TenantInfo] = None
+    locked_until: Optional[datetime] = None
+    failed_login_count: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -68,3 +70,14 @@ class Token(BaseModel):
     refresh_token: str = ""
     token_type: str = "bearer"
     user: UserResponse
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for password reset."""
+    token: str
+    new_password: str

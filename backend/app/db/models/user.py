@@ -43,6 +43,10 @@ class User(Base):
     verification_token = Column(String(512), nullable=True)
     verification_sent_at = Column(DateTime, nullable=True)
 
+    # Password reset
+    password_reset_token = Column(String(500), nullable=True)
+    password_reset_sent_at = Column(DateTime, nullable=True)
+
     # Onboarding
     onboarding_dismissed_at = Column(DateTime, nullable=True)
 
