@@ -1982,6 +1982,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Get key at <a href="https://platform.openai.com/api-keys" target="_blank" className="text-blue-600 underline">platform.openai.com</a>
                   </p>
+                  {testResults.openai && (
+                    <p className={`text-sm mt-1 ${testResults.openai.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.openai.message}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -2007,6 +2012,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Get key at <a href="https://console.anthropic.com/" target="_blank" className="text-blue-600 underline">console.anthropic.com</a>
                   </p>
+                  {testResults.anthropic && (
+                    <p className={`text-sm mt-1 ${testResults.anthropic.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.anthropic.message}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -2032,6 +2042,11 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Get key at <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-600 underline">aistudio.google.com</a>
                   </p>
+                  {testResults.gemini && (
+                    <p className={`text-sm mt-1 ${testResults.gemini.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.gemini.message}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
