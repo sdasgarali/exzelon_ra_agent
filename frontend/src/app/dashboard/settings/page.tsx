@@ -745,10 +745,11 @@ export default function SettingsPage() {
         ]
       case 'openai':
         return [
-          { value: 'gpt-4o', label: 'GPT-4o (Recommended)' },
-          { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Faster)' },
-          { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-          { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+          { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (Cheapest - Recommended)' },
+          { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini (Balanced)' },
+          { value: 'gpt-4.1', label: 'GPT-4.1 (Best Quality)' },
+          { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Legacy)' },
+          { value: 'gpt-4o', label: 'GPT-4o (Legacy)' },
         ]
       case 'anthropic':
         return [
@@ -1863,7 +1864,7 @@ export default function SettingsPage() {
                   className="input"
                 >
                   <option value="groq">Groq (Free & Fast - Recommended)</option>
-                  <option value="openai">OpenAI (GPT-4)</option>
+                  <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic (Claude)</option>
                   <option value="gemini">Google (Gemini)</option>
                 </select>
