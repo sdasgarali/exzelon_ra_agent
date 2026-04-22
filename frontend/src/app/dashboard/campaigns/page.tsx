@@ -280,6 +280,11 @@ export default function CampaignsPage() {
   const [spintaxVariants, setSpintaxVariants] = useState<string[]>([])
   const [loadingSpintax, setLoadingSpintax] = useState(false)
 
+  // AI Personalization Preview
+  const [aiPreviewResults, setAiPreviewResults] = useState<any[] | null>(null)
+  const [aiPreviewLoading, setAiPreviewLoading] = useState(false)
+  const [showAIPreviewModal, setShowAIPreviewModal] = useState(false)
+
   // Template selection for step modal
   const [stepTemplates, setStepTemplates] = useState<any[]>([])
   const [stepTemplatesLoading, setStepTemplatesLoading] = useState(false)
@@ -3674,6 +3679,30 @@ export default function CampaignsPage() {
                         >
                           <Shuffle className="w-4 h-4 text-orange-500" />
                         </button>
+                        <button
+                          onClick={async () => {
+                            if (!selectedCampaign) return
+                            setAiPreviewLoading(true)
+                            setAiPreviewResults(null)
+                            setShowAIPreviewModal(true)
+                            try {
+                              const res = await emailPreviewApi.previewPersonalization({
+                                campaign_id: selectedCampaign.campaign_id,
+                                step_index: step.step_order,
+                              })
+                              setAiPreviewResults(res.results || [])
+                            } catch (err: any) {
+                              setAiPreviewResults([])
+                              console.error('AI Preview error:', err)
+                            } finally {
+                              setAiPreviewLoading(false)
+                            }
+                          }}
+                          className="p-1 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded"
+                          title="AI Personalization Preview"
+                        >
+                          <Sparkles className="w-4 h-4 text-purple-500" />
+                        </button>
                       </>
                     )}
                     <button onClick={() => openStepModal(step)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
@@ -5406,6 +5435,64 @@ export default function CampaignsPage() {
                   <div key={i} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
                     <div className="text-xs text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
                     <div className="text-sm text-gray-700 dark:text-gray-300" dangerouslySetInnerHTML={{ __html: v }} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* AI Personalization Preview Modal */}
+      {showAIPreviewModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowAIPreviewModal(false)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[900px] max-w-[95vw] max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-500" />
+                AI Personalization Preview
+              </h3>
+              <button onClick={() => setShowAIPreviewModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            {aiPreviewLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+                <p className="text-sm text-gray-500">Generating AI personalized previews...</p>
+              </div>
+            ) : !aiPreviewResults || aiPreviewResults.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-8">No contacts available for preview. Enroll contacts in this campaign first.</p>
+            ) : (
+              <div className="space-y-4">
+                {aiPreviewResults.map((r: any) => (
+                  <div key={r.contact_id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-2 bg-gray-50 dark:bg-gray-700/50">
+                      <span className="font-medium text-sm">{r.contact_name}{r.contact_company ? ` — ${r.contact_company}` : ''}</span>
+                      <div className="flex items-center gap-2">
+                        {r.ai_used ? (
+                          <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full">{r.tokens_used} tokens</span>
+                        ) : (
+                          <span className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 px-2 py-0.5 rounded-full">AI skipped</span>
+                        )}
+                      </div>
+                    </div>
+                    {r.ai_error && !r.ai_used && (
+                      <div className="px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
+                        <p className="text-xs text-yellow-700 dark:text-yellow-300">AI error: {r.ai_error}</p>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 divide-x divide-gray-200 dark:divide-gray-700">
+                      <div className="p-4">
+                        <div className="text-xs font-medium text-gray-400 uppercase mb-2">Original</div>
+                        <div className="text-xs text-gray-500 mb-1">Subject: <span className="text-gray-800 dark:text-gray-200">{r.original.subject}</span></div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 mt-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: r.original.body_html }} />
+                      </div>
+                      <div className="p-4">
+                        <div className="text-xs font-medium text-purple-500 uppercase mb-2">AI Personalized</div>
+                        <div className="text-xs text-gray-500 mb-1">Subject: <span className="text-gray-800 dark:text-gray-200">{r.personalized.subject}</span></div>
+                        <div className="text-sm text-gray-700 dark:text-gray-300 mt-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: r.personalized.body_html }} />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

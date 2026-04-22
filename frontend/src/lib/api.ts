@@ -1624,6 +1624,10 @@ export const emailPreviewApi = {
     const response = await api.delete('/email-preview/drafts/bulk', { data: { draft_ids: draftIds } })
     return response.data
   },
+  previewPersonalization: async (data: { campaign_id: number; step_index: number; contact_ids?: number[] }) => {
+    const response = await api.post('/email-preview/preview-personalization', data)
+    return response.data
+  },
 }
 
 export const deliverabilityApi = {

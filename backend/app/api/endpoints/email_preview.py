@@ -15,6 +15,7 @@ from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.sender_mailbox import SenderMailbox
+from app.db.models.campaign import Campaign, SequenceStep, CampaignContact
 
 router = APIRouter(prefix="/email-preview", tags=["email-preview"])
 
@@ -53,6 +54,11 @@ class DeliverabilityRequest(BaseModel):
 class SpamCheckRequest(BaseModel):
     subject: str
     body_html: str
+
+class PreviewPersonalizationRequest(BaseModel):
+    campaign_id: int
+    step_index: int = 0
+    contact_ids: Optional[List[int]] = None
 
 class SpamFixRequest(BaseModel):
     replacements: List[dict] = Field(..., description="List of {original, replacement}")
@@ -333,6 +339,141 @@ def spam_check(
     from app.services.email_preview_service import check_spam_and_suggest
     result = check_spam_and_suggest(data.subject, data.body_html, db, tenant_id or 1)
     return result
+
+
+@router.post("/preview-personalization")
+@limiter.limit("20/hour")
+def preview_personalization(
+    request: Request,
+    data: PreviewPersonalizationRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Preview AI personalization for a campaign step across multiple contacts."""
+    from app.services.ai_personalizer import personalize_email_for_contact
+    from app.services.spintax import process_spintax
+
+    tid = tenant_id or 1
+
+    # Load campaign
+    campaign = tenant_filter(
+        db.query(Campaign), Campaign, tenant_id
+    ).filter(Campaign.campaign_id == data.campaign_id).first()
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    # Load step by step_order
+    step = db.query(SequenceStep).filter(
+        SequenceStep.campaign_id == campaign.campaign_id,
+        SequenceStep.step_order == data.step_index,
+    ).first()
+    if not step:
+        raise HTTPException(404, f"Step at index {data.step_index} not found")
+    if not step.subject or not step.body_html:
+        raise HTTPException(400, "Step has no email content to personalize")
+
+    # Resolve contacts
+    if data.contact_ids:
+        contacts = db.query(ContactDetails).filter(
+            ContactDetails.contact_id.in_(data.contact_ids),
+        ).all()
+        if tenant_id is not None:
+            contacts = [c for c in contacts if c.tenant_id == tid]
+    else:
+        # Auto-pick first 3 enrolled contacts
+        cc_rows = db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == campaign.campaign_id,
+        ).limit(3).all()
+        contact_ids_list = [cc.contact_id for cc in cc_rows]
+        contacts = db.query(ContactDetails).filter(
+            ContactDetails.contact_id.in_(contact_ids_list),
+        ).all() if contact_ids_list else []
+
+    if not contacts:
+        raise HTTPException(400, "No contacts found for preview")
+
+    results = []
+    for contact in contacts:
+        # Load associated lead
+        lead = None
+        cc_row = db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == campaign.campaign_id,
+            CampaignContact.contact_id == contact.contact_id,
+        ).first()
+        if cc_row and cc_row.lead_id:
+            lead = db.query(LeadDetails).filter(
+                LeadDetails.lead_id == cc_row.lead_id,
+            ).first()
+        if not lead and contact.lead_id:
+            lead = db.query(LeadDetails).filter(
+                LeadDetails.lead_id == contact.lead_id,
+            ).first()
+
+        # Process spintax
+        subject = process_spintax(step.subject or "", seed=contact.contact_id, campaign_id=campaign.campaign_id)
+        body_html = process_spintax(step.body_html or "", seed=contact.contact_id, campaign_id=campaign.campaign_id)
+        body_text = process_spintax(step.body_text or step.body_html or "", seed=contact.contact_id, campaign_id=campaign.campaign_id)
+
+        # Placeholder substitution
+        _job_title = (lead.job_title if lead and lead.job_title else "")
+        _job_location = (lead.state if lead and lead.state else "")
+        _company = (lead.client_name if lead and lead.client_name else (contact.client_name or ""))
+        _placeholders = {
+            "{{contact_first_name}}": contact.first_name or "",
+            "{{contact_last_name}}": contact.last_name or "",
+            "{{company_name}}": _company,
+            "{{contact_title}}": contact.title or "",
+            "{{job_title}}": _job_title,
+            "{{job_location}}": _job_location,
+        }
+        try:
+            from jinja2 import Template as Jinja2Template
+            ctx = {
+                "contact_first_name": contact.first_name or "",
+                "contact_last_name": contact.last_name or "",
+                "company_name": _company,
+                "contact_title": contact.title or "",
+                "job_title": _job_title,
+                "job_location": _job_location,
+                "contact": {"first_name": contact.first_name or "", "last_name": contact.last_name or "", "title": contact.title or "", "email": contact.email or "", "company": contact.client_name or ""},
+                "lead": {"job_title": _job_title, "location": _job_location, "company": _company},
+            }
+            subject = Jinja2Template(subject).render(**ctx)
+            body_html = Jinja2Template(body_html).render(**ctx)
+            body_text = Jinja2Template(body_text).render(**ctx)
+        except Exception:
+            pass
+        for ph, val in _placeholders.items():
+            subject = subject.replace(ph, val)
+            body_html = body_html.replace(ph, val)
+            body_text = body_text.replace(ph, val)
+
+        original = {"subject": subject, "body_html": body_html, "body_text": body_text}
+
+        # AI personalization
+        ai_result = personalize_email_for_contact(
+            db=db, tenant_id=tid,
+            subject=subject, body_html=body_html, body_text=body_text,
+            contact=contact, lead=lead,
+        )
+
+        results.append({
+            "contact_id": contact.contact_id,
+            "contact_name": f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
+            "contact_company": contact.client_name or "",
+            "original": original,
+            "personalized": {
+                "subject": ai_result.get("subject", subject),
+                "body_html": ai_result.get("body_html", body_html),
+                "body_text": ai_result.get("body_text", body_text),
+            },
+            "ai_used": ai_result.get("ai_used", False),
+            "tokens_used": ai_result.get("tokens_used", 0),
+            "ai_error": ai_result.get("ai_error"),
+        })
+
+    return {"results": results, "campaign_id": campaign.campaign_id, "step_index": data.step_index}
 
 
 @router.post("/drafts/{draft_id}/spam-fix")
