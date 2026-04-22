@@ -20,15 +20,16 @@ class OpenAIAdapter(AIAdapter):
 
     BASE_URL = "https://api.openai.com/v1"
 
-    # Available models
+    # Available models (updated April 2026)
     MODELS = {
-        "gpt-4o": "GPT-4o - Best quality, multimodal",
-        "gpt-4o-mini": "GPT-4o Mini - Fast and affordable",
-        "gpt-4-turbo": "GPT-4 Turbo - High quality",
-        "gpt-3.5-turbo": "GPT-3.5 Turbo - Fast and economical",
+        "gpt-4.1-nano": "GPT-4.1 Nano - Cheapest, fast, 1M context ($0.10/M in)",
+        "gpt-4.1-mini": "GPT-4.1 Mini - Balanced quality/cost, 1M context ($0.20/M in)",
+        "gpt-4.1": "GPT-4.1 - Best quality, 1M context ($2.00/M in)",
+        "gpt-4o-mini": "GPT-4o Mini - Legacy, fast and affordable ($0.15/M in)",
+        "gpt-4o": "GPT-4o - Legacy, multimodal ($2.50/M in)",
     }
 
-    DEFAULT_MODEL = "gpt-4o-mini"
+    DEFAULT_MODEL = "gpt-4.1-nano"
 
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or getattr(settings, 'OPENAI_API_KEY', None)
