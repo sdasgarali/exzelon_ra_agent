@@ -50,6 +50,8 @@ interface AIConfig {
   anthropic_api_key: string
   gemini_api_key: string
   ai_model: string
+  ai_personalize_emails: string
+  ai_personalization_prompt: string
 }
 
 interface ContactConfig {
@@ -155,6 +157,35 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
   'employment agency', 'executive search firm'
 ]
 
+const DEFAULT_AI_PERSONALIZATION_PROMPT = `You are an expert cold email personalizer for a staffing/recruitment agency.
+
+Rewrite the given email to be uniquely personalized for this specific contact.
+
+RULES:
+1. Use the contact's profile naturally (name, title, company, industry, location, job context)
+2. Maintain the core message, value proposition, and CTA from the original
+3. Keep under 120 words — shorter is more human
+4. Write as a busy sales pro typing between meetings
+5. Vary sentence length — mix short (3-5 words) with longer ones
+6. Include one natural imperfection (dash, ellipsis, parenthetical)
+7. NEVER use: "I hope this finds you well", "reaching out", "cutting-edge", "synergy"
+8. Use first-person observations: "I noticed", "I saw that"
+9. Reference something specific about THEIR situation
+10. Short paragraphs (1-2 sentences)
+
+ANTI-AI-DETECTION:
+- Write like a slightly rushed but professional human
+- Mix contractions inconsistently
+- Avoid uniform sentence length
+- One imperfection makes it authentic
+
+OUTPUT FORMAT (strict):
+SUBJECT: [rewritten subject, under 50 chars]
+---
+[email body as HTML with <p> tags only]
+---
+[email body as plain text]`
+
 // Tab ID to permission key mapping
 const TAB_PERM_MAP: Record<string, string> = {
   jobfilters: 'job_filters',
@@ -182,6 +213,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   jooble_api_key: 'job_source_apis', jobdatafeeds_api_key: 'job_source_apis', coresignal_api_key: 'job_source_apis',
   ai_provider: 'ai_llm', groq_api_key: 'ai_llm', openai_api_key: 'ai_llm',
   anthropic_api_key: 'ai_llm', gemini_api_key: 'ai_llm', ai_model: 'ai_llm',
+  ai_personalize_emails: 'ai_llm', ai_personalization_prompt: 'ai_llm',
   contact_provider: 'contacts', contact_providers: 'contacts', seamless_api_key: 'contacts',
   email_validation_provider: 'validation', neverbounce_api_key: 'validation',
   zerobounce_api_key: 'validation', hunter_api_key: 'validation', clearout_api_key: 'validation',
@@ -269,6 +301,8 @@ export default function SettingsPage() {
     anthropic_api_key: '',
     gemini_api_key: '',
     ai_model: 'llama-3.1-70b-versatile',
+    ai_personalize_emails: 'yes',
+    ai_personalization_prompt: DEFAULT_AI_PERSONALIZATION_PROMPT,
   })
 
   // Contact configuration
@@ -467,6 +501,8 @@ export default function SettingsPage() {
         anthropic_api_key: settingsMap.anthropic_api_key || '',
         gemini_api_key: settingsMap.gemini_api_key || '',
         ai_model: settingsMap.ai_model || 'llama-3.1-70b-versatile',
+        ai_personalize_emails: settingsMap.ai_personalize_emails || 'yes',
+        ai_personalization_prompt: settingsMap.ai_personalization_prompt || DEFAULT_AI_PERSONALIZATION_PROMPT,
       }))
 
       setContactConfig(prev => ({
@@ -631,6 +667,8 @@ export default function SettingsPage() {
           saveSetting('anthropic_api_key', aiConfig.anthropic_api_key),
           saveSetting('gemini_api_key', aiConfig.gemini_api_key),
           saveSetting('ai_model', aiConfig.ai_model),
+          saveSetting('ai_personalize_emails', aiConfig.ai_personalize_emails),
+          saveSetting('ai_personalization_prompt', aiConfig.ai_personalization_prompt),
         ])
       } else if (configType === 'contacts') {
         await Promise.all([
@@ -2007,6 +2045,55 @@ export default function SettingsPage() {
                 <li>- Contact research and enrichment</li>
                 <li>- Response analysis and sentiment detection</li>
               </ul>
+            </div>
+
+            {/* AI Email Personalization */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h4 className="font-semibold text-gray-800 mb-1">AI Email Personalization</h4>
+              <p className="text-sm text-gray-500 mb-4">
+                When enabled, each outreach email is rewritten by AI at send time using the contact&apos;s profile to create unique, human-sounding variations.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enable AI Personalization</label>
+                <select
+                  className="input-field w-48"
+                  value={aiConfig.ai_personalize_emails}
+                  onChange={(e) => setAIConfig({ ...aiConfig, ai_personalize_emails: e.target.value })}
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+
+              {aiConfig.ai_personalize_emails === 'yes' && (
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium text-gray-700">Personalization Prompt</label>
+                      <button
+                        type="button"
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                        onClick={() => setAIConfig({ ...aiConfig, ai_personalization_prompt: DEFAULT_AI_PERSONALIZATION_PROMPT })}
+                      >
+                        Reset to Default
+                      </button>
+                    </div>
+                    <textarea
+                      className="input-field w-full font-mono text-xs"
+                      rows={16}
+                      value={aiConfig.ai_personalization_prompt}
+                      onChange={(e) => setAIConfig({ ...aiConfig, ai_personalization_prompt: e.target.value })}
+                      placeholder="Enter your personalization prompt..."
+                    />
+                  </div>
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-700">
+                      AI personalization uses ~300-500 tokens per email. Requires an AI provider with a valid API key configured above.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

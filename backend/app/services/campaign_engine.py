@@ -502,6 +502,31 @@ def _execute_email_step(
         body_html = body_html.replace(ph, val)
         body_text = body_text.replace(ph, val)
 
+    # --- AI Personalization (if enabled) ---
+    try:
+        from app.services.ai_personalizer import personalize_email_for_contact
+        ai_result = personalize_email_for_contact(
+            db=db, tenant_id=campaign.tenant_id,
+            subject=subject, body_html=body_html, body_text=body_text,
+            contact=contact, lead=contact_lead,
+        )
+        if ai_result.get("ai_used"):
+            subject = ai_result["subject"]
+            body_html = ai_result["body_html"]
+            body_text = ai_result["body_text"]
+    except Exception:
+        pass  # Continue with original content
+
+    # --- Email Humanizer (anti-AI-detection pass) ---
+    try:
+        from app.services.email_humanizer import humanize_email
+        humanized = humanize_email(subject, body_html, body_text, intensity="medium")
+        subject = humanized["subject"]
+        body_html = humanized["body_html"]
+        body_text = humanized["body_text"]
+    except Exception:
+        pass
+
     # Content uniqueness check (monitoring-only -- log but don't block)
     try:
         from app.services.content_fingerprint import check_content_uniqueness

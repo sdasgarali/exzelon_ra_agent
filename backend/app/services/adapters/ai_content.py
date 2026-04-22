@@ -7,11 +7,14 @@ from app.core.settings_resolver import get_tenant_setting
 def get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
     """Load configured AI provider from settings.
 
-    Reads `warmup_ai_provider`, the corresponding API key, and optionally
-    `ai_model` from the settings table, then returns the matching adapter
-    instance.  Returns None when no API key is configured.
+    Reads `ai_provider` (with fallback to legacy `warmup_ai_provider`),
+    the corresponding API key, and optionally `ai_model` from the settings
+    table, then returns the matching adapter instance.  Returns None when
+    no API key is configured.
     """
-    provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
+    provider = get_tenant_setting(db, "ai_provider", tenant_id=tenant_id, default=None)
+    if not provider:
+        provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
     model = get_tenant_setting(db, "ai_model", tenant_id=tenant_id, default="")
     api_key_map = {
         "groq": "groq_api_key",

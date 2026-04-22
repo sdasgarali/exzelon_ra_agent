@@ -61,6 +61,8 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'anthropic_api_key': 'ai_llm',
     'gemini_api_key': 'ai_llm',
     'ai_model': 'ai_llm',
+    'ai_personalize_emails': 'ai_llm',
+    'ai_personalization_prompt': 'ai_llm',
     # Contacts
     'contact_provider': 'contacts',
     'contact_providers': 'contacts',

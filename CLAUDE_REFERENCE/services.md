@@ -168,6 +168,7 @@ Domain reputation management subsystem:
 |---------|------|---------|
 | Bounce Handler | `services/bounce_handler.py` | SMTP 5xx auto-suppress + contact INACTIVE |
 | ESP Feedback | `services/esp_feedback.py` | Complaint rate tracking, auto-pause on 0.3% threshold |
+| AI Personalizer | `services/ai_personalizer.py` | Per-contact AI email rewriting at send time — `personalize_email_for_contact()` uses configured AI adapter to rewrite emails with contact profile data. Controlled by `ai_personalize_emails` and `ai_personalization_prompt` settings. Graceful fallback on failure. |
 | Email Humanizer | `services/email_humanizer.py` | Anti-AI detection (burstiness, sentence variation) |
 | DKIM Signer | `services/dkim_signer.py` | Optional DKIM for custom SMTP |
 | Engagement Tracker | `services/engagement_tracker.py` | Multi-signal scoring (reply > click > pixel) |
