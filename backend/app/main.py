@@ -1442,17 +1442,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for tenant website/industry: {e}")
 
-    # Migration: add company_address column to tenants
+    # Migration: add company_address, phone, contact_email columns to tenants
     try:
         from sqlalchemy import text as sa_text_tca, inspect as sa_inspect_tca
         with engine.connect() as conn:
             tenant_cols_ca = [c["name"] for c in sa_inspect_tca(engine).get_columns("tenants")]
-            if "company_address" not in tenant_cols_ca:
-                conn.execute(sa_text_tca("ALTER TABLE tenants ADD COLUMN company_address VARCHAR(500) NULL"))
-                conn.commit()
-                logger.info("Migration: added company_address to tenants")
+            for col_name, col_def in [
+                ("company_address", "VARCHAR(500) NULL"),
+                ("phone", "VARCHAR(50) NULL"),
+                ("contact_email", "VARCHAR(255) NULL"),
+            ]:
+                if col_name not in tenant_cols_ca:
+                    try:
+                        conn.execute(sa_text_tca(f"ALTER TABLE tenants ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to tenants")
+                    except Exception:
+                        pass
     except Exception as e:
-        logger.warning(f"Migration check for tenant company_address: {e}")
+        logger.warning(f"Migration check for tenant contact columns: {e}")
 
     # Migration: cleanup orphaned campaign_contacts for archived campaigns
     # and reset lead_status to 'enriched' for leads no longer in any active campaign

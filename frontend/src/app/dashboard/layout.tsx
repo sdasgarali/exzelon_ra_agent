@@ -50,6 +50,8 @@ import {
   HelpCircle,
   Eye,
   FileSearch,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react'
 
 const navigation = [
@@ -109,6 +111,7 @@ export default function DashboardLayout({
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const [tenantList, setTenantList] = useState<TenantSummary[]>([])
@@ -128,6 +131,8 @@ export default function DashboardLayout({
   // Handle mounting to avoid hydration mismatch
   useEffect(() => {
     setMounted(true)
+    const saved = localStorage.getItem('sidebar_collapsed')
+    if (saved === 'true') setSidebarCollapsed(true)
   }, [])
 
   useEffect(() => {
@@ -173,6 +178,13 @@ export default function DashboardLayout({
     setSidebarOpen(false)
   }, [pathname])
 
+  const toggleSidebarCollapse = () => {
+    const next = !sidebarCollapsed
+    setSidebarCollapsed(next)
+    localStorage.setItem('sidebar_collapsed', String(next))
+    setProfileOpen(false)
+  }
+
   const handleLogout = () => {
     logout()
     router.push('/login')
@@ -212,149 +224,202 @@ export default function DashboardLayout({
     )
   }
 
-  const sidebarContent = (
-    <>
-      <div className="p-4 border-b border-gray-700">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">NeuraLeads</h1>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden text-gray-400 hover:text-white"
-            aria-label="Close sidebar"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        {user?.role === 'super_admin' ? (
-          <select
-            value={impersonation?.tenantId?.toString() || ''}
-            onChange={(e) => handleTenantSwitch(e.target.value)}
-            disabled={tenantLoading}
-            className="mt-2 w-full bg-gray-800 text-gray-300 text-sm border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 cursor-pointer disabled:opacity-50"
-          >
-            <option value="">All Tenants</option>
-            {tenantList.filter(t => t.is_active).map(t => (
-              <option key={t.tenant_id} value={t.tenant_id.toString()}>
-                {t.name} ({t.plan})
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p className="text-gray-400 text-sm mt-1 truncate">
-            {user?.tenant?.name || 'Admin Panel'}
-          </p>
-        )}
-      </div>
+  // isCollapsed only applies on desktop; mobile sidebar is always expanded
+  const isCollapsed = sidebarCollapsed && mounted
 
-      <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation" data-tour="sidebar">
-        {navigation.filter(item => {
-          if (item.roles && !item.roles.includes(user?.role || 'viewer')) return false
-          return true
-        }).map((item) => {
-          const isActive = item.href === '/dashboard'
-            ? pathname === '/dashboard'
-            : pathname.startsWith(item.href)
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              aria-current={isActive ? 'page' : undefined}
-              data-tour={item.tourId || undefined}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                isActive
-                  ? 'bg-primary-600 text-white font-medium'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`}
+  const sidebarContent = (isMobileOverlay: boolean) => {
+    const collapsed = isCollapsed && !isMobileOverlay
+    return (
+      <>
+        <div className={`border-b border-gray-700 ${collapsed ? 'p-2' : 'p-4'}`}>
+          <div className="flex items-center justify-between">
+            {collapsed ? (
+              <div className="w-full flex justify-center">
+                <span className="text-lg font-bold">N</span>
+              </div>
+            ) : (
+              <h1 className="text-xl font-bold">NeuraLeads</h1>
+            )}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden text-gray-400 hover:text-white"
+              aria-label="Close sidebar"
             >
-              <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : item.iconColor}`} aria-hidden="true" />
-              {item.name}
-              {item.name === 'Warmup Engine' && unreadAlerts > 0 && (
-                <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center" aria-label={`${unreadAlerts} unread alerts`}>{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
-              )}
-            </Link>
-          )
-        })}
-      </nav>
-
-      <div ref={profileRef} className="p-4 border-t border-gray-700 relative">
-        {/* Notification bell + Cmd+K hint (desktop) */}
-        <div className="hidden lg:flex items-center gap-2 mb-3 px-2">
-          <div className="[&_button]:text-gray-400 [&_button]:hover:text-white [&_button:hover]:bg-gray-700">
-            <NotificationCenter />
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
-            className="flex items-center gap-2 flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
-            title="Command Palette"
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span>Search...</span>
-            <kbd className="ml-auto text-[10px] font-mono bg-gray-700 px-1 py-0.5 rounded">Ctrl+K</kbd>
-          </button>
+          {!collapsed && user?.role === 'super_admin' ? (
+            <select
+              value={impersonation?.tenantId?.toString() || ''}
+              onChange={(e) => handleTenantSwitch(e.target.value)}
+              disabled={tenantLoading}
+              className="mt-2 w-full bg-gray-800 text-gray-300 text-sm border border-gray-600 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 cursor-pointer disabled:opacity-50"
+            >
+              <option value="">All Tenants</option>
+              {tenantList.filter(t => t.is_active).map(t => (
+                <option key={t.tenant_id} value={t.tenant_id.toString()}>
+                  {t.name} ({t.plan})
+                </option>
+              ))}
+            </select>
+          ) : !collapsed ? (
+            <p className="text-gray-400 text-sm mt-1 truncate">
+              {user?.tenant?.name || 'Admin Panel'}
+            </p>
+          ) : null}
         </div>
-        {/* Clickable user profile trigger */}
-        <button
-          onClick={() => setProfileOpen(!profileOpen)}
-          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
-        >
-          <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
-            {user?.email?.[0]?.toUpperCase() || 'U'}
-          </div>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-            <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
-          </div>
-          <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-        </button>
 
-        {/* Profile dropdown popover */}
-        {profileOpen && (
-          <div className="absolute bottom-full left-4 right-4 mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
-            {/* User details */}
-            <div className="p-4 border-b border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-lg font-semibold" aria-hidden="true">
+        <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? 'p-2' : 'p-4'}`} aria-label="Main navigation" data-tour="sidebar">
+          {navigation.filter(item => {
+            if (item.roles && !item.roles.includes(user?.role || 'viewer')) return false
+            return true
+          }).map((item) => {
+            const isActive = item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname.startsWith(item.href)
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                data-tour={item.tourId || undefined}
+                title={collapsed ? item.name : undefined}
+                className={`flex items-center gap-3 rounded-lg transition-colors relative group ${
+                  collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2'
+                } ${
+                  isActive
+                    ? 'bg-primary-600 text-white font-medium'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
+              >
+                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-white' : item.iconColor}`} aria-hidden="true" />
+                {!collapsed && item.name}
+                {!collapsed && item.name === 'Warmup Engine' && unreadAlerts > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center" aria-label={`${unreadAlerts} unread alerts`}>{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
+                )}
+                {collapsed && item.name === 'Warmup Engine' && unreadAlerts > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
+                )}
+                {/* Tooltip on hover when collapsed */}
+                {collapsed && (
+                  <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[60]">
+                    {item.name}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div ref={profileRef} className={`border-t border-gray-700 relative ${collapsed ? 'p-2' : 'p-4'}`}>
+          {/* Collapse toggle button (desktop only) */}
+          <button
+            onClick={toggleSidebarCollapse}
+            className={`hidden lg:flex items-center justify-center w-full py-1.5 mb-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors ${collapsed ? 'px-0' : 'px-2'}`}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+            {!collapsed && <span className="ml-2 text-xs">Collapse</span>}
+          </button>
+
+          {/* Notification bell + Cmd+K hint (desktop, expanded only) */}
+          {!collapsed && (
+            <div className="hidden lg:flex items-center gap-2 mb-3 px-2">
+              <div className="[&_button]:text-gray-400 [&_button]:hover:text-white [&_button:hover]:bg-gray-700">
+                <NotificationCenter />
+              </div>
+              <button
+                onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
+                className="flex items-center gap-2 flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
+                title="Command Palette"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search...</span>
+                <kbd className="ml-auto text-[10px] font-mono bg-gray-700 px-1 py-0.5 rounded">Ctrl+K</kbd>
+              </button>
+            </div>
+          )}
+
+          {/* Collapsed: just show avatar with tooltip */}
+          {collapsed ? (
+            <div className="relative group">
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className="w-full flex justify-center p-1 rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
                   {user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-                  <p className="text-xs text-gray-400 truncate">{user?.email}</p>
-                  <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
-                    {user?.role?.replace('_', ' ')}
-                  </span>
+              </button>
+              <span className="absolute left-full ml-2 bottom-0 px-2 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[60]">
+                {user?.full_name || user?.email}
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setProfileOpen(!profileOpen)}
+              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+            >
+              <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                {user?.email?.[0]?.toUpperCase() || 'U'}
+              </div>
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
+                <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
+              </div>
+              <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+            </button>
+          )}
+
+          {/* Profile dropdown popover */}
+          {profileOpen && (
+            <div className={`absolute bottom-full mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden ${collapsed ? 'left-full ml-2 w-56 bottom-0' : 'left-4 right-4'}`}>
+              {/* User details */}
+              <div className="p-4 border-b border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-lg font-semibold" aria-hidden="true">
+                    {user?.email?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
+                    <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+                    <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
+                      {user?.role?.replace('_', ' ')}
+                    </span>
+                  </div>
                 </div>
               </div>
+              {/* Actions */}
+              <div className="p-2">
+                <button
+                  onClick={() => { toggleTheme(); setProfileOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+                >
+                  {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                  {theme === 'light' ? 'Dark mode' : 'Light mode'}
+                </button>
+                <button
+                  onClick={() => { setHelpOpen(true); setProfileOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+                >
+                  <Keyboard className="w-4 h-4" />
+                  Keyboard shortcuts
+                </button>
+                <div className="border-t border-gray-700 my-1" />
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </button>
+              </div>
             </div>
-            {/* Actions */}
-            <div className="p-2">
-              <button
-                onClick={() => { toggleTheme(); setProfileOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
-              >
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-                {theme === 'light' ? 'Dark mode' : 'Light mode'}
-              </button>
-              <button
-                onClick={() => { setHelpOpen(true); setProfileOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
-              >
-                <Keyboard className="w-4 h-4" />
-                Keyboard shortcuts
-              </button>
-              <div className="border-t border-gray-700 my-1" />
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-lg transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign out
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  )
+          )}
+        </div>
+      </>
+    )
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -369,13 +434,22 @@ export default function DashboardLayout({
       )}
 
       {/* Sidebar - hidden on mobile, always visible on desktop */}
+      {/* Mobile sidebar (always full-width w-64) */}
       <div className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white flex flex-col
         transform transition-transform duration-200 ease-in-out
-        lg:relative lg:translate-x-0
+        lg:hidden
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        {sidebarContent}
+        {sidebarContent(true)}
+      </div>
+      {/* Desktop sidebar (collapsible) */}
+      <div className={`
+        hidden lg:flex flex-col bg-gray-900 text-white flex-shrink-0
+        transition-[width] duration-200 ease-in-out
+        ${isCollapsed ? 'w-16' : 'w-64'}
+      `}>
+        {sidebarContent(false)}
       </div>
 
       {/* Main content */}

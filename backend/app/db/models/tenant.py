@@ -48,6 +48,8 @@ class Tenant(Base):
     website = Column(String(500), nullable=True)
     industry = Column(String(100), nullable=True)
     company_address = Column(String(500), nullable=True)
+    phone = Column(String(50), nullable=True)
+    contact_email = Column(String(255), nullable=True)
 
     # Billing
     monthly_price_cents = Column(Integer, default=0, nullable=False)

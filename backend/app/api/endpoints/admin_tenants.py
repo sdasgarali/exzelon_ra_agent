@@ -17,6 +17,7 @@ from app.api.deps.auth import get_current_active_user, require_role, UserRole
 from app.core.security import create_access_token
 from app.core.config import settings
 from app.services.audit_helper import write_audit_log
+from app.services.tenant_service import generate_unique_slug
 from app.core.settings_resolver import get_tenant_setting_bool, set_tenant_setting
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
@@ -33,6 +34,9 @@ class TenantSummary(BaseModel):
     is_active: bool
     website: Optional[str] = None
     industry: Optional[str] = None
+    company_address: Optional[str] = None
+    phone: Optional[str] = None
+    contact_email: Optional[str] = None
     user_count: int
     lead_count: int
     contact_count: int
@@ -55,6 +59,21 @@ class TenantDetail(TenantSummary):
     users: list = []
 
 
+class TenantCreate(BaseModel):
+    name: str
+    plan: str = "starter"
+    website: Optional[str] = None
+    industry: Optional[str] = None
+    company_address: Optional[str] = None
+    phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    max_users: int = 3
+    max_mailboxes: int = 0
+    max_contacts: int = 0
+    max_campaigns: int = 0
+    max_leads: int = 0
+
+
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
     plan: Optional[str] = None
@@ -67,6 +86,8 @@ class TenantUpdate(BaseModel):
     website: Optional[str] = None
     industry: Optional[str] = None
     company_address: Optional[str] = None
+    phone: Optional[str] = None
+    contact_email: Optional[str] = None
 
 
 @router.get("", response_model=List[TenantSummary])
@@ -96,6 +117,9 @@ async def list_tenants(
             is_active=t.is_active,
             website=t.website,
             industry=t.industry,
+            company_address=t.company_address,
+            phone=t.phone,
+            contact_email=t.contact_email,
             user_count=db.query(User).filter(User.tenant_id == t.tenant_id).count(),
             lead_count=db.query(LeadDetails).filter(LeadDetails.tenant_id == t.tenant_id).count(),
             contact_count=db.query(ContactDetails).filter(ContactDetails.tenant_id == t.tenant_id).count(),
@@ -105,6 +129,58 @@ async def list_tenants(
         ))
 
     return result
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+async def create_tenant(
+    data: TenantCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Create a new tenant. Super admin only."""
+    if not data.name or not data.name.strip():
+        raise HTTPException(status_code=400, detail="Tenant name is required")
+
+    try:
+        plan = TenantPlan(data.plan)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid plan: {data.plan}")
+
+    slug = generate_unique_slug(data.name, db)
+
+    tenant = Tenant(
+        name=data.name.strip(),
+        slug=slug,
+        plan=plan,
+        website=data.website or None,
+        industry=data.industry or None,
+        company_address=data.company_address or None,
+        phone=data.phone or None,
+        contact_email=data.contact_email or None,
+        max_users=data.max_users,
+        max_mailboxes=data.max_mailboxes,
+        max_contacts=data.max_contacts,
+        max_campaigns=data.max_campaigns,
+        max_leads=data.max_leads,
+    )
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+
+    write_audit_log(
+        db, tenant_id=tenant.tenant_id, entity_type="tenant",
+        entity_id=tenant.tenant_id, action="tenant_created",
+        changed_by=current_user.email,
+        notes=f"name={tenant.name}, plan={plan.value}",
+    )
+    db.commit()
+
+    return {
+        "message": f"Tenant '{tenant.name}' created",
+        "tenant_id": tenant.tenant_id,
+        "slug": tenant.slug,
+        "plan": plan.value,
+    }
 
 
 @router.get("/{tenant_id}", response_model=TenantDetail)
@@ -140,6 +216,9 @@ async def get_tenant(
         is_active=tenant.is_active,
         website=tenant.website,
         industry=tenant.industry,
+        company_address=tenant.company_address,
+        phone=tenant.phone,
+        contact_email=tenant.contact_email,
         domain=tenant.domain,
         logo_url=tenant.logo_url,
         max_users=tenant.max_users,
@@ -194,6 +273,10 @@ async def update_tenant(
         tenant.industry = data.industry
     if data.company_address is not None:
         tenant.company_address = data.company_address
+    if data.phone is not None:
+        tenant.phone = data.phone
+    if data.contact_email is not None:
+        tenant.contact_email = data.contact_email
 
     db.commit()
     db.refresh(tenant)

@@ -1414,6 +1414,10 @@ export const tenantsApi = {
     const response = await api.get('/admin/tenants', { params })
     return response.data
   },
+  create: async (data: Record<string, any>) => {
+    const response = await api.post('/admin/tenants', data)
+    return response.data
+  },
   get: async (id: number) => {
     const response = await api.get(`/admin/tenants/${id}`)
     return response.data

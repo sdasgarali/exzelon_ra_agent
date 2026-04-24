@@ -436,6 +436,9 @@ export interface TenantSummary {
   is_active: boolean;
   website: string | null;
   industry: string | null;
+  company_address: string | null;
+  phone: string | null;
+  contact_email: string | null;
   user_count: number;
   lead_count: number;
   contact_count: number;

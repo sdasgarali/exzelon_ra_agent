@@ -19,6 +19,10 @@ import {
   Zap,
   RefreshCw,
   AlertTriangle,
+  Plus,
+  MapPin,
+  Phone,
+  AtSign,
 } from 'lucide-react'
 
 const PLAN_COLORS: Record<string, string> = {
@@ -63,12 +67,33 @@ export default function TenantManagementPage() {
     max_leads: 5000,
     website: '',
     industry: '',
+    company_address: '',
+    phone: '',
+    contact_email: '',
   })
   const [editFeatures, setEditFeatures] = useState({
     feature_email_validation_enabled: true,
     feature_campaigns_enabled: true,
   })
   const [editSaving, setEditSaving] = useState(false)
+
+  // Create modal
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    plan: 'starter',
+    website: '',
+    industry: '',
+    company_address: '',
+    phone: '',
+    contact_email: '',
+    max_users: 3,
+    max_mailboxes: 0,
+    max_contacts: 0,
+    max_campaigns: 0,
+    max_leads: 0,
+  })
+  const [createSaving, setCreateSaving] = useState(false)
 
   // Deactivate confirmation
   const [deactivateId, setDeactivateId] = useState<number | null>(null)
@@ -146,6 +171,9 @@ export default function TenantManagementPage() {
         max_leads: data.max_leads,
         website: data.website || '',
         industry: data.industry || '',
+        company_address: data.company_address || '',
+        phone: data.phone || '',
+        contact_email: data.contact_email || '',
       })
       setEditFeatures({
         feature_email_validation_enabled: features.feature_email_validation_enabled ?? true,
@@ -200,6 +228,29 @@ export default function TenantManagementPage() {
     }
   }
 
+  const handleCreateTenant = async () => {
+    if (!createForm.name.trim()) {
+      setError('Tenant name is required')
+      return
+    }
+    try {
+      setCreateSaving(true)
+      await tenantsApi.create(createForm)
+      setSuccess(`Tenant "${createForm.name}" created successfully`)
+      setCreateOpen(false)
+      setCreateForm({
+        name: '', plan: 'starter', website: '', industry: '',
+        company_address: '', phone: '', contact_email: '',
+        max_users: 3, max_mailboxes: 0, max_contacts: 0, max_campaigns: 0, max_leads: 0,
+      })
+      fetchTenants()
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create tenant')
+    } finally {
+      setCreateSaving(false)
+    }
+  }
+
   const activeTenants = tenants.filter(t => t.is_active).length
 
   if (!isSuperAdmin()) return null
@@ -217,13 +268,22 @@ export default function TenantManagementPage() {
             {tenants.length} total tenants, {activeTenants} active
           </p>
         </div>
-        <button
-          onClick={fetchTenants}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Tenant
+          </button>
+          <button
+            onClick={fetchTenants}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Alerts */}
@@ -385,6 +445,51 @@ export default function TenantManagementPage() {
               </div>
             </div>
 
+            {/* Contact Info */}
+            {(detailTenant.company_address || detailTenant.phone || detailTenant.contact_email || detailTenant.website) && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Contact Information</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {detailTenant.company_address && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">Address</div>
+                        <div className="text-sm text-gray-900 dark:text-white">{detailTenant.company_address}</div>
+                      </div>
+                    </div>
+                  )}
+                  {detailTenant.phone && (
+                    <div className="flex items-start gap-2">
+                      <Phone className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">Phone</div>
+                        <a href={`tel:${detailTenant.phone}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">{detailTenant.phone}</a>
+                      </div>
+                    </div>
+                  )}
+                  {detailTenant.contact_email && (
+                    <div className="flex items-start gap-2">
+                      <AtSign className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">Email</div>
+                        <a href={`mailto:${detailTenant.contact_email}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">{detailTenant.contact_email}</a>
+                      </div>
+                    </div>
+                  )}
+                  {detailTenant.website && (
+                    <div className="flex items-start gap-2">
+                      <Building2 className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">Website</div>
+                        <a href={detailTenant.website} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">{detailTenant.website.replace(/^https?:\/\//, '')}</a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Users table */}
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Users ({detailTenant.users.length})</h3>
@@ -477,6 +582,40 @@ export default function TenantManagementPage() {
                 <option value="finance">Finance</option>
                 <option value="general">General</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+            <input
+              type="text"
+              value={editForm.company_address}
+              onChange={(e) => setEditForm({ ...editForm, company_address: e.target.value })}
+              placeholder="123 Main St, City, State, ZIP"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone No.</label>
+              <input
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                placeholder="+1 (555) 000-0000"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={editForm.contact_email}
+                onChange={(e) => setEditForm({ ...editForm, contact_email: e.target.value })}
+                placeholder="contact@company.com"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
             </div>
           </div>
 
@@ -574,6 +713,140 @@ export default function TenantManagementPage() {
               className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
             >
               {editSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Create Tenant Modal */}
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Add New Tenant" size="md">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tenant Name *</label>
+            <input
+              type="text"
+              value={createForm.name}
+              onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+              placeholder="Company Name"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
+              <input
+                type="url"
+                value={createForm.website}
+                onChange={(e) => setCreateForm({ ...createForm, website: e.target.value })}
+                placeholder="https://example.com"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Industry</label>
+              <select
+                value={createForm.industry}
+                onChange={(e) => setCreateForm({ ...createForm, industry: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">— Select —</option>
+                <option value="saas">SaaS</option>
+                <option value="recruiting">Recruiting</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="ecommerce">E-Commerce</option>
+                <option value="finance">Finance</option>
+                <option value="general">General</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+            <input
+              type="text"
+              value={createForm.company_address}
+              onChange={(e) => setCreateForm({ ...createForm, company_address: e.target.value })}
+              placeholder="123 Main St, City, State, ZIP"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone No.</label>
+              <input
+                type="tel"
+                value={createForm.phone}
+                onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                placeholder="+1 (555) 000-0000"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={createForm.contact_email}
+                onChange={(e) => setCreateForm({ ...createForm, contact_email: e.target.value })}
+                placeholder="contact@company.com"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan</label>
+              <select
+                value={createForm.plan}
+                onChange={(e) => setCreateForm({ ...createForm, plan: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="starter">Starter</option>
+                <option value="professional">Professional</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Plan Limits</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[
+                { key: 'max_users', label: 'Max Users' },
+                { key: 'max_mailboxes', label: 'Max Mailboxes' },
+                { key: 'max_contacts', label: 'Max Contacts' },
+                { key: 'max_campaigns', label: 'Max Campaigns' },
+                { key: 'max_leads', label: 'Max Leads' },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={(createForm as any)[key]}
+                    onChange={(e) => setCreateForm({ ...createForm, [key]: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => setCreateOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreateTenant}
+              disabled={createSaving}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            >
+              {createSaving ? 'Creating...' : 'Create Tenant'}
             </button>
           </div>
         </div>
