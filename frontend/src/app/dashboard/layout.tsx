@@ -240,6 +240,18 @@ export default function DashboardLayout({
             ) : (
               <h1 className="text-xl font-bold">NeuraLeads</h1>
             )}
+            {/* Desktop collapse toggle */}
+            <button
+              onClick={toggleSidebarCollapse}
+              className="hidden lg:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors group relative"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+              <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[60]">
+                {collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              </span>
+            </button>
+            {/* Mobile close button */}
             <button
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-gray-400 hover:text-white"
@@ -312,16 +324,6 @@ export default function DashboardLayout({
         </nav>
 
         <div ref={profileRef} className={`border-t border-gray-700 relative ${collapsed ? 'p-2' : 'p-4'}`}>
-          {/* Collapse toggle button (desktop only) */}
-          <button
-            onClick={toggleSidebarCollapse}
-            className={`hidden lg:flex items-center justify-center w-full py-1.5 mb-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors ${collapsed ? 'px-0' : 'px-2'}`}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
-            {!collapsed && <span className="ml-2 text-xs">Collapse</span>}
-          </button>
-
           {/* Notification bell + Cmd+K hint (desktop, expanded only) */}
           {!collapsed && (
             <div className="hidden lg:flex items-center gap-2 mb-3 px-2">
