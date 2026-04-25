@@ -113,6 +113,17 @@ export default function InboxPage() {
 
   useEffect(() => { fetchThreads() }, [fetchThreads])
 
+  // Auto-select first thread when threads change; clear preview when empty
+  useEffect(() => {
+    if (loading) return
+    if (threads.length === 0) {
+      setSelectedThread(null)
+      setSelectedThreadId(null)
+    } else if (!selectedThreadId || !threads.find(t => t.thread_id === selectedThreadId)) {
+      openThread(threads[0].thread_id)
+    }
+  }, [threads, loading])
+
   useEffect(() => {
     inboxApi.stats().then(setStats).catch(() => {})
     mailboxesApi.list({ page: 1, page_size: 100 }).then((data: any) => {
