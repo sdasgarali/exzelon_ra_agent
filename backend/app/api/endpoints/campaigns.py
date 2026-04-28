@@ -306,7 +306,7 @@ def get_available_leads(
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
     prioritize_ids: Optional[List[int]] = Query(None, description="Lead IDs to sort to the top of results"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
+    page_size: int = Query(50, ge=1, le=5000),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
