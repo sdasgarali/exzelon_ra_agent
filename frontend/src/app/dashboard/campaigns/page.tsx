@@ -218,6 +218,7 @@ export default function CampaignsPage() {
   const [availableLeads, setAvailableLeads] = useState<any[]>([])
   const [availableLeadsTotal, setAvailableLeadsTotal] = useState(0)
   const [availableLeadsPage, setAvailableLeadsPage] = useState(1)
+  const [availableLeadsPageSize, setAvailableLeadsPageSize] = useState(50)
   const [availableLeadsPages, setAvailableLeadsPages] = useState(1)
   const [availableLeadsSearch, setAvailableLeadsSearch] = useState('')
   const [availableLeadsLoading, setAvailableLeadsLoading] = useState(false)
@@ -491,7 +492,7 @@ export default function CampaignsPage() {
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
     try {
-      const params: Record<string, any> = { ...buildAlFilterParams(), page: availableLeadsPage, page_size: 50 }
+      const params: Record<string, any> = { ...buildAlFilterParams(), page: availableLeadsPage, page_size: availableLeadsPageSize === 0 ? 9999 : availableLeadsPageSize }
       if (autoSelectLeadIds.length > 0) params.prioritize_ids = autoSelectLeadIds
       const data = await campaignsApi.getAvailableLeads(params)
       setAvailableLeads(data.items || [])
@@ -515,7 +516,7 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle])
+  }, [availableLeadsPage, availableLeadsPageSize, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle])
 
   useEffect(() => {
     if (showCreateModal && createStep === 'select_leads') fetchAvailableLeads()
@@ -2323,6 +2324,16 @@ export default function CampaignsPage() {
                       <option value={180}>Last 6 months</option>
                       <option value={365}>Last year</option>
                     </select>
+                    <select
+                      value={availableLeadsPageSize}
+                      onChange={e => { setAvailableLeadsPageSize(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
+                      className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                    >
+                      <option value={0}>All</option>
+                      <option value={100}>100</option>
+                      <option value={50}>50</option>
+                      <option value={25}>25</option>
+                    </select>
                     <span className="text-sm text-gray-500 whitespace-nowrap">
                       {selectedCreateLeadIds.size} of {availableLeadsTotal} selected
                     </span>
@@ -2614,7 +2625,7 @@ export default function CampaignsPage() {
                   </div>
 
                   {/* Pagination */}
-                  {availableLeadsPages > 1 && (
+                  {availableLeadsPageSize !== 0 && availableLeadsPages > 1 && (
                     <div className="flex justify-center gap-2 mb-4">
                       <button disabled={availableLeadsPage <= 1} onClick={() => setAvailableLeadsPage(p => p - 1)} className="px-3 py-1 border rounded text-sm disabled:opacity-50">Prev</button>
                       <span className="px-3 py-1 text-sm text-gray-500">Page {availableLeadsPage} of {availableLeadsPages}</span>
