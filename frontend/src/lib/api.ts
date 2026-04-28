@@ -8,6 +8,18 @@ export const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  paramsSerializer: (params) => {
+    const qs = new URLSearchParams()
+    Object.entries(params).forEach(([key, val]) => {
+      if (val === undefined || val === null || val === '') return
+      if (Array.isArray(val)) {
+        val.forEach(v => qs.append(key, String(v)))
+      } else {
+        qs.append(key, String(val))
+      }
+    })
+    return qs.toString()
+  },
 })
 
 // Request deduplication - cancel duplicate in-flight requests
