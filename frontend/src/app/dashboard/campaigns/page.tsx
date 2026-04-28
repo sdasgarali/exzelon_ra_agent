@@ -2506,17 +2506,24 @@ export default function CampaignsPage() {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
+                                ref={el => {
+                                  if (el) {
+                                    const allChecked = selectedCreateLeadIds.size > 0 && selectedCreateLeadIds.size >= availableLeadsTotal
+                                    const someChecked = selectedCreateLeadIds.size > 0 && !allChecked
+                                    el.indeterminate = someChecked
+                                  }
+                                }}
                                 checked={selectedCreateLeadIds.size > 0 && selectedCreateLeadIds.size >= availableLeadsTotal}
-                                onChange={async e => {
-                                  if (e.target.checked) {
+                                onChange={async () => {
+                                  if (selectedCreateLeadIds.size > 0) {
+                                    setSelectedCreateLeadIds(new Set())
+                                  } else {
                                     try {
                                       const allData = await campaignsApi.getAvailableLeads({ ...buildAlFilterParams(), page: 1, page_size: Math.max(availableLeadsTotal, 200) })
                                       setSelectedCreateLeadIds(new Set((allData.items || []).map((l: any) => l.lead_id)))
                                     } catch {
                                       setSelectedCreateLeadIds(new Set(availableLeads.map(l => l.lead_id)))
                                     }
-                                  } else {
-                                    setSelectedCreateLeadIds(new Set())
                                   }
                                 }}
                                 className="w-4 h-4 rounded"
