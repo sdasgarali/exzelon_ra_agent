@@ -37,6 +37,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'company_size_no_preference': 'job_filters',
     'exclude_it_keywords': 'job_filters',
     'exclude_staffing_keywords': 'job_filters',
+    'job_title_categories': 'job_filters',
     # Job Source APIs (provider selection, API keys, enabled sources)
     'job_source_provider': 'job_source_apis',
     'jsearch_api_key': 'job_source_apis',
@@ -413,6 +414,14 @@ DEFAULT_SETTINGS = {
         "type": "list",
         "description": "Keywords to exclude staffing/recruitment companies"
     },
+
+    # Job Title Categories (grouped by industry/function)
+    "job_title_categories": {
+        "value": None,  # Uses config.JOB_TITLE_CATEGORIES as default when None
+        "type": "object",
+        "description": "Job titles grouped by category — dict of category_name: [titles]"
+    },
+
     # Warmup Engine Configuration
     "backup_retention_days": {"value": 3, "type": "integer", "description": "Auto-delete backups older than this many days"},
 

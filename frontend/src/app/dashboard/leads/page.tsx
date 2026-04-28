@@ -36,6 +36,7 @@ interface LeadFilterOptions {
   data_types: string[]
   exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }
   job_titles: string[]
+  job_title_categories?: Record<string, string[]>
 }
 
 const STATUS_OPTIONS = [
@@ -1115,7 +1116,10 @@ export default function LeadsPage() {
               <label className="label text-sm">Job Title</label>
               <SearchableMultiSelect
                 label="Titles"
-                options={leadFilterOptions.job_titles}
+                grouped={!!leadFilterOptions.job_title_categories && Object.keys(leadFilterOptions.job_title_categories).length > 0}
+                options={leadFilterOptions.job_title_categories && Object.keys(leadFilterOptions.job_title_categories).length > 0
+                  ? Object.entries(leadFilterOptions.job_title_categories).sort(([a], [b]) => a.localeCompare(b)).map(([category, items]) => ({ category, items: items.sort() }))
+                  : leadFilterOptions.job_titles}
                 selected={filterTitle}
                 onChange={setFilterTitle}
               />

@@ -747,16 +747,33 @@ async def get_lead_filter_options(
         except (ValueError, TypeError):
             staffing_kw = app_settings.EXCLUDE_STAFFING_KEYWORDS
 
-    # Available job titles from tenant settings
+    # Job title categories from tenant settings (preferred) or config default
+    job_cats = get_tenant_setting(db, "job_title_categories", tenant_id=tenant_id, default=None)
+    if not job_cats or not isinstance(job_cats, dict):
+        job_cats = app_settings.JOB_TITLE_CATEGORIES
+    elif isinstance(job_cats, str):
+        import json as _json
+        try:
+            job_cats = _json.loads(job_cats)
+            if not isinstance(job_cats, dict):
+                job_cats = app_settings.JOB_TITLE_CATEGORIES
+        except (ValueError, TypeError):
+            job_cats = app_settings.JOB_TITLE_CATEGORIES
+
+    # Available job titles: flatten categories, merge with any stored flat list
     avail_titles = get_tenant_setting(db, "available_job_titles", tenant_id=tenant_id, default=None)
     if not avail_titles:
-        avail_titles = app_settings.AVAILABLE_JOB_TITLES
+        avail_titles = []
     elif isinstance(avail_titles, str):
         import json as _json
         try:
-            avail_titles = _json.loads(avail_titles) or app_settings.AVAILABLE_JOB_TITLES
+            avail_titles = _json.loads(avail_titles) or []
         except (ValueError, TypeError):
-            avail_titles = app_settings.AVAILABLE_JOB_TITLES
+            avail_titles = []
+
+    # Merge: all titles from categories + any standalone titles
+    cat_titles = set(t for ts in job_cats.values() for t in ts)
+    all_titles = sorted(cat_titles | set(avail_titles))
 
     return {
         "industries": industries,
@@ -766,7 +783,8 @@ async def get_lead_filter_options(
             "it_keywords": sorted(it_kw) if it_kw else [],
             "staffing_keywords": sorted(staffing_kw) if staffing_kw else [],
         },
-        "job_titles": sorted(avail_titles) if avail_titles else [],
+        "job_titles": all_titles,
+        "job_title_categories": {k: sorted(v) for k, v in sorted(job_cats.items())},
     }
 
 

@@ -239,7 +239,7 @@ export default function CampaignsPage() {
   const [alFilterExcludeKeywords, setAlFilterExcludeKeywords] = useState<string[]>([])
   const [alFilterTitle, setAlFilterTitle] = useState<string[]>([])
   const [alShowMoreFilters, setAlShowMoreFilters] = useState(false)
-  const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[]; exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }; job_titles: string[] }>({ industries: [], company_sizes: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
+  const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[]; exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }; job_titles: string[]; job_title_categories?: Record<string, string[]> }>({ industries: [], company_sizes: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
   const [alSortBy, setAlSortBy] = useState<AvailableLeadsSortField>('posting_date')
   const [alSortOrder, setAlSortOrder] = useState<'asc' | 'desc'>('desc')
 
@@ -531,6 +531,7 @@ export default function CampaignsPage() {
           company_sizes: opts.company_sizes || [],
           exclusion_keywords: opts.exclusion_keywords || { it_keywords: [], staffing_keywords: [] },
           job_titles: opts.job_titles || [],
+          job_title_categories: opts.job_title_categories || undefined,
         })
       }).catch(() => {})
     }
@@ -2498,7 +2499,10 @@ export default function CampaignsPage() {
                             />
                             <WizardSearchableMultiSelect
                               label="Titles"
-                              options={alFilterOptions.job_titles}
+                              grouped={!!alFilterOptions.job_title_categories && Object.keys(alFilterOptions.job_title_categories).length > 0}
+                              options={alFilterOptions.job_title_categories && Object.keys(alFilterOptions.job_title_categories).length > 0
+                                ? Object.entries(alFilterOptions.job_title_categories).sort(([a], [b]) => a.localeCompare(b)).map(([category, items]) => ({ category, items: items.sort() }))
+                                : alFilterOptions.job_titles}
                               selected={alFilterTitle}
                               onChange={setAlFilterTitle}
                             />

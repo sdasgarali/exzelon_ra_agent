@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -22,8 +22,9 @@ interface JobSourceConfig {
   lead_sources: string[]  // Enabled lead sources: jsearch, apollo, theirstack, serpapi, adzuna
   enabled_sources: string[]
   target_states: string[]
-  available_job_titles: string[]  // Master list of all available titles
+  available_job_titles: string[]  // Master list of all available titles (derived from categories)
   target_job_titles: string[]     // Currently selected/active titles for search
+  job_title_categories: Record<string, string[]>  // Titles grouped by category
   target_industries: string[]
   company_size_priority_1_max: number
   company_size_priority_2_min: number
@@ -120,20 +121,54 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-const DEFAULT_JOB_TITLES = [
-  'HR Manager', 'HR Director', 'Recruiter', 'Talent Acquisition',
-  'Operations Manager', 'Plant Manager', 'Warehouse Manager',
-  'Production Supervisor', 'Logistics Manager', 'Supply Chain Manager',
-  'Maintenance Manager', 'Quality Manager', 'Safety Manager',
-  'Facilities Manager', 'Branch Manager', 'Regional Manager',
-  'General Manager', 'Site Manager', 'Distribution Manager',
-  'Manufacturing Manager', 'Engineering Manager', 'Project Manager',
-  'Purchasing Manager', 'Procurement Manager', 'Inventory Manager',
-  'Shipping Manager', 'Receiving Manager', 'Fleet Manager',
-  'Store Manager', 'Restaurant Manager', 'Hotel Manager',
-  'Construction Manager', 'Field Manager', 'Service Manager',
-  'Account Manager', 'Territory Manager', 'Area Manager'
-]
+const DEFAULT_JOB_TITLE_CATEGORIES: Record<string, string[]> = {
+  "HR & Talent": ["HR Manager", "HR Director", "HR Business Partner", "HR Generalist", "HR Coordinator", "Recruiter", "Talent Acquisition", "Talent Acquisition Manager", "Staffing Coordinator", "Staffing Manager", "Talent Manager", "Workforce Manager", "Recruitment Manager", "People Operations Manager", "Employee Relations Manager", "Compensation Manager", "Benefits Manager", "Payroll Manager", "VP Human Resources", "Director of HR", "Chief People Officer"],
+  "Operations & General Management": ["Operations Manager", "Operations Director", "VP Operations", "Director of Operations", "COO", "Chief Operating Officer", "General Manager", "Assistant General Manager", "Regional Manager", "Area Manager", "District Manager", "Territory Manager", "Branch Manager", "Site Manager", "Field Manager"],
+  "Manufacturing": ["Manufacturing Manager", "Manufacturing Director", "Manufacturing Supervisor", "Manufacturing Engineer", "Manufacturing Technician", "Lean Manager", "Continuous Improvement Manager", "Process Improvement Manager"],
+  "Production": ["Plant Manager", "Production Manager", "Production Supervisor", "Production Coordinator", "Production Planner", "Production Scheduler", "Production Control Manager", "Production Lead"],
+  "Warehouse & Logistics": ["Warehouse Manager", "Warehouse Supervisor", "Warehouse Director", "Distribution Manager", "Distribution Center Manager", "Logistics Manager", "Logistics Director", "Logistics Coordinator", "Supply Chain Manager", "Supply Chain Director", "Inventory Manager", "Inventory Control Manager", "Shipping Manager", "Receiving Manager", "Freight Manager", "Fleet Manager", "Dispatch Manager", "Transportation Manager"],
+  "Facilities": ["Facilities Manager", "Facilities Director", "Facilities Coordinator", "Facilities Supervisor", "Building Manager", "Building Engineer", "Property Manager", "Property Management Director"],
+  "Maintenance": ["Maintenance Manager", "Maintenance Director", "Maintenance Supervisor", "Maintenance Coordinator", "Maintenance Technician", "Maintenance Planner", "Maintenance Engineer"],
+  "Safety & Compliance": ["Safety Manager", "Safety Director", "Safety Coordinator", "EHS Manager", "Environmental Health Safety Manager", "HSE Manager", "Compliance Manager", "Compliance Director", "Compliance Officer", "Risk Manager", "Risk Director", "Loss Prevention Manager", "Claims Manager", "Regulatory Affairs Manager"],
+  "Construction": ["Construction Manager", "Construction Superintendent", "Construction Director", "Construction Foreman", "Construction Estimator", "Construction Inspector", "General Contractor", "Site Superintendent"],
+  "Engineering": ["Engineering Manager", "Engineering Director", "Chief Engineer", "Mechanical Engineer", "Civil Engineer", "Structural Engineer", "Design Engineer", "Project Engineer", "Field Engineer"],
+  "Quality": ["Quality Manager", "Quality Control Manager", "Quality Assurance Manager", "Quality Director", "Quality Engineer", "Quality Inspector", "Quality Supervisor", "Quality Technician"],
+  "CNC": ["CNC Machinist", "CNC Operator", "CNC Programmer", "CNC Supervisor", "CNC Manager", "CNC Setup Technician", "CNC Mill Operator", "CNC Lathe Operator", "CNC Lead"],
+  "Accounting": ["Accountant", "CPA", "Accounting Manager", "Accounting Director", "Accounting Supervisor", "Accounts Payable Manager", "Accounts Receivable Manager", "Staff Accountant", "Senior Accountant", "Cost Accountant", "Tax Accountant", "Accounting Clerk"],
+  "Bookkeeper": ["Bookkeeper", "Full Charge Bookkeeper", "Senior Bookkeeper", "Bookkeeping Manager", "Bookkeeping Supervisor"],
+  "Controller": ["Controller", "Assistant Controller", "Corporate Controller", "Division Controller", "Plant Controller", "Regional Controller"],
+  "Financial": ["Finance Manager", "Finance Director", "CFO", "Chief Financial Officer", "Financial Analyst", "Financial Controller", "Financial Planner", "Credit Manager", "Collections Manager", "Treasury Manager"],
+  "Tax": ["Tax Manager", "Tax Director", "Tax Analyst", "Tax Accountant", "Tax Preparer", "Tax Specialist", "Tax Supervisor"],
+  "Insurance": ["Insurance Manager", "Insurance Agent", "Insurance Underwriter", "Insurance Adjuster", "Claims Manager", "Claims Adjuster", "Insurance Director", "Risk Manager"],
+  "Architecture": ["Architect", "Senior Architect", "Architecture Manager", "Architectural Designer", "Project Architect", "Design Manager", "Interior Architect", "Landscape Architect"],
+  "Interior Designer": ["Interior Designer", "Senior Interior Designer", "Interior Design Manager", "Interior Design Director", "Space Planner", "Design Coordinator"],
+  "Purchasing & Procurement": ["Purchasing Manager", "Purchasing Director", "Purchasing Agent", "Procurement Manager", "Procurement Director", "Procurement Specialist", "Buyer", "Senior Buyer", "Category Manager", "Vendor Manager", "Supplier Manager"],
+  "Hospitality & Food Service": ["Restaurant Manager", "Restaurant General Manager", "Hotel Manager", "Hotel General Manager", "Front Desk Manager", "Food Service Manager", "Food Service Director", "Banquet Manager", "Catering Manager", "Housekeeping Manager", "Housekeeping Director", "Executive Chef", "Kitchen Manager"],
+  "Food Industry": ["Food Production Manager", "Food Safety Manager", "Food Plant Manager", "Food Quality Manager", "Food Processing Supervisor", "Bakery Manager", "Dairy Manager", "Meat Processing Manager"],
+  "Retail": ["Store Manager", "Store Director", "Retail Manager", "Assistant Store Manager", "Retail Operations Manager", "Merchandise Manager", "Visual Merchandising Manager", "Retail District Manager", "Retail Regional Manager"],
+  "Sales": ["Account Manager", "Sales Manager", "Regional Sales Manager", "Business Development Manager", "Service Manager", "Customer Service Manager", "Call Center Manager", "Sales Director", "VP Sales", "Inside Sales Manager", "Outside Sales Manager", "Territory Sales Manager"],
+  "Healthcare & Social Services": ["Nurse Manager", "Nursing Director", "Director of Nursing", "Clinical Manager", "Practice Manager", "Office Manager", "Healthcare Administrator", "Hospital Administrator", "Social Services Director", "Case Manager"],
+  "Education": ["School Principal", "Assistant Principal", "Academic Director", "Education Director", "Training Manager", "Training Director", "Learning and Development Manager", "Organizational Development Manager", "Curriculum Director", "Dean"],
+  "HVAC": ["HVAC Manager", "HVAC Supervisor", "HVAC Technician", "HVAC Installer", "HVAC Service Manager", "HVAC Director", "Refrigeration Manager", "Refrigeration Technician"],
+  "Electrical": ["Electrical Manager", "Electrical Supervisor", "Electrical Engineer", "Electrical Foreman", "Master Electrician", "Electrical Director", "Electrical Contractor", "Electrical Superintendent"],
+  "Technicians": ["Service Technician", "Field Service Technician", "Maintenance Technician", "Industrial Technician", "Equipment Technician", "Lab Technician", "Technical Manager", "Technical Director"],
+  "Field Service": ["Field Service Manager", "Field Service Director", "Field Service Engineer", "Field Service Supervisor", "Field Service Coordinator", "Field Operations Manager", "Service Dispatch Manager"],
+  "Mining": ["Mine Manager", "Mine Superintendent", "Mine Engineer", "Mining Supervisor", "Mining Director", "Quarry Manager", "Drilling Manager", "Geology Manager"],
+  "Solar": ["Solar Project Manager", "Solar Installation Manager", "Solar Director", "Solar Operations Manager", "Solar Site Supervisor", "Renewable Energy Manager", "Energy Manager"],
+  "Industrial": ["Industrial Manager", "Industrial Engineer", "Industrial Supervisor", "Industrial Maintenance Manager", "Industrial Production Manager", "Plant Engineer", "Plant Superintendent"],
+  "Injection Molding": ["Injection Molding Manager", "Injection Molding Supervisor", "Molding Manager", "Molding Technician", "Plastics Manager", "Plastics Engineer", "Extrusion Manager"],
+  "Process Engineer": ["Process Engineer", "Senior Process Engineer", "Process Engineering Manager", "Process Improvement Engineer", "Process Development Engineer", "Chemical Engineer", "Process Technician"],
+  "Plant Management": ["Plant Manager", "Plant Director", "Plant Superintendent", "Plant Engineer", "Plant Supervisor", "Plant Operations Manager", "Assistant Plant Manager"],
+  "Supervisor": ["Production Supervisor", "Warehouse Supervisor", "Shift Supervisor", "Team Leader", "Team Supervisor", "Lead Supervisor", "Night Shift Supervisor", "Day Shift Supervisor", "Area Supervisor", "Line Supervisor"],
+  "Manager": ["Project Manager", "Senior Project Manager", "Program Manager", "Department Manager", "Division Manager", "Office Manager", "Administrative Manager", "Business Manager"],
+  "Attorney": ["Attorney", "General Counsel", "Corporate Counsel", "Legal Director", "Legal Manager", "Paralegal Manager", "Compliance Attorney", "Employment Attorney"],
+  "Entry Level": ["Administrative Assistant", "Office Coordinator", "Receptionist", "Data Entry Clerk", "File Clerk", "Mail Room Clerk", "Customer Service Representative", "Order Entry Clerk"],
+  "Staff Account": ["Staff Accountant", "Junior Accountant", "Accounting Associate", "Accounting Specialist", "Accounting Coordinator", "AP Clerk", "AR Clerk", "Billing Clerk"],
+  "Agriculture & Trades": ["Farm Manager", "Ranch Manager", "Ag Operations Manager", "Shop Manager", "Foreman", "Superintendent", "Trades Manager", "Skilled Trades Supervisor"],
+}
+
+// Derive flat list from categories
+const DEFAULT_JOB_TITLES = Array.from(new Set(Object.values(DEFAULT_JOB_TITLE_CATEGORIES).flat())).sort()
 
 const TARGET_INDUSTRIES = [
   'Healthcare', 'Manufacturing', 'Logistics', 'Retail', 'BFSI',
@@ -204,7 +239,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   target_industries: 'job_filters', company_size_priority_1_max: 'job_filters',
   company_size_priority_2_min: 'job_filters', company_size_priority_2_max: 'job_filters',
   company_size_no_preference: 'job_filters',
-  exclude_it_keywords: 'job_filters', exclude_staffing_keywords: 'job_filters',
+  exclude_it_keywords: 'job_filters', exclude_staffing_keywords: 'job_filters', job_title_categories: 'job_filters',
   job_source_provider: 'job_source_apis', jsearch_api_key: 'job_source_apis', indeed_publisher_id: 'job_source_apis',
   apollo_api_key: 'job_source_apis', lead_sources: 'job_source_apis', enabled_sources: 'job_source_apis',
   theirstack_api_key: 'job_source_apis', serpapi_api_key: 'job_source_apis',
@@ -267,6 +302,7 @@ export default function SettingsPage() {
     target_states: ['CA', 'TX', 'FL', 'NY', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI'],
     available_job_titles: DEFAULT_JOB_TITLES,
     target_job_titles: DEFAULT_JOB_TITLES.slice(0, 16), // First 16 selected by default
+    job_title_categories: DEFAULT_JOB_TITLE_CATEGORIES,
     target_industries: TARGET_INDUSTRIES,
     company_size_priority_1_max: 50,
     company_size_priority_2_min: 51,
@@ -286,8 +322,30 @@ export default function SettingsPage() {
     coresignal_api_key: '',
   })
 
-  // State for adding new job title
+  // State for job title category UI
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [titleSearchText, setTitleSearchText] = useState('')
   const [newJobTitle, setNewJobTitle] = useState('')
+  const [newJobTitleCategory, setNewJobTitleCategory] = useState('')
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
+  const [categorySearchText, setCategorySearchText] = useState('')
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [editingCategory, setEditingCategory] = useState<string | null>(null)
+  const [editingCategoryName, setEditingCategoryName] = useState('')
+  const categoryDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close category dropdown on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
+        setCategoryDropdownOpen(false)
+        setCategorySearchText('')
+      }
+    }
+    if (categoryDropdownOpen) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [categoryDropdownOpen])
 
   // State for adding new exclusion keywords
   const [newITKeyword, setNewITKeyword] = useState('')
@@ -456,9 +514,15 @@ export default function SettingsPage() {
       }
 
       // Update all configs from settings
-      // Merge available titles: stored + defaults (remove duplicates)
+      // Load job title categories (preferred) or derive from flat list
+      const storedCategories = settingsMap.job_title_categories
+      const categories: Record<string, string[]> = (storedCategories && typeof storedCategories === 'object' && !Array.isArray(storedCategories))
+        ? storedCategories
+        : DEFAULT_JOB_TITLE_CATEGORIES
+      // Derive available titles from categories
       const storedAvailable = settingsMap.available_job_titles || []
-      const mergedAvailable = Array.from(new Set([...DEFAULT_JOB_TITLES, ...storedAvailable]))
+      const catTitles = Object.values(categories).flat()
+      const mergedAvailable = Array.from(new Set([...catTitles, ...storedAvailable])).sort()
 
       const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       setIsLocalhost(isLocal)
@@ -474,6 +538,7 @@ export default function SettingsPage() {
         target_states: settingsMap.target_states || ['CA', 'TX', 'FL', 'NY', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI'],
         available_job_titles: mergedAvailable,
         target_job_titles: settingsMap.target_job_titles || DEFAULT_JOB_TITLES.slice(0, 16),
+        job_title_categories: categories,
         target_industries: settingsMap.target_industries || TARGET_INDUSTRIES,
         company_size_priority_1_max: settingsMap.company_size_priority_1_max ?? 50,
         company_size_priority_2_min: settingsMap.company_size_priority_2_min ?? 51,
@@ -628,9 +693,11 @@ export default function SettingsPage() {
       setSuccess('')
 
       if (configType === 'jobfilters') {
+        // Derive available_job_titles from categories for backward compat
+        const flatTitles = Array.from(new Set(Object.values(jobSourceConfig.job_title_categories).flat())).sort()
         await Promise.all([
           saveSetting('target_states', jobSourceConfig.target_states, 'list'),
-          saveSetting('available_job_titles', jobSourceConfig.available_job_titles, 'list'),
+          saveSetting('available_job_titles', flatTitles, 'list'),
           saveSetting('target_job_titles', jobSourceConfig.target_job_titles, 'list'),
           saveSetting('target_industries', jobSourceConfig.target_industries, 'list'),
           saveSetting('company_size_priority_1_max', jobSourceConfig.company_size_priority_1_max, 'integer'),
@@ -639,6 +706,7 @@ export default function SettingsPage() {
           saveSetting('company_size_no_preference', jobSourceConfig.company_size_no_preference, 'boolean'),
           saveSetting('exclude_it_keywords', jobSourceConfig.exclude_it_keywords, 'list'),
           saveSetting('exclude_staffing_keywords', jobSourceConfig.exclude_staffing_keywords, 'list'),
+          saveSetting('job_title_categories', jobSourceConfig.job_title_categories, 'object'),
         ])
       } else if (configType === 'jobsourceapis') {
         await Promise.all([
@@ -941,11 +1009,11 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500 mt-1">Select US states to search for jobs</p>
               </div>
 
-              {/* Target Job Titles - Enhanced UI */}
+              {/* Target Job Titles - Categorized Accordion UI */}
               <div>
                 <label className="label">Target Job Titles for Search</label>
                 <p className="text-sm text-gray-500 mb-3">
-                  Select which job titles to include in lead searches. You can add custom titles below.
+                  Select which job titles to include in lead searches. Titles are organized by category.
                 </p>
                 {/* "Any" checkbox */}
                 <label className="flex items-center gap-2 cursor-pointer mb-3 p-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors">
@@ -966,32 +1034,33 @@ export default function SettingsPage() {
                 </label>
                 {!(jobSourceConfig.target_job_titles.length === 1 && jobSourceConfig.target_job_titles[0] === '__ANY__') && (
                 <div className="border rounded-lg bg-gray-50">
-                  {/* Header with Select All and count */}
-                  <div className="px-3 py-2 border-b bg-gray-100 rounded-t-lg flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={jobSourceConfig.target_job_titles.length === jobSourceConfig.available_job_titles.length}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [...jobSourceConfig.available_job_titles] })
-                          } else {
-                            setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [] })
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm font-medium">
-                        Select All ({jobSourceConfig.target_job_titles.length}/{jobSourceConfig.available_job_titles.length} selected)
-                      </span>
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setJobSourceConfig({ ...jobSourceConfig, target_job_titles: jobSourceConfig.available_job_titles.slice(0, 16) })}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Select First 16
-                      </button>
+                  {/* Header with Select All, count, search */}
+                  <div className="px-3 py-2 border-b bg-gray-100 rounded-t-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={jobSourceConfig.target_job_titles.length === jobSourceConfig.available_job_titles.length && jobSourceConfig.available_job_titles.length > 0}
+                          ref={(el) => {
+                            if (el) {
+                              const allTitles = jobSourceConfig.available_job_titles
+                              const selected = jobSourceConfig.target_job_titles
+                              el.indeterminate = selected.length > 0 && selected.length < allTitles.length
+                            }
+                          }}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [...jobSourceConfig.available_job_titles] })
+                            } else {
+                              setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [] })
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">
+                          Select All ({jobSourceConfig.target_job_titles.length}/{jobSourceConfig.available_job_titles.length})
+                        </span>
+                      </label>
                       <button
                         onClick={() => setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [] })}
                         className="text-xs text-gray-600 hover:underline"
@@ -999,95 +1068,297 @@ export default function SettingsPage() {
                         Clear All
                       </button>
                     </div>
+                    <input
+                      type="text"
+                      value={titleSearchText}
+                      onChange={(e) => setTitleSearchText(e.target.value)}
+                      placeholder="Search titles..."
+                      className="input text-sm w-full"
+                    />
                   </div>
-                  {/* Job titles checkboxes */}
-                  <div className="flex flex-wrap gap-2 p-3 max-h-64 overflow-y-auto">
-                    {jobSourceConfig.available_job_titles.map((title) => (
-                      <label
-                        key={title}
-                        className={`flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border transition-colors ${
-                          jobSourceConfig.target_job_titles.includes(title)
-                            ? 'bg-blue-50 border-blue-300 text-blue-700'
-                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={jobSourceConfig.target_job_titles.includes(title)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [...jobSourceConfig.target_job_titles, title] })
-                            } else {
-                              setJobSourceConfig({ ...jobSourceConfig, target_job_titles: jobSourceConfig.target_job_titles.filter(t => t !== title) })
-                            }
-                          }}
-                          className="w-3 h-3"
-                        />
-                        <span className="text-sm">{title}</span>
-                        {/* Delete custom title button */}
-                        {!DEFAULT_JOB_TITLES.includes(title) && (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault()
-                              setJobSourceConfig({
-                                ...jobSourceConfig,
-                                available_job_titles: jobSourceConfig.available_job_titles.filter(t => t !== title),
-                                target_job_titles: jobSourceConfig.target_job_titles.filter(t => t !== title)
-                              })
-                            }}
-                            className="ml-1 text-red-400 hover:text-red-600"
-                            title="Remove custom title"
-                          >
-                            x
-                          </button>
+                  {/* Category accordion */}
+                  <div className="max-h-96 overflow-y-auto divide-y">
+                    {Object.entries(jobSourceConfig.job_title_categories)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([category, titles]) => {
+                        const filteredTitles = titleSearchText
+                          ? titles.filter(t => t.toLowerCase().includes(titleSearchText.toLowerCase()))
+                          : titles
+                        // Hide categories with no matching titles when searching
+                        if (titleSearchText && filteredTitles.length === 0) return null
+                        const isExpanded = expandedCategories.has(category) || (titleSearchText.length > 0 && filteredTitles.length > 0)
+                        const selectedInCat = titles.filter(t => jobSourceConfig.target_job_titles.includes(t)).length
+                        const totalInCat = titles.length
+                        return (
+                          <div key={category}>
+                            <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 cursor-pointer select-none"
+                              onClick={() => {
+                                const next = new Set(expandedCategories)
+                                if (next.has(category)) next.delete(category); else next.add(category)
+                                setExpandedCategories(next)
+                              }}>
+                              <span className="text-xs text-gray-400 w-4 flex-shrink-0">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                              <input
+                                type="checkbox"
+                                checked={selectedInCat === totalInCat && totalInCat > 0}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = selectedInCat > 0 && selectedInCat < totalInCat
+                                }}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  if (e.target.checked) {
+                                    const newSelected = new Set(jobSourceConfig.target_job_titles)
+                                    titles.forEach(t => newSelected.add(t))
+                                    setJobSourceConfig({ ...jobSourceConfig, target_job_titles: Array.from(newSelected) })
+                                  } else {
+                                    setJobSourceConfig({ ...jobSourceConfig, target_job_titles: jobSourceConfig.target_job_titles.filter(t => !titles.includes(t)) })
+                                  }
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-sm font-medium text-gray-700 flex-1">{category}</span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedInCat === totalInCat ? 'bg-blue-100 text-blue-700' : selectedInCat > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {selectedInCat}/{totalInCat}
+                              </span>
+                            </div>
+                            {isExpanded && (
+                              <div className="pl-10 pr-3 pb-2 flex flex-wrap gap-1.5">
+                                {filteredTitles.sort().map(title => (
+                                  <label key={title}
+                                    className={`flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded border text-xs transition-colors ${
+                                      jobSourceConfig.target_job_titles.includes(title)
+                                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                    }`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={jobSourceConfig.target_job_titles.includes(title)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setJobSourceConfig({ ...jobSourceConfig, target_job_titles: [...jobSourceConfig.target_job_titles, title] })
+                                        } else {
+                                          setJobSourceConfig({ ...jobSourceConfig, target_job_titles: jobSourceConfig.target_job_titles.filter(t => t !== title) })
+                                        }
+                                      }}
+                                      className="w-3 h-3"
+                                    />
+                                    <span>{title}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                  {/* Add Custom Title with Category Dropdown */}
+                  <div className="px-3 py-2 border-t bg-gray-100">
+                    <p className="text-xs font-medium text-gray-600 mb-1.5">Add Custom Title</p>
+                    <div className="flex gap-2 items-start">
+                      {/* Category dropdown */}
+                      <div className="relative flex-shrink-0" ref={categoryDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                          className="input text-sm w-44 text-left flex items-center justify-between"
+                        >
+                          <span className={newJobTitleCategory ? 'text-gray-800' : 'text-gray-400'}>
+                            {newJobTitleCategory || 'Category...'}
+                          </span>
+                          <span className="text-gray-400 text-xs">{categoryDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                        </button>
+                        {categoryDropdownOpen && (
+                          <div className="absolute z-20 mt-1 w-56 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            <input
+                              type="text"
+                              value={categorySearchText}
+                              onChange={(e) => setCategorySearchText(e.target.value)}
+                              placeholder="Search categories..."
+                              className="w-full px-3 py-1.5 text-xs border-b outline-none"
+                              autoFocus
+                            />
+                            {Object.keys(jobSourceConfig.job_title_categories)
+                              .filter(c => !categorySearchText || c.toLowerCase().includes(categorySearchText.toLowerCase()))
+                              .sort()
+                              .map(cat => (
+                                <button
+                                  key={cat}
+                                  type="button"
+                                  onClick={() => { setNewJobTitleCategory(cat); setCategoryDropdownOpen(false); setCategorySearchText('') }}
+                                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 ${newJobTitleCategory === cat ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+                                >
+                                  {cat} ({jobSourceConfig.job_title_categories[cat]?.length || 0})
+                                </button>
+                              ))}
+                          </div>
                         )}
-                      </label>
-                    ))}
-                  </div>
-                  {/* Add new job title */}
-                  <div className="px-3 py-2 border-t bg-gray-100 rounded-b-lg">
-                    <div className="flex gap-2">
+                      </div>
+                      {/* Title input */}
                       <input
                         type="text"
                         value={newJobTitle}
                         onChange={(e) => setNewJobTitle(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newJobTitle.trim()) {
+                          if (e.key === 'Enter' && newJobTitle.trim() && newJobTitleCategory) {
                             e.preventDefault()
-                            if (!jobSourceConfig.available_job_titles.includes(newJobTitle.trim())) {
+                            const title = newJobTitle.trim()
+                            const cat = newJobTitleCategory
+                            if (!jobSourceConfig.available_job_titles.includes(title)) {
+                              const updatedCats = { ...jobSourceConfig.job_title_categories, [cat]: [...(jobSourceConfig.job_title_categories[cat] || []), title] }
+                              const flatTitles = Array.from(new Set(Object.values(updatedCats).flat())).sort()
                               setJobSourceConfig({
                                 ...jobSourceConfig,
-                                available_job_titles: [...jobSourceConfig.available_job_titles, newJobTitle.trim()],
-                                target_job_titles: [...jobSourceConfig.target_job_titles, newJobTitle.trim()]
+                                job_title_categories: updatedCats,
+                                available_job_titles: flatTitles,
+                                target_job_titles: [...jobSourceConfig.target_job_titles, title]
                               })
                               setNewJobTitle('')
                             }
                           }
                         }}
-                        placeholder="Add custom job title..."
+                        placeholder="New title..."
                         className="input flex-1 text-sm"
                       />
                       <button
                         onClick={() => {
-                          if (newJobTitle.trim() && !jobSourceConfig.available_job_titles.includes(newJobTitle.trim())) {
+                          const title = newJobTitle.trim()
+                          const cat = newJobTitleCategory
+                          if (title && cat && !jobSourceConfig.available_job_titles.includes(title)) {
+                            const updatedCats = { ...jobSourceConfig.job_title_categories, [cat]: [...(jobSourceConfig.job_title_categories[cat] || []), title] }
+                            const flatTitles = Array.from(new Set(Object.values(updatedCats).flat())).sort()
                             setJobSourceConfig({
                               ...jobSourceConfig,
-                              available_job_titles: [...jobSourceConfig.available_job_titles, newJobTitle.trim()],
-                              target_job_titles: [...jobSourceConfig.target_job_titles, newJobTitle.trim()]
+                              job_title_categories: updatedCats,
+                              available_job_titles: flatTitles,
+                              target_job_titles: [...jobSourceConfig.target_job_titles, title]
                             })
                             setNewJobTitle('')
                           }
                         }}
-                        disabled={!newJobTitle.trim() || jobSourceConfig.available_job_titles.includes(newJobTitle.trim())}
+                        disabled={!newJobTitle.trim() || !newJobTitleCategory || jobSourceConfig.available_job_titles.includes(newJobTitle.trim())}
                         className="btn-secondary text-sm"
                       >
-                        Add Title
+                        Add
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Press Enter or click "Add Title" to add a custom job title
-                    </p>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <p className="text-xs text-gray-500">Select a category, then enter a title</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryManager(!showCategoryManager)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        {showCategoryManager ? 'Hide' : 'Manage'} Categories
+                      </button>
+                    </div>
                   </div>
+                  {/* Category Manager */}
+                  {showCategoryManager && (
+                    <div className="px-3 py-2 border-t bg-white">
+                      <p className="text-xs font-medium text-gray-600 mb-2">Manage Categories</p>
+                      {/* Add new category */}
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newCategoryName.trim() && !jobSourceConfig.job_title_categories[newCategoryName.trim()]) {
+                              e.preventDefault()
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                job_title_categories: { ...jobSourceConfig.job_title_categories, [newCategoryName.trim()]: [] }
+                              })
+                              setNewCategoryName('')
+                            }
+                          }}
+                          placeholder="New category name..."
+                          className="input flex-1 text-sm"
+                        />
+                        <button
+                          onClick={() => {
+                            if (newCategoryName.trim() && !jobSourceConfig.job_title_categories[newCategoryName.trim()]) {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                job_title_categories: { ...jobSourceConfig.job_title_categories, [newCategoryName.trim()]: [] }
+                              })
+                              setNewCategoryName('')
+                            }
+                          }}
+                          disabled={!newCategoryName.trim() || !!jobSourceConfig.job_title_categories[newCategoryName.trim()]}
+                          className="btn-secondary text-sm"
+                        >
+                          Create
+                        </button>
+                      </div>
+                      {/* Category list */}
+                      <div className="max-h-48 overflow-y-auto space-y-1">
+                        {Object.entries(jobSourceConfig.job_title_categories).sort(([a], [b]) => a.localeCompare(b)).map(([cat, titles]) => (
+                          <div key={cat} className="flex items-center gap-2 text-xs py-1 px-1 rounded hover:bg-gray-50 group">
+                            {editingCategory === cat ? (
+                              <>
+                                <input
+                                  type="text"
+                                  value={editingCategoryName}
+                                  onChange={(e) => setEditingCategoryName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      const newName = editingCategoryName.trim()
+                                      if (newName && newName !== cat && !jobSourceConfig.job_title_categories[newName]) {
+                                        const { [cat]: catTitles, ...rest } = jobSourceConfig.job_title_categories
+                                        setJobSourceConfig({
+                                          ...jobSourceConfig,
+                                          job_title_categories: { ...rest, [newName]: catTitles }
+                                        })
+                                      }
+                                      setEditingCategory(null)
+                                    } else if (e.key === 'Escape') {
+                                      setEditingCategory(null)
+                                    }
+                                  }}
+                                  className="input text-xs flex-1 py-0.5"
+                                  autoFocus
+                                />
+                                <button onClick={() => {
+                                  const newName = editingCategoryName.trim()
+                                  if (newName && newName !== cat && !jobSourceConfig.job_title_categories[newName]) {
+                                    const { [cat]: catTitles, ...rest } = jobSourceConfig.job_title_categories
+                                    setJobSourceConfig({
+                                      ...jobSourceConfig,
+                                      job_title_categories: { ...rest, [newName]: catTitles }
+                                    })
+                                  }
+                                  setEditingCategory(null)
+                                }} className="text-green-600 hover:text-green-800">Save</button>
+                                <button onClick={() => setEditingCategory(null)} className="text-gray-400 hover:text-gray-600">Cancel</button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="flex-1 text-gray-700">{cat}</span>
+                                <span className="text-gray-400">({titles.length})</span>
+                                <button onClick={() => { setEditingCategory(cat); setEditingCategoryName(cat) }}
+                                  className="text-blue-500 hover:text-blue-700 opacity-0 group-hover:opacity-100">Rename</button>
+                                <button onClick={() => {
+                                  if (confirm(`Delete category "${cat}"? Its ${titles.length} title(s) will be removed from the categories list.`)) {
+                                    const { [cat]: _, ...rest } = jobSourceConfig.job_title_categories
+                                    const flatTitles = Array.from(new Set(Object.values(rest).flat())).sort()
+                                    setJobSourceConfig({
+                                      ...jobSourceConfig,
+                                      job_title_categories: rest,
+                                      available_job_titles: flatTitles,
+                                      target_job_titles: jobSourceConfig.target_job_titles.filter(t => flatTitles.includes(t))
+                                    })
+                                  }
+                                }}
+                                  className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100">Delete</button>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 )}
                 {jobSourceConfig.target_job_titles.length === 0 && (

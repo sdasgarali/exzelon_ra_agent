@@ -1,13 +1,14 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 87: UI polish + data ops session.
-> 1. Contacts page: archived contacts show "Restore Selected" (green) instead of "Archive Selected",
->    "Bulk Update" hidden when archived. Per-row Edit and Delete action buttons added for every contact.
->    Edit Contact modal with all fields. Backend: PUT /contacts/bulk/restore endpoint. Commit 58bbec1, deployed.
-> 2. Leads page: archived leads show ONLY "Restore Selected" button — all other bulk buttons
->    (Contact Enrich, Send Outreach, Update Status, Archive, Bulk Update, Create Campaign) hidden.
->    Commit 1179998, deployed.
+> Session 88: Categorized Job Titles System.
+> Implemented categorized job titles across the entire stack:
+> 1. Backend: JOB_TITLE_CATEGORIES (43 categories, 392 titles) in config.py, registered in settings.py, leads.py filter-options returns job_title_categories
+> 2. Settings page: accordion UI with expand/collapse per category, indeterminate checkboxes, search, category dropdown for adding custom titles, category manager (create/rename/delete)
+> 3. Leads page: SearchableMultiSelect switched to grouped mode using job_title_categories
+> 4. Campaigns page: WizardSearchableMultiSelect switched to grouped mode using job_title_categories
+> 5. TypeScript compiles clean, Next.js build passes, backend loads OK
+> Next: Commit and deploy to VPS
 > 3. Database ops (direct MySQL on VPS, no code changes):
 >    - Permanently deleted contacts #1 (ali.infy@gmail.com) and #2 (ali.aitechs@gmail.com)
 >      along with their FK references (outreach_events, inbox_messages, outreach_drafts, deals).

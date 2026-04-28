@@ -213,6 +213,244 @@ class Settings(BaseSettings):
         "Food Service Manager", "Housekeeping Manager"
     ]
 
+    # Job Title Categories — grouped by industry/function
+    # 35 categories from CSV data + 15 existing categories merged
+    JOB_TITLE_CATEGORIES: dict[str, list[str]] = {
+        "HR & Talent": [
+            "HR Manager", "HR Director", "HR Business Partner", "HR Generalist",
+            "HR Coordinator", "Recruiter", "Talent Acquisition", "Talent Acquisition Manager",
+            "Staffing Coordinator", "Staffing Manager", "Talent Manager", "Workforce Manager",
+            "Recruitment Manager", "People Operations Manager", "Employee Relations Manager",
+            "Compensation Manager", "Benefits Manager", "Payroll Manager",
+            "VP Human Resources", "Director of HR", "Chief People Officer",
+        ],
+        "Operations & General Management": [
+            "Operations Manager", "Operations Director", "VP Operations",
+            "Director of Operations", "COO", "Chief Operating Officer",
+            "General Manager", "Assistant General Manager", "Regional Manager",
+            "Area Manager", "District Manager", "Territory Manager",
+            "Branch Manager", "Site Manager", "Field Manager",
+        ],
+        "Manufacturing": [
+            "Manufacturing Manager", "Manufacturing Director", "Manufacturing Supervisor",
+            "Manufacturing Engineer", "Manufacturing Technician",
+            "Lean Manager", "Continuous Improvement Manager", "Process Improvement Manager",
+        ],
+        "Production": [
+            "Plant Manager", "Production Manager", "Production Supervisor",
+            "Production Coordinator", "Production Planner", "Production Scheduler",
+            "Production Control Manager", "Production Lead",
+        ],
+        "Warehouse & Logistics": [
+            "Warehouse Manager", "Warehouse Supervisor", "Warehouse Director",
+            "Distribution Manager", "Distribution Center Manager",
+            "Logistics Manager", "Logistics Director", "Logistics Coordinator",
+            "Supply Chain Manager", "Supply Chain Director",
+            "Inventory Manager", "Inventory Control Manager",
+            "Shipping Manager", "Receiving Manager", "Freight Manager",
+            "Fleet Manager", "Dispatch Manager", "Transportation Manager",
+        ],
+        "Facilities": [
+            "Facilities Manager", "Facilities Director", "Facilities Coordinator",
+            "Facilities Supervisor", "Building Manager", "Building Engineer",
+            "Property Manager", "Property Management Director",
+        ],
+        "Maintenance": [
+            "Maintenance Manager", "Maintenance Director", "Maintenance Supervisor",
+            "Maintenance Coordinator", "Maintenance Technician", "Maintenance Planner",
+            "Maintenance Engineer",
+        ],
+        "Safety & Compliance": [
+            "Safety Manager", "Safety Director", "Safety Coordinator",
+            "EHS Manager", "Environmental Health Safety Manager", "HSE Manager",
+            "Compliance Manager", "Compliance Director", "Compliance Officer",
+            "Risk Manager", "Risk Director", "Loss Prevention Manager",
+            "Claims Manager", "Regulatory Affairs Manager",
+        ],
+        "Construction": [
+            "Construction Manager", "Construction Superintendent", "Construction Director",
+            "Construction Foreman", "Construction Estimator", "Construction Inspector",
+            "General Contractor", "Site Superintendent",
+        ],
+        "Engineering": [
+            "Engineering Manager", "Engineering Director", "Chief Engineer",
+            "Mechanical Engineer", "Civil Engineer", "Structural Engineer",
+            "Design Engineer", "Project Engineer", "Field Engineer",
+        ],
+        "Quality": [
+            "Quality Manager", "Quality Control Manager", "Quality Assurance Manager",
+            "Quality Director", "Quality Engineer", "Quality Inspector",
+            "Quality Supervisor", "Quality Technician",
+        ],
+        "CNC": [
+            "CNC Machinist", "CNC Operator", "CNC Programmer", "CNC Supervisor",
+            "CNC Manager", "CNC Setup Technician", "CNC Mill Operator",
+            "CNC Lathe Operator", "CNC Lead",
+        ],
+        "Accounting": [
+            "Accountant", "CPA", "Accounting Manager", "Accounting Director",
+            "Accounting Supervisor", "Accounts Payable Manager", "Accounts Receivable Manager",
+            "Staff Accountant", "Senior Accountant", "Cost Accountant",
+            "Tax Accountant", "Accounting Clerk",
+        ],
+        "Bookkeeper": [
+            "Bookkeeper", "Full Charge Bookkeeper", "Senior Bookkeeper",
+            "Bookkeeping Manager", "Bookkeeping Supervisor",
+        ],
+        "Controller": [
+            "Controller", "Assistant Controller", "Corporate Controller",
+            "Division Controller", "Plant Controller", "Regional Controller",
+        ],
+        "Financial": [
+            "Finance Manager", "Finance Director", "CFO", "Chief Financial Officer",
+            "Financial Analyst", "Financial Controller", "Financial Planner",
+            "Credit Manager", "Collections Manager", "Treasury Manager",
+        ],
+        "Tax": [
+            "Tax Manager", "Tax Director", "Tax Analyst", "Tax Accountant",
+            "Tax Preparer", "Tax Specialist", "Tax Supervisor",
+        ],
+        "Insurance": [
+            "Insurance Manager", "Insurance Agent", "Insurance Underwriter",
+            "Insurance Adjuster", "Claims Manager", "Claims Adjuster",
+            "Insurance Director", "Risk Manager",
+        ],
+        "Architecture": [
+            "Architect", "Senior Architect", "Architecture Manager",
+            "Architectural Designer", "Project Architect", "Design Manager",
+            "Interior Architect", "Landscape Architect",
+        ],
+        "Interior Designer": [
+            "Interior Designer", "Senior Interior Designer", "Interior Design Manager",
+            "Interior Design Director", "Space Planner", "Design Coordinator",
+        ],
+        "Purchasing & Procurement": [
+            "Purchasing Manager", "Purchasing Director", "Purchasing Agent",
+            "Procurement Manager", "Procurement Director", "Procurement Specialist",
+            "Buyer", "Senior Buyer", "Category Manager",
+            "Vendor Manager", "Supplier Manager",
+        ],
+        "Hospitality & Food Service": [
+            "Restaurant Manager", "Restaurant General Manager",
+            "Hotel Manager", "Hotel General Manager", "Front Desk Manager",
+            "Food Service Manager", "Food Service Director",
+            "Banquet Manager", "Catering Manager",
+            "Housekeeping Manager", "Housekeeping Director",
+            "Executive Chef", "Kitchen Manager",
+        ],
+        "Food Industry": [
+            "Food Production Manager", "Food Safety Manager", "Food Plant Manager",
+            "Food Quality Manager", "Food Processing Supervisor",
+            "Bakery Manager", "Dairy Manager", "Meat Processing Manager",
+        ],
+        "Retail": [
+            "Store Manager", "Store Director", "Retail Manager",
+            "Assistant Store Manager", "Retail Operations Manager",
+            "Merchandise Manager", "Visual Merchandising Manager",
+            "Retail District Manager", "Retail Regional Manager",
+        ],
+        "Sales": [
+            "Account Manager", "Sales Manager", "Regional Sales Manager",
+            "Business Development Manager", "Service Manager",
+            "Customer Service Manager", "Call Center Manager",
+            "Sales Director", "VP Sales", "Inside Sales Manager",
+            "Outside Sales Manager", "Territory Sales Manager",
+        ],
+        "Healthcare & Social Services": [
+            "Nurse Manager", "Nursing Director", "Director of Nursing",
+            "Clinical Manager", "Practice Manager", "Office Manager",
+            "Healthcare Administrator", "Hospital Administrator",
+            "Social Services Director", "Case Manager",
+        ],
+        "Education": [
+            "School Principal", "Assistant Principal", "Academic Director",
+            "Education Director", "Training Manager", "Training Director",
+            "Learning and Development Manager", "Organizational Development Manager",
+            "Curriculum Director", "Dean",
+        ],
+        "HVAC": [
+            "HVAC Manager", "HVAC Supervisor", "HVAC Technician",
+            "HVAC Installer", "HVAC Service Manager", "HVAC Director",
+            "Refrigeration Manager", "Refrigeration Technician",
+        ],
+        "Electrical": [
+            "Electrical Manager", "Electrical Supervisor", "Electrical Engineer",
+            "Electrical Foreman", "Master Electrician", "Electrical Director",
+            "Electrical Contractor", "Electrical Superintendent",
+        ],
+        "Technicians": [
+            "Service Technician", "Field Service Technician", "Maintenance Technician",
+            "Industrial Technician", "Equipment Technician", "Lab Technician",
+            "Technical Manager", "Technical Director",
+        ],
+        "Field Service": [
+            "Field Service Manager", "Field Service Director", "Field Service Engineer",
+            "Field Service Supervisor", "Field Service Coordinator",
+            "Field Operations Manager", "Service Dispatch Manager",
+        ],
+        "Mining": [
+            "Mine Manager", "Mine Superintendent", "Mine Engineer",
+            "Mining Supervisor", "Mining Director", "Quarry Manager",
+            "Drilling Manager", "Geology Manager",
+        ],
+        "Solar": [
+            "Solar Project Manager", "Solar Installation Manager", "Solar Director",
+            "Solar Operations Manager", "Solar Site Supervisor",
+            "Renewable Energy Manager", "Energy Manager",
+        ],
+        "Industrial": [
+            "Industrial Manager", "Industrial Engineer", "Industrial Supervisor",
+            "Industrial Maintenance Manager", "Industrial Production Manager",
+            "Plant Engineer", "Plant Superintendent",
+        ],
+        "Injection Molding": [
+            "Injection Molding Manager", "Injection Molding Supervisor",
+            "Molding Manager", "Molding Technician", "Plastics Manager",
+            "Plastics Engineer", "Extrusion Manager",
+        ],
+        "Process Engineer": [
+            "Process Engineer", "Senior Process Engineer", "Process Engineering Manager",
+            "Process Improvement Engineer", "Process Development Engineer",
+            "Chemical Engineer", "Process Technician",
+        ],
+        "Plant Management": [
+            "Plant Manager", "Plant Director", "Plant Superintendent",
+            "Plant Engineer", "Plant Supervisor", "Plant Operations Manager",
+            "Assistant Plant Manager",
+        ],
+        "Supervisor": [
+            "Production Supervisor", "Warehouse Supervisor", "Shift Supervisor",
+            "Team Leader", "Team Supervisor", "Lead Supervisor",
+            "Night Shift Supervisor", "Day Shift Supervisor",
+            "Area Supervisor", "Line Supervisor",
+        ],
+        "Manager": [
+            "Project Manager", "Senior Project Manager", "Program Manager",
+            "Department Manager", "Division Manager", "Office Manager",
+            "Administrative Manager", "Business Manager",
+        ],
+        "Attorney": [
+            "Attorney", "General Counsel", "Corporate Counsel",
+            "Legal Director", "Legal Manager", "Paralegal Manager",
+            "Compliance Attorney", "Employment Attorney",
+        ],
+        "Entry Level": [
+            "Administrative Assistant", "Office Coordinator", "Receptionist",
+            "Data Entry Clerk", "File Clerk", "Mail Room Clerk",
+            "Customer Service Representative", "Order Entry Clerk",
+        ],
+        "Staff Account": [
+            "Staff Accountant", "Junior Accountant", "Accounting Associate",
+            "Accounting Specialist", "Accounting Coordinator",
+            "AP Clerk", "AR Clerk", "Billing Clerk",
+        ],
+        "Agriculture & Trades": [
+            "Farm Manager", "Ranch Manager", "Ag Operations Manager",
+            "Shop Manager", "Foreman", "Superintendent",
+            "Trades Manager", "Skilled Trades Supervisor",
+        ],
+    }
+
     # Target Job Titles
     TARGET_JOB_TITLES: list[str] = [
         # HR & Talent
