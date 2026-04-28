@@ -1,6 +1,7 @@
 """DNS Health Check Service - SPF, DKIM, DMARC, MX checks via dnspython."""
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 # Common DKIM selectors by provider (detected from MX records)
 _PROVIDER_SELECTORS: Dict[str, List[str]] = {
     "outlook": ["selector1", "selector2"],
-    "google": ["google", "google2"],
+    "google": ["google", "google2", "20230601", "20221208", "20210112"],
     "zoho": ["zmail", "zoho"],
     "yahoo": ["s1024", "s2048"],
     "protonmail": ["protonmail", "protonmail2", "protonmail3"],
@@ -27,6 +28,7 @@ _PROVIDER_SELECTORS: Dict[str, List[str]] = {
 _FALLBACK_SELECTORS = [
     "selector1", "selector2",  # Microsoft 365
     "google",                   # Google Workspace
+    "20230601",                 # Gmail date-based
     "default",                  # Generic
     "mail",                     # Common
     "s1", "s2",                 # Generic
@@ -35,6 +37,27 @@ _FALLBACK_SELECTORS = [
     "dkim",                     # Generic
     "smtp",                     # Generic
 ]
+
+# Domains where the provider handles DKIM signing automatically.
+# Our DNS check may not find the record (date-based selectors rotate),
+# but outbound mail IS signed when sent through the provider's SMTP.
+_PROVIDER_SIGNED_DOMAINS: Dict[str, str] = {
+    "gmail.com": "google",
+    "googlemail.com": "google",
+    "outlook.com": "outlook",
+    "hotmail.com": "outlook",
+    "live.com": "outlook",
+    "yahoo.com": "yahoo",
+    "ymail.com": "yahoo",
+    "aol.com": "yahoo",
+    "protonmail.com": "protonmail",
+    "proton.me": "protonmail",
+    "pm.me": "protonmail",
+    "fastmail.com": "fastmail",
+    "zoho.com": "zoho",
+    "icloud.com": "apple",
+    "me.com": "apple",
+}
 
 
 def _detect_provider_from_mx(mx_result: Dict[str, Any]) -> str | None:
@@ -83,6 +106,11 @@ def _try_dkim_selector(domain: str, selector: str) -> Dict[str, Any] | None:
         for rdata in answers:
             txt = rdata.to_text().strip('"')
             if "v=DKIM1" in txt or "p=" in txt:
+                # Reject revoked keys — empty p= value means key was revoked
+                p_match = re.search(r"p=([^;\s]*)", txt)
+                if p_match and not p_match.group(1):
+                    logger.debug("DKIM selector '%s' for %s has revoked key (empty p=)", selector, domain)
+                    continue
                 return {"valid": True, "record": txt, "selector": selector}
     except Exception:
         pass
@@ -90,38 +118,54 @@ def _try_dkim_selector(domain: str, selector: str) -> Dict[str, Any] | None:
 
 
 def check_dkim(domain: str, selector: str = "default", mx_result: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    tried: set[str] = set()
+
+    def _try(sel: str) -> Dict[str, Any] | None:
+        if sel in tried:
+            return None
+        tried.add(sel)
+        return _try_dkim_selector(domain, sel)
+
     # 1. If an explicit selector was configured (not "default"), try it first
     if selector != "default":
-        result = _try_dkim_selector(domain, selector)
+        result = _try(selector)
         if result:
             return result
 
     # 2. Auto-detect provider from MX and try provider-specific selectors
+    provider = None
     if mx_result:
         provider = _detect_provider_from_mx(mx_result)
-        if provider and provider in _PROVIDER_SELECTORS:
-            for sel in _PROVIDER_SELECTORS[provider]:
-                if sel == selector:
-                    continue  # Already tried
-                result = _try_dkim_selector(domain, sel)
-                if result:
-                    logger.info("DKIM found for %s with selector '%s' (provider: %s)", domain, sel, provider)
-                    return result
+    # Also check if domain itself is a known provider-signed domain
+    if not provider and domain.lower() in _PROVIDER_SIGNED_DOMAINS:
+        provider = _PROVIDER_SIGNED_DOMAINS[domain.lower()]
+
+    if provider and provider in _PROVIDER_SELECTORS:
+        for sel in _PROVIDER_SELECTORS[provider]:
+            result = _try(sel)
+            if result:
+                logger.info("DKIM found for %s with selector '%s' (provider: %s)", domain, sel, provider)
+                return result
 
     # 3. Try the explicit selector if we haven't yet (it was "default")
     if selector == "default":
-        result = _try_dkim_selector(domain, selector)
+        result = _try(selector)
         if result:
             return result
 
     # 4. Fallback: try common selectors
     for sel in _FALLBACK_SELECTORS:
-        if sel == selector:
-            continue  # Already tried
-        result = _try_dkim_selector(domain, sel)
+        result = _try(sel)
         if result:
             logger.info("DKIM found for %s with fallback selector '%s'", domain, sel)
             return result
+
+    # 5. If domain is provider-signed, treat as valid — the provider signs outbound mail
+    #    even though the DKIM selector may rotate and we can't discover it
+    if domain.lower() in _PROVIDER_SIGNED_DOMAINS:
+        logger.info("DKIM auto-pass for provider-signed domain %s (provider: %s)", domain, _PROVIDER_SIGNED_DOMAINS[domain.lower()])
+        return {"valid": True, "record": "provider-signed", "selector": "provider-managed",
+                "note": f"DKIM is managed by {_PROVIDER_SIGNED_DOMAINS[domain.lower()]}; outbound mail is automatically signed"}
 
     return {"valid": False, "record": None, "selector": selector, "error": "No DKIM record found with any known selector"}
 
