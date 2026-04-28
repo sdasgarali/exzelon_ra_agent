@@ -55,7 +55,7 @@ interface WarmupProfile {
 }
 interface DNSResult {
   id: number; mailbox_id: number; domain: string; spf_valid: boolean;
-  dkim_valid: boolean; dmarc_valid: boolean; overall_score: number;
+  dkim_valid: boolean; dkim_selector?: string; dmarc_valid: boolean; overall_score: number;
 }
 interface BlacklistResult {
   id: number; mailbox_id: number; domain: string; ip_address: string | null;
@@ -611,7 +611,7 @@ export default function WarmupEnginePage() {
                         <tr key={mb.mailbox_id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-medium text-gray-900 truncate max-w-[160px]">{mb.email}</td>
                           <td className="px-3 py-2">{dns ? <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${dns.spf_valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{dns.spf_valid ? 'Pass' : 'Fail'}</span> : <span className="text-gray-400">-</span>}</td>
-                          <td className="px-3 py-2">{dns ? <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${dns.dkim_valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{dns.dkim_valid ? 'Pass' : 'Fail'}</span> : <span className="text-gray-400">-</span>}</td>
+                          <td className="px-3 py-2">{dns ? <span title={dns.dkim_valid && dns.dkim_selector ? `Selector: ${dns.dkim_selector}` : ''} className={`px-1.5 py-0.5 rounded text-xs font-medium ${dns.dkim_valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{dns.dkim_valid ? 'Pass' : 'Fail'}</span> : <span className="text-gray-400">-</span>}</td>
                           <td className="px-3 py-2">{dns ? <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${dns.dmarc_valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{dns.dmarc_valid ? 'Pass' : 'Fail'}</span> : <span className="text-gray-400">-</span>}</td>
                           <td className="px-3 py-2 font-medium">{dns ? dns.overall_score : mb.dns_score}</td>
                           <td className="px-3 py-2"><button onClick={() => handleDnsCheck(mb.mailbox_id)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">Run Check</button></td>

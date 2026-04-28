@@ -1,12 +1,64 @@
 """DNS Health Check Service - SPF, DKIM, DMARC, MX checks via dnspython."""
 import json
+import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.dns_check_result import DNSCheckResult
 from app.core.settings_resolver import get_tenant_setting
+
+logger = logging.getLogger(__name__)
+
+# Common DKIM selectors by provider (detected from MX records)
+_PROVIDER_SELECTORS: Dict[str, List[str]] = {
+    "outlook": ["selector1", "selector2"],
+    "google": ["google", "google2"],
+    "zoho": ["zmail", "zoho"],
+    "yahoo": ["s1024", "s2048"],
+    "protonmail": ["protonmail", "protonmail2", "protonmail3"],
+    "fastmail": ["fm1", "fm2", "fm3"],
+    "mimecast": ["mimecast20190104"],
+    "barracuda": ["barracuda"],
+}
+
+# Fallback selectors to try when provider is unknown
+_FALLBACK_SELECTORS = [
+    "selector1", "selector2",  # Microsoft 365
+    "google",                   # Google Workspace
+    "default",                  # Generic
+    "mail",                     # Common
+    "s1", "s2",                 # Generic
+    "k1",                       # Mailchimp / SendGrid
+    "zmail",                    # Zoho
+    "dkim",                     # Generic
+    "smtp",                     # Generic
+]
+
+
+def _detect_provider_from_mx(mx_result: Dict[str, Any]) -> str | None:
+    """Detect email provider from MX records."""
+    records = mx_result.get("records", [])
+    for rec in records:
+        host = rec.get("host", "").lower()
+        if "google" in host or "gmail" in host or "googlemail" in host:
+            return "google"
+        if "outlook" in host or "microsoft" in host:
+            return "outlook"
+        if "zoho" in host:
+            return "zoho"
+        if "yahoodns" in host or "yahoo" in host:
+            return "yahoo"
+        if "protonmail" in host or "proton" in host:
+            return "protonmail"
+        if "fastmail" in host or "messagingengine" in host:
+            return "fastmail"
+        if "mimecast" in host:
+            return "mimecast"
+        if "barracuda" in host:
+            return "barracuda"
+    return None
 
 
 def check_spf(domain: str) -> Dict[str, Any]:
@@ -22,7 +74,8 @@ def check_spf(domain: str) -> Dict[str, Any]:
         return {"valid": False, "record": None, "error": str(e)}
 
 
-def check_dkim(domain: str, selector: str = "default") -> Dict[str, Any]:
+def _try_dkim_selector(domain: str, selector: str) -> Dict[str, Any] | None:
+    """Try a single DKIM selector. Returns result dict if valid, None otherwise."""
     try:
         import dns.resolver
         dkim_domain = f"{selector}._domainkey.{domain}"
@@ -31,9 +84,46 @@ def check_dkim(domain: str, selector: str = "default") -> Dict[str, Any]:
             txt = rdata.to_text().strip('"')
             if "v=DKIM1" in txt or "p=" in txt:
                 return {"valid": True, "record": txt, "selector": selector}
-        return {"valid": False, "record": None, "selector": selector}
-    except Exception as e:
-        return {"valid": False, "record": None, "selector": selector, "error": str(e)}
+    except Exception:
+        pass
+    return None
+
+
+def check_dkim(domain: str, selector: str = "default", mx_result: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    # 1. If an explicit selector was configured (not "default"), try it first
+    if selector != "default":
+        result = _try_dkim_selector(domain, selector)
+        if result:
+            return result
+
+    # 2. Auto-detect provider from MX and try provider-specific selectors
+    if mx_result:
+        provider = _detect_provider_from_mx(mx_result)
+        if provider and provider in _PROVIDER_SELECTORS:
+            for sel in _PROVIDER_SELECTORS[provider]:
+                if sel == selector:
+                    continue  # Already tried
+                result = _try_dkim_selector(domain, sel)
+                if result:
+                    logger.info("DKIM found for %s with selector '%s' (provider: %s)", domain, sel, provider)
+                    return result
+
+    # 3. Try the explicit selector if we haven't yet (it was "default")
+    if selector == "default":
+        result = _try_dkim_selector(domain, selector)
+        if result:
+            return result
+
+    # 4. Fallback: try common selectors
+    for sel in _FALLBACK_SELECTORS:
+        if sel == selector:
+            continue  # Already tried
+        result = _try_dkim_selector(domain, sel)
+        if result:
+            logger.info("DKIM found for %s with fallback selector '%s'", domain, sel)
+            return result
+
+    return {"valid": False, "record": None, "selector": selector, "error": "No DKIM record found with any known selector"}
 
 
 def check_dmarc(domain: str) -> Dict[str, Any]:
@@ -85,9 +175,9 @@ def run_dns_health_check(mailbox_id: int, db: Session, tenant_id=None) -> Dict[s
     selector = get_tenant_setting(db, "warmup_dkim_selector", tenant_id=tenant_id, default="default")
 
     spf = check_spf(domain)
-    dkim = check_dkim(domain, selector)
-    dmarc = check_dmarc(domain)
     mx = check_mx(domain)
+    dkim = check_dkim(domain, selector, mx_result=mx)
+    dmarc = check_dmarc(domain)
 
     score = calculate_dns_score(spf["valid"], dkim["valid"], dmarc["valid"])
 
@@ -96,7 +186,7 @@ def run_dns_health_check(mailbox_id: int, db: Session, tenant_id=None) -> Dict[s
         domain=domain,
         spf_record=spf.get("record"),
         spf_valid=spf["valid"],
-        dkim_selector=selector,
+        dkim_selector=dkim.get("selector", selector),
         dkim_valid=dkim["valid"],
         dmarc_record=dmarc.get("record"),
         dmarc_valid=dmarc["valid"],
