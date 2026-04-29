@@ -844,6 +844,7 @@ export default function PipelinesPage() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {runs
+              .filter(r => r.pipeline_name !== 'warmup_assessment')
               .filter(r => !pipelineFilter || r.pipeline_name === pipelineFilter)
               .slice((currentPage - 1) * RUNS_PER_PAGE, currentPage * RUNS_PER_PAGE)
               .map((run) => (
@@ -953,7 +954,7 @@ export default function PipelinesPage() {
         )}
 
         {(() => {
-          const filtered = runs.filter(r => !pipelineFilter || r.pipeline_name === pipelineFilter)
+          const filtered = runs.filter(r => r.pipeline_name !== 'warmup_assessment').filter(r => !pipelineFilter || r.pipeline_name === pipelineFilter)
           const totalPages = Math.ceil(filtered.length / RUNS_PER_PAGE)
           if (totalPages <= 1) return null
           return (

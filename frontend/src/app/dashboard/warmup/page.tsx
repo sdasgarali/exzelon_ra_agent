@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { warmupApi, settingsApi, deliverabilityApi } from '@/lib/api'
+import { warmupApi, settingsApi, deliverabilityApi, pipelinesApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -82,7 +83,16 @@ interface SchedulerStatusData {
   total_jobs: number; enabled_jobs: number; jobs: SchedulerJob[];
 }
 
-type TabId = 'overview' | 'analytics' | 'emails' | 'dns' | 'profiles' | 'alerts' | 'settings'
+interface PipelineRun {
+  run_id: number; pipeline_name: string; status: string;
+  started_at: string; ended_at: string | null;
+  records_processed: number; records_success: number; records_failed: number;
+  error_message: string | null; triggered_by: string;
+  duration_seconds: number | null; adapters_used: string[] | null;
+  progress_pct?: number;
+}
+
+type TabId = 'overview' | 'history' | 'analytics' | 'emails' | 'dns' | 'profiles' | 'alerts' | 'settings'
 
 /* helpers */
 const statusColor: Record<string, string> = {
@@ -132,6 +142,12 @@ export default function WarmupEnginePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // Assessment history state
+  const [assessmentRuns, setAssessmentRuns] = useState<PipelineRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runsPage, setRunsPage] = useState(1)
+  const [selectedRunReport, setSelectedRunReport] = useState<PipelineRun | null>(null)
+
   // Email Threads state
   const [emailList, setEmailList] = useState<WarmupEmailList | null>(null)
   const [emailPage, setEmailPage] = useState(1)
@@ -178,6 +194,14 @@ export default function WarmupEnginePage() {
     finally { setEmailsLoading(false) }
   }
 
+  const fetchAssessmentRuns = async () => {
+    setRunsLoading(true)
+    try {
+      const allRuns = await pipelinesApi.runs({ limit: 200 })
+      setAssessmentRuns((allRuns || []).filter((r: PipelineRun) => r.pipeline_name === 'warmup_assessment'))
+    } catch { /* ignore */ } finally { setRunsLoading(false) }
+  }
+
   const openEmailDetail = async (emailId: number) => {
     try {
       setEmailDetailLoading(true)
@@ -187,7 +211,7 @@ export default function WarmupEnginePage() {
     finally { setEmailDetailLoading(false) }
   }
 
-  useEffect(() => { fetchCore() }, [])
+  useEffect(() => { fetchCore(); fetchAssessmentRuns() }, [])
   useEffect(() => { if (activeTab === 'analytics') fetchAnalytics(analyticsDays) }, [activeTab, analyticsDays])
   useEffect(() => { if (activeTab === 'emails') fetchEmails() }, [activeTab, emailPage, emailMailboxFilter, emailDirectionFilter])
   useEffect(() => { if (activeTab === 'alerts') fetchAlerts() }, [activeTab])
@@ -272,12 +296,13 @@ export default function WarmupEnginePage() {
   for (const mb of (status?.mailboxes || [])) { mailboxEmailMap[mb.mailbox_id] = mb.email }
 
   const allTabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: 'Overview' }, { id: 'analytics', label: 'Analytics' },
+    { id: 'overview', label: 'Mailbox Warmup Status' }, { id: 'history', label: 'Warmup Assessment History' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'emails', label: 'Email Threads' },
     { id: 'dns', label: 'DNS & Blacklist' }, { id: 'profiles', label: 'Profiles' },
     { id: 'alerts', label: 'Alerts' }, { id: 'settings', label: 'Settings' },
   ]
-  const tabs = isAdmin ? allTabs : allTabs.filter(t => ['overview', 'analytics'].includes(t.id))
+  const tabs = isAdmin ? allTabs : allTabs.filter(t => ['overview', 'history', 'analytics'].includes(t.id))
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading warmup data...</div></div>
 
@@ -495,6 +520,93 @@ export default function WarmupEnginePage() {
           </div>
         </div>
       )}
+
+      {/* ASSESSMENT HISTORY TAB */}
+      {activeTab === 'history' && (() => {
+        const HISTORY_PER_PAGE = 10
+        const paged = assessmentRuns.slice((runsPage - 1) * HISTORY_PER_PAGE, runsPage * HISTORY_PER_PAGE)
+        const totalPages = Math.ceil(assessmentRuns.length / HISTORY_PER_PAGE)
+        const statusBadge = (s: string) => {
+          const m: Record<string, string> = { running: 'bg-blue-100 text-blue-800 animate-pulse', completed: 'bg-green-100 text-green-800', failed: 'bg-red-100 text-red-800', pending: 'bg-yellow-100 text-yellow-800', cancelled: 'bg-gray-100 text-gray-800' }
+          return m[s?.toLowerCase()] || 'bg-gray-100 text-gray-800'
+        }
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Warmup Assessment History</h2>
+                <p className="text-sm text-gray-500 mt-1">Past warmup_assessment pipeline runs</p>
+              </div>
+              <button onClick={fetchAssessmentRuns} disabled={runsLoading} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {runsLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {['Run ID', 'Status', 'Started', 'Duration', 'Records', 'Success / Failed', 'Triggered By', 'Actions'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {runsLoading ? (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Loading assessment runs...</td></tr>
+                    ) : paged.length === 0 ? (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No warmup assessment runs found.</td></tr>
+                    ) : paged.map(run => (
+                      <tr key={run.run_id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm font-mono text-gray-900">#{run.run_id}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`px-2 py-1 text-xs rounded-full ${statusBadge(run.status)}`}>{run.status}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {run.duration_seconds != null
+                            ? run.duration_seconds < 60
+                              ? `${run.duration_seconds}s`
+                              : `${Math.floor(run.duration_seconds / 60)}m ${Math.round(run.duration_seconds % 60)}s`
+                            : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{run.records_processed || 0}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className="text-green-600">{run.records_success || 0}</span>
+                          {' / '}
+                          <span className="text-red-600">{run.records_failed || 0}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{run.triggered_by || 'system'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {['completed', 'failed', 'cancelled'].includes(run.status?.toLowerCase()) && (
+                            <button
+                              onClick={() => setSelectedRunReport(run)}
+                              className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200"
+                            >
+                              Report
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalPages > 1 && (
+                <div className="px-4 py-3 border-t flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Page {runsPage} of {totalPages} ({assessmentRuns.length} total)</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setRunsPage(p => Math.max(1, p - 1))} disabled={runsPage <= 1} className="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Prev</button>
+                    <button onClick={() => setRunsPage(p => p + 1)} disabled={runsPage >= totalPages} className="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Next</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ANALYTICS TAB */}
       {activeTab === 'analytics' && (
@@ -751,6 +863,16 @@ export default function WarmupEnginePage() {
           </div>
         </div>
       )}
+
+      {/* Pipeline Report Modal for assessment history */}
+      <PipelineReportModal
+        open={!!selectedRunReport}
+        onClose={() => setSelectedRunReport(null)}
+        runId={selectedRunReport?.run_id || 0}
+        pipelineName={selectedRunReport?.pipeline_name || ''}
+        status={selectedRunReport?.status || ''}
+        durationSeconds={selectedRunReport?.duration_seconds ?? null}
+      />
 
       {/* SETTINGS TAB */}
       {activeTab === 'settings' && editConfig && (
