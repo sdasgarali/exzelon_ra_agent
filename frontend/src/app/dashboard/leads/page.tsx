@@ -381,12 +381,20 @@ export default function LeadsPage() {
     })
   }
 
+  const allCurrentPageSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.lead_id))
+
   const toggleSelectAll = () => {
-    if (selectedIds.size === leads.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(leads.map(l => l.lead_id)))
-    }
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allCurrentPageSelected) {
+        // Deselect only current page leads
+        leads.forEach(l => next.delete(l.lead_id))
+      } else {
+        // Add current page leads to existing selections
+        leads.forEach(l => next.add(l.lead_id))
+      }
+      return next
+    })
   }
 
   const handleBulkDelete = async () => {
@@ -1200,7 +1208,7 @@ export default function LeadsPage() {
                 <th className="px-3 py-3 w-10">
                   <input
                     type="checkbox"
-                    checked={leads.length > 0 && selectedIds.size === leads.length}
+                    checked={allCurrentPageSelected}
                     onChange={toggleSelectAll}
                     className="w-4 h-4"
                   />
