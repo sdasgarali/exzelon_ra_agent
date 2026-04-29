@@ -1,6 +1,6 @@
 """Lead details model for job posts and leads."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Numeric, Text, Enum, Index, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -70,6 +70,9 @@ class LeadDetails(Base):
     salary_max = Column(Numeric(10, 2), nullable=True)
     source = Column(String(50), nullable=True)  # linkedin, indeed, glassdoor, simplyhired
     employment_type = Column(String(50), nullable=True)  # Full-time, Part-time, Contract, Temporary, Internship
+
+    # Pipeline run tracking
+    run_id = Column(Integer, ForeignKey("job_runs.run_id"), nullable=True, index=True)
 
     # Enhanced deduplication fields
     external_job_id = Column(String(1024), nullable=True)  # JSearch/SerpAPI job_id for cross-run dedup (prefix-indexed via migration)

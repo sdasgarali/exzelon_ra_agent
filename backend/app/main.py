@@ -1302,6 +1302,28 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for data_type column: {e}")
 
+    # Migration: add run_id column to lead_details
+    try:
+        from sqlalchemy import text as sa_text_runid, inspect as sa_inspect_runid
+        with engine.connect() as conn:
+            inspector_runid = sa_inspect_runid(engine)
+            lead_cols_runid = [c["name"] for c in inspector_runid.get_columns("lead_details")]
+            if "run_id" not in lead_cols_runid:
+                try:
+                    conn.execute(sa_text_runid("ALTER TABLE lead_details ADD COLUMN run_id INTEGER NULL"))
+                    conn.commit()
+                    logger.info("Migration: added run_id column to lead_details")
+                except Exception:
+                    pass
+                try:
+                    conn.execute(sa_text_runid("CREATE INDEX idx_lead_run_id ON lead_details(run_id)"))
+                    conn.commit()
+                    logger.info("Migration: added idx_lead_run_id index")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Migration check for run_id column: {e}")
+
     # Migration: add onboarding_dismissed_at column to users
     try:
         from sqlalchemy import text as sa_text_onboard, inspect as sa_inspect_onboard

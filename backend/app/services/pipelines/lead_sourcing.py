@@ -713,6 +713,7 @@ def run_lead_sourcing_pipeline(
                     employer_website=job_data.get("employer_website") or None,
                     industry=job_data.get("industry") or None,
                     company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
+                    run_id=job_run.run_id,
                 )
                 db.add(lead)
                 # Flush immediately to catch IntegrityError per-lead

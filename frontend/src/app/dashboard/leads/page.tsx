@@ -24,6 +24,7 @@ interface Lead {
   contact_count: number  // Number of contacts linked to this lead
   industry: string | null
   company_size: string | null
+  run_id: number | null
   data_type: string
   is_archived: boolean
   created_at: string
@@ -69,7 +70,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size' | 'run_id'
 type SortOrder = 'asc' | 'desc'
 
 const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
@@ -100,6 +101,8 @@ export default function LeadsPage() {
   const [filterEmploymentType, setFilterEmploymentType] = useState('')
   const [filterExcludeKeywords, setFilterExcludeKeywords] = useState<string[]>([])
   const [filterTitle, setFilterTitle] = useState<string[]>([])
+  const [filterExtractedFrom, setFilterExtractedFrom] = useState('')
+  const [filterExtractedTo, setFilterExtractedTo] = useState('')
 
   // Filter options from backend
   const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [], data_types: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
@@ -214,7 +217,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -238,6 +241,8 @@ export default function LeadsPage() {
       if (filterEmploymentType) params.employment_type = filterEmploymentType
       if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
       if (filterTitle.length) params.title = filterTitle
+      if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
+      if (filterExtractedTo) params.extracted_to = filterExtractedTo
       if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
@@ -765,7 +770,7 @@ export default function LeadsPage() {
     )
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterDataType, filterEmploymentType, search].filter(Boolean).length
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDataType, filterEmploymentType, search].filter(Boolean).length
     + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   return (
@@ -987,7 +992,7 @@ export default function LeadsPage() {
           <div className="flex-1 min-w-64">
             <input
               type="text"
-              placeholder="Search by ID (#42), company, job title, or state..."
+              placeholder="Search by ID (#42), Run ID (R5), company, job title, or state..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="input w-full"
@@ -1143,6 +1148,24 @@ export default function LeadsPage() {
               />
             </div>
             <div>
+              <label className="label text-sm">Extracted From</label>
+              <input
+                type="date"
+                value={filterExtractedFrom}
+                onChange={(e) => { setFilterExtractedFrom(e.target.value); setPage(1); }}
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Extracted To</label>
+              <input
+                type="date"
+                value={filterExtractedTo}
+                onChange={(e) => { setFilterExtractedTo(e.target.value); setPage(1); }}
+                className="input w-full"
+              />
+            </div>
+            <div>
               <label className="label text-sm">Page Size</label>
               <select
                 value={pageSize}
@@ -1189,6 +1212,12 @@ export default function LeadsPage() {
                   ID <SortIcon field="lead_id" />
                 </th>
                 <th
+                  onClick={() => handleSort('run_id')}
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Run <SortIcon field="run_id" />
+                </th>
+                <th
                   onClick={() => handleSort('client_name')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
@@ -1205,6 +1234,12 @@ export default function LeadsPage() {
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   Posted <SortIcon field="posting_date" />
+                </th>
+                <th
+                  onClick={() => handleSort('created_at')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Extracted <SortIcon field="created_at" />
                 </th>
                 <th
                   onClick={() => handleSort('source')}
@@ -1250,13 +1285,13 @@ export default function LeadsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
                     Loading leads...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
                     No leads found. {activeFiltersCount > 0 ? 'Try adjusting your filters.' : 'Run the Lead Sourcing pipeline to fetch jobs.'}
                   </td>
                 </tr>
@@ -1280,6 +1315,9 @@ export default function LeadsPage() {
                         {lead.is_archived && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-medium">Archived</span>}
                       </div>
                     </td>
+                    <td className="px-3 py-3 text-xs text-gray-500 font-mono">
+                      {lead.run_id ? `R${lead.run_id}` : '-'}
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline">
                         {lead.client_name}
@@ -1291,6 +1329,9 @@ export default function LeadsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDate(lead.posting_date)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '-'}
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">

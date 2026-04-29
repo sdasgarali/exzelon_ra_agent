@@ -64,6 +64,7 @@ SORT_COLUMNS = {
     "source": LeadDetails.source,
     "employment_type": LeadDetails.employment_type,
     "lead_status": LeadDetails.lead_status,
+    "run_id": LeadDetails.run_id,
 }
 
 
@@ -85,6 +86,8 @@ async def list_leads(
     title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
+    extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
+    extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
@@ -161,11 +164,24 @@ async def list_leads(
         query = query.filter(LeadDetails.posting_date >= from_date)
     if to_date:
         query = query.filter(LeadDetails.posting_date <= to_date)
+    if extracted_from:
+        query = query.filter(func.date(LeadDetails.created_at) >= extracted_from)
+    if extracted_to:
+        query = query.filter(func.date(LeadDetails.created_at) <= extracted_to)
     if search:
-        # Support searching by numeric ID (e.g. "42" or "#42")
+        # Support searching by numeric ID or run ID (e.g. "42", "#42", "R42", "run:42")
         search_stripped = search.lstrip('#').strip()
-        if search_stripped.isdigit():
-            query = query.filter(LeadDetails.lead_id == int(search_stripped))
+        run_prefix = search.lower().startswith('r') or search.lower().startswith('run:')
+        run_num = search.lstrip('rRunRUN:').strip() if run_prefix else None
+        if run_num and run_num.isdigit():
+            query = query.filter(LeadDetails.run_id == int(run_num))
+        elif search_stripped.isdigit():
+            # Could be lead_id or run_id — match either
+            num_val = int(search_stripped)
+            query = query.filter(
+                (LeadDetails.lead_id == num_val) |
+                (LeadDetails.run_id == num_val)
+            )
         else:
             # Find lead IDs that have contacts matching the search email
             contact_lead_ids = db.query(LeadContactAssociation.lead_id).join(
