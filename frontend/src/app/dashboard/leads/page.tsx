@@ -27,6 +27,7 @@ interface Lead {
   run_id: number | null
   data_type: string
   is_archived: boolean
+  downloaded_at: string | null
   created_at: string
   updated_at: string
 }
@@ -70,7 +71,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size' | 'run_id'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size' | 'run_id' | 'downloaded_at'
 type SortOrder = 'asc' | 'desc'
 
 const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
@@ -103,6 +104,10 @@ export default function LeadsPage() {
   const [filterTitle, setFilterTitle] = useState<string[]>([])
   const [filterExtractedFrom, setFilterExtractedFrom] = useState('')
   const [filterExtractedTo, setFilterExtractedTo] = useState('')
+  const [filterDownloaded, setFilterDownloaded] = useState('')
+
+  // Export modal
+  const [showExportModal, setShowExportModal] = useState(false)
 
   // Filter options from backend
   const [leadFilterOptions, setLeadFilterOptions] = useState<LeadFilterOptions>({ industries: [], company_sizes: [], data_types: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
@@ -217,7 +222,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
 
   const fetchLeads = async () => {
     try {
@@ -243,6 +248,7 @@ export default function LeadsPage() {
       if (filterTitle.length) params.title = filterTitle
       if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
       if (filterExtractedTo) params.extracted_to = filterExtractedTo
+      if (filterDownloaded) params.downloaded = filterDownloaded
       if (showArchived) params.show_archived = true
 
       const response = await leadsApi.list(params)
@@ -296,20 +302,26 @@ export default function LeadsPage() {
     setFilterEmploymentType('')
     setFilterExcludeKeywords([])
     setFilterTitle([])
+    setFilterDownloaded('')
     setShowArchived(false)
     setPage(1)
   }
 
-  const handleExport = async () => {
+  const handleExport = async (mode: 'all' | 'selected') => {
     try {
       setExporting(true)
+      setShowExportModal(false)
       const params = new URLSearchParams()
-      if (filterStatus) params.append('status', filterStatus)
-      if (filterSource) params.append('source', filterSource)
-      filterState.forEach(s => params.append('state', s))
-      if (filterFromDate) params.append('from_date', filterFromDate)
-      if (filterToDate) params.append('to_date', filterToDate)
-      if (debouncedSearch) params.append('search', debouncedSearch)
+      if (mode === 'selected') {
+        Array.from(selectedIds).forEach(id => params.append('lead_ids', String(id)))
+      } else {
+        if (filterStatus) params.append('status', filterStatus)
+        if (filterSource) params.append('source', filterSource)
+        filterState.forEach(s => params.append('state', s))
+        if (filterFromDate) params.append('from_date', filterFromDate)
+        if (filterToDate) params.append('to_date', filterToDate)
+        if (debouncedSearch) params.append('search', debouncedSearch)
+      }
 
       const response = await api.get(`/leads/export/csv?${params.toString()}`, {
         responseType: 'blob'
@@ -325,8 +337,9 @@ export default function LeadsPage() {
       link.remove()
       window.URL.revokeObjectURL(url)
 
-      setSuccess('Export completed successfully')
+      setSuccess(`Export completed — ${mode === 'selected' ? selectedIds.size + ' selected' : 'all filtered'} leads`)
       setTimeout(() => setSuccess(''), 3000)
+      fetchLeads() // Refresh to show updated downloaded_at
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to export leads')
     } finally {
@@ -778,7 +791,7 @@ export default function LeadsPage() {
     )
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDataType, filterEmploymentType, search].filter(Boolean).length
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, filterEmploymentType, search].filter(Boolean).length
     + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   return (
@@ -898,23 +911,56 @@ export default function LeadsPage() {
           </button>
 
           {/* Export Button */}
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="btn-secondary flex items-center gap-2"
-          >
-            {exporting ? (
+          <div className="relative">
+            <button
+              onClick={() => setShowExportModal(true)}
+              disabled={exporting}
+              className="btn-secondary flex items-center gap-2"
+            >
+              {exporting ? (
+                <>
+                  <span className="animate-spin">&#8635;</span>
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <span>&#8595;</span>
+                  Export CSV
+                </>
+              )}
+            </button>
+            {showExportModal && (
               <>
-                <span className="animate-spin">&#8635;</span>
-                Exporting...
-              </>
-            ) : (
-              <>
-                <span>&#8595;</span>
-                Export CSV
+              <div className="fixed inset-0 z-40" onClick={() => setShowExportModal(false)} />
+              <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-56">
+                <div className="p-2">
+                  <div className="text-xs font-medium text-gray-500 px-3 py-1.5">Export Options</div>
+                  <button
+                    onClick={() => handleExport('all')}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2"
+                  >
+                    <span>&#128196;</span> All Leads {total > 0 && <span className="text-gray-400 text-xs">({total})</span>}
+                  </button>
+                  <button
+                    onClick={() => handleExport('selected')}
+                    disabled={selectedIds.size === 0}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <span>&#9745;</span> Selected Only {selectedIds.size > 0 && <span className="text-gray-400 text-xs">({selectedIds.size})</span>}
+                  </button>
+                </div>
+                <div className="border-t px-2 py-1.5">
+                  <button
+                    onClick={() => setShowExportModal(false)}
+                    className="w-full text-center text-xs text-gray-500 hover:text-gray-700 py-1"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
               </>
             )}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1174,6 +1220,18 @@ export default function LeadsPage() {
               />
             </div>
             <div>
+              <label className="label text-sm">Downloaded</label>
+              <select
+                value={filterDownloaded}
+                onChange={(e) => { setFilterDownloaded(e.target.value); setPage(1); }}
+                className="input w-full"
+              >
+                <option value="">All</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div>
               <label className="label text-sm">Page Size</label>
               <select
                 value={pageSize}
@@ -1250,6 +1308,12 @@ export default function LeadsPage() {
                   Extracted <SortIcon field="created_at" />
                 </th>
                 <th
+                  onClick={() => handleSort('downloaded_at')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Downloaded <SortIcon field="downloaded_at" />
+                </th>
+                <th
                   onClick={() => handleSort('source')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
@@ -1293,13 +1357,13 @@ export default function LeadsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
                     Loading leads...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
                     No leads found. {activeFiltersCount > 0 ? 'Try adjusting your filters.' : 'Run the Lead Sourcing pipeline to fetch jobs.'}
                   </td>
                 </tr>
@@ -1340,6 +1404,15 @@ export default function LeadsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {lead.downloaded_at ? (
+                        <span className="text-xs px-2 py-1 rounded bg-green-50 text-green-700" title={new Date(lead.downloaded_at).toLocaleString()}>
+                          {new Date(lead.downloaded_at).toLocaleDateString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">

@@ -1324,6 +1324,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for run_id column: {e}")
 
+    # Migration: add downloaded_at column to lead_details
+    try:
+        from sqlalchemy import text as sa_text_dl, inspect as sa_inspect_dl
+        with engine.connect() as conn:
+            inspector_dl = sa_inspect_dl(engine)
+            lead_cols_dl = [c["name"] for c in inspector_dl.get_columns("lead_details")]
+            if "downloaded_at" not in lead_cols_dl:
+                try:
+                    conn.execute(sa_text_dl("ALTER TABLE lead_details ADD COLUMN downloaded_at DATETIME NULL"))
+                    conn.commit()
+                    logger.info("Migration: added downloaded_at column to lead_details")
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Migration check for downloaded_at column: {e}")
+
     # Migration: add onboarding_dismissed_at column to users
     try:
         from sqlalchemy import text as sa_text_onboard, inspect as sa_inspect_onboard

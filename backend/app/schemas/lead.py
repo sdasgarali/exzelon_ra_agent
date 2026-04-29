@@ -66,6 +66,7 @@ class LeadResponse(LeadBase):
     company_size: Optional[str] = None
     run_id: Optional[int] = None
     is_archived: bool = False
+    downloaded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

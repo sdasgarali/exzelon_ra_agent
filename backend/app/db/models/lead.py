@@ -103,6 +103,9 @@ class LeadDetails(Base):
     # Research analyst tracking
     ra_name = Column(String(100), nullable=True)
 
+    # Download/export tracking
+    downloaded_at = Column(DateTime, nullable=True)
+
     # Legacy one-to-many relationship (contacts with lead_id FK)
     # No cascade delete — contacts must survive lead deletion to grow the database
     contacts = relationship("ContactDetails", back_populates="lead")

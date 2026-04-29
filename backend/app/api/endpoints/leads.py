@@ -65,6 +65,7 @@ SORT_COLUMNS = {
     "employment_type": LeadDetails.employment_type,
     "lead_status": LeadDetails.lead_status,
     "run_id": LeadDetails.run_id,
+    "downloaded_at": LeadDetails.downloaded_at,
 }
 
 
@@ -88,6 +89,7 @@ async def list_leads(
     to_date: Optional[date] = None,
     extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
     extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
+    downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
@@ -168,6 +170,11 @@ async def list_leads(
         query = query.filter(func.date(LeadDetails.created_at) >= extracted_from)
     if extracted_to:
         query = query.filter(func.date(LeadDetails.created_at) <= extracted_to)
+    if downloaded:
+        if downloaded.lower() == 'yes':
+            query = query.filter(LeadDetails.downloaded_at.isnot(None))
+        elif downloaded.lower() == 'no':
+            query = query.filter(LeadDetails.downloaded_at.is_(None))
     if search:
         # Support searching by numeric ID or run ID (e.g. "42", "#42", "R42", "run:42")
         search_stripped = search.lstrip('#').strip()
@@ -565,6 +572,7 @@ async def export_leads_csv(
     to_date: Optional[date] = None,
     search: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived leads"),
+    lead_ids: Optional[List[int]] = Query(None, description="Export only these lead IDs (selected leads)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -579,10 +587,14 @@ async def export_leads_csv(
     lead_query = db.query(LeadDetails)
     lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
 
-    if show_archived:
-        lead_query = lead_query.filter(LeadDetails.is_archived == True)
+    # If specific lead IDs requested, filter to just those
+    if lead_ids:
+        lead_query = lead_query.filter(LeadDetails.lead_id.in_(lead_ids))
     else:
-        lead_query = lead_query.filter(LeadDetails.is_archived == False)
+        if show_archived:
+            lead_query = lead_query.filter(LeadDetails.is_archived == True)
+        else:
+            lead_query = lead_query.filter(LeadDetails.is_archived == False)
 
     if lead_status:
         lead_query = lead_query.filter(LeadDetails.lead_status == lead_status)
@@ -600,6 +612,19 @@ async def export_leads_csv(
             (LeadDetails.job_title.ilike(f"%{search}%"))
         )
 
+    # Stamp downloaded_at on all exported leads
+    now = datetime.now()
+    export_query = lead_query.with_entities(LeadDetails.lead_id)
+    exported_ids = [row[0] for row in export_query.all()]
+    if exported_ids:
+        # Batch update in chunks of 500
+        for i in range(0, len(exported_ids), 500):
+            chunk = exported_ids[i:i + 500]
+            db.query(LeadDetails).filter(LeadDetails.lead_id.in_(chunk)).update(
+                {LeadDetails.downloaded_at: now}, synchronize_session=False
+            )
+        db.commit()
+
     def generate_csv():
         """Stream Lead×Contact CSV rows in batches."""
         output = io.StringIO()
@@ -612,7 +637,7 @@ async def export_leads_csv(
             "Position Type", "Posting Date", "Job Link", "Source",
             "Lead Status", "Salary Min", "Salary Max", "Industry",
             "Company Size", "Employer LinkedIn", "Employer Website",
-            "Lead Created At",
+            "Lead Created At", "Downloaded At",
             # Contact fields
             "Contact ID", "Contact First Name", "Contact Last Name",
             "Contact Title", "Contact Email", "Contact Phone",
@@ -679,6 +704,7 @@ async def export_leads_csv(
                     lead.employer_linkedin_url or "",
                     lead.employer_website or "",
                     lead.created_at.isoformat() if lead.created_at else "",
+                    lead.downloaded_at.isoformat() if lead.downloaded_at else "",
                 ]
 
                 if not cids:
