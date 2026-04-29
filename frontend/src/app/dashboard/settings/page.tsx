@@ -1373,10 +1373,10 @@ export default function SettingsPage() {
           <div className="card p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
               <span className="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
-              Target Industries (Non-IT Only)
+              Target Industries
             </h3>
             <p className="text-sm text-gray-500 mb-4">
-              Select which industries to target for lead sourcing. IT/Tech industries are excluded by design.
+              Select which industries to target for lead sourcing. Check &quot;Any&quot; to search all industries without filtering.
             </p>
             {/* "Any" checkbox */}
             <label className="flex items-center gap-2 cursor-pointer mb-3 p-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-green-400 transition-colors">
