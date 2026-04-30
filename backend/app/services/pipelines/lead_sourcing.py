@@ -579,8 +579,8 @@ def run_lead_sourcing_pipeline(
 
         # "__ANY__" sentinel means skip filtering for that dimension
         if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
-            target_job_titles = None
-            logger.info("Job titles set to 'Any' — no title filtering")
+            target_job_titles = settings.BROAD_SEARCH_QUERIES
+            logger.info(f"Job titles set to 'Any' — using {len(settings.BROAD_SEARCH_QUERIES)} broad search terms")
         if isinstance(target_industries, list) and target_industries == ["__ANY__"]:
             target_industries = None
             logger.info("Industries set to 'Any' — no industry filtering")

@@ -530,6 +530,31 @@ class Settings(BaseSettings):
         "Shop Manager", "Foreman", "Superintendent",
     ]
 
+    # Broad search queries used when "Any" is selected for job titles.
+    # These generic role-level terms cast a much wider net than the specific
+    # TARGET_JOB_TITLES list. Each term acts as a contains/wildcard match
+    # at the API level — e.g., "Manager" matches Construction Manager,
+    # Operations Manager, Plant Manager, Food Service Manager, etc.
+    BROAD_SEARCH_QUERIES: list[str] = [
+        "Accountant", "Administrator", "Advisor", "Agent",
+        "Analyst", "Apprentice", "Architect", "Assistant",
+        "Associate", "Attorney", "Auditor", "Bookkeeper",
+        "Broker", "Buyer", "CAD Technician", "CFO",
+        "Chef", "Chemist", "Clerk", "Comptroller",
+        "Consultant", "Controller", "Coordinator", "Counsel",
+        "Counselor", "Designer", "Director", "Dispatcher",
+        "Drafter", "Electrician", "Engineer", "Estimator",
+        "Executive", "Fabricator", "Foreman", "Inspector",
+        "Installer", "Intern", "Laborer", "Lawyer",
+        "Leader", "Machinist", "Manager", "Mechanic",
+        "Microbiologist", "Nutritionist", "Officer", "Operator",
+        "Planner", "Principal", "Programmer", "Representative",
+        "Scheduler", "Scientist", "Specialist", "Superintendent",
+        "Supervisor", "Surveyor", "Tax Preparer", "Technician",
+        "Technologist", "Toolmaker", "Trainee", "Treasurer",
+        "Underwriter", "Worker",
+    ]
+
 
 @lru_cache
 def get_settings() -> Settings:
