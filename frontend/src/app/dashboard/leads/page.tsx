@@ -86,7 +86,7 @@ export default function LeadsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [updating, setUpdating] = useState<number | null>(null)
-  const [pageSize, setPageSize] = useState(25)
+  const [pageSize, setPageSize] = useState(200)
 
   // Filters
   const [showFilters, setShowFilters] = useState(false)
@@ -1242,6 +1242,8 @@ export default function LeadsPage() {
                 <option value="25">25 per page</option>
                 <option value="50">50 per page</option>
                 <option value="100">100 per page</option>
+                <option value="200">200 per page</option>
+                <option value="500">All</option>
               </select>
             </div>
             </div>
