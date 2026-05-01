@@ -204,6 +204,13 @@ async def list_leads(
 
     total = query.count()
 
+    # Total lead-contact associations across ALL filtered leads (not just current page).
+    # Counts each (lead, contact) pair separately — e.g. one contact linked to 3 leads = 3.
+    filtered_ids_sq = query.with_entities(LeadDetails.lead_id).subquery()
+    total_contact_associations = db.query(func.count(LeadContactAssociation.contact_id)).join(
+        filtered_ids_sq, LeadContactAssociation.lead_id == filtered_ids_sq.c.lead_id
+    ).scalar() or 0
+
     if sort_by == "contact_count":
         # Subquery: count distinct contacts per lead from junction table
         count_sub = db.query(
@@ -311,6 +318,7 @@ async def list_leads(
     return {
         "items": lead_responses,
         "total": total,
+        "total_contact_associations": total_contact_associations,
         "page": page,
         "page_size": page_size,
         "pages": pages
@@ -480,15 +488,8 @@ async def get_lead_stats(
         key = cstatus.value if hasattr(cstatus, 'value') else cstatus
         by_campaign_status[key] = cnt
 
-    # Total contacts linked to these leads
-    lead_ids_sq = stats_base.with_entities(LeadDetails.lead_id).subquery()
-    total_contacts = db.query(func.count(func.distinct(LeadContactAssociation.contact_id))).join(
-        lead_ids_sq, LeadContactAssociation.lead_id == lead_ids_sq.c.lead_id
-    ).scalar() or 0
-
     return {
         "total": total,
-        "total_contacts": total_contacts,
         "by_status": {s.value: c for s, c in by_status if s},
         "by_source": {s: c for s, c in by_source if s},
         "by_campaign_status": by_campaign_status,

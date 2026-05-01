@@ -170,7 +170,8 @@ export default function LeadsPage() {
   const [checkingEligibility, setCheckingEligibility] = useState(false)
 
   // Status cards stats
-  const [leadStats, setLeadStats] = useState<{ total: number; total_contacts: number; by_status: Record<string, number>; by_campaign_status: Record<string, number> } | null>(null)
+  const [leadStats, setLeadStats] = useState<{ total: number; by_status: Record<string, number>; by_campaign_status: Record<string, number> } | null>(null)
+  const [totalContactAssociations, setTotalContactAssociations] = useState(0)
 
   // Update cache whenever leads change (user browses pages)
   useEffect(() => {
@@ -254,6 +255,7 @@ export default function LeadsPage() {
       const response = await leadsApi.list(params)
       setLeads(response.items || [])
       setTotal(response.total || 0)
+      setTotalContactAssociations(response.total_contact_associations || 0)
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
         setError(err.response?.data?.detail || 'Failed to fetch leads')
@@ -801,9 +803,9 @@ export default function LeadsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Leads</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {total} job postings sourced from LinkedIn, Indeed, Glassdoor, and more
-            {leadStats?.total_contacts != null && leadStats.total_contacts > 0 && (
-              <> — {leadStats.total_contacts.toLocaleString()} contacts are associated with these leads</>
+            {total.toLocaleString()} job postings sourced from LinkedIn, Indeed, Glassdoor, and more
+            {totalContactAssociations > 0 && (
+              <> — {totalContactAssociations.toLocaleString()} contacts are associated with these leads</>
             )}
           </p>
         </div>
