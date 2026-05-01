@@ -480,8 +480,15 @@ async def get_lead_stats(
         key = cstatus.value if hasattr(cstatus, 'value') else cstatus
         by_campaign_status[key] = cnt
 
+    # Total contacts linked to these leads
+    lead_ids_sq = stats_base.with_entities(LeadDetails.lead_id).subquery()
+    total_contacts = db.query(func.count(func.distinct(LeadContactAssociation.contact_id))).join(
+        lead_ids_sq, LeadContactAssociation.lead_id == lead_ids_sq.c.lead_id
+    ).scalar() or 0
+
     return {
         "total": total,
+        "total_contacts": total_contacts,
         "by_status": {s.value: c for s, c in by_status if s},
         "by_source": {s: c for s, c in by_source if s},
         "by_campaign_status": by_campaign_status,

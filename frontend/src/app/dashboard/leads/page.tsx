@@ -170,7 +170,7 @@ export default function LeadsPage() {
   const [checkingEligibility, setCheckingEligibility] = useState(false)
 
   // Status cards stats
-  const [leadStats, setLeadStats] = useState<{ total: number; by_status: Record<string, number>; by_campaign_status: Record<string, number> } | null>(null)
+  const [leadStats, setLeadStats] = useState<{ total: number; total_contacts: number; by_status: Record<string, number>; by_campaign_status: Record<string, number> } | null>(null)
 
   // Update cache whenever leads change (user browses pages)
   useEffect(() => {
@@ -802,6 +802,9 @@ export default function LeadsPage() {
           <h1 className="text-2xl font-bold text-gray-800">Leads</h1>
           <p className="text-gray-500 text-sm mt-1">
             {total} job postings sourced from LinkedIn, Indeed, Glassdoor, and more
+            {leadStats?.total_contacts != null && leadStats.total_contacts > 0 && (
+              <> — {leadStats.total_contacts.toLocaleString()} contacts are associated with these leads</>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
