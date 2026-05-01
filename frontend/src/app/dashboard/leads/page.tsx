@@ -1262,6 +1262,20 @@ export default function LeadsPage() {
         </div>
       )}
 
+      {/* Pagination (top) */}
+      <div className="bg-white px-6 py-3 flex items-center justify-between border rounded-lg mb-2">
+        <div className="text-sm text-gray-500">
+          Showing {leads.length > 0 ? ((page - 1) * pageSize) + 1 : 0} to {Math.min(page * pageSize, total)} of {total} results
+        </div>
+        <div className="flex gap-2 items-center">
+          <button onClick={() => setPage(1)} disabled={page === 1} className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100" title="First page">&laquo;</button>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100">Previous</button>
+          <span className="px-3 py-1 text-sm text-gray-600">Page {page} of {Math.ceil(total / pageSize) || 1}</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={page * pageSize >= total} className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100">Next</button>
+          <button onClick={() => setPage(Math.ceil(total / pageSize))} disabled={page * pageSize >= total} className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100" title="Last page">&raquo;</button>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
