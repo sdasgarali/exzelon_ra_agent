@@ -22,6 +22,45 @@ from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
+# Legal entity suffixes to strip for cleaner API search queries.
+# These confuse fuzzy-match APIs (e.g., Apollo q_organization_name)
+# without adding search value.  We preserve casing and the core name.
+_LEGAL_SUFFIXES = re.compile(
+    r'[,\s]+'           # leading comma / whitespace before suffix
+    r'(?:'
+    r'Inc\.?|Incorporated|Corp\.?|Corporation|LLC|L\.?L\.?C\.?|'
+    r'Ltd\.?|Limited|Co\.?|Company|PLC|LP|LLP|'
+    r'P\.?C\.?|PLLC|S\.?A\.?|N\.?A\.?|'
+    r'Group|Holdings'
+    r')\s*$',
+    re.IGNORECASE,
+)
+
+
+def clean_company_name_for_search(name: str) -> str:
+    """Strip legal entity suffixes for better API search matching.
+
+    Unlike normalize_company_name() (dedup-grade, lowercased), this
+    preserves original casing and only removes trailing legal suffixes
+    that hurt fuzzy search.
+
+    Examples:
+        "Tractor Supply Company, Inc." -> "Tractor Supply"
+        "The Boeing Company"           -> "The Boeing"
+        "FedEx Corp."                  -> "FedEx"
+        "ABC Holdings LLC"             -> "ABC"
+    """
+    if not name:
+        return name
+    cleaned = name.strip()
+    # Iteratively strip — handles "XYZ Holdings, Inc." (two suffixes)
+    for _ in range(3):
+        prev = cleaned
+        cleaned = _LEGAL_SUFFIXES.sub('', cleaned).strip()
+        if cleaned == prev:
+            break
+    return cleaned or name  # Fall back to original if everything was stripped
+
 
 def get_contact_discovery_adapters(db=None, tenant_id=None):
     """Get all configured contact discovery adapters with DB-stored API keys."""
@@ -416,8 +455,9 @@ def run_contact_enrichment_pipeline(
                     try:
                         adapter_stats[adapter_name]["calls"] += 1
                         adapters_used_for_lead.append(adapter_name)
+                        search_company = clean_company_name_for_search(lead.client_name)
                         result = adapter.search_contacts(
-                            company_name=lead.client_name,
+                            company_name=search_company,
                             job_title=lead.job_title,
                             state=lead.state,
                             limit=remaining_needed,
