@@ -7,7 +7,7 @@ Pricing: From $40/mo for 4,000 searches (vs SerpAPI $50/mo for 5,000)
 """
 import time
 import random
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
 from app.services.adapters.base import JobSourceAdapter, RateLimitError
@@ -82,7 +82,19 @@ class SearchAPIAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles into groups of 4 for OR queries
+        # Map days to Google Jobs date filter chips (same as SerpAPI)
+        date_filter_map = {
+            1: "today",
+            3: "3days",
+            7: "week",
+            30: "month",
+        }
+        date_filter = date_filter_map.get(
+            min(posted_within_days, 30),
+            "week" if posted_within_days <= 7 else "month"
+        )
+
+        # Batch titles into groups of 4 for OR queries (unquoted, matching SerpAPI)
         title_batches = [search_titles[i:i+4] for i in range(0, len(search_titles), 4)]
 
         with httpx.Client(timeout=30) as client:
@@ -90,7 +102,7 @@ class SearchAPIAdapter(JobSourceAdapter):
                 if len(jobs) >= limit:
                     break
 
-                query = " OR ".join(f'"{t}"' for t in batch)
+                query = " OR ".join(batch)
 
                 # Paginate with offset (start param, 10 per page)
                 for start in range(0, 30, 10):  # 3 pages per batch
@@ -102,13 +114,15 @@ class SearchAPIAdapter(JobSourceAdapter):
                         "q": query,
                         "location": location,
                         "api_key": self.api_key,
+                        "chips": f"date_posted:{date_filter}",
                         "start": start,
                     }
 
                     try:
                         response = self._request_with_backoff(client, params)
                         data = response.json()
-                        results = data.get("jobs_results", [])
+                        # SearchAPI returns jobs under "jobs" key (not "jobs_results")
+                        results = data.get("jobs", [])
 
                         if not results:
                             break
@@ -142,9 +156,25 @@ class SearchAPIAdapter(JobSourceAdapter):
         if not raw_data:
             return None
 
-        # Parse posting date
-        date_str = raw_data.get("detected_extensions", {}).get("posted_at", "")
-        posting_date = date.today()  # Default to today
+        # Parse posting date from relative text like "3 days ago"
+        detected_extensions = raw_data.get("detected_extensions", {})
+        posted_at = detected_extensions.get("posted_at", "")
+        posting_date = date.today()
+        if posted_at:
+            try:
+                if "hour" in posted_at or "just" in posted_at:
+                    posting_date = date.today()
+                elif "day" in posted_at:
+                    days = int("".join(filter(str.isdigit, posted_at)) or "1")
+                    posting_date = date.today() - timedelta(days=days)
+                elif "week" in posted_at:
+                    weeks = int("".join(filter(str.isdigit, posted_at)) or "1")
+                    posting_date = date.today() - timedelta(weeks=weeks)
+                elif "month" in posted_at:
+                    months = int("".join(filter(str.isdigit, posted_at)) or "1")
+                    posting_date = date.today() - timedelta(days=months * 30)
+            except Exception:
+                posting_date = date.today()
 
         # Extract location
         location = raw_data.get("location", "") or ""
@@ -161,10 +191,9 @@ class SearchAPIAdapter(JobSourceAdapter):
                     break
 
         # Extract salary from extensions
-        extensions = raw_data.get("detected_extensions", {})
         salary_min = None
         salary_max = None
-        salary_str = extensions.get("salary", "")
+        salary_str = detected_extensions.get("salary", "")
         if salary_str and "$" in salary_str:
             import re
             nums = re.findall(r'[\d,]+', salary_str.replace(",", ""))
@@ -174,21 +203,24 @@ class SearchAPIAdapter(JobSourceAdapter):
             elif len(nums) == 1:
                 salary_min = float(nums[0])
 
-        # Employment type: SearchAPI field is detected_extensions.schedule_type (same as SerpAPI)
+        # Employment type: SearchAPI uses "schedule" (not "schedule_type")
         from app.services.adapters.base import normalize_employment_type
-        emp_type = normalize_employment_type(extensions.get("schedule_type", ""))
+        emp_type = normalize_employment_type(detected_extensions.get("schedule", ""))
+
+        # Get job link: apply_link directly on object, fallback to sharing_link
+        job_link = raw_data.get("apply_link", "") or raw_data.get("sharing_link", "")
 
         return {
             "client_name": raw_data.get("company_name", "Unknown Company"),
             "job_title": raw_data.get("title", "Unknown Position"),
             "state": state,
             "posting_date": posting_date,
-            "job_link": raw_data.get("apply_link") or raw_data.get("share_link", ""),
+            "job_link": job_link,
             "salary_min": salary_min,
             "salary_max": salary_max,
             "source": "searchapi",
             "employment_type": emp_type,
-            "external_job_id": raw_data.get("job_id", ""),
+            "external_job_id": "",
             "city": city,
             "employer_linkedin_url": "",
             "employer_website": "",
