@@ -32,7 +32,7 @@ class SeamlessAdapter(ContactDiscoveryAdapter):
 
     def _determine_priority(self, title: str) -> PriorityLevel:
         """Determine priority level based on job title."""
-        title_lower = title.lower()
+        title_lower = (title or "").lower()
 
         if any(kw in title_lower for kw in ["hiring manager", "talent acquisition"]):
             return PriorityLevel.P1_JOB_POSTER

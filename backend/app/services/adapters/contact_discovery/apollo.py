@@ -44,7 +44,7 @@ class ApolloAdapter(ContactDiscoveryAdapter):
 
     def _determine_priority(self, title: str) -> PriorityLevel:
         """Determine priority level based on job title."""
-        title_lower = title.lower()
+        title_lower = (title or "").lower()
         if any(kw in title_lower for kw in ["hiring manager", "talent acquisition"]):
             return PriorityLevel.P1_JOB_POSTER
         if any(kw in title_lower for kw in ["recruiter", "hr coordinator", "talent"]):
@@ -183,7 +183,7 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         if not email:
             return None
 
-        title = raw_data.get("title", "")
+        title = raw_data.get("title") or ""
         phone = None
         phone_numbers = raw_data.get("phone_numbers", [])
         if phone_numbers and len(phone_numbers) > 0:

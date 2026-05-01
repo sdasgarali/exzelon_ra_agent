@@ -7,9 +7,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from datetime import timezone
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_tenant_id
+from app.api.deps.auth import require_module_permission, require_module_tab_permission
 from app.core.rate_limiter import limiter
-from app.db.models.user import User, UserRole
+from app.db.models.user import User
 from app.db.models.job_run import JobRun, JobStatus
 from app.db.query_helpers import tenant_filter
 from app.schemas.pipeline import LeadIdsRequest, ContactIdsRequest
@@ -103,7 +104,7 @@ async def list_job_runs(
     pipeline_name: Optional[str] = None,
     status_filter: Optional[JobStatus] = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List pipeline job runs."""
@@ -165,7 +166,7 @@ async def list_job_runs(
 async def get_job_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get job run details."""
@@ -226,7 +227,7 @@ async def get_job_run(
 async def download_run_export(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Download the export file (CSV) for a completed pipeline run."""
@@ -251,7 +252,7 @@ async def get_run_summary(
     run_id: int,
     regenerate: bool = Query(False, description="Force re-generation of summary report"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get or generate an AI-powered summary report for a completed pipeline run.
@@ -297,7 +298,7 @@ async def get_run_summary(
 async def cancel_job_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_permission('pipelines', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Request cancellation of a running pipeline job."""
@@ -320,7 +321,7 @@ async def run_lead_sourcing(
     background_tasks: BackgroundTasks,
     sources: List[str] = Query(default=["linkedin", "indeed"]),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run lead sourcing pipeline."""
@@ -345,7 +346,7 @@ async def upload_leads_file(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Upload leads from XLSX file."""
@@ -376,7 +377,7 @@ async def upload_leads_file(
 @router.get("/contact-enrichment/estimate")
 async def estimate_contact_enrichment(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'contact_enrichment', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Estimate API calls for a contact enrichment run (read-only, no side effects)."""
@@ -460,7 +461,7 @@ async def run_contact_enrichment(
     background_tasks: BackgroundTasks,
     body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'contact_enrichment', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
@@ -485,7 +486,7 @@ async def run_contact_enrichment(
 @router.get("/feature-status")
 async def get_feature_status(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get feature flags for the current tenant."""
@@ -503,7 +504,7 @@ async def get_feature_status(
 @router.get("/business-rules")
 async def get_business_rules(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_module_permission('pipelines', 'read')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get resolved business rules for the current tenant (read from DB settings)."""
@@ -521,7 +522,7 @@ async def run_email_validation(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'email_validation', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation pipeline."""
@@ -554,7 +555,7 @@ async def run_email_validation_selected(
     background_tasks: BackgroundTasks,
     body: ContactIdsRequest = Body(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'email_validation', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run email validation for selected contact IDs."""
@@ -603,7 +604,7 @@ async def run_outreach(
     dry_run: bool = Query(True),
     body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'outreach', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""

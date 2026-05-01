@@ -102,9 +102,10 @@ def require_role(allowed_roles: List[UserRole]):
     return role_checker
 
 
-def get_user_settings_tab_access(db: Session, user: User, tab_key: str) -> str:
-    """Returns the user's access level for a specific settings tab.
+def get_module_tab_access(db: Session, user: User, module_key: str, tab_key: str) -> str:
+    """Returns the user's access level for a specific tab within any module.
 
+    Works for settings, warmup, pipelines, or any future independentTabs module.
     Returns one of: 'full', 'read_write', 'read', 'no_access'.
     Super admins always get 'full'.
     """
@@ -116,22 +117,29 @@ def get_user_settings_tab_access(db: Session, user: User, tab_key: str) -> str:
     if not role_perms or not isinstance(role_perms, dict):
         return 'no_access'
 
-    role_name = user.role.value  # e.g. 'admin', 'operator', 'viewer'
-    role_config = role_perms.get(role_name, {})
-    settings_perm = role_config.get('settings')
+    role_config = role_perms.get(user.role.value, {})
+    module_perm = role_config.get(module_key)
 
-    if settings_perm is None:
+    if module_perm is None:
         return 'no_access'
 
-    # Flat string: all tabs have the same permission
-    if isinstance(settings_perm, str):
-        return settings_perm
+    # Flat string: all tabs inherit the same permission
+    if isinstance(module_perm, str):
+        return module_perm
 
     # Nested object: per-tab permissions
-    if isinstance(settings_perm, dict):
-        return settings_perm.get(tab_key, 'no_access')
+    if isinstance(module_perm, dict):
+        return module_perm.get(tab_key, 'no_access')
 
     return 'no_access'
+
+
+def get_user_settings_tab_access(db: Session, user: User, tab_key: str) -> str:
+    """Returns the user's access level for a specific settings tab.
+
+    Thin wrapper around get_module_tab_access for backward compatibility.
+    """
+    return get_module_tab_access(db, user, 'settings', tab_key)
 
 
 def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
@@ -200,6 +208,14 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
             # Could be a string or a dict (for modules with independent tabs)
             if isinstance(perm, str):
                 return perm
+            if isinstance(perm, dict):
+                # Independent tabs: return highest access as aggregate
+                levels = [perm.get(k, 'no_access') for k in perm]
+                if levels:
+                    max_idx = max(
+                        PERMISSION_LEVELS.index(l) for l in levels if l in PERMISSION_LEVELS
+                    ) if any(l in PERMISSION_LEVELS for l in levels) else 0
+                    return PERMISSION_LEVELS[max_idx]
 
     # Layer 1: Safe defaults
     defaults = {
@@ -232,6 +248,30 @@ def require_module_permission(module_key: str, min_level: str):
             )
         return current_user
     return permission_checker
+
+
+def require_module_tab_permission(module_key: str, tab_key: str, min_level: str):
+    """Dependency factory to enforce minimum permission level for a specific tab within a module.
+
+    Usage: current_user = Depends(require_module_tab_permission('warmup', 'overview', 'read'))
+    """
+    min_idx = PERMISSION_LEVELS.index(min_level)
+
+    async def tab_permission_checker(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return current_user
+        level = get_module_tab_access(db, current_user, module_key, tab_key)
+        level_idx = PERMISSION_LEVELS.index(level) if level in PERMISSION_LEVELS else 0
+        if level_idx < min_idx:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permission for {module_key}/{tab_key}. Required: {min_level}, yours: {level}"
+            )
+        return current_user
+    return tab_permission_checker
 
 
 def _extract_tenant_id(user: User, x_tenant_id: Optional[int] = None) -> Optional[int]:
