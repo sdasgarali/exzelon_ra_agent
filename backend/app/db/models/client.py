@@ -53,6 +53,7 @@ class ClientInfo(Base):
     phone = Column(String(50), nullable=True)
     enrichment_source = Column(String(100), nullable=True)
     enriched_at = Column(DateTime, nullable=True)
+    enrich_attempts = Column(Integer, default=0, nullable=False, server_default="0")
     data_type = Column(String(20), nullable=False, server_default="enriched", default="enriched")
 
     __table_args__ = (

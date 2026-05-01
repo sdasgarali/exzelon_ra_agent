@@ -16,6 +16,8 @@ interface Client {
   service_count: number
   website: string | null
   linkedin_url: string | null
+  enrich_attempts: number
+  enriched_at: string | null
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -58,7 +60,7 @@ const CATEGORY_OPTIONS = [
   { value: 'dormant', label: 'Dormant', color: 'bg-gray-100 text-gray-800' },
 ]
 
-type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'timezone' | 'services' | 'website' | 'linkedin_url' | 'created_at'
+type SortField = 'client_id' | 'client_name' | 'status' | 'client_category' | 'industry' | 'company_size' | 'location_state' | 'timezone' | 'services' | 'website' | 'linkedin_url' | 'enrich_attempts' | 'enriched_at' | 'created_at'
 type SortOrder = 'asc' | 'desc'
 
 export default function ClientsPage() {
@@ -84,6 +86,7 @@ export default function ClientsPage() {
   const [filterIndustry, setFilterIndustry] = useState('')
   const [filterSize, setFilterSize] = useState('')
   const [filterState, setFilterState] = useState('')
+  const [filterEnrichment, setFilterEnrichment] = useState('')
   const [showArchived, setShowArchived] = useState(false)
 
   // Filter options from backend
@@ -117,7 +120,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterSize, filterState, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterSize, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
 
   const fetchClients = async () => {
     try {
@@ -135,6 +138,7 @@ export default function ClientsPage() {
       if (filterIndustry) params.industry = filterIndustry
       if (filterSize) params.company_size = filterSize
       if (filterState) params.location_state = filterState
+      if (filterEnrichment) params.enrichment = filterEnrichment
       if (showArchived) params.show_archived = true
 
       const response = await clientsApi.list(params)
@@ -299,6 +303,7 @@ export default function ClientsPage() {
     setFilterIndustry('')
     setFilterSize('')
     setFilterState('')
+    setFilterEnrichment('')
     setShowArchived(false)
     setPage(1)
   }
@@ -338,7 +343,7 @@ export default function ClientsPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
-  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterSize, filterState, search].filter(Boolean).length + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterSize, filterState, filterEnrichment, search].filter(Boolean).length + (showArchived ? 1 : 0)
 
   return (
     <div>
@@ -483,6 +488,17 @@ export default function ClientsPage() {
             </select>
           )}
 
+          <select
+            value={filterEnrichment}
+            onChange={(e) => { setFilterEnrichment(e.target.value); setPage(1); }}
+            className="input w-full sm:w-44"
+          >
+            <option value="">All Enrichment</option>
+            <option value="never">Never Enriched</option>
+            <option value="enriched">Enriched (1+)</option>
+            <option value="multiple">Re-enriched (2+)</option>
+          </select>
+
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -584,6 +600,18 @@ export default function ClientsPage() {
                   Timezone <SortIcon field="timezone" />
                 </th>
                 <th
+                  onClick={() => handleSort('enrich_attempts')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Enriched <SortIcon field="enrich_attempts" />
+                </th>
+                <th
+                  onClick={() => handleSort('enriched_at')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Enriched At <SortIcon field="enriched_at" />
+                </th>
+                <th
                   onClick={() => handleSort('created_at')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
@@ -597,13 +625,13 @@ export default function ClientsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
                     Loading clients...
                   </td>
                 </tr>
               ) : clients.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center">
+                  <td colSpan={15} className="px-4 py-8 text-center">
                     <div className="flex flex-col items-center justify-center py-4">
                       <div className="text-gray-300 mb-4">
                         <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -722,6 +750,18 @@ export default function ClientsPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500" title={client.timezone || ''}>
                       {formatTimezone(client.timezone)}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {client.enrich_attempts > 0 ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {client.enrich_attempts}x
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">0</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {formatDate(client.enriched_at)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDate(client.created_at)}

@@ -35,6 +35,8 @@ SORT_COLUMNS = {
     "services": ClientInfo.service_count,
     "website": ClientInfo.website,
     "linkedin_url": ClientInfo.linkedin_url,
+    "enrich_attempts": ClientInfo.enrich_attempts,
+    "enriched_at": ClientInfo.enriched_at,
     "created_at": ClientInfo.created_at,
 }
 
@@ -85,6 +87,7 @@ async def list_clients(
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("client_name", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
+    enrichment: Optional[str] = Query(None, description="Filter: 'never', 'enriched', 'multiple'"),
     show_archived: bool = Query(False, description="Include archived clients"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -114,6 +117,16 @@ async def list_clients(
                 (ClientInfo.industry.ilike(f"%{search}%")) |
                 (ClientInfo.location_state.ilike(f"%{search}%"))
             )
+
+    if enrichment:
+        if enrichment == "never":
+            query = query.filter(
+                (ClientInfo.enrich_attempts == 0) | (ClientInfo.enrich_attempts.is_(None))
+            )
+        elif enrichment == "enriched":
+            query = query.filter(ClientInfo.enrich_attempts >= 1)
+        elif enrichment == "multiple":
+            query = query.filter(ClientInfo.enrich_attempts >= 2)
 
     total = query.count()
 
@@ -192,7 +205,7 @@ async def export_clients_csv(
 
         writer.writerow([
             "ID", "Client Name", "Industry", "Size", "Status",
-            "Category", "Services", "Location", "Created"
+            "Category", "Services", "Location", "Enrich Attempts", "Enriched At", "Created"
         ])
         yield output.getvalue()
         output.seek(0)
@@ -215,6 +228,8 @@ async def export_clients_csv(
                     client.client_category.value if client.client_category else "",
                     client.service_count or 0,
                     client.location_state or "",
+                    client.enrich_attempts or 0,
+                    client.enriched_at.isoformat() if client.enriched_at else "",
                     client.created_at.isoformat() if client.created_at else ""
                 ])
             yield output.getvalue()

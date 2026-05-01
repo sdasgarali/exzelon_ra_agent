@@ -211,6 +211,9 @@ def enrich_client(db: Session, client: ClientInfo, tenant_id: Optional[int] = No
     """
     result = {"client_id": client.client_id, "client_name": client.client_name, "fields_updated": []}
 
+    # Increment enrichment attempt counter
+    client.enrich_attempts = (client.enrich_attempts or 0) + 1
+
     # Tier 1: Aggregate from leads (always free)
     lead_updates = enrich_from_leads(db, client)
     if lead_updates:

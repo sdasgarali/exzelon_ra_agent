@@ -61,6 +61,7 @@ class ClientResponse(ClientBase):
     timezone: Optional[str] = None
     enrichment_source: Optional[str] = None
     enriched_at: Optional[datetime] = None
+    enrich_attempts: int = 0
     created_at: datetime
     updated_at: datetime
 

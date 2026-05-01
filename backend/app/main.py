@@ -1964,6 +1964,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for password reset columns: {e}")
 
+    # Migration: add enrich_attempts column to client_info
+    try:
+        from sqlalchemy import text as sa_text_enrich_cnt
+        with engine.connect() as conn:
+            ci_cols_ea = [r[0].lower() for r in conn.execute(sa_text_enrich_cnt("SHOW COLUMNS FROM client_info")).fetchall()]
+            if "enrich_attempts" not in ci_cols_ea:
+                conn.execute(sa_text_enrich_cnt("ALTER TABLE client_info ADD COLUMN enrich_attempts INT NOT NULL DEFAULT 0"))
+                conn.commit()
+                logger.info("Migration: added enrich_attempts column to client_info")
+    except Exception as e:
+        logger.warning(f"Migration check for client_info.enrich_attempts: {e}")
+
     # Release MySQL advisory lock after migrations complete
     if _migration_lock_conn and _got_lock:
         try:
