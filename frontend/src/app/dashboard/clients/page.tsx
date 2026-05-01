@@ -73,7 +73,7 @@ export default function ClientsPage() {
 
   // Pagination
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(25)
+  const [pageSize, setPageSize] = useState(500)
 
   // Sorting
   const [sortBy, setSortBy] = useState<SortField>('client_name')
@@ -173,12 +173,20 @@ export default function ClientsPage() {
     })
   }
 
+  const allPageSelected = clients.length > 0 && clients.every(c => selectedIds.has(c.client_id))
+
   const toggleSelectAll = () => {
-    if (selectedIds.size === clients.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(clients.map(c => c.client_id)))
-    }
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allPageSelected) {
+        // Deselect only current page items
+        clients.forEach(c => next.delete(c.client_id))
+      } else {
+        // Select all current page items (preserving cross-page selections)
+        clients.forEach(c => next.add(c.client_id))
+      }
+      return next
+    })
   }
 
   const handleBulkDelete = async () => {
@@ -344,6 +352,62 @@ export default function ClientsPage() {
 
   const totalPages = Math.ceil(total / pageSize) || 1
   const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterSize, filterState, filterEnrichment, search].filter(Boolean).length + (showArchived ? 1 : 0)
+
+  const PaginationBar = ({ className = '' }: { className?: string }) => (
+    <div className={`bg-gray-50 px-6 py-3 flex items-center justify-between ${className}`}>
+      <div className="flex items-center gap-4">
+        <div className="text-sm text-gray-500">
+          Showing {clients.length > 0 ? ((page - 1) * pageSize) + 1 : 0} to {Math.min(page * pageSize, total)} of {total} results
+        </div>
+        <select
+          value={pageSize}
+          onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+          className="text-sm border rounded px-2 py-1"
+        >
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+          <option value="250">250 / page</option>
+          <option value="500">500 / page</option>
+        </select>
+      </div>
+      <div className="flex gap-2 items-center">
+        <button
+          onClick={() => setPage(1)}
+          disabled={page === 1}
+          className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
+          title="First page"
+        >
+          &laquo;
+        </button>
+        <button
+          onClick={() => setPage(p => Math.max(1, p - 1))}
+          disabled={page === 1}
+          className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
+        >
+          Previous
+        </button>
+        <span className="px-3 py-1 text-sm text-gray-600">
+          Page {page} of {totalPages}
+        </span>
+        <button
+          onClick={() => setPage(p => p + 1)}
+          disabled={page * pageSize >= total}
+          className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
+        >
+          Next
+        </button>
+        <button
+          onClick={() => setPage(totalPages)}
+          disabled={page * pageSize >= total}
+          className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
+          title="Last page"
+        >
+          &raquo;
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div>
@@ -527,6 +591,7 @@ export default function ClientsPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
+        <PaginationBar className="border-b" />
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -534,7 +599,7 @@ export default function ClientsPage() {
                 <th className="px-3 py-3 w-10">
                   <input
                     type="checkbox"
-                    checked={clients.length > 0 && selectedIds.size === clients.length}
+                    checked={allPageSelected}
                     onChange={toggleSelectAll}
                     className="w-4 h-4"
                   />
@@ -783,58 +848,7 @@ export default function ClientsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="bg-gray-50 px-6 py-3 flex items-center justify-between border-t">
-          <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-500">
-              Showing {clients.length > 0 ? ((page - 1) * pageSize) + 1 : 0} to {Math.min(page * pageSize, total)} of {total} results
-            </div>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="text-sm border rounded px-2 py-1"
-            >
-              <option value="10">10 / page</option>
-              <option value="25">25 / page</option>
-              <option value="50">50 / page</option>
-              <option value="100">100 / page</option>
-            </select>
-          </div>
-          <div className="flex gap-2 items-center">
-            <button
-              onClick={() => setPage(1)}
-              disabled={page === 1}
-              className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
-              title="First page"
-            >
-              &laquo;
-            </button>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1 text-sm text-gray-600">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={page * pageSize >= total}
-              className="px-3 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
-            >
-              Next
-            </button>
-            <button
-              onClick={() => setPage(totalPages)}
-              disabled={page * pageSize >= total}
-              className="px-2 py-1 border rounded text-sm disabled:opacity-50 hover:bg-gray-100"
-              title="Last page"
-            >
-              &raquo;
-            </button>
-          </div>
-        </div>
+        <PaginationBar className="border-t" />
       </div>
 
       {/* Archive Confirmation Modal */}
