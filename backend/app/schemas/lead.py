@@ -78,6 +78,7 @@ class LeadListResponse(BaseModel):
     """Schema for paginated lead list response."""
     items: List[LeadResponse]
     total: int
+    total_contact_associations: int = 0
     page: int
     page_size: int
     pages: int
