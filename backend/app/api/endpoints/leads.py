@@ -206,9 +206,11 @@ async def list_leads(
 
     # Total lead-contact associations across ALL filtered leads (not just current page).
     # Counts each (lead, contact) pair separately — e.g. one contact linked to 3 leads = 3.
-    filtered_ids_sq = query.with_entities(LeadDetails.lead_id).subquery()
-    total_contact_associations = db.query(func.count(LeadContactAssociation.contact_id)).join(
-        filtered_ids_sq, LeadContactAssociation.lead_id == filtered_ids_sq.c.lead_id
+    filtered_lead_ids = query.with_entities(LeadDetails.lead_id)
+    total_contact_associations = db.query(
+        func.count(LeadContactAssociation.contact_id)
+    ).filter(
+        LeadContactAssociation.lead_id.in_(filtered_lead_ids)
     ).scalar() or 0
 
     if sort_by == "contact_count":
