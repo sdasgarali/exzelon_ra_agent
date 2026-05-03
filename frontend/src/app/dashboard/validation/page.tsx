@@ -336,7 +336,7 @@ export default function ValidationPage() {
           <h1 className="text-2xl font-bold text-gray-800">Email Validation</h1>
           <p className="text-gray-500 mt-1">Validate contact emails before outreach</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {selectedIds.size > 0 && (
             <button
               onClick={handleValidateSelected}
@@ -368,7 +368,7 @@ export default function ValidationPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mb-6">
         <div className="card p-4 text-center cursor-pointer hover:shadow-md" onClick={() => { setFilterValidation(''); setPage(1); }}>
           <div className="text-2xl font-bold text-gray-800">{stats.total}</div>
           <div className="text-sm text-gray-500">Total Contacts</div>

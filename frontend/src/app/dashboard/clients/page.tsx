@@ -419,7 +419,7 @@ export default function ClientsPage() {
             {total} companies tracked across all pipelines
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {selectedIds.size > 0 && (
             <>
               <button
@@ -893,7 +893,7 @@ export default function ClientsPage() {
       {/* Bulk Update Modal */}
       {showBulkUpdateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
             <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Client{selectedIds.size > 1 ? 's' : ''}</h2>
             <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

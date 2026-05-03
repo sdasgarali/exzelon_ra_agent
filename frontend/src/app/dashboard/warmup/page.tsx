@@ -1185,7 +1185,7 @@ function EmailThreadsTab({
       {/* Email Detail Modal */}
       {(emailDetail || emailDetailLoading) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => { if (!emailDetailLoading) setEmailDetail(null) }}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             {emailDetailLoading ? (
               <div className="p-12 text-center text-gray-500">Loading email...</div>
             ) : emailDetail && (

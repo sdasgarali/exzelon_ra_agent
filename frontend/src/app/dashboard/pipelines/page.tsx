@@ -807,6 +807,7 @@ export default function PipelinesPage() {
             <option value="outreach">Outreach</option>
           </select>
         </div>
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -946,6 +947,7 @@ export default function PipelinesPage() {
             ))}
           </tbody>
         </table>
+        </div>
 
         {runs.length === 0 && (
           <div className="text-center py-8 text-gray-500">
@@ -1067,6 +1069,7 @@ export default function PipelinesPage() {
               ) : selectorLeads.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">No leads found.</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -1121,6 +1124,7 @@ export default function PipelinesPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
 
@@ -1245,6 +1249,7 @@ export default function PipelinesPage() {
               ) : contactSelectorContacts.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">No contacts found.</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -1295,6 +1300,7 @@ export default function PipelinesPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
 

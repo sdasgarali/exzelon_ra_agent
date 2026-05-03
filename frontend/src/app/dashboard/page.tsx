@@ -1235,6 +1235,7 @@ export default function DashboardPage() {
               ) : selectorLeads.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">No leads found.</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -1284,6 +1285,7 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
 
@@ -1379,6 +1381,7 @@ export default function DashboardPage() {
               ) : contactSelectorContacts.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">No contacts found.</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -1424,6 +1427,7 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
 

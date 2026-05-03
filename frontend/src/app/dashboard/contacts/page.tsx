@@ -507,7 +507,7 @@ export default function ContactsPage() {
             {total} contacts total
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {selectedIds.size > 0 && (
             <>
               {showArchived ? (

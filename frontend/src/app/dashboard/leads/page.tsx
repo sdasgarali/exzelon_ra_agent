@@ -737,7 +737,7 @@ export default function LeadsPage() {
           <span className="text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
         </button>
         {open && (
-          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto min-w-[220px]">
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto min-w-0 sm:min-w-[220px]">
             <div className="flex gap-2 px-3 py-2 border-b bg-gray-50 sticky top-0 z-10">
               <button type="button" onClick={() => { onChange([...allItems]); setPage(1) }} className="text-xs text-blue-600 hover:underline">Select All</button>
               <button type="button" onClick={() => { onChange([]); setPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
@@ -809,7 +809,7 @@ export default function LeadsPage() {
             )}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {selectedIds.size > 0 && (
             <>
               {showArchived ? (
@@ -1655,7 +1655,7 @@ export default function LeadsPage() {
       {/* Bulk Update Modal */}
       {showBulkUpdateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
             <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Lead{selectedIds.size > 1 ? 's' : ''}</h2>
             <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
             <div className="space-y-3">
@@ -2054,7 +2054,7 @@ export default function LeadsPage() {
               {/* Summary Cards */}
               {enrichLeadResults && enrichLeadResults.length > 0 && (
                 <>
-                  <div className="grid grid-cols-5 gap-3 mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                       <div className="text-2xl font-bold text-green-700">
                         {enrichLeadResults.filter((r: any) => r.status === 'enriched').length}

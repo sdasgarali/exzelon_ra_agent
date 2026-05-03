@@ -863,7 +863,7 @@ export default function MailboxesPage() {
       {/* Search & Filters Bar */}
       <div className="bg-white p-4 rounded-lg shadow">
         <div className="flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[220px]">
+          <div className="flex-1 min-w-0 sm:min-w-[220px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
               type="text"
@@ -965,7 +965,7 @@ export default function MailboxesPage() {
       {/* Bulk Update Modal */}
       {showBulkUpdateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
             <h2 className="text-lg font-bold mb-1">Bulk Update {selectedIds.size} Mailbox{selectedIds.size > 1 ? 'es' : ''}</h2>
             <p className="text-sm text-gray-500 mb-4">Only filled fields will be updated.</p>
             <div className="space-y-3">
@@ -1015,6 +1015,7 @@ export default function MailboxesPage() {
 
       {/* Mailboxes Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -1218,6 +1219,7 @@ export default function MailboxesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Edit Mailbox Modal (existing flow for editing) */}

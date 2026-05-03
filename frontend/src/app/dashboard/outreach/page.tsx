@@ -264,7 +264,7 @@ export default function OutreachPage() {
           <h1 className="text-2xl font-bold text-gray-800">Outreach Management</h1>
           <p className="text-gray-500 mt-1">Send emails and track replies</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {selectedIds.size > 0 && (
             <button
               onClick={() => setShowDeleteModal(true)}
@@ -310,7 +310,7 @@ export default function OutreachPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 mb-6">
         <div className="card p-4 text-center border-l-4 border-blue-500">
           <div className="text-2xl font-bold text-blue-600">{stats?.total_valid_emails || 0}</div>
           <div className="text-sm text-gray-500">Valid Emails</div>

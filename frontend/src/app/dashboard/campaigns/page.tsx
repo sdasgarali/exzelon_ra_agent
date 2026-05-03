@@ -1659,7 +1659,7 @@ export default function CampaignsPage() {
 
         {/* Filters */}
         <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search campaigns..." className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm" />
           </div>
@@ -1703,6 +1703,7 @@ export default function CampaignsPage() {
               <p className="text-sm mt-1">Create your first multi-step campaign</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
@@ -1795,6 +1796,7 @@ export default function CampaignsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 
@@ -1811,7 +1813,7 @@ export default function CampaignsPage() {
         {showCreateModal && (
           <>
             <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
-            <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-[95vw] max-h-[85vh] overflow-y-auto ${createStep === 'select_leads' ? 'w-[1100px]' : 'w-[700px]'}`}>
+            <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-h-[85vh] overflow-y-auto mx-4 ${createStep === 'select_leads' ? 'w-full max-w-[1100px]' : 'w-full max-w-[700px]'}`}>
               {/* Header */}
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-3">
@@ -2092,7 +2094,7 @@ export default function CampaignsPage() {
                   </div>
 
                   {/* Preview table */}
-                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto">
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
@@ -2264,7 +2266,7 @@ export default function CampaignsPage() {
                   </div>
 
                   {/* Preview table */}
-                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto">
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 max-h-[250px] overflow-y-auto overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                         <tr>
@@ -2467,7 +2469,7 @@ export default function CampaignsPage() {
                                 <span className="text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
                               </button>
                               {open && (
-                                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto min-w-[220px]">
+                                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto min-w-0 sm:min-w-[220px]">
                                   <div className="flex gap-2 px-2 py-1.5 border-b bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                                     <button type="button" onClick={() => { onChange([...allItems]); setAvailableLeadsPage(1) }} className="text-xs text-blue-600 hover:underline">All</button>
                                     <button type="button" onClick={() => { onChange([]); setAvailableLeadsPage(1) }} className="text-xs text-gray-500 hover:underline">Clear</button>
@@ -2537,7 +2539,7 @@ export default function CampaignsPage() {
                   )}
 
                   {/* Leads Table */}
-                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4">
+                  <div className="border rounded-lg overflow-hidden dark:border-gray-700 mb-4 overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
@@ -4262,7 +4264,7 @@ export default function CampaignsPage() {
                     <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading breakdown...</div>
                   ) : healthDetail && healthDetail.score != null ? (
                     <div className="space-y-3">
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {['deliverability', 'engagement', 'volume'].map(key => {
                           const val = healthDetail.components?.[key] ?? 0
                           const weight = key === 'deliverability' ? 40 : key === 'engagement' ? 35 : 25
@@ -5465,7 +5467,7 @@ export default function CampaignsPage() {
       {showEnrollModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowEnrollModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[640px] max-w-[95vw] max-h-[85vh] flex flex-col">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-[640px] mx-4 max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-lg font-bold dark:text-gray-100">Enroll Contacts from Leads</h2>
@@ -5629,7 +5631,7 @@ export default function CampaignsPage() {
       {showThreadPreviewModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowThreadPreviewModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[600px] max-w-[90vw] max-h-[80vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-lg">Email Thread Preview</h3>
@@ -5689,7 +5691,7 @@ export default function CampaignsPage() {
       {spintaxModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setSpintaxModal(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] max-h-[70vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-[500px] mx-4 max-h-[70vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2">
                 <Shuffle className="w-4 h-4 text-orange-500" />
@@ -5719,7 +5721,7 @@ export default function CampaignsPage() {
       {showAIPreviewModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowAIPreviewModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[900px] max-w-[95vw] max-h-[85vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-[900px] mx-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-purple-500" />

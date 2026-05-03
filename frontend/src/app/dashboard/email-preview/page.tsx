@@ -10,7 +10,7 @@ import {
   Mail, User, Building, FileSearch, Shield, AlertTriangle,
   Check, X, Loader2, ArrowLeftRight, ChevronDown, Eye,
   Zap, BarChart3, ChevronRight, Brain, Shuffle, Monitor,
-  ShieldCheck, type LucideIcon,
+  ShieldCheck, ArrowLeft, type LucideIcon,
 } from 'lucide-react'
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -643,7 +643,7 @@ export default function EmailPreviewPage() {
       {/* 3-Panel Layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel — Draft List */}
-        <div className="w-[320px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900">
+        <div className={`w-full md:w-[320px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 ${selectedDraft ? 'hidden md:flex' : 'flex'}`}>
           {/* Search + Select All */}
           <div className="p-2 border-b border-gray-200 dark:border-gray-700 space-y-1.5">
             <div className="relative">
@@ -752,11 +752,19 @@ export default function EmailPreviewPage() {
         </div>
 
         {/* Center Panel — Email Preview */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
+        <div className={`flex-1 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ${selectedDraft ? 'flex' : 'hidden md:flex'}`}>
           {selectedDraft ? (
             <>
               {/* Email header */}
               <div className="p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 space-y-2">
+                {/* Mobile back button */}
+                <button
+                  onClick={() => setSelectedDraft(null)}
+                  className="md:hidden flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-1"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to drafts
+                </button>
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <span className="font-medium text-gray-700 dark:text-gray-300">From:</span>
                   <span>{selectedDraft.mailbox?.display_name || selectedDraft.mailbox?.email}</span>
@@ -922,7 +930,7 @@ export default function EmailPreviewPage() {
         </div>
 
         {/* Right Panel — Tabbed Intelligence */}
-        <div className="w-[370px] border-l border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
+        <div className="hidden lg:flex w-[370px] border-l border-gray-200 dark:border-gray-700 flex-col bg-white dark:bg-gray-900 overflow-hidden">
           {/* Tab bar */}
           <div className="border-b border-gray-200 dark:border-gray-700 px-1 flex overflow-x-auto">
             {([

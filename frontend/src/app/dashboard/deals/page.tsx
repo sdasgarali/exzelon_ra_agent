@@ -354,7 +354,7 @@ export default function DealsPage() {
       {showCreateModal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCreateModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[500px] max-w-[90vw] mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-[500px] mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold dark:text-gray-100">New Deal</h2>
               <button onClick={() => setShowCreateModal(false)}><X className="w-5 h-5" /></button>

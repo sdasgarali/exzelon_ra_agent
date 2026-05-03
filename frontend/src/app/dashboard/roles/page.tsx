@@ -376,8 +376,8 @@ export default function RolesPermissionsPage() {
         ))}
       </div>
 
-      {/* Permissions matrix */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      {/* Permissions matrix — Desktop table */}
+      <div className="hidden md:block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
@@ -417,6 +417,80 @@ export default function RolesPermissionsPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Permissions matrix — Mobile accordion */}
+      <div className="md:hidden space-y-2">
+        {MODULES.map(mod => {
+          const isExpanded = expandedModules.has(mod.key)
+          const hasTabs = mod.tabs && mod.tabs.length > 0
+          const isIndependent = mod.independentTabs && hasTabs
+
+          return (
+            <div key={mod.key} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <button
+                onClick={() => toggleModule(mod.key)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              >
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{mod.label}</span>
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              {isExpanded && (
+                <div className="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700/50">
+                  {ROLES.map(role => {
+                    const level = getModuleAccess(role.name as RoleName, mod.key)
+                    const isLocked = mod.superAdminOnly && role.name !== 'super_admin'
+
+                    return (
+                      <div key={role.name} className="px-4 py-2.5 flex items-center justify-between">
+                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{role.label}</span>
+                        {role.static ? (
+                          <AccessBadge level="full" />
+                        ) : isLocked ? (
+                          <AccessBadge level="no_access" locked />
+                        ) : (
+                          <AccessDropdown
+                            value={level}
+                            onChange={(newLevel) => handleAccessChange(role.name as RoleName, mod.key, newLevel)}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                  {isIndependent && mod.tabs!.map((tab, idx) => {
+                    const tabKey = mod.tabKeys ? mod.tabKeys[idx] : undefined
+                    return (
+                      <div key={tab} className="bg-gray-50/50 dark:bg-gray-800/50 px-4 py-2">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1.5 pl-2 border-l-2 border-gray-300 dark:border-gray-600">{tab}</div>
+                        <div className="space-y-1.5 pl-4">
+                          {ROLES.filter(r => !r.static).map(role => {
+                            const isLocked = mod.superAdminOnly && role.name !== 'super_admin'
+                            const tabLevel = tabKey ? getSubTabAccess(role.name as RoleName, mod.key, tabKey) : getModuleAccess(role.name as RoleName, mod.key)
+                            return (
+                              <div key={role.name} className="flex items-center justify-between">
+                                <span className="text-[11px] text-gray-500 dark:text-gray-400">{role.label}</span>
+                                {isLocked ? (
+                                  <span className="text-[10px] text-gray-400 italic">-</span>
+                                ) : tabKey ? (
+                                  <AccessDropdown
+                                    value={tabLevel}
+                                    onChange={(newLevel) => handleAccessChange(role.name as RoleName, mod.key, newLevel, tabKey)}
+                                  />
+                                ) : (
+                                  <span className="text-[10px] text-gray-400 italic">inherits ({getModuleAccess(role.name as RoleName, mod.key)})</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Legend */}
