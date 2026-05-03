@@ -13,27 +13,50 @@ logger = structlog.get_logger()
 
 
 def calculate_campaign_health(campaign_id: int, db: Session) -> dict:
-    """Calculate health score for a single campaign."""
+    """Calculate health score for a single campaign.
+
+    Uses live queries against OutreachEvent instead of stale denormalized
+    counters to ensure accuracy even when counters are out of sync.
+    """
     campaign = db.query(Campaign).filter(
         Campaign.campaign_id == campaign_id
     ).first()
     if not campaign:
         return {"score": 0, "components": {}}
 
-    total_sent = campaign.total_sent or 0
-    total_contacts = campaign.total_contacts or 0
+    # Live counts from OutreachEvent — not stale denormalized counters
+    total_sent = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.sent_at.isnot(None),
+    ).count()
+
+    total_contacts = db.query(CampaignContact).filter(
+        CampaignContact.campaign_id == campaign_id,
+    ).count()
 
     if total_sent < 5:
         return {"score": None, "components": {}, "reason": "insufficient_data"}
 
-    # Deliverability (0-100): low bounce rate + low spam = good
-    total_bounced = campaign.total_bounced or 0
+    total_bounced = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.status == OutreachStatus.BOUNCED,
+    ).count()
+
+    total_opened = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.opened_at.isnot(None),
+    ).count()
+
+    total_replied = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.reply_detected_at.isnot(None),
+    ).count()
+
+    # Deliverability (0-100): low bounce rate = good
     bounce_rate = total_bounced / total_sent * 100 if total_sent > 0 else 0
     deliverability = max(0, 100 - bounce_rate * 10)  # 10% bounce = 0 score
 
     # Engagement (0-100): reply rate + open rate
-    total_replied = campaign.total_replied or 0
-    total_opened = campaign.total_opened or 0
     reply_rate = total_replied / total_sent * 100 if total_sent > 0 else 0
     open_rate = total_opened / total_sent * 100 if total_sent > 0 else 0
 
@@ -56,19 +79,56 @@ def calculate_campaign_health(campaign_id: int, db: Session) -> dict:
     score = round(deliverability * 0.4 + engagement * 0.35 + volume * 0.25)
     score = max(0, min(100, score))
 
+    label = "Excellent" if score >= 80 else "Fair" if score >= 50 else "Poor"
+
+    # Build explanation lines
+    deliv_pts = round(deliverability * 0.4, 1)
+    engage_pts = round(engagement * 0.35, 1)
+    vol_pts = round(volume * 0.25, 1)
+
+    explanation = [
+        f"Deliverability: {round(deliverability)}/100 ({deliv_pts}/40 pts) — {round(bounce_rate, 1)}% bounce rate",
+        f"Engagement: {round(engagement)}/100 ({engage_pts}/35 pts) — {round(reply_rate, 1)}% reply, {round(open_rate, 1)}% open",
+        f"Volume: {round(volume)}/100 ({vol_pts}/25 pts) — {round(completion_rate, 1)}% completion",
+    ]
+
+    # Build recommendations based on weak components
+    recommendations = []
+    if deliverability < 70:
+        recommendations.append("High bounce rate detected — verify email addresses before sending and check domain reputation.")
+    if reply_rate < 1:
+        recommendations.append("Very low reply rate — consider personalizing subject lines and email copy.")
+    elif reply_rate < 3:
+        recommendations.append("Reply rate is below average — try A/B testing different call-to-action approaches.")
+    if open_rate < 15:
+        recommendations.append("Low open rate — experiment with shorter subject lines and different send times.")
+    elif open_rate < 30:
+        recommendations.append("Open rate could improve — test subject line variations and sender name.")
+    if volume < 50 and active_contacts == 0:
+        recommendations.append("Campaign appears stalled — all contacts have been processed or removed.")
+    if not recommendations:
+        recommendations.append("Campaign is performing well — maintain current sending patterns.")
+
     return {
         "score": score,
+        "label": label,
         "components": {
             "deliverability": round(deliverability, 1),
             "engagement": round(engagement, 1),
             "volume": round(volume, 1),
         },
         "metrics": {
+            "total_sent": total_sent,
+            "total_opened": total_opened,
+            "total_replied": total_replied,
+            "total_bounced": total_bounced,
             "bounce_rate": round(bounce_rate, 1),
             "reply_rate": round(reply_rate, 1),
             "open_rate": round(open_rate, 1),
             "completion_rate": round(completion_rate, 1),
         },
+        "explanation": explanation,
+        "recommendations": recommendations,
     }
 
 

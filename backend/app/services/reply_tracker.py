@@ -205,6 +205,11 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
                 # Update mailbox reply count
                 mailbox.reply_count = (mailbox.reply_count or 0) + 1
 
+                # Update campaign counters if this is a campaign email
+                if matched_event.campaign_id:
+                    from app.services.campaign_engine import handle_campaign_reply
+                    handle_campaign_reply(matched_event.event_id, db)
+
                 result["replies_found"] += 1
                 logger.info("Reply detected",
                     mailbox=mailbox.email,

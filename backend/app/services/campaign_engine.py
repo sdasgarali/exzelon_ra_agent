@@ -994,19 +994,25 @@ def recalculate_campaign_stats(campaign_id: int, db: Session):
         CampaignContact.campaign_id == campaign_id
     ).count()
 
+    # Count all events that were actually sent (a replied/bounced email was still sent)
     campaign.total_sent = db.query(OutreachEvent).filter(
         OutreachEvent.campaign_id == campaign_id,
-        OutreachEvent.status == OutreachStatus.SENT,
+        OutreachEvent.sent_at.isnot(None),
     ).count()
 
-    campaign.total_replied = db.query(CampaignContact).filter(
-        CampaignContact.campaign_id == campaign_id,
-        CampaignContact.status == CampaignContactStatus.REPLIED,
+    campaign.total_opened = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.opened_at.isnot(None),
     ).count()
 
-    campaign.total_bounced = db.query(CampaignContact).filter(
-        CampaignContact.campaign_id == campaign_id,
-        CampaignContact.status == CampaignContactStatus.BOUNCED,
+    campaign.total_replied = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.reply_detected_at.isnot(None),
+    ).count()
+
+    campaign.total_bounced = db.query(OutreachEvent).filter(
+        OutreachEvent.campaign_id == campaign_id,
+        OutreachEvent.status == OutreachStatus.BOUNCED,
     ).count()
 
     db.commit()

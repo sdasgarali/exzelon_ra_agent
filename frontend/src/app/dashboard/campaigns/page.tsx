@@ -352,6 +352,28 @@ export default function CampaignsPage() {
   const [compareData, setCompareData] = useState<any>(null)
   const [compareLoading, setCompareLoading] = useState(false)
 
+  // Health detail popover state
+  const [healthDetail, setHealthDetail] = useState<any>(null)
+  const [healthDetailLoading, setHealthDetailLoading] = useState(false)
+  const [healthDetailOpen, setHealthDetailOpen] = useState<'sidebar' | 'analytics' | null>(null)
+
+  const fetchHealthDetail = useCallback(async (campaignId: number, location: 'sidebar' | 'analytics') => {
+    if (healthDetailOpen === location) {
+      setHealthDetailOpen(null)
+      return
+    }
+    setHealthDetailOpen(location)
+    setHealthDetailLoading(true)
+    try {
+      const data = await campaignsApi.health(campaignId)
+      setHealthDetail(data)
+    } catch {
+      setHealthDetail(null)
+    } finally {
+      setHealthDetailLoading(false)
+    }
+  }, [healthDetailOpen])
+
   // Auto-enrollment rules state
   const [enrollmentRules, setEnrollmentRules] = useState({
     enabled: false,
@@ -855,6 +877,8 @@ export default function CampaignsPage() {
     setRemoveContactIds(new Set())
     setMailboxSearch('')
     setMailboxSortCol('')
+    setHealthDetailOpen(null)
+    setHealthDetail(null)
     setView('detail')
     setDetailTab('overview')
     try {
@@ -3056,15 +3080,64 @@ export default function CampaignsPage() {
               </div>
 
               {selectedCampaign.health_score !== null && selectedCampaign.health_score !== undefined && (
-                <div>
+                <div className="relative">
                   <label className="block text-xs font-medium text-gray-500 mb-1">Health Score</label>
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium ${
-                    selectedCampaign.health_score >= 80 ? 'bg-green-100 text-green-800' :
-                    selectedCampaign.health_score >= 50 ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
+                  <button
+                    onClick={() => fetchHealthDetail(selectedCampaign.campaign_id, 'sidebar')}
+                    className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium cursor-pointer hover:opacity-80 ${
+                      selectedCampaign.health_score >= 80 ? 'bg-green-100 text-green-800' :
+                      selectedCampaign.health_score >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}
+                  >
                     {selectedCampaign.health_score}%
-                  </span>
+                  </button>
+                  {healthDetailOpen === 'sidebar' && (
+                    <div className="absolute left-0 top-full mt-1 z-20 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4">
+                      {healthDetailLoading ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>
+                      ) : healthDetail && healthDetail.score != null ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold">{healthDetail.label || 'Health'}</span>
+                            <span className={`text-lg font-bold ${healthDetail.score >= 80 ? 'text-green-600' : healthDetail.score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>{healthDetail.score}/100</span>
+                          </div>
+                          <div className="space-y-2">
+                            {['deliverability', 'engagement', 'volume'].map(key => {
+                              const val = healthDetail.components?.[key] ?? 0
+                              const weight = key === 'deliverability' ? 40 : key === 'engagement' ? 35 : 25
+                              return (
+                                <div key={key}>
+                                  <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-0.5">
+                                    <span className="capitalize">{key}</span>
+                                    <span>{Math.round(val)}/100 ({Math.round(val * weight / 100)}/{weight} pts)</span>
+                                  </div>
+                                  <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full">
+                                    <div className={`h-full rounded-full ${val >= 70 ? 'bg-green-500' : val >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${val}%` }} />
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          {healthDetail.explanation?.length > 0 && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5 border-t pt-2">
+                              {healthDetail.explanation.map((line: string, i: number) => <p key={i}>{line}</p>)}
+                            </div>
+                          )}
+                          {healthDetail.recommendations?.length > 0 && (
+                            <div className="text-xs space-y-1 border-t pt-2">
+                              <p className="font-medium text-gray-700 dark:text-gray-300">Recommendations</p>
+                              {healthDetail.recommendations.map((rec: string, i: number) => (
+                                <p key={i} className="text-gray-500 dark:text-gray-400 flex gap-1"><span>•</span><span>{rec}</span></p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">Unable to load health details.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -4160,23 +4233,70 @@ export default function CampaignsPage() {
 
           {/* Health Score Badge */}
           {selectedCampaign && selectedCampaign.health_score != null && (
-            <div className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <span className="text-sm text-gray-500">Health Score</span>
-              <span className={`text-lg font-bold ${
-                selectedCampaign.health_score >= 70 ? 'text-green-600' :
-                selectedCampaign.health_score >= 40 ? 'text-yellow-600' : 'text-red-600'
-              }`}>
-                {selectedCampaign.health_score}/100
-              </span>
-              <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
-                <div
-                  className={`h-full rounded-full ${
-                    selectedCampaign.health_score >= 70 ? 'bg-green-500' :
-                    selectedCampaign.health_score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}
-                  style={{ width: `${selectedCampaign.health_score}%` }}
-                />
-              </div>
+            <div className="relative bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <button
+                onClick={() => fetchHealthDetail(selectedCampaign.campaign_id, 'analytics')}
+                className="w-full flex items-center gap-3 cursor-pointer hover:opacity-80"
+              >
+                <span className="text-sm text-gray-500">Health Score</span>
+                <span className={`text-lg font-bold ${
+                  selectedCampaign.health_score >= 70 ? 'text-green-600' :
+                  selectedCampaign.health_score >= 40 ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {selectedCampaign.health_score}/100
+                </span>
+                <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full">
+                  <div
+                    className={`h-full rounded-full ${
+                      selectedCampaign.health_score >= 70 ? 'bg-green-500' :
+                      selectedCampaign.health_score >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${selectedCampaign.health_score}%` }}
+                  />
+                </div>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${healthDetailOpen === 'analytics' ? 'rotate-180' : ''}`} />
+              </button>
+              {healthDetailOpen === 'analytics' && (
+                <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+                  {healthDetailLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading breakdown...</div>
+                  ) : healthDetail && healthDetail.score != null ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        {['deliverability', 'engagement', 'volume'].map(key => {
+                          const val = healthDetail.components?.[key] ?? 0
+                          const weight = key === 'deliverability' ? 40 : key === 'engagement' ? 35 : 25
+                          return (
+                            <div key={key} className="text-center">
+                              <p className="text-xs text-gray-500 capitalize mb-1">{key}</p>
+                              <p className={`text-lg font-bold ${val >= 70 ? 'text-green-600' : val >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>{Math.round(val)}</p>
+                              <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-1">
+                                <div className={`h-full rounded-full ${val >= 70 ? 'bg-green-500' : val >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${val}%` }} />
+                              </div>
+                              <p className="text-[10px] text-gray-400 mt-0.5">{Math.round(val * weight / 100)}/{weight} pts</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {healthDetail.explanation?.length > 0 && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                          {healthDetail.explanation.map((line: string, i: number) => <p key={i}>{line}</p>)}
+                        </div>
+                      )}
+                      {healthDetail.recommendations?.length > 0 && (
+                        <div className="text-xs space-y-1 border-t pt-2">
+                          <p className="font-medium text-gray-700 dark:text-gray-300">Recommendations</p>
+                          {healthDetail.recommendations.map((rec: string, i: number) => (
+                            <p key={i} className="text-gray-500 dark:text-gray-400 flex gap-1"><span>•</span><span>{rec}</span></p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">Unable to load health details.</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
