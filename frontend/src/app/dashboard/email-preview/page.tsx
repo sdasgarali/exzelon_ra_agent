@@ -324,11 +324,53 @@ export default function EmailPreviewPage() {
     finally { setApprovingAll(false) }
   }
 
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return
+    setApprovingAll(true)
+    try {
+      await emailPreviewApi.bulkApprove(Array.from(selectedIds))
+      setSelectedIds(new Set())
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setApprovingAll(false) }
+  }
+
+  const handleApproveAllPending = async () => {
+    if (!confirm(`Approve ALL ${pendingCount} pending draft(s)?`)) return
+    setApprovingAll(true)
+    try {
+      await emailPreviewApi.approveAllPending()
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setApprovingAll(false) }
+  }
+
   const handleSendBatch = async () => {
     if (!batchId) return
     setSendingBatch(true)
     try {
       await emailPreviewApi.sendBatch(batchId)
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setSendingBatch(false) }
+  }
+
+  const handleBulkSend = async () => {
+    if (selectedIds.size === 0) return
+    setSendingBatch(true)
+    try {
+      await emailPreviewApi.bulkSend(Array.from(selectedIds))
+      setSelectedIds(new Set())
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setSendingBatch(false) }
+  }
+
+  const handleSendAllApproved = async () => {
+    if (!confirm(`Send ALL ${approvedCount} approved draft(s)?`)) return
+    setSendingBatch(true)
+    try {
+      await emailPreviewApi.sendAllApproved()
       await fetchDrafts()
     } catch (err) { console.error(err) }
     finally { setSendingBatch(false) }
@@ -616,37 +658,57 @@ export default function EmailPreviewPage() {
             ))}
           </select>
 
-          {/* Batch actions */}
-          {batchId && pendingCount > 0 && (
-            <button
-              onClick={handleApproveAll}
-              disabled={approvingAll}
-              className="text-xs px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
-            >
-              {approvingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-              Approve All
-            </button>
-          )}
-          {batchId && approvedCount > 0 && (
-            <button
-              onClick={handleSendBatch}
-              disabled={sendingBatch}
-              className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
-            >
-              {sendingBatch ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-              Send Batch
-            </button>
+          {/* Selection-based actions */}
+          {selectedIds.size > 0 && (
+            <>
+              <button
+                onClick={handleBulkApprove}
+                disabled={approvingAll}
+                className="text-xs px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
+              >
+                {approvingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                Approve Selected ({selectedIds.size})
+              </button>
+              <button
+                onClick={handleBulkSend}
+                disabled={sendingBatch}
+                className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+              >
+                {sendingBatch ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                Send Selected ({selectedIds.size})
+              </button>
+              {isSuperAdmin && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+                >
+                  {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                  Delete Selected ({selectedIds.size})
+                </button>
+              )}
+            </>
           )}
 
-          {/* Bulk delete — Super Admin only */}
-          {isSuperAdmin && selectedIds.size > 0 && (
+          {/* Global actions (no selection / no batch required) */}
+          {pendingCount > 0 && selectedIds.size === 0 && (
             <button
-              onClick={handleBulkDelete}
-              disabled={bulkDeleting}
-              className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
+              onClick={batchId ? handleApproveAll : handleApproveAllPending}
+              disabled={approvingAll}
+              className="text-xs px-3 py-1.5 bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 flex items-center gap-1"
             >
-              {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-              Delete Selected ({selectedIds.size})
+              {approvingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+              Approve All ({pendingCount})
+            </button>
+          )}
+          {approvedCount > 0 && selectedIds.size === 0 && (
+            <button
+              onClick={batchId ? handleSendBatch : handleSendAllApproved}
+              disabled={sendingBatch}
+              className="text-xs px-3 py-1.5 bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center gap-1"
+            >
+              {sendingBatch ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              Send All ({approvedCount})
             </button>
           )}
           {isSuperAdmin && total > 0 && (

@@ -40,6 +40,9 @@ class UpdateDraftRequest(BaseModel):
 class ApproveAllRequest(BaseModel):
     batch_id: str
 
+class BulkDraftIdsRequest(BaseModel):
+    draft_ids: List[int]
+
 class BulkDeleteDraftsRequest(BaseModel):
     draft_ids: List[int]
 
@@ -266,6 +269,114 @@ def approve_all_drafts(
     from app.services.email_preview_service import approve_batch
     result = approve_batch(data.batch_id, user.user_id, db, tenant_id or 1)
     return result
+
+
+@router.post("/drafts/bulk-approve")
+def bulk_approve_drafts(
+    data: BulkDraftIdsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Approve multiple drafts by ID list."""
+    if not data.draft_ids:
+        raise HTTPException(400, "No draft IDs provided")
+    effective_tenant = tenant_id or 1
+    from datetime import datetime
+    now = datetime.utcnow()
+    count = db.query(OutreachDraft).filter(
+        OutreachDraft.draft_id.in_(data.draft_ids),
+        OutreachDraft.tenant_id == effective_tenant,
+        OutreachDraft.status == DraftStatus.PENDING,
+    ).update(
+        {"status": DraftStatus.APPROVED, "approved_by": user.user_id, "approved_at": now},
+        synchronize_session=False,
+    )
+    db.commit()
+    return {"approved_count": count}
+
+
+@router.post("/drafts/approve-all-pending")
+def approve_all_pending_drafts(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Approve ALL pending drafts for the tenant (no batch_id required)."""
+    effective_tenant = tenant_id or 1
+    from datetime import datetime
+    now = datetime.utcnow()
+    count = db.query(OutreachDraft).filter(
+        OutreachDraft.tenant_id == effective_tenant,
+        OutreachDraft.status == DraftStatus.PENDING,
+    ).update(
+        {"status": DraftStatus.APPROVED, "approved_by": user.user_id, "approved_at": now},
+        synchronize_session=False,
+    )
+    db.commit()
+    return {"approved_count": count}
+
+
+@router.post("/drafts/bulk-send")
+def bulk_send_drafts(
+    data: BulkDraftIdsRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Send multiple approved drafts by ID list (runs in background)."""
+    if not data.draft_ids:
+        raise HTTPException(400, "No draft IDs provided")
+    from app.services.email_preview_service import send_single_draft
+    from app.db.base import SessionLocal
+
+    tid = tenant_id or 1
+    ids = list(data.draft_ids)
+
+    def _bg_send():
+        _db = SessionLocal()
+        try:
+            for did in ids:
+                send_single_draft(did, _db, tid)
+        finally:
+            _db.close()
+
+    background_tasks.add_task(_bg_send)
+    return {"message": f"Sending {len(ids)} draft(s) in background", "status": "processing"}
+
+
+@router.post("/drafts/send-all-approved")
+def send_all_approved_drafts(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Send ALL approved drafts for the tenant (runs in background)."""
+    from app.services.email_preview_service import send_single_draft
+    from app.db.base import SessionLocal
+
+    tid = tenant_id or 1
+    draft_ids = [
+        d.draft_id for d in db.query(OutreachDraft.draft_id).filter(
+            OutreachDraft.tenant_id == tid,
+            OutreachDraft.status == DraftStatus.APPROVED,
+        ).all()
+    ]
+    if not draft_ids:
+        return {"message": "No approved drafts to send", "status": "done", "count": 0}
+
+    def _bg_send():
+        _db = SessionLocal()
+        try:
+            for did in draft_ids:
+                send_single_draft(did, _db, tid)
+        finally:
+            _db.close()
+
+    background_tasks.add_task(_bg_send)
+    return {"message": f"Sending {len(draft_ids)} approved draft(s) in background", "status": "processing", "count": len(draft_ids)}
 
 
 @router.post("/drafts/{draft_id}/send")

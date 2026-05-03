@@ -1636,6 +1636,22 @@ export const emailPreviewApi = {
     const response = await api.post(`/email-preview/drafts/${id}/spam-fix`, { replacements })
     return response.data
   },
+  bulkApprove: async (draftIds: number[]) => {
+    const response = await api.post('/email-preview/drafts/bulk-approve', { draft_ids: draftIds })
+    return response.data
+  },
+  approveAllPending: async () => {
+    const response = await api.post('/email-preview/drafts/approve-all-pending')
+    return response.data
+  },
+  bulkSend: async (draftIds: number[]) => {
+    const response = await api.post('/email-preview/drafts/bulk-send', { draft_ids: draftIds })
+    return response.data
+  },
+  sendAllApproved: async () => {
+    const response = await api.post('/email-preview/drafts/send-all-approved')
+    return response.data
+  },
   bulkDeleteDrafts: async (draftIds: number[]) => {
     const response = await api.delete('/email-preview/drafts/bulk', { data: { draft_ids: draftIds } })
     return response.data
