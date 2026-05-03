@@ -65,6 +65,7 @@ export default function ContactsPage() {
   const [filterValidation, setFilterValidation] = useState('')
   const [filterSource, setFilterSource] = useState('')
   const [filterOutreachStatus, setFilterOutreachStatus] = useState('')
+  const [filterDataType, setFilterDataType] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState('')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -95,7 +96,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts()
-  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, showArchived, sortBy, sortOrder])
+  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, filterDataType, showArchived, sortBy, sortOrder])
 
   const fetchContacts = async () => {
     try {
@@ -107,6 +108,7 @@ export default function ContactsPage() {
       if (filterValidation) params.validation_status = filterValidation
       if (filterSource) params.source = filterSource
       if (filterOutreachStatus) params.outreach_status = filterOutreachStatus
+      if (filterDataType) params.data_type = filterDataType
       if (showArchived) params.show_archived = true
       if (sortBy) { params.sort_by = sortBy; params.sort_order = sortOrder }
       const response = await contactsApi.list(params)
@@ -644,6 +646,11 @@ export default function ContactsPage() {
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="unsubscribed">Unsubscribed</option>
+          </select>
+          <select value={filterDataType} onChange={(e) => { setFilterDataType(e.target.value); setPage(1); }} className="input w-full sm:w-40">
+            <option value="">All Data Types</option>
+            <option value="enriched">Enriched</option>
+            <option value="test">Test</option>
           </select>
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="input w-36">
             <option value="10">10 per page</option>

@@ -50,6 +50,7 @@ async def list_contacts(
     state: Optional[str] = None,
     search: Optional[str] = None,
     outreach_status: Optional[str] = None,
+    data_type: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived contacts"),
     sort_by: Optional[str] = Query(None, description="Column to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
@@ -84,6 +85,8 @@ async def list_contacts(
         query = query.filter(ContactDetails.source == source)
     if outreach_status:
         query = query.filter(ContactDetails.outreach_status == outreach_status)
+    if data_type:
+        query = query.filter(ContactDetails.data_type == data_type)
     if state:
         query = query.filter(ContactDetails.location_state == state)
     if search:
