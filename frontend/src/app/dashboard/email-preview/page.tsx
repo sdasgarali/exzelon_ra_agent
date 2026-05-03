@@ -176,10 +176,10 @@ export default function EmailPreviewPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
 
-  // Stats
-  const pendingCount = drafts.filter(d => d.status === 'pending').length
-  const approvedCount = drafts.filter(d => d.status === 'approved').length
-  const sentCount = drafts.filter(d => d.status === 'sent').length
+  // Stats (server-side counts across all pages)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [approvedCount, setApprovedCount] = useState(0)
+  const [sentCount, setSentCount] = useState(0)
 
   const fetchDrafts = useCallback(async () => {
     setLoading(true)
@@ -194,6 +194,9 @@ export default function EmailPreviewPage() {
       setDrafts(data.drafts || [])
       setTotal(data.total || 0)
       setTotalPages(data.pages || 1)
+      setPendingCount(data.pending_count ?? 0)
+      setApprovedCount(data.approved_count ?? 0)
+      setSentCount(data.sent_count ?? 0)
       setSelectedIds(new Set())
     } catch (err) {
       console.error('Failed to fetch drafts:', err)

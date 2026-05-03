@@ -137,12 +137,32 @@ def list_drafts(
         (page - 1) * per_page
     ).limit(per_page).all()
 
+    # Compute status counts from the FULL filtered query (not just current page)
+    base_query = tenant_filter(db.query(OutreachDraft), OutreachDraft, tenant_id)
+    base_query = base_query.filter(OutreachDraft.is_archived == False)
+    if batch_id:
+        base_query = base_query.filter(OutreachDraft.batch_id == batch_id)
+    if source:
+        base_query = base_query.filter(OutreachDraft.source == source)
+    if campaign_id:
+        base_query = base_query.filter(OutreachDraft.campaign_id == campaign_id)
+    if mailbox_id:
+        base_query = base_query.filter(OutreachDraft.mailbox_id == mailbox_id)
+    status_counts = dict(
+        base_query.with_entities(OutreachDraft.status, sa_func.count())
+        .group_by(OutreachDraft.status).all()
+    )
+
     return {
         "drafts": [_draft_to_dict(d, db) for d in drafts],
         "total": total,
         "page": page,
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page,
+        "pending_count": status_counts.get("pending", 0),
+        "approved_count": status_counts.get("approved", 0),
+        "sent_count": status_counts.get("sent", 0),
+        "rejected_count": status_counts.get("rejected", 0),
     }
 
 
