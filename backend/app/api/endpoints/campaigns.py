@@ -326,13 +326,18 @@ def get_available_leads(
     cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Base query: non-archived leads posted within window
+    # Test leads (data_type='test') bypass date cutoff and enrollment exclusion
+    from sqlalchemy import or_ as sa_or
     query = db.query(LeadDetails).filter(
         LeadDetails.is_archived == False,
-        LeadDetails.posting_date >= cutoff.date(),
+        sa_or(
+            LeadDetails.posting_date >= cutoff.date(),
+            LeadDetails.data_type == "test",
+        ),
     )
     query = tenant_filter(query, LeadDetails, tenant_id)
 
-    # Exclude leads already enrolled in active campaigns
+    # Exclude leads already enrolled in active campaigns (test leads exempt)
     enrolled_lead_ids_subq = db.query(CampaignContact.lead_id).join(
         Campaign, CampaignContact.campaign_id == Campaign.campaign_id
     ).filter(
@@ -341,7 +346,12 @@ def get_available_leads(
         CampaignContact.lead_id.isnot(None),
     ).distinct().subquery()
 
-    query = query.filter(~LeadDetails.lead_id.in_(enrolled_lead_ids_subq))
+    query = query.filter(
+        sa_or(
+            ~LeadDetails.lead_id.in_(enrolled_lead_ids_subq),
+            LeadDetails.data_type == "test",
+        )
+    )
 
     # Only include leads with at least one contact
     leads_with_contacts_subq = db.query(
