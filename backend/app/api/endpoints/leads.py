@@ -890,7 +890,8 @@ async def check_campaign_eligible(
     ineligible = {}
     for lead in leads_found:
         lid = lead.lead_id
-        if lid in enrolled_set:
+        is_test_lead = getattr(lead, 'data_type', None) == 'test'
+        if lid in enrolled_set and not is_test_lead:
             ineligible[lid] = "Already in active campaign"
         elif lid not in has_contacts_set:
             ineligible[lid] = "No contacts"
