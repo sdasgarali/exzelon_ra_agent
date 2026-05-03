@@ -1975,7 +1975,8 @@ async def lifespan(app: FastAPI):
                 ))
                 conn.execute(sa_text_istest(
                     "UPDATE contact_details SET is_test=1, data_type='test' WHERE email IN "
-                    "('ali@medeoan.com','ali.infy@gmail.com','ali.aitechs@gmail.com')"
+                    "('ali@medeoan.com','ali.infy@gmail.com','ali.aitechs@gmail.com',"
+                    "'rizwantayyab00@gmail.com','zeeshujaun@gmail.com')"
                 ))
                 conn.commit()
                 logger.info("Migration: added is_test column to contact_details and seeded test contacts")
