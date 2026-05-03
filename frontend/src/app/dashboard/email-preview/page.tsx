@@ -10,7 +10,7 @@ import {
   Mail, User, Building, FileSearch, Shield, AlertTriangle,
   Check, X, Loader2, ArrowLeftRight, ChevronDown, Eye,
   Zap, BarChart3, ChevronRight, Brain, Shuffle, Monitor,
-  ShieldCheck, ArrowLeft, type LucideIcon,
+  ShieldCheck, ArrowLeft, Trash2, type LucideIcon,
 } from 'lucide-react'
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -174,6 +174,7 @@ export default function EmailPreviewPage() {
   // Multi-select for bulk delete (Super Admin)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   // Stats
   const pendingCount = drafts.filter(d => d.status === 'pending').length
@@ -515,6 +516,18 @@ export default function EmailPreviewPage() {
     finally { setBulkDeleting(false) }
   }
 
+  const handleDeleteAll = async () => {
+    if (!confirm(`Permanently delete ALL ${total} draft(s)? This cannot be undone.`)) return
+    setDeletingAll(true)
+    try {
+      await emailPreviewApi.deleteAllDrafts()
+      setSelectedIds(new Set())
+      setSelectedDraft(null)
+      await fetchDrafts()
+    } catch (err) { console.error(err) }
+    finally { setDeletingAll(false) }
+  }
+
   // Filter drafts by search
   const filteredDrafts = drafts.filter(d => {
     if (!search) return true
@@ -631,6 +644,16 @@ export default function EmailPreviewPage() {
             >
               {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
               Delete Selected ({selectedIds.size})
+            </button>
+          )}
+          {isSuperAdmin && total > 0 && (
+            <button
+              onClick={handleDeleteAll}
+              disabled={deletingAll}
+              className="text-xs px-3 py-1.5 bg-red-100 text-red-700 border border-red-300 rounded hover:bg-red-200 disabled:opacity-50 flex items-center gap-1"
+            >
+              {deletingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+              Delete All ({total})
             </button>
           )}
 

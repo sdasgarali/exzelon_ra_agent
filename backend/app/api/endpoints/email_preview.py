@@ -515,6 +515,27 @@ def bulk_delete_drafts(
     }
 
 
+@router.delete("/drafts/all")
+def delete_all_drafts(
+    status: Optional[str] = Query(None, description="Only delete drafts with this status"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Delete ALL drafts for the current tenant. Super Admin only. Optionally filter by status."""
+    query = db.query(OutreachDraft)
+    if tenant_id is not None:
+        query = query.filter(OutreachDraft.tenant_id == tenant_id)
+    if status:
+        query = query.filter(OutreachDraft.status == status)
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+    return {
+        "message": f"Successfully deleted {deleted_count} draft(s)",
+        "deleted_count": deleted_count,
+    }
+
+
 # ─── Helpers ───────────────────────────────────────────────────────
 
 def _draft_to_dict(draft: OutreachDraft, db: Session, include_details: bool = False) -> dict:
