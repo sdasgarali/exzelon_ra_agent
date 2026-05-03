@@ -10,7 +10,7 @@
 ## Lead & Contact Models
 
 - **LeadDetails** — job postings with status tracking (open/hunting/closed), enhanced dedup fields (external_job_id, city, employer_linkedin_url, employer_website)
-- **ContactDetails** — decision-makers with priority levels (P1 job poster through P5 functional manager). **Required NOT NULL fields**: `client_name`, `first_name`, `last_name`
+- **ContactDetails** — decision-makers with priority levels (P1 job poster through P5 functional manager). **Required NOT NULL fields**: `client_name`, `first_name`, `last_name`. `is_test` (Boolean, default False) — test contacts bypass send gate cooldown/fatigue checks (4-8) and allow campaign re-enrollment.
 - **LeadContactAssociation** — many-to-many junction table
 - **ClientInfo** — companies/organizations, `timezone` column auto-resolved from `location_state` via `timezone_resolver.py`
 

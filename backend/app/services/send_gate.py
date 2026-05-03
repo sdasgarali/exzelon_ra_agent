@@ -216,9 +216,11 @@ def unified_send_gate(
         return _blocked("INVALID_EMAIL", checks)
     checks.append(GateCheckResult("email_validation", True))
 
-    # ── Checks 4-10 have skip logic for replies ───────────────────
+    # ── Checks 4-8 have skip logic for replies and test contacts ──
 
-    if not is_reply:
+    _is_test_contact = getattr(contact, 'is_test', False)
+
+    if not is_reply and not _is_test_contact:
         # ── 4. Contact + Lead cooldown (cross-channel) ────────────
         cooldown_days = _resolve_cooldown_days(db, tenant_id)
         cooldown_cutoff = datetime.utcnow() - timedelta(days=cooldown_days)
@@ -340,6 +342,14 @@ def unified_send_gate(
         except Exception as e:
             logger.warning("send_gate_fatigue_error", error=str(e))
             checks.append(GateCheckResult("sequence_fatigue", True, f"check failed: {e}"))
+    elif _is_test_contact:
+        # Test contacts skip checks 4-8 (cooldown, fatigue, caps)
+        logger.info("send_gate_test_bypass", contact_id=contact.contact_id, email=contact.email)
+        checks.append(GateCheckResult("contact_lead_cooldown", True, "skipped (test contact)"))
+        checks.append(GateCheckResult("contact_cooldown", True, "skipped (test contact)"))
+        checks.append(GateCheckResult("lead_contact_limit", True, "skipped (test contact)"))
+        checks.append(GateCheckResult("company_cap", True, "skipped (test contact)"))
+        checks.append(GateCheckResult("sequence_fatigue", True, "skipped (test contact)"))
     else:
         # Replies skip checks 4-8
         checks.append(GateCheckResult("contact_lead_cooldown", True, "skipped (reply)"))

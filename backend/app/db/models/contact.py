@@ -1,5 +1,5 @@
 """Contact details model for discovered contacts."""
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Index, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from enum import Enum as PyEnum
 from app.db.base import Base
@@ -64,6 +64,9 @@ class ContactDetails(Base):
     # Outreach status and unsubscribe tracking
     outreach_status = Column(Enum(OutreachStatus, values_callable=lambda x: [e.value for e in x]), default=OutreachStatus.ACTIVE, nullable=False, server_default="active")
     unsubscribed_at = Column(DateTime, nullable=True)
+
+    # Test contact flag — bypasses cooldown/fatigue checks in send gate
+    is_test = Column(Boolean, default=False, nullable=False, server_default="0")
 
     # Timezone (resolved from state)
     timezone = Column(String(50), nullable=True)

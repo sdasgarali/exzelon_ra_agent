@@ -19,6 +19,7 @@ class ContactBase(BaseModel):
     source: Optional[str] = None
     priority_level: Optional[PriorityLevel] = None
     data_type: Optional[str] = "enriched"
+    is_test: Optional[bool] = False
 
 
 class ContactCreate(ContactBase):
@@ -43,6 +44,7 @@ class ContactUpdate(BaseModel):
     validation_status: Optional[str] = None
     last_outreach_date: Optional[str] = None
     outreach_status: Optional[OutreachStatus] = None
+    is_test: Optional[bool] = None
 
 
 class ContactResponse(ContactBase):
@@ -53,6 +55,7 @@ class ContactResponse(ContactBase):
     last_outreach_date: Optional[str] = None
     outreach_status: Optional[str] = "active"
     data_type: str = "enriched"
+    is_test: bool = False
     unsubscribed_at: Optional[datetime] = None
     lead_ids: List[int] = []  # All associated lead IDs via junction table
     is_archived: bool = False

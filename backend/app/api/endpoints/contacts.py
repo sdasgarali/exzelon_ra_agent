@@ -7,13 +7,16 @@ from sqlalchemy import func
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
-from app.db.models.contact import ContactDetails, PriorityLevel
+from app.db.models.contact import ContactDetails, PriorityLevel, OutreachStatus as ContactOutreachStatus
 from app.db.models.client import ClientInfo
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.schemas.pipeline import BulkContactIdsRequest
 from app.services.timezone_resolver import resolve_contact_timezone
+
+import structlog
+_logger = structlog.get_logger()
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
 
@@ -321,7 +324,7 @@ async def bulk_update_contacts(
     ALLOWED_FIELDS = {
         "data_type", "first_name", "last_name", "client_name", "email",
         "phone", "timezone", "lead_id", "outreach_status", "validation_status",
-        "priority_level",
+        "priority_level", "is_test",
     }
     filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
 
@@ -350,6 +353,73 @@ async def bulk_update_contacts(
         raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
 
     return {"message": f"Updated {len(contacts)} contact(s)", "updated_count": len(contacts)}
+
+
+@router.post("/reset-test-data", tags=["Contacts"])
+async def reset_test_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Reset outreach history for all test contacts. Super Admin only.
+
+    Deletes OutreachEvent and CampaignContact records for is_test=True contacts,
+    resets their last_outreach_date and outreach_status, and removes suppression entries.
+    """
+    from app.db.models.outreach import OutreachEvent
+    from app.db.models.campaign import CampaignContact
+    from app.db.models.suppression import SuppressionList
+
+    query = tenant_filter(
+        db.query(ContactDetails).filter(ContactDetails.is_test == True),
+        ContactDetails, tenant_id,
+    )
+    test_contacts = query.all()
+
+    if not test_contacts:
+        return {"reset_count": 0, "events_deleted": 0, "enrollments_deleted": 0, "suppressions_removed": 0}
+
+    test_ids = [c.contact_id for c in test_contacts]
+    test_emails = [c.email.lower() for c in test_contacts if c.email]
+
+    # Delete outreach events
+    events_deleted = db.query(OutreachEvent).filter(
+        OutreachEvent.contact_id.in_(test_ids),
+    ).delete(synchronize_session=False)
+
+    # Delete campaign enrollments
+    enrollments_deleted = db.query(CampaignContact).filter(
+        CampaignContact.contact_id.in_(test_ids),
+    ).delete(synchronize_session=False)
+
+    # Remove from suppression list
+    suppressions_removed = 0
+    if test_emails:
+        suppressions_removed = db.query(SuppressionList).filter(
+            SuppressionList.email.in_(test_emails),
+        ).delete(synchronize_session=False)
+
+    # Reset contact fields
+    for contact in test_contacts:
+        contact.last_outreach_date = None
+        contact.outreach_status = ContactOutreachStatus.ACTIVE
+
+    db.commit()
+    _logger.info(
+        "reset_test_data",
+        tenant_id=tenant_id,
+        reset_count=len(test_contacts),
+        events_deleted=events_deleted,
+        enrollments_deleted=enrollments_deleted,
+        suppressions_removed=suppressions_removed,
+    )
+
+    return {
+        "reset_count": len(test_contacts),
+        "events_deleted": events_deleted,
+        "enrollments_deleted": enrollments_deleted,
+        "suppressions_removed": suppressions_removed,
+    }
 
 
 @router.get("/duplicates", tags=["Contacts"])

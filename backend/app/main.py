@@ -1964,6 +1964,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for password reset columns: {e}")
 
+    # Migration: add is_test column to contact_details (test contact bypass)
+    try:
+        from sqlalchemy import text as sa_text_istest
+        with engine.connect() as conn:
+            cd_cols_istest = [r[0].lower() for r in conn.execute(sa_text_istest("SHOW COLUMNS FROM contact_details")).fetchall()]
+            if "is_test" not in cd_cols_istest:
+                conn.execute(sa_text_istest(
+                    "ALTER TABLE contact_details ADD COLUMN is_test TINYINT(1) NOT NULL DEFAULT 0"
+                ))
+                conn.execute(sa_text_istest(
+                    "UPDATE contact_details SET is_test=1 WHERE email IN "
+                    "('ali@medeoan.com','ali.infy@gmail.com','ali.aitechs@gmail.com')"
+                ))
+                conn.commit()
+                logger.info("Migration: added is_test column to contact_details and seeded test contacts")
+    except Exception as e:
+        logger.warning(f"Migration check for contact_details.is_test: {e}")
+
     # Migration: add enrich_attempts column to client_info
     try:
         from sqlalchemy import text as sa_text_enrich_cnt

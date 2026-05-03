@@ -891,20 +891,39 @@ def enroll_contacts(
     ).all()
     suppressed_ids = {c.contact_id for c in contacts if c.email and c.email.lower() in suppressed_emails}
 
+    # Build contact lookup for is_test checks
+    contact_map = {c.contact_id: c for c in contacts}
+
     enrolled = 0
-    duplicates = len(existing)
+    re_enrolled = 0
+    duplicates = 0
     suppressed = 0
 
     now = datetime.utcnow()
     for cid in contact_ids:
         if cid in existing:
+            # Allow re-enrollment for test contacts
+            contact_obj = contact_map.get(cid)
+            if contact_obj and getattr(contact_obj, 'is_test', False):
+                cc = db.query(CampaignContact).filter(
+                    CampaignContact.campaign_id == campaign_id,
+                    CampaignContact.contact_id == cid,
+                ).first()
+                if cc:
+                    cc.status = CampaignContactStatus.ACTIVE
+                    cc.current_step = first_step.step_order if first_step else 0
+                    cc.next_send_at = now + delay if campaign.status == CampaignStatus.ACTIVE else None
+                    cc.completed_at = None
+                    re_enrolled += 1
+                    continue
+            duplicates += 1
             continue
         if cid in suppressed_ids:
             suppressed += 1
             continue
 
         # Find lead_id for this contact
-        contact = db.query(ContactDetails).filter(
+        contact = contact_map.get(cid) or db.query(ContactDetails).filter(
             ContactDetails.contact_id == cid
         ).first()
 
@@ -927,7 +946,7 @@ def enroll_contacts(
 
     db.commit()
 
-    return {"enrolled": enrolled, "duplicates": duplicates, "suppressed": suppressed}
+    return {"enrolled": enrolled, "re_enrolled": re_enrolled, "duplicates": duplicates, "suppressed": suppressed}
 
 
 def handle_campaign_reply(event_id: int, db: Session):

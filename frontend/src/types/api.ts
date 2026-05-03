@@ -46,6 +46,7 @@ export interface Contact {
   timezone: string | null;
   lead_id: number | null;
   lead_ids: number[];
+  is_test: boolean;
   is_archived: boolean;
   created_at: string;
   updated_at: string;

@@ -23,6 +23,7 @@ interface Contact {
   source: string
   outreach_status: string
   unsubscribed_at: string | null
+  is_test: boolean
 }
 
 const TIMEZONE_LABELS: Record<string, string> = {
@@ -46,7 +47,7 @@ function formatTimezone(tz: string | null): string {
 const EMPTY_FORM = {
   first_name: '', last_name: '', email: '', client_name: '',
   title: '', phone: '', linkedin_url: '', location_state: '', source: 'manual',
-  priority_level: '',
+  priority_level: '', is_test: false as boolean,
 }
 
 export default function ContactsPage() {
@@ -250,6 +251,26 @@ export default function ContactsPage() {
     }
   }
 
+  // Reset test data
+  const [resettingTestData, setResettingTestData] = useState(false)
+
+  const handleResetTestData = async () => {
+    if (!confirm('Reset all outreach data for test contacts? This deletes their outreach events, campaign enrollments, and suppression entries.')) return
+    try {
+      setResettingTestData(true)
+      setError('')
+      const res = await api.post('/contacts/reset-test-data')
+      const d = res.data
+      setSuccess(`Reset ${d.reset_count} test contact(s): ${d.events_deleted} events, ${d.enrollments_deleted} enrollments, ${d.suppressions_removed} suppressions removed.`)
+      fetchContacts()
+      setTimeout(() => setSuccess(''), 6000)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to reset test data')
+    } finally {
+      setResettingTestData(false)
+    }
+  }
+
   const getValidationBadge = (status: string) => {
     const colors: Record<string, string> = {
       valid: 'bg-green-100 text-green-800',
@@ -415,6 +436,16 @@ export default function ContactsPage() {
                   <option value="p5_functional_manager">P5 - Functional Manager</option>
                 </select>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createForm.is_test}
+                  onChange={e => setCreateForm(f => ({ ...f, is_test: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Test Contact</span>
+                <span className="text-xs text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
+              </label>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button
@@ -485,6 +516,16 @@ export default function ContactsPage() {
                   <option value="p5_functional_manager">P5 - Functional Manager</option>
                 </select>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.is_test}
+                  onChange={e => setEditForm(f => ({ ...f, is_test: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Test Contact</span>
+                <span className="text-xs text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
+              </label>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button
@@ -534,6 +575,15 @@ export default function ContactsPage() {
                 </>
               )}
             </>
+          )}
+          {isSuperAdmin && (
+            <button
+              onClick={handleResetTestData}
+              disabled={resettingTestData}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium disabled:opacity-50"
+            >
+              {resettingTestData ? 'Resetting...' : 'Reset Test Data'}
+            </button>
           )}
           <button
             onClick={() => setShowCreateModal(true)}
@@ -663,7 +713,10 @@ export default function ContactsPage() {
                       <input type="checkbox" checked={selectedIds.has(contact.contact_id)} onChange={() => toggleSelect(contact.contact_id)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-sm font-medium text-gray-900">{contact.first_name} {contact.last_name}</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {contact.first_name} {contact.last_name}
+                        {contact.is_test && <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-teal-100 text-teal-700">TEST</span>}
+                      </div>
                       <div className="text-sm text-gray-500">{contact.title || '-'}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{contact.client_name || '-'}</td>
@@ -737,6 +790,7 @@ export default function ContactsPage() {
                               location_state: contact.location_state || '',
                               source: contact.source || 'manual',
                               priority_level: contact.priority_level || '',
+                              is_test: contact.is_test || false,
                             })
                             setShowEditModal(true)
                           }}

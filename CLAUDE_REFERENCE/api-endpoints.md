@@ -10,7 +10,7 @@ All endpoints are mounted under `/api/v1`.
 |--------|------|---------|
 | `/auth` | `auth.py` | Login, signup, verify email, resend verification, refresh token |
 | `/leads` | `leads.py` | Lead CRUD, bulk operations |
-| `/contacts` | `contacts.py` | Contact CRUD, bulk operations, unsubscribe |
+| `/contacts` | `contacts.py` | Contact CRUD, bulk operations, unsubscribe, `POST /reset-test-data` (super_admin — clears outreach/enrollment/suppression for is_test contacts) |
 | `/clients` | `clients.py` | Client/company CRUD, backfill-timezones |
 | `/mailboxes` | `mailboxes.py` | Mailbox CRUD, health check |
 | `/campaigns` | `campaigns.py` | Campaign CRUD, sequence steps, enrollment, schedules |

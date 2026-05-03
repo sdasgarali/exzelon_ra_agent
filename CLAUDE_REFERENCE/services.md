@@ -158,7 +158,7 @@ Domain reputation management subsystem:
 | Rate Limiter | `core/rate_limiter.py` | Shared slowapi limiter — auth, pipelines, email-preview, billing, campaigns |
 | Job Lock | `core/job_lock.py` | MySQL advisory lock — prevents duplicate job execution across workers |
 | State Machine | `core/state_machine.py` | Lead + Campaign status transition validation |
-| **Send Gate** | `services/send_gate.py` | Centralized send safety — `unified_send_gate()` runs 10 ordered checks. All 4 send paths wired. Checks: contact status -> suppression -> email validation -> cooldown -> per-lead limit -> company cap -> sequence fatigue -> domain throttle -> AI orchestrator |
+| **Send Gate** | `services/send_gate.py` | Centralized send safety — `unified_send_gate()` runs 10 ordered checks. All 4 send paths wired. Checks: contact status -> suppression -> email validation -> cooldown -> per-lead limit -> company cap -> sequence fatigue -> domain throttle -> AI orchestrator. **Test contacts** (`is_test=True`) skip checks 4-8 (cooldown, fatigue, caps) like replies do. |
 
 ---
 
