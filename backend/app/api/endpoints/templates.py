@@ -89,6 +89,10 @@ async def list_templates(
     show_archived: bool = False,
     industry: Optional[str] = Query(None, description="Filter by industry"),
     goal: Optional[str] = Query(None, description="Filter by goal"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status (active/inactive)"),
+    search: Optional[str] = Query(None, description="Search by name or subject"),
+    sort_by: Optional[str] = Query(None, description="Column to sort by"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -105,7 +109,36 @@ async def list_templates(
         query = query.filter(EmailTemplate.industry == industry)
     if goal:
         query = query.filter(EmailTemplate.goal == goal)
-    templates = query.order_by(EmailTemplate.created_at.desc()).all()
+    if status_filter:
+        query = query.filter(EmailTemplate.status == status_filter)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (EmailTemplate.name.ilike(search_term)) | (EmailTemplate.subject.ilike(search_term))
+        )
+
+    # Sorting
+    SORT_COLUMNS = {
+        "name": EmailTemplate.name,
+        "category": EmailTemplate.category,
+        "goal": EmailTemplate.goal,
+        "industry": EmailTemplate.industry,
+        "subject": EmailTemplate.subject,
+        "status": EmailTemplate.status,
+        "created_at": EmailTemplate.created_at,
+    }
+    if sort_by and sort_by in SORT_COLUMNS:
+        col = SORT_COLUMNS[sort_by]
+        order_col = col.asc() if sort_order == "asc" else col.desc()
+        templates = query.order_by(order_col).all()
+    else:
+        # Default: active first, then by created_at desc
+        from sqlalchemy import case
+        status_priority = case(
+            (EmailTemplate.status == TemplateStatus.ACTIVE, 0),
+            else_=1,
+        )
+        templates = query.order_by(status_priority, EmailTemplate.created_at.desc()).all()
 
     # Find active template per category
     active_outreach = next(

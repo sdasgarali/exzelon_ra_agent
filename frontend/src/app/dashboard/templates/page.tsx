@@ -26,6 +26,7 @@ import {
   BarChart3,
   Wrench,
   ChevronDown,
+  Search,
 } from 'lucide-react'
 
 type TemplateCategory = 'outreach' | 'followup'
@@ -197,6 +198,11 @@ export default function TemplatesPage() {
   // Template library filters
   const [industryFilter, setIndustryFilter] = useState('')
   const [goalFilter, setGoalFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [sortBy, setSortBy] = useState('')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [seedingLibrary, setSeedingLibrary] = useState(false)
 
   // Refs for drop targets
@@ -419,6 +425,33 @@ export default function TemplatesPage() {
     if (activeTab === 'scorecard' && !scorecardResult && !loadingScorecard) handleScorecard()
   }, [activeTab, showModal]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── Search debounce ────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // ─── Sort helpers ──────────────────────────────────────────
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      if (sortOrder === 'asc') {
+        setSortOrder('desc')
+      } else {
+        // Third click: clear sort
+        setSortBy('')
+        setSortOrder('desc')
+      }
+    } else {
+      setSortBy(column)
+      setSortOrder('asc')
+    }
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortBy !== column) return ' \u2195'
+    return sortOrder === 'asc' ? ' \u2191' : ' \u2193'
+  }
+
   // ─── Original handlers ──────────────────────────────────────
 
   const fetchTemplates = async () => {
@@ -428,6 +461,12 @@ export default function TemplatesPage() {
       const params: Record<string, any> = showArchived ? { show_archived: true } : {}
       if (industryFilter) params.industry = industryFilter
       if (goalFilter) params.goal = goalFilter
+      if (statusFilter) params.status = statusFilter
+      if (debouncedSearch) params.search = debouncedSearch
+      if (sortBy) {
+        params.sort_by = sortBy
+        params.sort_order = sortOrder
+      }
       const data = await templatesApi.list(params)
       setTemplates(data.items || [])
       setActiveOutreachId(data.active_outreach_template_id ?? data.active_template_id ?? null)
@@ -452,7 +491,7 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     fetchTemplates()
-  }, [showArchived, industryFilter, goalFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showArchived, industryFilter, goalFilter, statusFilter, debouncedSearch, sortBy, sortOrder]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = () => {
     setEditingId(null)
@@ -645,8 +684,27 @@ export default function TemplatesPage() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search name or subject..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500 w-56"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
         <select
           value={industryFilter}
           onChange={(e) => setIndustryFilter(e.target.value)}
@@ -723,27 +781,23 @@ export default function TemplatesPage() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Name
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Goal
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Industry
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Subject
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Created
-              </th>
+              {[
+                { key: 'name', label: 'Name' },
+                { key: 'category', label: 'Category' },
+                { key: 'goal', label: 'Goal' },
+                { key: 'industry', label: 'Industry' },
+                { key: 'subject', label: 'Subject' },
+                { key: 'status', label: 'Status' },
+                { key: 'created_at', label: 'Created' },
+              ].map((col) => (
+                <th
+                  key={col.key}
+                  onClick={() => handleSort(col.key)}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 hover:bg-gray-100 select-none whitespace-nowrap"
+                >
+                  {col.label}{getSortIcon(col.key)}
+                </th>
+              ))}
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
