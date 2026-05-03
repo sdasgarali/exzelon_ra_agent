@@ -1974,13 +1974,24 @@ async def lifespan(app: FastAPI):
                     "ALTER TABLE contact_details ADD COLUMN is_test TINYINT(1) NOT NULL DEFAULT 0"
                 ))
                 conn.execute(sa_text_istest(
-                    "UPDATE contact_details SET is_test=1 WHERE email IN "
+                    "UPDATE contact_details SET is_test=1, data_type='test' WHERE email IN "
                     "('ali@medeoan.com','ali.infy@gmail.com','ali.aitechs@gmail.com')"
                 ))
                 conn.commit()
                 logger.info("Migration: added is_test column to contact_details and seeded test contacts")
     except Exception as e:
         logger.warning(f"Migration check for contact_details.is_test: {e}")
+
+    # One-time fix: ensure existing test contacts also have data_type='test'
+    try:
+        from sqlalchemy import text as sa_text_istest_fix
+        with engine.connect() as conn:
+            conn.execute(sa_text_istest_fix(
+                "UPDATE contact_details SET data_type='test' WHERE is_test=1 AND data_type != 'test'"
+            ))
+            conn.commit()
+    except Exception:
+        pass
 
     # Migration: add enrich_attempts column to client_info
     try:
