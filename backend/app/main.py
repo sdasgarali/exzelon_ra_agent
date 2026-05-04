@@ -1994,6 +1994,26 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Migration: add from_name, cc_emails, bcc_emails to inbox_messages
+    try:
+        from sqlalchemy import text as sa_text_inbox_meta
+        with engine.connect() as conn:
+            im_cols = [r[0].lower() for r in conn.execute(sa_text_inbox_meta("SHOW COLUMNS FROM inbox_messages")).fetchall()]
+            stmts = []
+            if "from_name" not in im_cols:
+                stmts.append("ALTER TABLE inbox_messages ADD COLUMN from_name VARCHAR(255) DEFAULT NULL")
+            if "cc_emails" not in im_cols:
+                stmts.append("ALTER TABLE inbox_messages ADD COLUMN cc_emails VARCHAR(1000) DEFAULT NULL")
+            if "bcc_emails" not in im_cols:
+                stmts.append("ALTER TABLE inbox_messages ADD COLUMN bcc_emails VARCHAR(1000) DEFAULT NULL")
+            for stmt in stmts:
+                conn.execute(sa_text_inbox_meta(stmt))
+            if stmts:
+                conn.commit()
+                logger.info("Migration: added from_name/cc_emails/bcc_emails to inbox_messages")
+    except Exception as e:
+        logger.warning(f"Migration check for inbox_messages metadata cols: {e}")
+
     # Migration: add enrich_attempts column to client_info
     try:
         from sqlalchemy import text as sa_text_enrich_cnt

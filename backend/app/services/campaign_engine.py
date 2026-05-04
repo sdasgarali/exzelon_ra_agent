@@ -19,6 +19,7 @@ from app.db.models.campaign import (
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
+from app.db.models.outreach_draft import OutreachDraft, DraftStatus
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.core.config import settings
 
@@ -175,9 +176,32 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
             if step.step_type == StepType.EMAIL:
                 # Preview mode: generate draft instead of sending
                 if getattr(campaign, 'preview_mode', False) and campaign.preview_mode:
+                    # Dedup: skip if a non-expired draft already exists for this contact+step
+                    existing_draft = db.query(OutreachDraft.draft_id).filter(
+                        OutreachDraft.campaign_id == cc.campaign_id,
+                        OutreachDraft.contact_id == cc.contact_id,
+                        OutreachDraft.step_id == step.step_id,
+                        OutreachDraft.status.in_([
+                            DraftStatus.PENDING, DraftStatus.APPROVED, DraftStatus.SENT,
+                        ]),
+                    ).first()
+                    if existing_draft:
+                        logger.debug(
+                            "preview_draft_dedup_skip",
+                            cc_id=cc.id,
+                            campaign_id=cc.campaign_id,
+                            step_id=step.step_id,
+                            existing_draft_id=existing_draft.draft_id,
+                        )
+                        # Advance to next step so contact progresses through sequence
+                        _advance_to_next_step(cc, step, campaign, db)
+                        results["processed"] += 1
+                        continue
                     try:
                         from app.services.email_preview_service import generate_single_campaign_draft
                         generate_single_campaign_draft(cc, step, campaign, db)
+                        # Advance to next step (same as normal mode)
+                        _advance_to_next_step(cc, step, campaign, db)
                         results["processed"] += 1
                         continue
                     except Exception as e_preview:

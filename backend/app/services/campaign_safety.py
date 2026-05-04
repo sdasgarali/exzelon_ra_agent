@@ -15,6 +15,7 @@ from app.db.models.campaign import (
     CampaignContact, CampaignContactStatus, Campaign,
 )
 from app.db.models.outreach import OutreachEvent, OutreachStatus
+from app.db.models.outreach_draft import OutreachDraft, DraftStatus
 from app.db.models.contact import ContactDetails
 from app.db.models.inbox_message import InboxMessage, MessageDirection
 
@@ -34,11 +35,11 @@ def get_idempotency_key(cc: CampaignContact) -> str:
 
 
 def check_already_processed(db: Session, cc: CampaignContact) -> bool:
-    """Check if this contact's current step was already sent today.
+    """Check if this contact's current step was already sent or drafted today.
 
     Prevents duplicate sends if the scheduler runs twice due to restart.
-    Queries OutreachEvent for a SENT event matching this campaign + contact +
-    step on today's date.
+    Queries OutreachEvent for a SENT event AND OutreachDraft for a
+    PENDING/APPROVED/SENT draft matching this campaign + contact + step.
     """
     today_start = datetime.combine(date.today(), datetime.min.time())
 
@@ -59,6 +60,27 @@ def check_already_processed(db: Session, cc: CampaignContact) -> bool:
             existing_event=existing.event_id,
         )
         return True
+
+    # Also check for existing drafts (preview mode dedup)
+    existing_draft = db.query(OutreachDraft.draft_id).filter(
+        OutreachDraft.campaign_id == cc.campaign_id,
+        OutreachDraft.contact_id == cc.contact_id,
+        OutreachDraft.step_id is not None,
+        OutreachDraft.status.in_([
+            DraftStatus.PENDING, DraftStatus.APPROVED, DraftStatus.SENT,
+        ]),
+    ).first()
+
+    if existing_draft:
+        logger.info(
+            "idempotency_guard_blocked_draft",
+            cc_id=cc.id,
+            campaign_id=cc.campaign_id,
+            contact_id=cc.contact_id,
+            existing_draft=existing_draft.draft_id,
+        )
+        return True
+
     return False
 
 

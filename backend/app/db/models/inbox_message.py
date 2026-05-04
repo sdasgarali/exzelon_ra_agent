@@ -39,7 +39,10 @@ class InboxMessage(Base):
 
     # Email headers
     from_email = Column(String(255), nullable=False)
+    from_name = Column(String(255), nullable=True)
     to_email = Column(String(255), nullable=False)
+    cc_emails = Column(String(1000), nullable=True)
+    bcc_emails = Column(String(1000), nullable=True)
     subject = Column(String(500), nullable=True)
     body_html = Column(Text, nullable=True)
     body_text = Column(Text, nullable=True)

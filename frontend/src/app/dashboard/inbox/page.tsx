@@ -10,6 +10,7 @@ import {
   Phone, Building, Briefcase, ExternalLink, Filter, Info,
   Bot, Zap, Activity, Trash2, CheckSquare, Square, CheckCheck,
   FileText, Check, Edit3, XCircle, ChevronUp, Loader2, ArrowLeft,
+  Users, Calendar,
 } from 'lucide-react'
 
 // ─── Category & sentiment config ────────────────────────────────────
@@ -58,6 +59,15 @@ function timeAgo(dateStr: string | null) {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
   return date.toLocaleDateString()
+}
+
+function formatFullDate(dateStr: string | null) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return d.toLocaleString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  })
 }
 
 export default function InboxPage() {
@@ -359,9 +369,9 @@ export default function InboxPage() {
   const unreadCount = threads.filter(t => t.unread_count > 0).length
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col">
+    <div className="h-[calc(100vh-120px)] flex flex-col overflow-hidden">
       {/* ─── Header ──────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
+      <div className="flex-shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <MessageSquare className="w-5 h-5 text-white" />
@@ -486,7 +496,7 @@ export default function InboxPage() {
 
       {/* ─── Category Legend ──────────────────────────────────────────── */}
       {showLegend && (
-        <div className="mb-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
+        <div className="flex-shrink-0 mb-3 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Category Legend</h4>
             <button onClick={() => setShowLegend(false)} className="text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
@@ -515,7 +525,7 @@ export default function InboxPage() {
 
       {/* ─── Automation Activity Panel ───────────────────────────────── */}
       {showAutomationPanel && (
-        <div className="mb-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
+        <div className="flex-shrink-0 mb-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -572,7 +582,7 @@ export default function InboxPage() {
       )}
 
       {/* ─── Main 3-Panel Layout ─────────────────────────────────────── */}
-      <div className="flex-1 flex rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="flex-1 min-h-0 flex rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700">
 
         {/* ── Left: Thread List ──────────────────────────────────────── */}
         <div className={`w-full md:w-[340px] border-r border-gray-200 dark:border-gray-700 flex flex-col bg-gray-50/50 dark:bg-gray-900/30 ${selectedThreadId ? 'hidden md:flex' : 'flex'}`}>
@@ -690,7 +700,7 @@ export default function InboxPage() {
         </div>
 
         {/* ── Center: Message Thread ─────────────────────────────────── */}
-        <div className={`flex-1 flex flex-col min-w-0 ${selectedThreadId ? 'flex' : 'hidden md:flex'}`}>
+        <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${selectedThreadId ? 'flex' : 'hidden md:flex'}`}>
           {!selectedThread ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
@@ -704,7 +714,7 @@ export default function InboxPage() {
           ) : (
             <>
               {/* Thread header */}
-              <div className="px-3 sm:px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-3">
+              <div className="flex-shrink-0 px-3 sm:px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-3">
                 {/* Mobile back button */}
                 <button
                   onClick={() => { setSelectedThreadId(null); setSelectedThread(null) }}
@@ -766,65 +776,113 @@ export default function InboxPage() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-4 bg-gray-50/50 dark:bg-gray-900/20">
+              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3 bg-gray-50/50 dark:bg-gray-900/20">
                 {selectedThread.messages?.map((msg: InboxMessage, idx: number) => {
                   const isSent = msg.direction === 'sent'
                   const msgCat = msg.category ? categoryConfig[msg.category] : null
                   const msgSent = msg.sentiment ? sentimentConfig[msg.sentiment] : null
+                  const senderName = msg.from_name || msg.from_email
+                  const showSubject = idx === 0 || msg.subject !== selectedThread.messages?.[idx - 1]?.subject
                   return (
-                    <div key={msg.message_id} className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}>
-                      {/* Received avatar */}
-                      {!isSent && (
-                        <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(msg.from_email)} flex items-center justify-center flex-shrink-0 mr-2 mt-1 shadow-sm`}>
-                          <span className="text-[10px] font-bold text-white">{msg.from_email?.[0]?.toUpperCase() || '?'}</span>
-                        </div>
-                      )}
-                      <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-3 shadow-sm ${
+                    <div key={msg.message_id} className={`rounded-xl border shadow-sm overflow-hidden ${
+                      isSent
+                        ? 'border-indigo-200 dark:border-indigo-800/50'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}>
+                      {/* Email header */}
+                      <div className={`px-4 py-3 ${
                         isSent
-                          ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-br-md'
-                          : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-bl-md'
+                          ? 'bg-indigo-50 dark:bg-indigo-900/20'
+                          : 'bg-white dark:bg-gray-800'
                       }`}>
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className={`text-[11px] font-semibold ${isSent ? 'text-indigo-100' : 'text-gray-700 dark:text-gray-300'}`}>
-                            {isSent ? (
-                              <span className="flex items-center gap-1"><ArrowUpRight className="w-3 h-3" /> You</span>
-                            ) : msg.from_email}
-                          </span>
-                          <span className={`text-[10px] ${isSent ? 'text-indigo-200' : 'text-gray-400'} flex items-center gap-1`}>
-                            <Clock className="w-2.5 h-2.5" />
-                            {msg.received_at ? timeAgo(msg.received_at) : ''}
-                          </span>
+                        {/* Row 1: Sender + date */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm ${
+                              isSent
+                                ? 'bg-gradient-to-br from-indigo-500 to-indigo-600'
+                                : `bg-gradient-to-br ${getAvatarColor(msg.from_email)}`
+                            }`}>
+                              {isSent ? (
+                                <ArrowUpRight className="w-3.5 h-3.5 text-white" />
+                              ) : (
+                                <span className="text-[10px] font-bold text-white">{senderName[0]?.toUpperCase() || '?'}</span>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{isSent ? 'You' : senderName}</span>
+                                {isSent && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">Sent</span>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate block">&lt;{msg.from_email}&gt;</span>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {formatFullDate(msg.received_at)}
+                            </div>
+                            <span className="text-[10px] text-gray-400">{timeAgo(msg.received_at)}</span>
+                          </div>
                         </div>
-                        {msg.body_text ? (
-                          <p className={`text-sm whitespace-pre-wrap leading-relaxed ${isSent ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>{msg.body_text}</p>
-                        ) : msg.body_html ? (
-                          <div className={`text-sm leading-relaxed ${isSent ? 'text-white' : 'text-gray-800 dark:text-gray-200'} [&_a]:underline`} dangerouslySetInnerHTML={{ __html: msg.body_html }} />
-                        ) : (
-                          <p className={`text-sm italic ${isSent ? 'text-indigo-200' : 'text-gray-400'}`}>(empty message)</p>
-                        )}
+                        {/* Row 2: To / CC / BCC */}
+                        <div className="mt-2 pl-[42px] space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-medium text-gray-400 dark:text-gray-500 w-7">To:</span>
+                            <span className="truncate">{msg.to_email}</span>
+                          </div>
+                          {msg.cc_emails && (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                              <span className="font-medium text-gray-400 dark:text-gray-500 w-7">Cc:</span>
+                              <span className="truncate">{msg.cc_emails}</span>
+                            </div>
+                          )}
+                          {msg.bcc_emails && (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                              <span className="font-medium text-gray-400 dark:text-gray-500 w-7">Bcc:</span>
+                              <span className="truncate">{msg.bcc_emails}</span>
+                            </div>
+                          )}
+                          {showSubject && msg.subject && (
+                            <div className="flex items-center gap-1.5 text-xs mt-0.5">
+                              <span className="font-medium text-gray-400 dark:text-gray-500 w-7">Sub:</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 truncate">{msg.subject}</span>
+                            </div>
+                          )}
+                        </div>
                         {/* Category + Sentiment badges */}
                         {(msgCat || msgSent) && (
-                          <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-white/10">
+                          <div className="flex items-center gap-2 mt-2 pl-[42px]">
                             {msgCat && (
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${isSent ? 'bg-white/15 text-white' : `${msgCat.bg} ${msgCat.color}`}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isSent ? 'bg-white/60' : msgCat.dot}`} />
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${msgCat.bg} ${msgCat.color}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${msgCat.dot}`} />
                                 {msgCat.label}
                               </span>
                             )}
                             {msgSent && (
-                              <span className={`inline-flex items-center gap-1 text-[10px] ${isSent ? 'text-indigo-200' : msgSent.color}`}>
+                              <span className={`inline-flex items-center gap-1 text-[10px] ${msgSent.color}`}>
                                 {msgSent.icon} {msgSent.label}
                               </span>
                             )}
                           </div>
                         )}
                       </div>
-                      {/* Sent avatar */}
-                      {isSent && (
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center flex-shrink-0 ml-2 mt-1 shadow-sm">
-                          <ArrowUpRight className="w-3.5 h-3.5 text-white" />
-                        </div>
-                      )}
+                      {/* Email body */}
+                      <div className={`px-4 py-3 border-t ${
+                        isSent
+                          ? 'bg-white dark:bg-gray-800/50 border-indigo-100 dark:border-indigo-800/30'
+                          : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700'
+                      }`}>
+                        {msg.body_html ? (
+                          <div className="text-sm leading-relaxed text-gray-800 dark:text-gray-200 [&_a]:text-indigo-600 [&_a]:underline [&_img]:max-w-full [&_img]:h-auto overflow-x-auto" dangerouslySetInnerHTML={{ __html: msg.body_html }} />
+                        ) : msg.body_text ? (
+                          <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200">{msg.body_text}</p>
+                        ) : (
+                          <p className="text-sm italic text-gray-400">(empty message)</p>
+                        )}
+                      </div>
                     </div>
                   )
                 })}
@@ -833,7 +891,7 @@ export default function InboxPage() {
 
               {/* AI Reply Agent Panel */}
               {showAiDraft && aiDraft && (
-                <div className="border-t border-gray-200 dark:border-gray-700 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10 px-5 py-3">
+                <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10 px-5 py-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Bot className="w-4 h-4 text-amber-600" />
                     <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">AI Reply Draft</span>
@@ -877,7 +935,7 @@ export default function InboxPage() {
               )}
 
               {/* Reply Composer */}
-              <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 sm:p-4">
+              <div className="flex-shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 sm:p-4">
                 {replyError && (
                   <div className="mb-2 px-3 py-2 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-700 rounded-lg text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
                     <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />

@@ -237,6 +237,25 @@ def get_thread(
                 "phone": contact.phone,
             }
 
+    # Build mailbox lookup for sender names on sent messages
+    mailbox_ids = {m.mailbox_id for m in messages if m.mailbox_id}
+    mailbox_map: dict = {}
+    if mailbox_ids:
+        from app.db.models.sender_mailbox import SenderMailbox
+        for mb in db.query(SenderMailbox).filter(SenderMailbox.mailbox_id.in_(mailbox_ids)).all():
+            mailbox_map[mb.mailbox_id] = mb
+
+    def _from_name(m: InboxMessage) -> str:
+        """Derive a display name for the sender."""
+        if m.from_name:
+            return m.from_name
+        if m.direction == MessageDirection.SENT and m.mailbox_id and m.mailbox_id in mailbox_map:
+            mb = mailbox_map[m.mailbox_id]
+            return getattr(mb, 'display_name', None) or getattr(mb, 'sender_name', None) or m.from_email
+        if m.direction == MessageDirection.RECEIVED and contact_info:
+            return contact_info["name"] or m.from_email
+        return m.from_email
+
     return {
         "thread_id": thread_id,
         "contact": contact_info,
@@ -245,7 +264,10 @@ def get_thread(
                 "message_id": m.message_id,
                 "direction": m.direction.value if m.direction else "sent",
                 "from_email": m.from_email,
+                "from_name": _from_name(m),
                 "to_email": m.to_email,
+                "cc_emails": getattr(m, 'cc_emails', None),
+                "bcc_emails": getattr(m, 'bcc_emails', None),
                 "subject": m.subject,
                 "body_html": m.body_html,
                 "body_text": m.body_text,
