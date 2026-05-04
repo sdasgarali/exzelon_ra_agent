@@ -92,7 +92,7 @@ export default function InboxPage() {
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: 'single' | 'bulk'; threadId?: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Reply macros state
   const [macros, setMacros] = useState<{ id: string; name: string; body: string }[]>([])
@@ -152,8 +152,10 @@ export default function InboxPage() {
   }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [selectedThread?.messages])
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = 0
+    }
+  }, [selectedThreadId])
 
   const [replyError, setReplyError] = useState('')
 
@@ -776,7 +778,7 @@ export default function InboxPage() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3 bg-gray-50/50 dark:bg-gray-900/20">
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-3 bg-gray-50/50 dark:bg-gray-900/20">
                 {selectedThread.messages?.map((msg: InboxMessage, idx: number) => {
                   const isSent = msg.direction === 'sent'
                   const msgCat = msg.category ? categoryConfig[msg.category] : null
@@ -886,7 +888,6 @@ export default function InboxPage() {
                     </div>
                   )
                 })}
-                <div ref={messagesEndRef} />
               </div>
 
               {/* AI Reply Agent Panel */}
