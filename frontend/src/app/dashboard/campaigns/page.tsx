@@ -960,9 +960,13 @@ export default function CampaignsPage() {
     if (!selectedCampaign || contactIds.length === 0) return
     if (!confirm(`Remove ${contactIds.length} contact(s) from this campaign?`)) return
     try {
-      await campaignsApi.removeContacts(selectedCampaign.campaign_id, contactIds)
+      const res = await campaignsApi.removeContacts(selectedCampaign.campaign_id, contactIds)
       setContacts(prev => prev.filter(c => !contactIds.includes(c.contact_id)))
       setRemoveContactIds(new Set())
+      // Update denormalized total_contacts on the campaign
+      const newTotal = res.total_contacts ?? (selectedCampaign.total_contacts - (res.removed || contactIds.length))
+      setSelectedCampaign(prev => prev ? { ...prev, total_contacts: newTotal } : prev)
+      setCampaigns(prev => prev.map(c => c.campaign_id === selectedCampaign.campaign_id ? { ...c, total_contacts: newTotal } : c))
     } catch { /* ignore */ }
   }
 

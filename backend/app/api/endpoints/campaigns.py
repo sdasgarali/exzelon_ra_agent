@@ -1468,8 +1468,15 @@ def remove_contacts(
         CampaignContact.campaign_id == campaign_id,
         CampaignContact.contact_id.in_(data.contact_ids),
     ).delete(synchronize_session=False)
+
+    # Recalculate denormalized total_contacts after removal
+    remaining = db.query(CampaignContact).filter(
+        CampaignContact.campaign_id == campaign_id,
+    ).count()
+    campaign.total_contacts = remaining
+
     db.commit()
-    return {"removed": deleted}
+    return {"removed": deleted, "total_contacts": remaining}
 
 
 @router.get("/{campaign_id}/contacts")
