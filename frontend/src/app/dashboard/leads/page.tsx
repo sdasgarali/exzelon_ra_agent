@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { leadsApi, pipelinesApi, api } from '@/lib/api'
+import { leadsApi, pipelinesApi, api, getApiError } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { ContactsWizard } from '@/components/contacts-wizard'
 
@@ -258,7 +258,7 @@ export default function LeadsPage() {
       setTotalContactAssociations(response.total_contact_associations || 0)
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
-        setError(err.response?.data?.detail || 'Failed to fetch leads')
+        setError(getApiError(err, 'Failed to fetch leads'))
       }
     } finally {
       setLoading(false)
@@ -275,7 +275,7 @@ export default function LeadsPage() {
       setSuccess('Status updated successfully')
       setTimeout(() => setSuccess(''), 2000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update status')
+      setError(getApiError(err, 'Failed to update status'))
     } finally {
       setUpdating(null)
     }
@@ -343,7 +343,7 @@ export default function LeadsPage() {
       setTimeout(() => setSuccess(''), 3000)
       fetchLeads() // Refresh to show updated downloaded_at
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to export leads')
+      setError(getApiError(err, 'Failed to export leads'))
     } finally {
       setExporting(false)
     }
@@ -370,7 +370,7 @@ export default function LeadsPage() {
       fetchLeads()
       setTimeout(() => setSuccess(''), 5000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to import leads')
+      setError(getApiError(err, 'Failed to import leads'))
     } finally {
       setImporting(false)
       if (fileInputRef.current) {
@@ -422,7 +422,7 @@ export default function LeadsPage() {
       fetchLeads()
       setTimeout(() => setSuccess(''), 4000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete leads')
+      setError(getApiError(err, 'Failed to delete leads'))
     } finally {
       setDeleting(false)
     }
@@ -438,7 +438,7 @@ export default function LeadsPage() {
       fetchLeads()
       setTimeout(() => setSuccess(''), 4000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to restore leads')
+      setError(getApiError(err, 'Failed to restore leads'))
       setTimeout(() => setError(''), 4000)
     }
   }
@@ -457,7 +457,7 @@ export default function LeadsPage() {
       fetchLeads()
       setTimeout(() => setSuccess(''), 4000)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Bulk update failed')
+      setError(getApiError(err, 'Bulk update failed'))
       setTimeout(() => setError(''), 4000)
     } finally {
       setBulkUpdating(false)
@@ -476,7 +476,7 @@ export default function LeadsPage() {
       fetchLeads()
       setTimeout(() => setSuccess(''), 4000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update status')
+      setError(getApiError(err, 'Failed to update status'))
     } finally {
       setUpdatingBulkStatus(false)
     }
@@ -527,7 +527,7 @@ export default function LeadsPage() {
         setSelectedIds(new Set())
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to run outreach')
+      setError(getApiError(err, 'Failed to run outreach'))
     } finally {
       setSendingOutreach(false)
     }
@@ -542,7 +542,7 @@ export default function LeadsPage() {
       const preview = await leadsApi.bulkEnrichPreview(ids)
       setEnrichPreview(preview)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load enrichment preview')
+      setError(getApiError(err, 'Failed to load enrichment preview'))
       setShowEnrichModal(false)
     } finally {
       setLoadingEnrichPreview(false)
@@ -592,7 +592,7 @@ export default function LeadsPage() {
         }, 3000)
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to start enrichment')
+      setError(getApiError(err, 'Failed to start enrichment'))
     } finally {
       setEnriching(false)
     }
@@ -839,7 +839,7 @@ export default function LeadsPage() {
                           setOutreachPreview(preview)
                         }
                       } catch (err: any) {
-                        setError(err.response?.data?.detail || 'Failed to load preview')
+                        setError(getApiError(err, 'Failed to load preview'))
                       } finally {
                         setLoadingPreview(false)
                       }

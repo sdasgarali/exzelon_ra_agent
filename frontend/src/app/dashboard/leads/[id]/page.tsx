@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { leadsApi, outreachApi, contactsApi } from '@/lib/api'
+import { leadsApi, outreachApi, contactsApi, getApiError } from '@/lib/api'
 
 interface Contact {
   contact_id: number
@@ -168,7 +168,7 @@ export default function LeadDetailPage() {
       const data = await leadsApi.getDetail(leadId)
       setLead(data)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to fetch lead details')
+      setError(getApiError(err, 'Failed to fetch lead details'))
     } finally {
       setLoading(false)
     }
@@ -182,7 +182,7 @@ export default function LeadDetailPage() {
       fetchLeadDetail()
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to remove contact')
+      setError(getApiError(err, 'Failed to remove contact'))
     } finally {
       setRemovingContact(null)
     }
@@ -200,7 +200,7 @@ export default function LeadDetailPage() {
       }
       setTimeout(() => setSuccess(''), 5000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to send outreach')
+      setError(getApiError(err, 'Failed to send outreach'))
     } finally {
       setSendingOutreach(false)
     }
@@ -216,7 +216,7 @@ export default function LeadDetailPage() {
       fetchLeadDetail()
       setTimeout(() => setSuccess(''), 5000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to check replies')
+      setError(getApiError(err, 'Failed to check replies'))
     } finally {
       setCheckingReplies(false)
     }
@@ -251,7 +251,7 @@ export default function LeadDetailPage() {
       setLinkResults([])
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to link contact')
+      setError(getApiError(err, 'Failed to link contact'))
     } finally {
       setLinking(false)
     }
