@@ -221,6 +221,11 @@ export default function LeadsPage() {
     return () => clearTimeout(timer)
   }, [search])
 
+  // Clear selections when filters change (not on page/sort changes)
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, pageSize, showArchived])
+
   useEffect(() => {
     fetchLeads()
   }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
