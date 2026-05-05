@@ -83,33 +83,14 @@ def _process_mailbox_imap(
             logger.debug("No IMAP host for mailbox", mailbox=mailbox.email)
             return 0
 
-    # Decrypt password if needed
-    password = mailbox.password
-    if password:
-        try:
-            from app.core.encryption import decrypt_field, is_encrypted
-            if is_encrypted(password):
-                password = decrypt_field(password)
-        except Exception:
-            pass
-
-    # For OAuth2 mailboxes, use access token
-    use_oauth = mailbox.auth_method == "oauth2" and mailbox.oauth_access_token
-
     marked_count = 0
 
     try:
         imap = imaplib.IMAP4_SSL(imap_host, imap_port)
 
-        if use_oauth:
-            # XOAUTH2 authentication
-            auth_string = f"user={mailbox.email}\x01auth=Bearer {mailbox.oauth_access_token}\x01\x01"
-            imap.authenticate("XOAUTH2", lambda x: auth_string.encode())
-        else:
-            if not password:
-                logger.debug("No password for IMAP login", mailbox=mailbox.email)
-                return 0
-            imap.login(mailbox.email, password)
+        # Use oauth_helper for proper token decryption, expiry check, and refresh
+        from app.services.oauth_helper import imap_authenticate
+        imap_authenticate(imap, mailbox.email, mailbox, db)
 
         imap.select("INBOX")
 
