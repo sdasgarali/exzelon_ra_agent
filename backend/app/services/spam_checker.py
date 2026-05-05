@@ -68,6 +68,24 @@ def strip_html(html: str) -> str:
     return text
 
 
+def html_safe_replace(html: str, original: str, replacement: str, case_insensitive: bool = False) -> str:
+    """Replace text only in HTML text nodes, preserving tags and attributes."""
+    # Split HTML into tags vs text. The regex handles > inside quoted attrs.
+    parts = re.split(r'(<(?:[^>"\']|"[^"]*"|\'[^\']*\')*>)', html)
+    result = []
+    for part in parts:
+        if part.startswith('<'):
+            result.append(part)  # Tag — preserve as-is
+        else:
+            # Text node — apply replacement
+            if case_insensitive:
+                pattern = re.compile(re.escape(original), re.IGNORECASE)
+                result.append(pattern.sub(replacement, part))
+            else:
+                result.append(part.replace(original, replacement))
+    return ''.join(result)
+
+
 def check_spam_score(subject: str, body_html: str) -> Dict[str, Any]:
     """Check email content for spam trigger words and patterns.
 

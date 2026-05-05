@@ -747,12 +747,14 @@ def apply_spam_fix(
     subject = draft.subject
     body_html = draft.body_html
 
+    from app.services.spam_checker import html_safe_replace
+
     for r in replacements:
         original = r.get("original", "")
         replacement = r.get("replacement", "")
         if original and replacement:
             subject = subject.replace(original, replacement)
-            body_html = body_html.replace(original, replacement)
+            body_html = html_safe_replace(body_html, original, replacement)
 
     draft.subject = subject
     draft.body_html = body_html

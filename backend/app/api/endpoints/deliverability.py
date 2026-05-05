@@ -496,6 +496,8 @@ async def spam_reduce(
         before = check_spam_score(request.subject, request.body_html)
 
         # Apply replacements
+        from app.services.spam_checker import html_safe_replace
+
         new_subject = request.subject
         new_body = request.body_html
         for rep in request.replacements:
@@ -503,7 +505,7 @@ async def spam_reduce(
             replacement = rep.get("replacement", "")
             if original:
                 new_subject = new_subject.replace(original, replacement)
-                new_body = new_body.replace(original, replacement)
+                new_body = html_safe_replace(new_body, original, replacement)
 
         # After scores
         after = check_spam_score(new_subject, new_body)

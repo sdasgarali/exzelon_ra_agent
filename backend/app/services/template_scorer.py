@@ -8,7 +8,7 @@ import math
 import re
 from typing import Any, Dict, List, Optional
 
-from app.services.spam_checker import check_spam_score, strip_html, SPAM_WORDS
+from app.services.spam_checker import check_spam_score, strip_html, html_safe_replace, SPAM_WORDS
 from app.services.rendering_checker import check_rendering
 from app.services.email_humanizer import compute_burstiness_score
 from app.services.content_fingerprint import compute_entropy_score
@@ -701,10 +701,10 @@ def apply_fixes(
         if fix["category"] == "spam_words":
             original = fix["original"]
             replacement = fix["replacement"]
-            # Case-insensitive replacement in subject and body
+            # Case-insensitive replacement in subject and body (HTML-safe for body)
             pattern = re.compile(re.escape(original), re.IGNORECASE)
             updated_subject = pattern.sub(replacement, updated_subject)
-            updated_body_html = pattern.sub(replacement, updated_body_html)
+            updated_body_html = html_safe_replace(updated_body_html, original, replacement, case_insensitive=True)
             if updated_body_text:
                 updated_body_text = pattern.sub(replacement, updated_body_text)
             applied.append(fid)
@@ -717,9 +717,15 @@ def apply_fixes(
                 skipped.append(fid)
 
         elif fix["category"] == "compliance":
-            # Append unsubscribe link to body
+            # Append unsubscribe link to body (inside </body> if present)
             if fix["replacement"] and "{{unsubscribe_link}}" not in updated_body_html.lower():
-                updated_body_html = updated_body_html.rstrip() + "\n" + fix["replacement"]
+                _footer = fix["replacement"]
+                if re.search(r'</body>', updated_body_html, re.IGNORECASE):
+                    updated_body_html = re.sub(
+                        r'(</body>)', _footer + r'\1', updated_body_html, count=1, flags=re.IGNORECASE
+                    )
+                else:
+                    updated_body_html = updated_body_html.rstrip() + "\n" + _footer
                 applied.append(fid)
             else:
                 skipped.append(fid)
