@@ -39,14 +39,27 @@ def check_already_processed(db: Session, cc: CampaignContact) -> bool:
 
     Prevents duplicate sends if the scheduler runs twice due to restart.
     Queries OutreachEvent for a SENT event AND OutreachDraft for a
-    PENDING/APPROVED/SENT draft matching this campaign + contact + step.
+    PENDING/APPROVED/SENT draft matching this campaign + contact + current step.
     """
+    from app.db.models.campaign import SequenceStep, StepType
+
+    # Look up the current step to get step_id and type
+    current_step = db.query(SequenceStep).filter(
+        SequenceStep.campaign_id == cc.campaign_id,
+        SequenceStep.step_order == cc.current_step,
+    ).first()
+
+    # Only email steps need idempotency protection (WAIT/CONDITION don't send)
+    if not current_step or current_step.step_type != StepType.EMAIL:
+        return False
+
+    step_id = current_step.step_id
     today_start = datetime.combine(date.today(), datetime.min.time())
 
     existing = db.query(OutreachEvent).filter(
         OutreachEvent.campaign_id == cc.campaign_id,
         OutreachEvent.contact_id == cc.contact_id,
-        OutreachEvent.step_id is not None,
+        OutreachEvent.step_id == step_id,
         OutreachEvent.status == OutreachStatus.SENT,
         OutreachEvent.sent_at >= today_start,
     ).first()
@@ -57,6 +70,7 @@ def check_already_processed(db: Session, cc: CampaignContact) -> bool:
             cc_id=cc.id,
             campaign_id=cc.campaign_id,
             contact_id=cc.contact_id,
+            step_id=step_id,
             existing_event=existing.event_id,
         )
         return True
@@ -65,7 +79,7 @@ def check_already_processed(db: Session, cc: CampaignContact) -> bool:
     existing_draft = db.query(OutreachDraft.draft_id).filter(
         OutreachDraft.campaign_id == cc.campaign_id,
         OutreachDraft.contact_id == cc.contact_id,
-        OutreachDraft.step_id is not None,
+        OutreachDraft.step_id == step_id,
         OutreachDraft.status.in_([
             DraftStatus.PENDING, DraftStatus.APPROVED, DraftStatus.SENT,
         ]),
@@ -77,6 +91,7 @@ def check_already_processed(db: Session, cc: CampaignContact) -> bool:
             cc_id=cc.id,
             campaign_id=cc.campaign_id,
             contact_id=cc.contact_id,
+            step_id=step_id,
             existing_draft=existing_draft.draft_id,
         )
         return True
