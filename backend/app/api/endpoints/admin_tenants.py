@@ -432,6 +432,8 @@ async def update_branding(
 class FeatureFlagsUpdate(BaseModel):
     feature_email_validation_enabled: Optional[bool] = None
     feature_campaigns_enabled: Optional[bool] = None
+    feature_outreach_enabled: Optional[bool] = None
+    feature_export_mailmerge_enabled: Optional[bool] = None
 
 
 @router.get("/{tenant_id}/features")
@@ -452,6 +454,12 @@ async def get_tenant_features(
         ),
         "feature_campaigns_enabled": get_tenant_setting_bool(
             db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_outreach_enabled": get_tenant_setting_bool(
+            db, "feature_outreach_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_export_mailmerge_enabled": get_tenant_setting_bool(
+            db, "feature_export_mailmerge_enabled", tenant_id=tenant_id, default=True
         ),
     }
 
@@ -497,6 +505,34 @@ async def update_tenant_features(
             "old": old_val, "new": data.feature_campaigns_enabled,
         }
 
+    if data.feature_outreach_enabled is not None:
+        old_val = get_tenant_setting_bool(
+            db, "feature_outreach_enabled", tenant_id=tenant_id, default=True
+        )
+        set_tenant_setting(
+            db, "feature_outreach_enabled",
+            data.feature_outreach_enabled,
+            tenant_id=tenant_id,
+            updated_by=current_user.email,
+        )
+        changes["feature_outreach_enabled"] = {
+            "old": old_val, "new": data.feature_outreach_enabled,
+        }
+
+    if data.feature_export_mailmerge_enabled is not None:
+        old_val = get_tenant_setting_bool(
+            db, "feature_export_mailmerge_enabled", tenant_id=tenant_id, default=True
+        )
+        set_tenant_setting(
+            db, "feature_export_mailmerge_enabled",
+            data.feature_export_mailmerge_enabled,
+            tenant_id=tenant_id,
+            updated_by=current_user.email,
+        )
+        changes["feature_export_mailmerge_enabled"] = {
+            "old": old_val, "new": data.feature_export_mailmerge_enabled,
+        }
+
     if changes:
         write_audit_log(
             db,
@@ -518,6 +554,12 @@ async def update_tenant_features(
         ),
         "feature_campaigns_enabled": get_tenant_setting_bool(
             db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_outreach_enabled": get_tenant_setting_bool(
+            db, "feature_outreach_enabled", tenant_id=tenant_id, default=True
+        ),
+        "feature_export_mailmerge_enabled": get_tenant_setting_bool(
+            db, "feature_export_mailmerge_enabled", tenant_id=tenant_id, default=True
         ),
     }
 

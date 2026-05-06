@@ -498,6 +498,12 @@ async def get_feature_status(
         "campaigns_enabled": get_tenant_setting_bool(
             db, "feature_campaigns_enabled", tenant_id=tenant_id, default=True
         ),
+        "outreach_enabled": get_tenant_setting_bool(
+            db, "feature_outreach_enabled", tenant_id=tenant_id, default=True
+        ),
+        "export_mailmerge_enabled": get_tenant_setting_bool(
+            db, "feature_export_mailmerge_enabled", tenant_id=tenant_id, default=True
+        ),
     }
 
 
@@ -608,6 +614,15 @@ async def run_outreach(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
+    from app.core.settings_resolver import get_tenant_setting_bool
+
+    if mode == "mailmerge":
+        if not get_tenant_setting_bool(db, "feature_export_mailmerge_enabled", tenant_id=tenant_id, default=True):
+            raise HTTPException(status_code=403, detail="Export mailmerge is disabled for your organization")
+    else:
+        if not get_tenant_setting_bool(db, "feature_outreach_enabled", tenant_id=tenant_id, default=True):
+            raise HTTPException(status_code=403, detail="Outreach is disabled for your organization")
+
     lead_ids = body.lead_ids if body else None
 
     if mode == "mailmerge":

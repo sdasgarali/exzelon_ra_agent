@@ -64,7 +64,7 @@ export default function PipelinesPage() {
   const [emailValidationRunning, setEmailValidationRunning] = useState(false)
   const [outreachRunning, setOutreachRunning] = useState(false)
   const [outreachPreviewMode, setOutreachPreviewMode] = useState(false)
-  const [featureStatus, setFeatureStatus] = useState<{ email_validation_enabled: boolean; campaigns_enabled: boolean }>({ email_validation_enabled: true, campaigns_enabled: true })
+  const [featureStatus, setFeatureStatus] = useState<{ email_validation_enabled: boolean; campaigns_enabled: boolean; outreach_enabled: boolean; export_mailmerge_enabled: boolean }>({ email_validation_enabled: true, campaigns_enabled: true, outreach_enabled: true, export_mailmerge_enabled: true })
   const [businessRules, setBusinessRules] = useState<{ cooldown_days: number; max_contacts_per_company_job: number; daily_send_limit: number; warmup_bounce_rate_good: number }>({ cooldown_days: 10, max_contacts_per_company_job: 4, daily_send_limit: 30, warmup_bounce_rate_good: 2.0 })
   const [pipelineFilter, setPipelineFilter] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -728,43 +728,62 @@ export default function PipelinesPage() {
             )}
           </div>
           <p className="text-sm text-gray-500 mb-4">Validate email addresses using ZeroBounce/MillionVerifier</p>
-          <button
-            onClick={() => openContactSelector()}
-            disabled={emailValidationRunning || !featureStatus.email_validation_enabled}
-            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
-              !featureStatus.email_validation_enabled
-                ? 'bg-gray-400 cursor-not-allowed'
-                : emailValidationRunning
-                  ? 'bg-cyan-400 animate-pulse cursor-not-allowed'
-                  : 'bg-cyan-600 hover:bg-cyan-700'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            {!featureStatus.email_validation_enabled ? 'Disabled' : emailValidationRunning ? 'Running...' : 'Run Pipeline'}
-          </button>
+          <div title={!featureStatus.email_validation_enabled ? 'Please contact Super Admin for Access' : undefined}>
+            <button
+              onClick={() => openContactSelector()}
+              disabled={emailValidationRunning || !featureStatus.email_validation_enabled}
+              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
+                !featureStatus.email_validation_enabled
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : emailValidationRunning
+                    ? 'bg-cyan-400 animate-pulse cursor-not-allowed'
+                    : 'bg-cyan-600 hover:bg-cyan-700'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              {!featureStatus.email_validation_enabled ? 'Disabled' : emailValidationRunning ? 'Running...' : 'Run Pipeline'}
+            </button>
+          </div>
         </div>
 
         {/* Outreach */}
-        <div className="card p-4 border-t-4 border-orange-500">
-          <h4 className="font-semibold text-gray-800 mb-2">Outreach</h4>
+        <div className={`card p-4 border-t-4 ${featureStatus.outreach_enabled ? 'border-orange-500' : 'border-gray-300 opacity-60'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-semibold text-gray-800">Outreach</h4>
+            {!featureStatus.outreach_enabled && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                Disabled by admin
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500 mb-3">Send emails or export for mail merge</p>
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={outreachPreviewMode}
-              onChange={e => setOutreachPreviewMode(e.target.checked)}
-              className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-            />
-            Preview before send
-          </label>
-          <button
-            onClick={() => openLeadSelector('outreach')}
-            disabled={outreachRunning}
-            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${outreachRunning ? 'bg-orange-400 animate-pulse cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700'}`}
-          >
-            <Send className="w-4 h-4" />
-            {outreachRunning ? 'Running...' : 'Run Pipeline'}
-          </button>
+          {featureStatus.outreach_enabled && (
+            <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={outreachPreviewMode}
+                onChange={e => setOutreachPreviewMode(e.target.checked)}
+                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              Preview before send
+            </label>
+          )}
+          <div title={!featureStatus.outreach_enabled ? 'Please contact Super Admin for Access' : undefined}>
+            <button
+              onClick={() => openLeadSelector('outreach')}
+              disabled={outreachRunning || !featureStatus.outreach_enabled}
+              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
+                !featureStatus.outreach_enabled
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : outreachRunning
+                    ? 'bg-orange-400 animate-pulse cursor-not-allowed'
+                    : 'bg-orange-600 hover:bg-orange-700'
+              }`}
+            >
+              <Send className="w-4 h-4" />
+              {!featureStatus.outreach_enabled ? 'Disabled' : outreachRunning ? 'Running...' : 'Run Pipeline'}
+            </button>
+          </div>
         </div>
       </div>
 

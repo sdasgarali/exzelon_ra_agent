@@ -189,6 +189,17 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         if phone_numbers and len(phone_numbers) > 0:
             phone = phone_numbers[0].get("sanitized_number", phone_numbers[0].get("number"))
 
+        # Extract organization data (comes free with /people/match response)
+        org = raw_data.get("organization") or {}
+        org_data = None
+        if org.get("estimated_num_employees") or org.get("industry"):
+            org_data = {
+                "employee_count": org.get("estimated_num_employees"),
+                "industry": org.get("industry"),
+                "website": org.get("website_url"),
+                "linkedin_url": org.get("linkedin_url"),
+            }
+
         return {
             "first_name": raw_data.get("first_name", ""),
             "last_name": raw_data.get("last_name", ""),
@@ -197,6 +208,7 @@ class ApolloAdapter(ContactDiscoveryAdapter):
             "phone": phone,
             "location_state": raw_data.get("state"),
             "priority_level": self._determine_priority(title),
-            "source": "apollo"
+            "source": "apollo",
+            "_organization": org_data,
         }
 

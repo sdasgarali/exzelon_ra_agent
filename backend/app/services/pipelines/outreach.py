@@ -344,7 +344,7 @@ def resolve_business_rules(db, tenant_id: Optional[int] = None) -> dict:
     }
 
 
-def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional[dict] = None) -> tuple[bool, str]:
+def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional[dict] = None, tenant_id: Optional[int] = None) -> tuple[bool, str]:
     """Check if a contact is eligible for outreach.
 
     .. deprecated::
@@ -380,8 +380,12 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
     if suppressed:
         return False, f"Suppressed: {suppressed.reason}"
 
-    # Check validation status
-    if contact.validation_status not in ["valid", "Valid"]:
+    # Check validation status (skip when email validation feature is disabled for tenant)
+    from app.core.settings_resolver import get_tenant_setting_bool
+    validation_enabled = get_tenant_setting_bool(
+        db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+    )
+    if validation_enabled and contact.validation_status not in ["valid", "Valid"]:
         validation = db.query(EmailValidationResult).filter(
             EmailValidationResult.email == email
         ).order_by(EmailValidationResult.validated_at.desc()).first()
@@ -471,10 +475,15 @@ def run_outreach_mailmerge_pipeline(
         # Resolve business rules from DB settings (once, not per-contact)
         biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
 
-        # Get validated contacts, optionally filtered by lead_ids
-        query = db.query(ContactDetails).filter(
-            ContactDetails.validation_status == "valid",
+        # Get contacts, optionally filtered by lead_ids
+        # Only require valid status if email validation feature is enabled
+        from app.core.settings_resolver import get_tenant_setting_bool
+        validation_enabled = get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
         )
+        query = db.query(ContactDetails)
+        if validation_enabled:
+            query = query.filter(ContactDetails.validation_status == "valid")
         if tenant_id:
             query = query.filter(ContactDetails.tenant_id == tenant_id)
         if lead_ids:
@@ -488,7 +497,7 @@ def run_outreach_mailmerge_pipeline(
 
         eligible_contacts = []
         for contact in contacts:
-            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
+            eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules, tenant_id=tenant_id)
             if eligible:
                 eligible_contacts.append(contact)
                 counters["eligible"] += 1
@@ -676,11 +685,18 @@ def run_outreach_send_pipeline(
             db.commit()
             return counters
 
-        # Get validated contacts not yet sent (excluding contacts from closed/archived leads)
-        contacts = db.query(ContactDetails).filter(
-            ContactDetails.validation_status == "valid",
+        # Get contacts not yet sent (excluding contacts from closed/archived leads)
+        # Only require valid status if email validation feature is enabled
+        from app.core.settings_resolver import get_tenant_setting_bool
+        validation_enabled = get_tenant_setting_bool(
+            db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+        )
+        contacts_q = db.query(ContactDetails).filter(
             ContactDetails.is_archived == False
-        ).all()
+        )
+        if validation_enabled:
+            contacts_q = contacts_q.filter(ContactDetails.validation_status == "valid")
+        contacts = contacts_q.all()
 
         # Get active email template
         active_template = get_active_template(db, category="outreach", tenant_id=tenant_id)

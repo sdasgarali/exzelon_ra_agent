@@ -143,12 +143,30 @@ async def list_leads(
             (LeadDetails.client_name.in_(matching_names) if matching_names else False)
         )
     if company_size:
-        client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size.in_(company_size))
-        matching_names = [r[0] for r in client_q.all()]
-        query = query.filter(
-            (LeadDetails.company_size.in_(company_size)) |
-            (LeadDetails.client_name.in_(matching_names) if matching_names else False)
-        )
+        include_unknown = "unknown" in company_size
+        known_sizes = [s for s in company_size if s != "unknown"]
+
+        conditions = []
+        if known_sizes:
+            client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size.in_(known_sizes))
+            matching_names = [r[0] for r in client_q.all()]
+            conditions.append(LeadDetails.company_size.in_(known_sizes))
+            if matching_names:
+                conditions.append(LeadDetails.client_name.in_(matching_names))
+
+        if include_unknown:
+            # Leads with no company_size AND whose client also has no size
+            clients_with_size = db.query(ClientInfo.client_name).filter(
+                ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
+            )
+            clients_with_size_names = [r[0] for r in clients_with_size.all()]
+            unknown_cond = (LeadDetails.company_size.is_(None)) | (LeadDetails.company_size == "")
+            if clients_with_size_names:
+                unknown_cond = unknown_cond & (~LeadDetails.client_name.in_(clients_with_size_names))
+            conditions.append(unknown_cond)
+
+        if conditions:
+            query = query.filter(or_(*conditions))
     if data_type:
         query = query.filter(LeadDetails.data_type == data_type)
     if employment_type:

@@ -1463,7 +1463,7 @@ export const tenantsApi = {
     const response = await api.get(`/admin/tenants/${id}/features`)
     return response.data
   },
-  updateFeatures: async (id: number, data: { feature_email_validation_enabled?: boolean; feature_campaigns_enabled?: boolean }) => {
+  updateFeatures: async (id: number, data: { feature_email_validation_enabled?: boolean; feature_campaigns_enabled?: boolean; feature_outreach_enabled?: boolean; feature_export_mailmerge_enabled?: boolean }) => {
     const response = await api.put(`/admin/tenants/${id}/features`, data)
     return response.data
   },

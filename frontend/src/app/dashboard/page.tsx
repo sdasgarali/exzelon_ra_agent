@@ -322,6 +322,16 @@ export default function DashboardPage() {
     queryFn: () => deliverabilityApi.healthSummary().catch(() => null),
   })
 
+  const { data: featureStatus } = useQuery({
+    queryKey: ['feature-status'],
+    queryFn: () => pipelinesApi.getFeatureStatus().catch(() => ({
+      email_validation_enabled: true,
+      campaigns_enabled: true,
+      outreach_enabled: true,
+      export_mailmerge_enabled: true,
+    })),
+  })
+
   const showOnboarding = onboardingStatus?.should_show_onboarding &&
     user?.role !== 'viewer'
 
@@ -878,33 +888,41 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 mt-2">Find decision-maker contacts for selected leads</p>
             </div>
             <div className="flex flex-col">
-              <button
-                className={`text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
-                  quickLoading === 'validate'
-                    ? 'bg-cyan-400 animate-pulse cursor-not-allowed'
-                    : 'bg-cyan-600 hover:bg-cyan-700'
-                }`}
-                disabled={quickLoading !== null}
-                onClick={() => openContactSelector()}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                {quickLoading === 'validate' ? 'Starting...' : 'Validate Emails'}
-              </button>
+              <div title={featureStatus && !featureStatus.email_validation_enabled ? 'Please contact Super Admin for Access' : undefined}>
+                <button
+                  className={`text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 w-full ${
+                    featureStatus && !featureStatus.email_validation_enabled
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : quickLoading === 'validate'
+                        ? 'bg-cyan-400 animate-pulse cursor-not-allowed'
+                        : 'bg-cyan-600 hover:bg-cyan-700'
+                  }`}
+                  disabled={quickLoading !== null || (featureStatus && !featureStatus.email_validation_enabled)}
+                  onClick={() => openContactSelector()}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  {featureStatus && !featureStatus.email_validation_enabled ? 'Disabled' : quickLoading === 'validate' ? 'Starting...' : 'Validate Emails'}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 mt-2">Validate selected contact email addresses</p>
             </div>
             <div className="flex flex-col">
-              <button
-                className={`text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
-                  quickLoading === 'outreach'
-                    ? 'bg-orange-400 animate-pulse cursor-not-allowed'
-                    : 'bg-orange-600 hover:bg-orange-700'
-                }`}
-                disabled={quickLoading !== null}
-                onClick={() => openLeadSelector('outreach')}
-              >
-                <Send className="w-4 h-4" />
-                {quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
-              </button>
+              <div title={featureStatus && !featureStatus.export_mailmerge_enabled ? 'Please contact Super Admin for Access' : undefined}>
+                <button
+                  className={`text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 w-full ${
+                    featureStatus && !featureStatus.export_mailmerge_enabled
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : quickLoading === 'outreach'
+                        ? 'bg-orange-400 animate-pulse cursor-not-allowed'
+                        : 'bg-orange-600 hover:bg-orange-700'
+                  }`}
+                  disabled={quickLoading !== null || (featureStatus && !featureStatus.export_mailmerge_enabled)}
+                  onClick={() => openLeadSelector('outreach')}
+                >
+                  <Send className="w-4 h-4" />
+                  {featureStatus && !featureStatus.export_mailmerge_enabled ? 'Disabled' : quickLoading === 'outreach' ? 'Starting...' : 'Export Mailmerge'}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 mt-2">Generate mail merge CSV for selected leads</p>
             </div>
           </div>

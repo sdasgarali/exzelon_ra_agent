@@ -37,6 +37,24 @@ _LEGAL_SUFFIXES = re.compile(
 )
 
 
+def _employee_count_to_size(count: int) -> str:
+    """Convert employee count to standard size range string.
+
+    Ranges match the settings convention (company_size_priority_1_max: 50, etc.).
+    """
+    if count <= 50:
+        return "1-50"
+    if count <= 200:
+        return "51-200"
+    if count <= 500:
+        return "201-500"
+    if count <= 1000:
+        return "501-1000"
+    if count <= 5000:
+        return "1001-5000"
+    return "5000+"
+
+
 def clean_company_name_for_search(name: str) -> str:
     """Strip legal entity suffixes for better API search matching.
 
@@ -250,6 +268,52 @@ def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | Non
         except Exception:
             db.rollback()
     return reused
+
+
+def _update_client_from_org_data(db, lead, org_data: dict):
+    """Update ClientInfo record with organization data from contact discovery.
+
+    Only fills NULL fields (never overwrites existing data).
+    Also updates lead.company_size if NULL.
+    """
+    if not org_data or not lead.client_name:
+        return
+
+    from app.db.query_helpers import tenant_filter as _tf
+    client = db.query(ClientInfo).filter(
+        ClientInfo.client_name == lead.client_name,
+        ClientInfo.tenant_id == (lead.tenant_id or 1),
+    ).first()
+    if not client:
+        return
+
+    updated = False
+    emp_count = org_data.get("employee_count")
+    if emp_count and not client.employee_count:
+        client.employee_count = emp_count
+        updated = True
+        if not client.company_size:
+            client.company_size = _employee_count_to_size(emp_count)
+
+    if org_data.get("industry") and not client.industry:
+        client.industry = org_data["industry"]
+        updated = True
+
+    if org_data.get("website") and not client.website:
+        client.website = org_data["website"]
+        updated = True
+
+    if org_data.get("linkedin_url") and not client.linkedin_url:
+        client.linkedin_url = org_data["linkedin_url"]
+        updated = True
+
+    if updated:
+        client.enrichment_source = client.enrichment_source or "apollo"
+        client.enriched_at = client.enriched_at or datetime.utcnow()
+
+    # Also update lead.company_size if NULL
+    if not lead.company_size and client.company_size:
+        lead.company_size = client.company_size
 
 
 def _update_lead_from_contacts(db, lead):
@@ -570,6 +634,11 @@ def run_contact_enrichment_pipeline(
                     lead.contact_source = first_contact.get("source")
                     lead.lead_status = LeadStatus.ENRICHED
                     counters["leads_enriched"] += 1
+
+                    # Update ClientInfo with org data from first contact (free from Apollo)
+                    org_data = first_contact.get("_organization")
+                    if org_data:
+                        _update_client_from_org_data(db, lead, org_data)
 
                 adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
                 lead_results.append({

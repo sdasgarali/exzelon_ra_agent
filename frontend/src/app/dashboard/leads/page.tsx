@@ -640,11 +640,12 @@ export default function LeadsPage() {
   }
 
   // Multi-select dropdown component
-  const MultiSelectDropdown = ({ label, options, selected, onChange }: {
+  const MultiSelectDropdown = ({ label, options, selected, onChange, labelMap }: {
     label: string
     options: string[]
     selected: string[]
     onChange: (vals: string[]) => void
+    labelMap?: Record<string, string>
   }) => {
     const [open, setOpen] = useState(false)
     const ref = useRef<HTMLDivElement>(null)
@@ -688,7 +689,7 @@ export default function LeadsPage() {
                   onChange={() => toggle(opt)}
                   className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
                 />
-                {opt}
+                {labelMap?.[opt] || opt}
               </label>
             ))}
             {options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No options available</div>}
@@ -1165,9 +1166,10 @@ export default function LeadsPage() {
               <label className="label text-sm">Company Size</label>
               <MultiSelectDropdown
                 label="Sizes"
-                options={leadFilterOptions.company_sizes}
+                options={['unknown', ...leadFilterOptions.company_sizes]}
                 selected={filterCompanySize}
                 onChange={setFilterCompanySize}
+                labelMap={{ unknown: 'Unknown / Not Set' }}
               />
             </div>
             <div>

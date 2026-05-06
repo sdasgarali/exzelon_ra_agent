@@ -74,6 +74,8 @@ export default function TenantManagementPage() {
   const [editFeatures, setEditFeatures] = useState({
     feature_email_validation_enabled: true,
     feature_campaigns_enabled: true,
+    feature_outreach_enabled: true,
+    feature_export_mailmerge_enabled: true,
   })
   const [editSaving, setEditSaving] = useState(false)
 
@@ -178,6 +180,8 @@ export default function TenantManagementPage() {
       setEditFeatures({
         feature_email_validation_enabled: features.feature_email_validation_enabled ?? true,
         feature_campaigns_enabled: features.feature_campaigns_enabled ?? true,
+        feature_outreach_enabled: features.feature_outreach_enabled ?? true,
+        feature_export_mailmerge_enabled: features.feature_export_mailmerge_enabled ?? true,
       })
       setEditOpen(true)
     } catch (err: any) {
@@ -695,6 +699,30 @@ export default function TenantManagementPage() {
                 <div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Campaign Execution</span>
                   <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to activate and run campaigns</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editFeatures.feature_outreach_enabled}
+                  onChange={(e) => setEditFeatures({ ...editFeatures, feature_outreach_enabled: e.target.checked })}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Outreach Pipeline</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to run outreach send pipelines</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editFeatures.feature_export_mailmerge_enabled}
+                  onChange={(e) => setEditFeatures({ ...editFeatures, feature_export_mailmerge_enabled: e.target.checked })}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Export Mailmerge</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to export mailmerge CSV files</p>
                 </div>
               </label>
             </div>
