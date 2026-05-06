@@ -1,4 +1,5 @@
 """Main FastAPI application."""
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,13 @@ from app.core.exceptions import AppException
 from app.api.router import api_router
 from app.db.base import engine, Base
 from app.middleware.security_headers import SecurityHeadersMiddleware
+
+# Configure stdlib logging so structlog output reaches stdout/stderr (captured by journalctl)
+logging.basicConfig(
+    format="%(message)s",
+    stream=__import__("sys").stderr,
+    level=logging.INFO,
+)
 
 structlog.configure(
     processors=[
