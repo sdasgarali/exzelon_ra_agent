@@ -78,7 +78,7 @@ export default function InboxPage() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [mailboxFilter, setMailboxFilter] = useState<string[]>([])
   const [campaignFilter, setCampaignFilter] = useState<string[]>([])
-  const [channelFilter, setChannelFilter] = useState<string[]>([])
+  const [sourceFilter, setSourceFilter] = useState<string[]>([])
   const [mailboxes, setMailboxes] = useState<{ mailbox_id: number; email: string }[]>([])
   const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
   const [selectedThread, setSelectedThread] = useState<InboxThreadDetail | null>(null)
@@ -117,7 +117,7 @@ export default function InboxPage() {
       if (categoryFilter) params.category = categoryFilter
       if (mailboxFilter.length) params.mailbox_id = mailboxFilter.map(Number)
       if (campaignFilter.length) params.campaign_id = campaignFilter.map(Number)
-      if (channelFilter.length) params.channel = channelFilter
+      if (sourceFilter.length) params.source = sourceFilter
       const data = await inboxApi.listThreads(params)
       setThreads(data?.items || [])
     } catch {
@@ -125,7 +125,7 @@ export default function InboxPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, categoryFilter, mailboxFilter, campaignFilter, channelFilter])
+  }, [search, categoryFilter, mailboxFilter, campaignFilter, sourceFilter])
 
   useEffect(() => { fetchThreads() }, [fetchThreads])
 
@@ -414,16 +414,16 @@ export default function InboxPage() {
             onChange={setCampaignFilter}
             className="w-[180px]"
           />
-          {/* Channel Filter Dropdown */}
+          {/* Source Filter Dropdown */}
           <FilterMultiSelect
-            label="Channels"
+            label="Sources"
             options={[
-              { id: 'smtp', label: 'SMTP' },
-              { id: 'mailmerge', label: 'Mailmerge' },
-              { id: 'api', label: 'API' },
+              { id: 'campaign', label: 'Campaign' },
+              { id: 'pipeline', label: 'Pipeline' },
+              { id: 'broadcast', label: 'Broadcast' },
             ]}
-            selected={channelFilter}
-            onChange={setChannelFilter}
+            selected={sourceFilter}
+            onChange={setSourceFilter}
             className="w-[150px]"
           />
           {/* Category Filter Dropdown */}

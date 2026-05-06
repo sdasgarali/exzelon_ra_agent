@@ -68,7 +68,7 @@ export default function OutreachPage() {
   const [mode, setMode] = useState<'mailmerge' | 'send'>('send')
   const [dryRun, setDryRun] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('')
-  const [channelFilter, setChannelFilter] = useState<string[]>([])
+  const [sourceFilter, setSourceFilter] = useState<string[]>([])
   const [campaignFilter, setCampaignFilter] = useState<string[]>([])
   const [mailboxFilter, setMailboxFilter] = useState<string[]>([])
   const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
@@ -90,7 +90,7 @@ export default function OutreachPage() {
 
   useEffect(() => {
     fetchData()
-  }, [statusFilter, channelFilter, debouncedSearch, campaignFilter, mailboxFilter])
+  }, [statusFilter, sourceFilter, debouncedSearch, campaignFilter, mailboxFilter])
 
   useEffect(() => {
     campaignsApi.list({ page: 1, page_size: 100 }).then((data: any) => {
@@ -111,7 +111,7 @@ export default function OutreachPage() {
       setError('')
       const outreachParams: Record<string, any> = { limit: 100 }
       if (statusFilter) outreachParams.status = statusFilter
-      if (channelFilter.length) outreachParams.channel = channelFilter
+      if (sourceFilter.length) outreachParams.source = sourceFilter
       if (debouncedSearch) outreachParams.search = debouncedSearch
       if (campaignFilter.length) outreachParams.campaign_id = campaignFilter.map(Number)
       if (mailboxFilter.length) outreachParams.mailbox_id = mailboxFilter.map(Number)
@@ -418,14 +418,14 @@ export default function OutreachPage() {
               <option value="skipped">Skipped</option>
             </select>
             <FilterMultiSelect
-              label="Channels"
+              label="Sources"
               options={[
-                { id: 'smtp', label: 'SMTP' },
-                { id: 'mailmerge', label: 'Mailmerge' },
-                { id: 'api', label: 'API' },
+                { id: 'campaign', label: 'Campaign' },
+                { id: 'pipeline', label: 'Pipeline' },
+                { id: 'broadcast', label: 'Broadcast' },
               ]}
-              selected={channelFilter}
-              onChange={setChannelFilter}
+              selected={sourceFilter}
+              onChange={setSourceFilter}
               className="w-[150px]"
             />
             <FilterMultiSelect

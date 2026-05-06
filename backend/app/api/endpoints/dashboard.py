@@ -14,6 +14,7 @@ from app.db.models.client import ClientInfo, ClientCategory
 from app.db.models.contact import ContactDetails
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus
+from app.db.models.outreach_draft import OutreachDraft
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.email_template import EmailTemplate, TemplateStatus
 from app.db.query_helpers import tenant_filter
@@ -168,6 +169,7 @@ async def get_outreach_sent(
     to_date: Optional[date] = None,
     status: Optional[str] = None,
     channel: Optional[List[str]] = Query(None),
+    source: Optional[List[str]] = Query(None),
     search: Optional[str] = None,
     campaign_id: Optional[List[int]] = Query(None),
     mailbox_id: Optional[List[int]] = Query(None),
@@ -188,6 +190,15 @@ async def get_outreach_sent(
         query = query.filter(OutreachEvent.status == status)
     if channel:
         query = query.filter(OutreachEvent.channel.in_(channel))
+    if source:
+        query = query.join(
+            OutreachDraft,
+            and_(
+                OutreachDraft.contact_id == OutreachEvent.contact_id,
+                OutreachDraft.mailbox_id == OutreachEvent.sender_mailbox_id,
+                OutreachDraft.tenant_id == OutreachEvent.tenant_id,
+            )
+        ).filter(OutreachDraft.source.in_(source))
     if campaign_id:
         query = query.filter(OutreachEvent.campaign_id.in_(campaign_id))
     if mailbox_id:

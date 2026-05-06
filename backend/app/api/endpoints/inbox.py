@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, and_
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
@@ -16,6 +16,7 @@ from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.campaign import Campaign
 from app.db.models.outreach import OutreachEvent
+from app.db.models.outreach_draft import OutreachDraft
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
@@ -42,7 +43,7 @@ def list_threads(
     category: Optional[str] = None,
     mailbox_id: Optional[List[int]] = Query(None),
     campaign_id: Optional[List[int]] = Query(None),
-    channel: Optional[List[str]] = Query(None),
+    source: Optional[List[str]] = Query(None),
     is_read: Optional[bool] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -65,10 +66,17 @@ def list_threads(
         thread_query = thread_query.filter(InboxMessage.mailbox_id.in_(mailbox_id))
     if campaign_id:
         thread_query = thread_query.filter(InboxMessage.campaign_id.in_(campaign_id))
-    if channel:
+    if source:
         thread_query = thread_query.join(
             OutreachEvent, OutreachEvent.event_id == InboxMessage.outreach_event_id
-        ).filter(OutreachEvent.channel.in_(channel))
+        ).join(
+            OutreachDraft,
+            and_(
+                OutreachDraft.contact_id == OutreachEvent.contact_id,
+                OutreachDraft.mailbox_id == OutreachEvent.sender_mailbox_id,
+                OutreachDraft.tenant_id == OutreachEvent.tenant_id,
+            )
+        ).filter(OutreachDraft.source.in_(source))
     if is_read is not None:
         thread_query = thread_query.filter(InboxMessage.is_read == is_read)
     if search:
