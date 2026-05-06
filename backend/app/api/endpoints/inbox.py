@@ -15,6 +15,7 @@ from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.campaign import Campaign
+from app.db.models.outreach import OutreachEvent
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
@@ -41,6 +42,7 @@ def list_threads(
     category: Optional[str] = None,
     mailbox_id: Optional[List[int]] = Query(None),
     campaign_id: Optional[List[int]] = Query(None),
+    channel: Optional[List[str]] = Query(None),
     is_read: Optional[bool] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -63,6 +65,10 @@ def list_threads(
         thread_query = thread_query.filter(InboxMessage.mailbox_id.in_(mailbox_id))
     if campaign_id:
         thread_query = thread_query.filter(InboxMessage.campaign_id.in_(campaign_id))
+    if channel:
+        thread_query = thread_query.join(
+            OutreachEvent, OutreachEvent.event_id == InboxMessage.outreach_event_id
+        ).filter(OutreachEvent.channel.in_(channel))
     if is_read is not None:
         thread_query = thread_query.filter(InboxMessage.is_read == is_read)
     if search:

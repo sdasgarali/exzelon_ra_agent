@@ -167,7 +167,7 @@ async def get_outreach_sent(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     status: Optional[str] = None,
-    channel: Optional[str] = None,
+    channel: Optional[List[str]] = Query(None),
     search: Optional[str] = None,
     campaign_id: Optional[List[int]] = Query(None),
     mailbox_id: Optional[List[int]] = Query(None),
@@ -187,7 +187,7 @@ async def get_outreach_sent(
     if status:
         query = query.filter(OutreachEvent.status == status)
     if channel:
-        query = query.filter(OutreachEvent.channel == channel)
+        query = query.filter(OutreachEvent.channel.in_(channel))
     if campaign_id:
         query = query.filter(OutreachEvent.campaign_id.in_(campaign_id))
     if mailbox_id:

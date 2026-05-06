@@ -68,7 +68,7 @@ export default function OutreachPage() {
   const [mode, setMode] = useState<'mailmerge' | 'send'>('send')
   const [dryRun, setDryRun] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('')
-  const [channelFilter, setChannelFilter] = useState<string>('')
+  const [channelFilter, setChannelFilter] = useState<string[]>([])
   const [campaignFilter, setCampaignFilter] = useState<string[]>([])
   const [mailboxFilter, setMailboxFilter] = useState<string[]>([])
   const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
@@ -111,7 +111,7 @@ export default function OutreachPage() {
       setError('')
       const outreachParams: Record<string, any> = { limit: 100 }
       if (statusFilter) outreachParams.status = statusFilter
-      if (channelFilter) outreachParams.channel = channelFilter
+      if (channelFilter.length) outreachParams.channel = channelFilter
       if (debouncedSearch) outreachParams.search = debouncedSearch
       if (campaignFilter.length) outreachParams.campaign_id = campaignFilter.map(Number)
       if (mailboxFilter.length) outreachParams.mailbox_id = mailboxFilter.map(Number)
@@ -417,12 +417,17 @@ export default function OutreachPage() {
               <option value="bounced">Bounced</option>
               <option value="skipped">Skipped</option>
             </select>
-            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="input w-36">
-              <option value="">All Channels</option>
-              <option value="smtp">SMTP</option>
-              <option value="mailmerge">Mailmerge</option>
-              <option value="api">API</option>
-            </select>
+            <FilterMultiSelect
+              label="Channels"
+              options={[
+                { id: 'smtp', label: 'SMTP' },
+                { id: 'mailmerge', label: 'Mailmerge' },
+                { id: 'api', label: 'API' },
+              ]}
+              selected={channelFilter}
+              onChange={setChannelFilter}
+              className="w-[150px]"
+            />
             <FilterMultiSelect
               label="Campaigns"
               options={campaigns.map(c => ({ id: String(c.campaign_id), label: c.name }))}
