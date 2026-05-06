@@ -827,8 +827,23 @@ async def get_lead_filter_options(
     cat_titles = set(t for ts in job_cats.values() for t in ts)
     all_titles = sorted(cat_titles | set(avail_titles))
 
+    # Industry categories: match DB industries to configured categories
+    industry_cats = app_settings.INDUSTRY_CATEGORIES
+    categorized_industries: dict[str, list[str]] = {}
+    categorized_set: set[str] = set()
+    for cat, cat_industries in sorted(industry_cats.items()):
+        matched = sorted([ind for ind in industries if ind in cat_industries])
+        if matched:
+            categorized_industries[cat] = matched
+            categorized_set.update(matched)
+    # Any industries not in a category go to "Other"
+    uncategorized = sorted([ind for ind in industries if ind not in categorized_set])
+    if uncategorized:
+        categorized_industries["Other"] = uncategorized
+
     return {
         "industries": industries,
+        "industry_categories": categorized_industries,
         "company_sizes": sizes,
         "data_types": ["test", "prod"],
         "exclusion_keywords": {

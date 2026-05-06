@@ -451,6 +451,76 @@ class Settings(BaseSettings):
         ],
     }
 
+    # Industry Categories — group industries for filter dropdown
+    INDUSTRY_CATEGORIES: dict[str, list[str]] = {
+        "Manufacturing & Industrial": [
+            "Automotive", "Automotive Components", "Automotive Services", "Automotive, Commercial Vehicles",
+            "Chemicals", "Industrial Automation", "Industrial Manufacturing", "Industrial Equipment",
+            "Manufacturing", "Machinery", "Metal Fabrication", "Metals & Mining", "Mining",
+            "Plastics", "Plastics & Rubber", "Packaging", "Paper & Packaging",
+            "Semiconductors", "Textiles", "Glass & Ceramics",
+        ],
+        "Construction & Engineering": [
+            "Architecture & Planning", "Architecture and Engineering", "Civil Engineering",
+            "Construction", "Construction Materials", "Engineering",
+            "Building Materials", "Electrical/Electronic Manufacturing",
+        ],
+        "Healthcare & Life Sciences": [
+            "Biotechnology", "Biotechnology Research", "Healthcare", "Hospital & Health Care",
+            "Medical Devices", "Pharmaceuticals", "Veterinary", "Health, Wellness and Fitness",
+            "Mental Health Care",
+        ],
+        "Technology & Software": [
+            "Computer Networking", "Computer Software", "Information Technology",
+            "Internet", "Software Development", "Telecommunications",
+            "Computer Hardware", "Information Services",
+        ],
+        "Food & Beverage": [
+            "Beverage", "Beverages", "Food & Beverages", "Food Production",
+            "Restaurants", "Hospitality", "Food Processing",
+        ],
+        "Financial Services": [
+            "Accounting and Consulting", "Accounting, Consulting, Advisory",
+            "Banking", "Financial Services", "Insurance", "Investment Management",
+            "Real Estate", "Venture Capital & Private Equity",
+        ],
+        "Retail & Consumer": [
+            "Apparel & Fashion", "Consumer Electronics", "Consumer Electronics / Sporting Goods",
+            "Consumer Goods", "E-Commerce", "Retail", "Luxury Goods & Jewelry",
+            "Sporting Goods", "Wholesale",
+        ],
+        "Transportation & Logistics": [
+            "Airlines/Aviation", "Logistics and Supply Chain", "Maritime",
+            "Railroad Manufacture", "Transportation", "Trucking", "Warehousing",
+            "Import and Export", "Package/Freight Delivery",
+        ],
+        "Energy & Utilities": [
+            "Electric Power", "Electrical", "Energy", "Oil & Energy",
+            "Renewables & Environment", "Utilities", "Solar",
+        ],
+        "Media & Communications": [
+            "Advertising", "Broadcasting", "Communication Services",
+            "Entertainment", "Media Production", "Publishing",
+            "Marketing and Advertising", "Public Relations",
+        ],
+        "Education & Government": [
+            "Education", "Education Management", "Government Administration",
+            "Higher Education", "Nonprofit Organization Management",
+            "Research", "Think Tanks",
+        ],
+        "Aerospace & Defense": [
+            "Aerospace", "Aerospace & Defense", "Aerospace & Defense, Software Development",
+            "Aerospace and Defense", "Aviation & Aerospace", "Defense & Space",
+        ],
+        "Other Services": [
+            "Cannabis Investment and Operations", "Casinos & Gaming",
+            "Environmental Services", "Facilities Services",
+            "Human Resources", "Legal Services", "Management Consulting",
+            "Professional Training & Coaching", "Security and Investigations",
+            "Staffing and Recruiting", "Wine and Spirits",
+        ],
+    }
+
     # Target Job Titles
     TARGET_JOB_TITLES: list[str] = [
         # HR & Talent

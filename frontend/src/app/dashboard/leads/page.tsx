@@ -34,6 +34,7 @@ interface Lead {
 
 interface LeadFilterOptions {
   industries: string[]
+  industry_categories?: Record<string, string[]>
   company_sizes: string[]
   data_types: string[]
   exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }
@@ -697,7 +698,7 @@ export default function LeadsPage() {
     )
   }
 
-  // Searchable multi-select with optional grouped categories
+  // Searchable multi-select with optional grouped categories and per-category "All" checkbox
   const SearchableMultiSelect = ({ label, options, selected, onChange, grouped }: {
     label: string
     options: string[] | { category: string; items: string[] }[]
@@ -726,6 +727,17 @@ export default function LeadsPage() {
 
     const toggle = (val: string) => {
       onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val])
+      setPage(1)
+    }
+
+    const toggleCategory = (categoryItems: string[]) => {
+      const allSelected = categoryItems.every(i => selected.includes(i))
+      if (allSelected) {
+        onChange(selected.filter(v => !categoryItems.includes(v)))
+      } else {
+        const merged = Array.from(new Set([...selected, ...categoryItems]))
+        onChange(merged)
+      }
       setPage(1)
     }
 
@@ -760,11 +772,23 @@ export default function LeadsPage() {
               (options as { category: string; items: string[] }[]).map(group => {
                 const filtered = filterBySearch(group.items)
                 if (filtered.length === 0) return null
+                const allCatSelected = group.items.length > 0 && group.items.every(i => selected.includes(i))
+                const someCatSelected = group.items.some(i => selected.includes(i))
                 return (
                   <div key={group.category}>
-                    <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase bg-gray-50 border-b">{group.category}</div>
+                    <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allCatSelected}
+                        ref={(el) => { if (el) el.indeterminate = someCatSelected && !allCatSelected }}
+                        onChange={() => toggleCategory(group.items)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
+                      />
+                      <span className="text-xs font-semibold text-gray-600 uppercase">{group.category}</span>
+                      <span className="text-xs text-gray-400 ml-auto">{group.items.filter(i => selected.includes(i)).length}/{group.items.length}</span>
+                    </label>
                     {filtered.map(opt => (
-                      <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                      <label key={opt} className="flex items-center gap-2 px-3 py-1.5 pl-7 hover:bg-gray-50 cursor-pointer text-sm">
                         <input
                           type="checkbox"
                           checked={selected.includes(opt)}
@@ -1127,9 +1151,12 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Industry</label>
-              <MultiSelectDropdown
+              <SearchableMultiSelect
                 label="Industries"
-                options={leadFilterOptions.industries}
+                grouped={!!leadFilterOptions.industry_categories && Object.keys(leadFilterOptions.industry_categories).length > 0}
+                options={leadFilterOptions.industry_categories && Object.keys(leadFilterOptions.industry_categories).length > 0
+                  ? Object.entries(leadFilterOptions.industry_categories).map(([category, items]) => ({ category, items }))
+                  : leadFilterOptions.industries}
                 selected={filterIndustry}
                 onChange={setFilterIndustry}
               />
