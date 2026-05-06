@@ -44,7 +44,7 @@ def advisory_lock(lock_name: str, timeout: int = 0):
         acquired = result.scalar() == 1
 
         if not acquired:
-            logger.debug("advisory_lock_skip", lock=full_name, reason="held_by_another_worker")
+            logger.info("advisory_lock_skip", lock=full_name, reason="held_by_another_worker")
 
         yield acquired
     except Exception as e:

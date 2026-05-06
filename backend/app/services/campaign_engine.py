@@ -58,6 +58,7 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     ).all()
 
     if not active_campaigns:
+        logger.info("campaign_processor_no_active_campaigns")
         return results
 
     # Filter out campaigns whose tenant has campaigns disabled
@@ -93,7 +94,14 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
             eligible_campaign_ids.append(campaign.campaign_id)
 
     if not eligible_campaign_ids:
+        logger.info("campaign_processor_no_eligible_campaigns",
+                     active_count=len(active_campaigns),
+                     reason="outside_send_window")
         return results
+
+    logger.info("campaign_processor_eligible",
+                 eligible_count=len(eligible_campaign_ids),
+                 campaign_ids=eligible_campaign_ids)
 
     # Get due contacts in batches
     due_contacts = db.query(CampaignContact).filter(
@@ -101,6 +109,14 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
         CampaignContact.status == CampaignContactStatus.ACTIVE,
         CampaignContact.next_send_at <= now,
     ).limit(BATCH_SIZE).all()
+
+    if due_contacts:
+        logger.info("campaign_processor_due_contacts",
+                     count=len(due_contacts),
+                     contact_steps=[(cc.id, cc.campaign_id, cc.current_step) for cc in due_contacts[:10]])
+    else:
+        logger.info("campaign_processor_no_due_contacts",
+                     eligible_campaign_ids=eligible_campaign_ids)
 
     # Pre-fetch all campaigns for this batch (eliminates N+1 query per contact)
     batch_campaign_ids = list(set(cc.campaign_id for cc in due_contacts))
@@ -1057,5 +1073,31 @@ def recalculate_campaign_stats(campaign_id: int, db: Session):
         OutreachEvent.campaign_id == campaign_id,
         OutreachEvent.status == OutreachStatus.BOUNCED,
     ).count()
+
+    # Recalculate per-step stats from actual OutreachEvent data
+    steps = db.query(SequenceStep).filter(
+        SequenceStep.campaign_id == campaign_id
+    ).all()
+    for step in steps:
+        step.total_sent = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.step_id == step.step_id,
+            OutreachEvent.sent_at.isnot(None),
+        ).count()
+        step.total_opened = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.step_id == step.step_id,
+            OutreachEvent.opened_at.isnot(None),
+        ).count()
+        step.total_replied = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.step_id == step.step_id,
+            OutreachEvent.reply_detected_at.isnot(None),
+        ).count()
+        step.total_bounced = db.query(OutreachEvent).filter(
+            OutreachEvent.campaign_id == campaign_id,
+            OutreachEvent.step_id == step.step_id,
+            OutreachEvent.status == OutreachStatus.BOUNCED,
+        ).count()
 
     db.commit()
