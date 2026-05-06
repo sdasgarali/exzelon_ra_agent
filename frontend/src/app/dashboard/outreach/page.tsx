@@ -93,7 +93,7 @@ export default function OutreachPage() {
   }, [statusFilter, channelFilter, debouncedSearch, campaignFilter, mailboxFilter])
 
   useEffect(() => {
-    campaignsApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+    campaignsApi.list({ page: 1, page_size: 100 }).then((data: any) => {
       setCampaigns((data?.items || []).map((c: any) => ({
         campaign_id: c.campaign_id, name: c.name,
       })))
