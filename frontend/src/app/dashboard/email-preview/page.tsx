@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { emailPreviewApi, mailboxesApi, deliverabilityApi, campaignsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -12,6 +12,7 @@ import {
   Zap, BarChart3, ChevronRight, Brain, Shuffle, Monitor,
   ShieldCheck, ArrowLeft, Trash2, type LucideIcon,
 } from 'lucide-react'
+import { FilterMultiSelect } from '@/components/filter-multi-select'
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -126,8 +127,8 @@ export default function EmailPreviewPage() {
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [batchId, setBatchId] = useState(searchParams.get('batch_id') || '')
   const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '')
-  const [campaignFilter, setCampaignFilter] = useState(searchParams.get('campaign_id') || '')
-  const [mailboxFilter, setMailboxFilter] = useState(searchParams.get('mailbox_id') || '')
+  const [campaignFilter, setCampaignFilter] = useState<string[]>(searchParams.get('campaign_id') ? [searchParams.get('campaign_id')!] : [])
+  const [mailboxFilter, setMailboxFilter] = useState<string[]>(searchParams.get('mailbox_id') ? [searchParams.get('mailbox_id')!] : [])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -188,8 +189,8 @@ export default function EmailPreviewPage() {
       if (batchId) params.batch_id = batchId
       if (statusFilter) params.status = statusFilter
       if (sourceFilter) params.source = sourceFilter
-      if (campaignFilter) params.campaign_id = Number(campaignFilter)
-      if (mailboxFilter) params.mailbox_id = Number(mailboxFilter)
+      if (campaignFilter.length) params.campaign_id = campaignFilter.map(Number)
+      if (mailboxFilter.length) params.mailbox_id = mailboxFilter.map(Number)
       const data = await emailPreviewApi.listDrafts(params)
       setDrafts(data.drafts || [])
       setTotal(data.total || 0)
@@ -635,28 +636,22 @@ export default function EmailPreviewPage() {
           </select>
 
           {/* Campaign filter */}
-          <select
-            className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 max-w-[160px]"
-            value={campaignFilter}
-            onChange={e => { setCampaignFilter(e.target.value); setPage(1) }}
-          >
-            <option value="">All campaigns</option>
-            {campaigns.map(c => (
-              <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
-            ))}
-          </select>
+          <FilterMultiSelect
+            label="Campaigns"
+            options={campaigns.map(c => ({ id: String(c.campaign_id), label: c.name }))}
+            selected={campaignFilter}
+            onChange={(ids) => { setCampaignFilter(ids); setPage(1) }}
+            className="w-[170px]"
+          />
 
           {/* Mailbox filter */}
-          <select
-            className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 max-w-[180px]"
-            value={mailboxFilter}
-            onChange={e => { setMailboxFilter(e.target.value); setPage(1) }}
-          >
-            <option value="">All mailboxes</option>
-            {mailboxes.map(m => (
-              <option key={m.mailbox_id} value={m.mailbox_id}>{m.email}</option>
-            ))}
-          </select>
+          <FilterMultiSelect
+            label="Mailboxes"
+            options={mailboxes.map(m => ({ id: String(m.mailbox_id), label: m.email }))}
+            selected={mailboxFilter}
+            onChange={(ids) => { setMailboxFilter(ids); setPage(1) }}
+            className="w-[190px]"
+          />
 
           {/* Selection-based actions */}
           {selectedIds.size > 0 && (

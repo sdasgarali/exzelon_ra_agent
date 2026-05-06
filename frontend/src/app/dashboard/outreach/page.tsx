@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DOMPurify from 'dompurify'
-import { dashboardApi, pipelinesApi, settingsApi, outreachApi } from '@/lib/api'
+import { dashboardApi, pipelinesApi, settingsApi, outreachApi, campaignsApi, mailboxesApi } from '@/lib/api'
+import { FilterMultiSelect } from '@/components/filter-multi-select'
 
 interface OutreachStats {
   emails_sent: number
@@ -68,6 +69,10 @@ export default function OutreachPage() {
   const [dryRun, setDryRun] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [channelFilter, setChannelFilter] = useState<string>('')
+  const [campaignFilter, setCampaignFilter] = useState<string[]>([])
+  const [mailboxFilter, setMailboxFilter] = useState<string[]>([])
+  const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
+  const [mailboxesList, setMailboxesList] = useState<{ mailbox_id: number; email: string }[]>([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [threadModal, setThreadModal] = useState<ThreadData | null>(null)
@@ -85,7 +90,20 @@ export default function OutreachPage() {
 
   useEffect(() => {
     fetchData()
-  }, [statusFilter, channelFilter, debouncedSearch])
+  }, [statusFilter, channelFilter, debouncedSearch, campaignFilter, mailboxFilter])
+
+  useEffect(() => {
+    campaignsApi.list().then((data: any) => {
+      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+        campaign_id: c.campaign_id, name: c.name,
+      })))
+    }).catch(() => {})
+    mailboxesApi.list({ page: 1, page_size: 100 }).then((data: any) => {
+      setMailboxesList((data?.items || data || []).map((m: any) => ({
+        mailbox_id: m.mailbox_id, email: m.email,
+      })))
+    }).catch(() => {})
+  }, [])
 
   const fetchData = async () => {
     try {
@@ -95,6 +113,8 @@ export default function OutreachPage() {
       if (statusFilter) outreachParams.status = statusFilter
       if (channelFilter) outreachParams.channel = channelFilter
       if (debouncedSearch) outreachParams.search = debouncedSearch
+      if (campaignFilter.length) outreachParams.campaign_id = campaignFilter.map(Number)
+      if (mailboxFilter.length) outreachParams.mailbox_id = mailboxFilter.map(Number)
 
       const [kpis, outreachData, settingsList] = await Promise.all([
         dashboardApi.kpis(),
@@ -403,6 +423,20 @@ export default function OutreachPage() {
               <option value="mailmerge">Mailmerge</option>
               <option value="api">API</option>
             </select>
+            <FilterMultiSelect
+              label="Campaigns"
+              options={campaigns.map(c => ({ id: String(c.campaign_id), label: c.name }))}
+              selected={campaignFilter}
+              onChange={setCampaignFilter}
+              className="w-[170px]"
+            />
+            <FilterMultiSelect
+              label="Mailboxes"
+              options={mailboxesList.map(m => ({ id: String(m.mailbox_id), label: m.email }))}
+              selected={mailboxFilter}
+              onChange={setMailboxFilter}
+              className="w-[190px]"
+            />
           </div>
         </div>
 

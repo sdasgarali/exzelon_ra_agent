@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, inboxApi, mailboxesApi, automationApi } from '@/lib/api'
+import { api, inboxApi, mailboxesApi, campaignsApi, automationApi } from '@/lib/api'
 import type { InboxThread, InboxMessage, InboxThreadDetail, AutomationEvent } from '@/types/api'
 import {
   Search, RefreshCw, ChevronDown, Send, Sparkles, User,
@@ -12,6 +12,7 @@ import {
   FileText, Check, Edit3, XCircle, ChevronUp, Loader2, ArrowLeft,
   Users, Calendar,
 } from 'lucide-react'
+import { FilterMultiSelect } from '@/components/filter-multi-select'
 
 // ─── Category & sentiment config ────────────────────────────────────
 const categoryConfig: Record<string, { label: string; color: string; bg: string; border: string; icon: string; dot: string }> = {
@@ -75,8 +76,10 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [mailboxFilter, setMailboxFilter] = useState<number | ''>('')
+  const [mailboxFilter, setMailboxFilter] = useState<string[]>([])
+  const [campaignFilter, setCampaignFilter] = useState<string[]>([])
   const [mailboxes, setMailboxes] = useState<{ mailbox_id: number; email: string }[]>([])
+  const [campaigns, setCampaigns] = useState<{ campaign_id: number; name: string }[]>([])
   const [selectedThread, setSelectedThread] = useState<InboxThreadDetail | null>(null)
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
@@ -111,7 +114,8 @@ export default function InboxPage() {
       const params: Record<string, any> = { page: 1, page_size: 50 }
       if (search) params.search = search
       if (categoryFilter) params.category = categoryFilter
-      if (mailboxFilter) params.mailbox_id = mailboxFilter
+      if (mailboxFilter.length) params.mailbox_id = mailboxFilter.map(Number)
+      if (campaignFilter.length) params.campaign_id = campaignFilter.map(Number)
       const data = await inboxApi.listThreads(params)
       setThreads(data?.items || [])
     } catch {
@@ -119,7 +123,7 @@ export default function InboxPage() {
     } finally {
       setLoading(false)
     }
-  }, [search, categoryFilter, mailboxFilter])
+  }, [search, categoryFilter, mailboxFilter, campaignFilter])
 
   useEffect(() => { fetchThreads() }, [fetchThreads])
 
@@ -138,6 +142,11 @@ export default function InboxPage() {
     inboxApi.stats().then(setStats).catch(() => {})
     mailboxesApi.list({ page: 1, page_size: 100 }).then((data: any) => {
       setMailboxes(data?.items || data || [])
+    }).catch(() => {})
+    campaignsApi.list().then((data: any) => {
+      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+        campaign_id: c.campaign_id, name: c.name,
+      })))
     }).catch(() => {})
   }, [])
 
@@ -388,26 +397,21 @@ export default function InboxPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Mailbox Filter Dropdown */}
-          {mailboxes.length > 0 && (
-            <div className="relative">
-              <select
-                value={mailboxFilter}
-                onChange={e => setMailboxFilter(e.target.value ? Number(e.target.value) : '')}
-                className={`appearance-none pl-8 pr-8 py-2 border rounded-xl text-sm font-medium shadow-sm transition-all cursor-pointer ${
-                  mailboxFilter
-                    ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700'
-                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                <option value="">All Mailboxes</option>
-                {mailboxes.map(mb => (
-                  <option key={mb.mailbox_id} value={mb.mailbox_id}>{mb.email}</option>
-                ))}
-              </select>
-              <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            </div>
-          )}
+          <FilterMultiSelect
+            label="Mailboxes"
+            options={mailboxes.map(mb => ({ id: String(mb.mailbox_id), label: mb.email }))}
+            selected={mailboxFilter}
+            onChange={setMailboxFilter}
+            className="w-[200px]"
+          />
+          {/* Campaign Filter Dropdown */}
+          <FilterMultiSelect
+            label="Campaigns"
+            options={campaigns.map(c => ({ id: String(c.campaign_id), label: c.name }))}
+            selected={campaignFilter}
+            onChange={setCampaignFilter}
+            className="w-[180px]"
+          />
           {/* Category Filter Dropdown */}
           <div className="relative">
             <button onClick={() => setShowCategoryFilter(!showCategoryFilter)}

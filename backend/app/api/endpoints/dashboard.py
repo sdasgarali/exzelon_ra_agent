@@ -1,7 +1,7 @@
 """Dashboard and KPI endpoints."""
 import time
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -169,6 +169,8 @@ async def get_outreach_sent(
     status: Optional[str] = None,
     channel: Optional[str] = None,
     search: Optional[str] = None,
+    campaign_id: Optional[List[int]] = Query(None),
+    mailbox_id: Optional[List[int]] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -186,6 +188,10 @@ async def get_outreach_sent(
         query = query.filter(OutreachEvent.status == status)
     if channel:
         query = query.filter(OutreachEvent.channel == channel)
+    if campaign_id:
+        query = query.filter(OutreachEvent.campaign_id.in_(campaign_id))
+    if mailbox_id:
+        query = query.filter(OutreachEvent.sender_mailbox_id.in_(mailbox_id))
 
     # For search, we need to join with contacts
     if search:

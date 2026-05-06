@@ -39,8 +39,8 @@ class BulkDeleteRequest(BaseModel):
 @router.get("/threads")
 def list_threads(
     category: Optional[str] = None,
-    mailbox_id: Optional[int] = None,
-    campaign_id: Optional[int] = None,
+    mailbox_id: Optional[List[int]] = Query(None),
+    campaign_id: Optional[List[int]] = Query(None),
     is_read: Optional[bool] = None,
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -60,9 +60,9 @@ def list_threads(
     if category:
         thread_query = thread_query.filter(InboxMessage.category == category)
     if mailbox_id:
-        thread_query = thread_query.filter(InboxMessage.mailbox_id == mailbox_id)
+        thread_query = thread_query.filter(InboxMessage.mailbox_id.in_(mailbox_id))
     if campaign_id:
-        thread_query = thread_query.filter(InboxMessage.campaign_id == campaign_id)
+        thread_query = thread_query.filter(InboxMessage.campaign_id.in_(campaign_id))
     if is_read is not None:
         thread_query = thread_query.filter(InboxMessage.is_read == is_read)
     if search:
