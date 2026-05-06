@@ -208,15 +208,15 @@ export default function EmailPreviewPage() {
 
   useEffect(() => { fetchDrafts() }, [fetchDrafts])
   useEffect(() => {
-    mailboxesApi.list().then((data: any) => {
-      setMailboxes((data.mailboxes || data || []).map((m: any) => ({
+    mailboxesApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+      setMailboxes((data?.items || []).map((m: any) => ({
         mailbox_id: m.mailbox_id,
         email: m.email,
         display_name: m.display_name || m.email,
       })))
     }).catch(() => {})
-    campaignsApi.list().then((data: any) => {
-      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+    campaignsApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+      setCampaigns((data?.items || []).map((c: any) => ({
         campaign_id: c.campaign_id,
         name: c.name,
       })))

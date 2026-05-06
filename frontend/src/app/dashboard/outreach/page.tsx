@@ -93,13 +93,13 @@ export default function OutreachPage() {
   }, [statusFilter, channelFilter, debouncedSearch, campaignFilter, mailboxFilter])
 
   useEffect(() => {
-    campaignsApi.list().then((data: any) => {
-      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+    campaignsApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+      setCampaigns((data?.items || []).map((c: any) => ({
         campaign_id: c.campaign_id, name: c.name,
       })))
     }).catch(() => {})
-    mailboxesApi.list({ page: 1, page_size: 100 }).then((data: any) => {
-      setMailboxesList((data?.items || data || []).map((m: any) => ({
+    mailboxesApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+      setMailboxesList((data?.items || []).map((m: any) => ({
         mailbox_id: m.mailbox_id, email: m.email,
       })))
     }).catch(() => {})

@@ -143,8 +143,8 @@ export default function InboxPage() {
     mailboxesApi.list({ page: 1, page_size: 100 }).then((data: any) => {
       setMailboxes(data?.items || data || [])
     }).catch(() => {})
-    campaignsApi.list().then((data: any) => {
-      setCampaigns((data.campaigns || data || []).map((c: any) => ({
+    campaignsApi.list({ page: 1, page_size: 200 }).then((data: any) => {
+      setCampaigns((data?.items || []).map((c: any) => ({
         campaign_id: c.campaign_id, name: c.name,
       })))
     }).catch(() => {})
