@@ -409,10 +409,23 @@ DEFAULT_SETTINGS = {
             "staffing", "recruiting", "recruitment agency", "talent acquisition agency",
             "us staffing", "it staffing", "technical staffing", "temp agency",
             "employment agency", "headhunter", "executive search",
-            "consulting firm", "contractor", "outsourcing"
+            "consulting firm", "contractor", "outsourcing",
+            "recruitment", "government", "administration",
+            "medical", "non profit", "nonprofit",
+            "civics", "social services", "chef",
+            "intern", "entry level", "media",
+            "education", "banking", "business consultant",
+            "internet", "music", "consultant",
+            "computer security", "network security", "security agency",
+            "advertising", "financial service", "insurance",
+            "mental health", "consumer service", "telecommunication",
+            "primary education", "secondary education", "university",
+            "religious", "trust", "church",
+            "brokerage", "museum", "airline",
+            "advisor", "historical", "zoo"
         ],
         "type": "list",
-        "description": "Keywords to exclude staffing/recruitment companies"
+        "description": "Keywords to exclude staffing/recruitment companies and irrelevant industries"
     },
 
     # Job Title Categories (grouped by industry/function)

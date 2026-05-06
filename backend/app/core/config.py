@@ -187,7 +187,20 @@ class Settings(BaseSettings):
     EXCLUDE_STAFFING_KEYWORDS: list[str] = [
         "staffing agency", "staffing firm", "recruitment agency",
         "talent acquisition agency", "temp agency",
-        "employment agency", "executive search firm"
+        "employment agency", "executive search firm",
+        "recruitment", "government", "administration",
+        "medical", "non profit", "nonprofit",
+        "civics", "social services", "chef",
+        "intern", "entry level", "media",
+        "education", "banking", "business consultant",
+        "internet", "music", "consultant",
+        "computer security", "network security", "security agency",
+        "advertising", "financial service", "insurance",
+        "mental health", "consumer service", "telecommunication",
+        "primary education", "secondary education", "university",
+        "religious", "trust", "church",
+        "brokerage", "museum", "airline",
+        "advisor", "historical", "zoo",
     ]
 
     # Available Job Titles
