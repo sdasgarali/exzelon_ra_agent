@@ -479,14 +479,20 @@ def _execute_email_step(
     body_html = process_spintax(body_html, seed=cc.contact_id, campaign_id=campaign.campaign_id)
     body_text = process_spintax(body_text, seed=cc.contact_id, campaign_id=campaign.campaign_id)
 
-    # Render signature
+    # Render signature (injected AFTER AI personalization to avoid AI stripping it)
     signature_html = ""
     if mailbox.email_signature_json:
         signature_html = render_signature_html(mailbox.email_signature_json)
-    if signature_html and "{{signature}}" in body_html:
-        body_html = body_html.replace("{{signature}}", signature_html)
-    elif signature_html:
-        body_html += signature_html
+
+    # Strip {{signature}} placeholder from body before AI — will be re-injected after
+    body_html = body_html.replace("{{signature}}", "")
+    body_text = body_text.replace("{{signature}}", "")
+
+    # Convert plain-text template bodies to basic HTML (newlines → <br>/<p>)
+    # Templates stored in DB often use literal \n instead of actual HTML tags
+    if body_html and "<" not in body_html:
+        paragraphs = body_html.replace("\\n\\n", "\n\n").replace("\\n", "\n").split("\n\n")
+        body_html = "".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
 
     # Placeholder substitution — Jinja2 with fallback to manual replace
     _job_title = (contact_lead.job_title if contact_lead and contact_lead.job_title else "")
@@ -566,6 +572,30 @@ def _execute_email_step(
         body_text = humanized["body_text"]
     except Exception:
         pass
+
+    # --- Inject signature AFTER AI/humanizer so it's never rewritten ---
+    if signature_html:
+        body_html += signature_html
+        # Build plain-text signature for body_text
+        try:
+            sig = json.loads(mailbox.email_signature_json)
+            sig_parts = []
+            if sig.get("sender_name"):
+                sig_parts.append(sig["sender_name"])
+            if sig.get("title"):
+                sig_parts.append(sig["title"])
+            if sig.get("company"):
+                sig_parts.append(sig["company"])
+            if sig.get("phone"):
+                sig_parts.append(sig["phone"])
+            if sig.get("email"):
+                sig_parts.append(sig["email"])
+            if sig.get("website"):
+                sig_parts.append(sig["website"])
+            if sig_parts:
+                body_text += "\n\n--\n" + "\n".join(sig_parts)
+        except Exception:
+            pass
 
     # Content uniqueness check (monitoring-only -- log but don't block)
     try:
