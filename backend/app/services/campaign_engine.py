@@ -307,9 +307,19 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
 
     db.commit()
 
-    # Recalculate stats for affected campaigns
+    # Recalculate stats + health scores for affected campaigns
     for cid in set(cc.campaign_id for cc in due_contacts):
         recalculate_campaign_stats(cid, db)
+        try:
+            from app.services.campaign_health import calculate_campaign_health
+            result = calculate_campaign_health(cid, db)
+            if result.get("score") is not None:
+                c = db.query(Campaign).filter(Campaign.campaign_id == cid).first()
+                if c:
+                    c.health_score = result["score"]
+                    db.commit()
+        except Exception as e:
+            logger.warning("health_score_refresh_failed", campaign_id=cid, error=str(e))
 
     return results
 
@@ -1020,7 +1030,11 @@ def enroll_contacts(
 
 
 def handle_campaign_reply(event_id: int, db: Session):
-    """Called when a reply is detected on a campaign outreach event."""
+    """Called when a reply is detected on a campaign outreach event.
+
+    Accepts contacts in ACTIVE or COMPLETED status — replies typically
+    arrive after the contact has already been advanced through all steps.
+    """
     event = db.query(OutreachEvent).filter(
         OutreachEvent.event_id == event_id
     ).first()
@@ -1031,23 +1045,42 @@ def handle_campaign_reply(event_id: int, db: Session):
         CampaignContact.campaign_id == event.campaign_id,
         CampaignContact.contact_id == event.contact_id,
     ).first()
-    if cc and cc.status == CampaignContactStatus.ACTIVE:
+    if cc and cc.status in (
+        CampaignContactStatus.ACTIVE,
+        CampaignContactStatus.COMPLETED,
+    ):
         cc.status = CampaignContactStatus.REPLIED
         cc.next_send_at = None
-        cc.completed_at = datetime.utcnow()
-
-        # Update campaign stats
-        campaign = db.query(Campaign).filter(
-            Campaign.campaign_id == event.campaign_id
-        ).first()
-        if campaign:
-            campaign.total_replied += 1
+        if not cc.completed_at:
+            cc.completed_at = datetime.utcnow()
 
         db.commit()
+
+    # Always recalculate stats from ground truth (OutreachEvent data)
+    # so denormalized counters on Campaign + SequenceStep stay in sync.
+    recalculate_campaign_stats(event.campaign_id, db)
+
+    # Refresh health score immediately instead of waiting for daily job
+    try:
+        from app.services.campaign_health import calculate_campaign_health
+        result = calculate_campaign_health(event.campaign_id, db)
+        if result.get("score") is not None:
+            campaign = db.query(Campaign).filter(
+                Campaign.campaign_id == event.campaign_id
+            ).first()
+            if campaign:
+                campaign.health_score = result["score"]
+                db.commit()
+    except Exception as e:
+        logger.warning("health_score_refresh_failed", error=str(e))
 
 
 def handle_campaign_bounce(event_id: int, db: Session):
-    """Called when a bounce is detected on a campaign outreach event."""
+    """Called when a bounce is detected on a campaign outreach event.
+
+    Accepts contacts in ACTIVE or COMPLETED status — bounces can arrive
+    after the contact was already advanced through remaining steps.
+    """
     event = db.query(OutreachEvent).filter(
         OutreachEvent.event_id == event_id
     ).first()
@@ -1058,17 +1091,17 @@ def handle_campaign_bounce(event_id: int, db: Session):
         CampaignContact.campaign_id == event.campaign_id,
         CampaignContact.contact_id == event.contact_id,
     ).first()
-    if cc and cc.status == CampaignContactStatus.ACTIVE:
+    if cc and cc.status in (
+        CampaignContactStatus.ACTIVE,
+        CampaignContactStatus.COMPLETED,
+    ):
         cc.status = CampaignContactStatus.BOUNCED
         cc.next_send_at = None
 
-        campaign = db.query(Campaign).filter(
-            Campaign.campaign_id == event.campaign_id
-        ).first()
-        if campaign:
-            campaign.total_bounced += 1
-
         db.commit()
+
+    # Recalculate stats from ground truth
+    recalculate_campaign_stats(event.campaign_id, db)
 
 
 def recalculate_campaign_stats(campaign_id: int, db: Session):
