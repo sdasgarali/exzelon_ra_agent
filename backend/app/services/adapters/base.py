@@ -1,6 +1,10 @@
 """Base adapter interfaces for all provider types."""
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class RateLimitError(RuntimeError):
@@ -113,6 +117,8 @@ class ContactDiscoveryAdapter(BaseAdapter):
         titles: Optional[List[str]] = None,
         limit: int = 4,
         domain: Optional[str] = None,
+        db: Optional[Session] = None,
+        lead_domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for contacts at a company.
@@ -122,6 +128,9 @@ class ContactDiscoveryAdapter(BaseAdapter):
             domain: Company website domain (e.g. "cognizant.com") — preferred
                     over company_name for precise matching when available.
             limit: Max contacts to return.
+            db: Optional DB session for pre-checking existing contacts
+                (used by Apollo to skip already-known people).
+            lead_domain: Optional domain for matching existing contacts.
 
         Returns list of dicts with keys:
         - first_name

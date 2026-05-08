@@ -76,6 +76,7 @@ class SnovioAdapter(ContactDiscoveryAdapter):
         titles: Optional[List[str]] = None,
         limit: int = 4,
         domain: Optional[str] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using Snov.io domain email search."""
         if not self.client_id or not self.client_secret:

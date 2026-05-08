@@ -159,7 +159,7 @@ DEFAULT_SETTINGS = {
     "data_storage": {"value": "database", "type": "string", "description": "Storage mode: database or files"},
     "daily_send_limit": {"value": 30, "type": "integer", "description": "Max emails per day per mailbox"},
     "cooldown_days": {"value": 10, "type": "integer", "description": "Days between emails to same contact"},
-    "max_contacts_per_company_job": {"value": 4, "type": "integer", "description": "Max contacts per company per job"},
+    "max_contacts_per_company_job": {"value": 2, "type": "integer", "description": "Max contacts per company per job"},
     "min_salary_threshold": {"value": 40000, "type": "integer", "description": "Minimum salary threshold"},
     "contact_provider": {"value": "mock", "type": "string", "description": "Contact discovery provider"},
     "email_validation_provider": {"value": "mock", "type": "string", "description": "Email validation provider"},

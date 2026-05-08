@@ -33,6 +33,7 @@ class MockContactDiscoveryAdapter(ContactDiscoveryAdapter):
         titles: Optional[List[str]] = None,
         limit: int = 4,
         domain: Optional[str] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """Generate mock contacts for a company."""
         contacts = []

@@ -57,6 +57,7 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
         titles: Optional[List[str]] = None,
         limit: int = 4,
         domain: Optional[str] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         """Search for contacts using Proxycurl role lookup API."""
         if not self.api_key:

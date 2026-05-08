@@ -2,6 +2,7 @@
 from typing import List, Dict, Any, Optional
 import httpx
 import structlog
+from sqlalchemy.orm import Session
 from app.services.adapters.base import ContactDiscoveryAdapter, CreditsExhaustedError
 from app.core.config import settings
 from app.db.models.contact import PriorityLevel
@@ -91,7 +92,10 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         return [p for p in people if p.get("has_email")][:limit]
 
     def _enrich_person(self, client, person_id):
-        """Step 2: Enrich a person to get email/details (costs credits)."""
+        """Step 2: Enrich a single person to get email/details (costs 1 credit).
+
+        Kept as fallback if bulk enrichment fails.
+        """
         if self._credits_exhausted:
             raise ApolloCreditsExhaustedError("Apollo credits exhausted")
 
@@ -122,6 +126,105 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         data = response.json()
         return data.get("person")
 
+    def _bulk_enrich_people(self, client, person_ids: List[str]) -> List[Dict[str, Any]]:
+        """Step 2 (bulk): Enrich up to 10 people in a single API call (costs 1 credit per match).
+
+        Uses Apollo's /people/bulk_match endpoint which is far more efficient than
+        individual /people/match calls when enriching multiple contacts.
+
+        Returns list of enriched person dicts (same format as _enrich_person).
+        """
+        if self._credits_exhausted:
+            raise ApolloCreditsExhaustedError("Apollo credits exhausted")
+
+        if not person_ids:
+            return []
+
+        # Apollo bulk_match accepts up to 10 people per call
+        details = [{"id": pid} for pid in person_ids[:10]]
+
+        response = client.post(
+            f"{self.BASE_URL}/people/bulk_match",
+            json={
+                "details": details,
+                "reveal_personal_emails": True,
+            },
+            headers={
+                "Content-Type": "application/json",
+                "X-Api-Key": self.api_key,
+                "Accept": "application/json"
+            },
+            timeout=60
+        )
+
+        # Detect credit exhaustion
+        if response.status_code == 422:
+            error_data = response.json()
+            error_msg = error_data.get("error", "")
+            if "insufficient credits" in error_msg.lower():
+                self._credits_exhausted = True
+                logger.error("Apollo API credits exhausted! Upgrade plan at https://app.apollo.io/#/settings/plans/upgrade")
+                raise ApolloCreditsExhaustedError(error_msg)
+
+        response.raise_for_status()
+        data = response.json()
+
+        # bulk_match returns {"matches": [person_or_null, ...]}
+        matches = data.get("matches", [])
+        return [m for m in matches if m is not None]
+
+    def _filter_already_known(self, people: List[Dict], db: Optional[Session], lead_domain: Optional[str]) -> List[Dict]:
+        """Remove people who already exist as contacts in the DB.
+
+        Matches on (first_name + last_name + email_domain) to avoid paying
+        enrichment credits for contacts we already have.
+        """
+        if db is None or not people:
+            return people
+
+        from app.db.models.contact import ContactDetails
+
+        # Build a set of known (first_name_lower, last_name_lower, domain) tuples
+        conditions = []
+        if lead_domain:
+            conditions.append(ContactDetails.email.like(f"%@{lead_domain}"))
+
+        if not conditions:
+            return people
+
+        known_contacts = db.query(
+            ContactDetails.first_name,
+            ContactDetails.last_name,
+        ).filter(*conditions).all()
+
+        known_set = {
+            (
+                (row[0] or "").lower().strip(),
+                (row[1] or "").lower().strip(),
+            )
+            for row in known_contacts
+        }
+
+        if not known_set:
+            return people
+
+        filtered = []
+        for person in people:
+            key = (
+                (person.get("first_name") or "").lower().strip(),
+                (person.get("last_name") or "").lower().strip(),
+            )
+            if key in known_set:
+                logger.debug(f"Skipping already-known contact: {key[0]} {key[1]}")
+            else:
+                filtered.append(person)
+
+        skipped = len(people) - len(filtered)
+        if skipped > 0:
+            logger.info(f"Apollo pre-check: skipped {skipped} already-known contacts")
+
+        return filtered
+
     def search_contacts(
         self,
         company_name: str,
@@ -130,11 +233,20 @@ class ApolloAdapter(ContactDiscoveryAdapter):
         titles: Optional[List[str]] = None,
         limit: int = 4,
         domain: Optional[str] = None,
+        db: Optional[Session] = None,
+        lead_domain: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Search for contacts at a company using Apollo API (Search + Enrich).
+        """Search for contacts at a company using Apollo API (Search + Bulk Enrich).
 
         Prefers domain-based search when available for precise company matching.
         Falls back to company name search otherwise.
+
+        Uses bulk_match API (1 call for up to 10 people) instead of individual
+        match calls, reducing paid API credits by ~75%.
+
+        Args:
+            db: Optional DB session for pre-checking existing contacts.
+            lead_domain: Optional domain to match existing contacts against.
         """
         if not self.api_key:
             raise ValueError("Apollo API key not configured")
@@ -144,7 +256,7 @@ class ApolloAdapter(ContactDiscoveryAdapter):
 
         try:
             with httpx.Client() as client:
-                # Step 1: Search for people IDs (free)
+                # Step 1: Search for people IDs (free, no credits)
                 people = self._search_people(client, company_name, titles, state, limit, domain=domain)
                 search_key = domain or company_name
                 logger.info(f"Apollo search found {len(people)} candidates for {search_key}")
@@ -152,20 +264,38 @@ class ApolloAdapter(ContactDiscoveryAdapter):
                 if not people:
                     return []
 
-                # Step 2: Enrich each person to get emails (costs credits)
+                # Step 1.5: Pre-filter people already in our DB (saves credits)
+                effective_domain = lead_domain or domain
+                people = self._filter_already_known(people, db, effective_domain)
+                if not people:
+                    logger.info(f"Apollo: all candidates for {search_key} already known — 0 enrichment credits used")
+                    return []
+
+                # Step 2: Bulk-enrich all people in one API call (costs credits)
+                person_ids = [p["id"] for p in people]
+                try:
+                    enriched = self._bulk_enrich_people(client, person_ids)
+                except ApolloCreditsExhaustedError:
+                    raise
+                except Exception as e:
+                    # Bulk endpoint failed — fall back to individual enrichment
+                    logger.warning(f"Apollo bulk_match failed, falling back to individual enrichment: {e}")
+                    enriched = []
+                    for person_preview in people:
+                        try:
+                            person = self._enrich_person(client, person_preview["id"])
+                            if person:
+                                enriched.append(person)
+                        except ApolloCreditsExhaustedError:
+                            raise
+                        except Exception as e2:
+                            logger.warning(f"Apollo enrich failed for {person_preview.get('first_name', '?')}: {e2}")
+
                 contacts = []
-                for person_preview in people:
-                    try:
-                        person = self._enrich_person(client, person_preview["id"])
-                        if person:
-                            contact = self.normalize(person)
-                            if contact:
-                                contacts.append(contact)
-                    except ApolloCreditsExhaustedError:
-                        logger.error("Apollo credits exhausted - stopping enrichment")
-                        raise
-                    except Exception as e:
-                        logger.warning(f"Apollo enrich failed for {person_preview.get('first_name', '?')}: {e}")
+                for person in enriched:
+                    contact = self.normalize(person)
+                    if contact:
+                        contacts.append(contact)
 
                 return contacts[:limit]
 

@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     SEND_DELAY_MIN_SEC: int = 45
     SEND_DELAY_MAX_SEC: int = 180
     MAX_HOURLY_RATIO: int = 8  # daily_limit / this = max per hour
-    MAX_CONTACTS_PER_COMPANY_PER_JOB: int = 4
+    MAX_CONTACTS_PER_COMPANY_PER_JOB: int = 2
     MIN_SALARY_THRESHOLD: int = 40000
     DATA_RETENTION_DAYS: int = 180
 

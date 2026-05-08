@@ -243,9 +243,14 @@ def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | Non
     # Primary: match by email domain (handles name variations like Cognizant/CTS)
     if lead_domain:
         conditions.append(ContactDetails.email.like(f"%@{lead_domain}"))
-    # Fallback: exact client_name match (covers cases where domain is unavailable)
+    # Fallback: fuzzy client_name match using normalized prefix
+    # e.g. "Acme" matches "Acme Inc.", "Acme LLC", "Acme, Corp"
     if lead.client_name:
-        conditions.append(ContactDetails.client_name == lead.client_name)
+        cleaned = clean_company_name_for_search(lead.client_name)
+        if cleaned:
+            conditions.append(ContactDetails.client_name.like(f"{cleaned}%"))
+        else:
+            conditions.append(ContactDetails.client_name == lead.client_name)
 
     if not conditions:
         return 0
@@ -526,6 +531,8 @@ def run_contact_enrichment_pipeline(
                             state=lead.state,
                             limit=remaining_needed,
                             domain=lead_domain,
+                            db=db,
+                            lead_domain=lead_domain,
                         )
                         for c in result:
                             c["source"] = c.get("source", adapter_name)
@@ -537,7 +544,8 @@ def run_contact_enrichment_pipeline(
                     except ApolloCreditsExhaustedError:
                         adapter_stats[adapter_name]["errors"] += 1
                         adapter_errors[adapter_name] = "Apollo credits exhausted"
-                        raise
+                        logger.warning("Apollo credits exhausted — skipping to next adapter for this lead")
+                        continue
                     except CreditsExhaustedError as e:
                         logger.warning(f"Adapter {adapter_name} credits exhausted, skipping to next: {e}")
                         adapter_stats[adapter_name]["errors"] += 1
@@ -548,6 +556,10 @@ def run_contact_enrichment_pipeline(
                         adapter_stats[adapter_name]["errors"] += 1
                         adapter_errors[adapter_name] = str(e)[:200]
                         counters["errors"] += 1
+
+                # Remove exhausted adapters so remaining leads skip them entirely
+                if adapter_errors.get("apollo") and "credits exhausted" in adapter_errors["apollo"].lower():
+                    adapters = [(n, a) for n, a in adapters if n != "apollo"]
 
                 seen_emails = set()
                 unique_contacts = []
@@ -660,15 +672,6 @@ def run_contact_enrichment_pipeline(
                         auto_enriched_companies.add(lead.client_name)
                     _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain)
 
-            except ApolloCreditsExhaustedError:
-                logger.error("Apollo credits exhausted - stopping pipeline early. Upgrade at https://app.apollo.io/#/settings/plans/upgrade")
-                counters["errors"] += 1
-                lead_results.append({
-                    "lead_id": lead.lead_id, "client_name": lead.client_name,
-                    "status": "error", "contacts_found": 0, "contacts_reused": 0,
-                    "adapter_used": "apollo", "reason": "Apollo credits exhausted"
-                })
-                break
             except Exception as e:
                 db.rollback()  # Rollback dirty session state from failed flush/insert
                 logger.error("Error enriching lead", error=str(e), lead_id=lead.lead_id)
