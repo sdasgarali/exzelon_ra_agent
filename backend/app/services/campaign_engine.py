@@ -628,6 +628,33 @@ def _execute_email_step(
     except Exception as e_fp:
         logger.warning("content_fingerprint_check_failed", error=str(e_fp))
 
+    # --- Thread chaining: look up first step's Message-ID for this contact ---
+    # This enables follow-up emails to thread under the original conversation
+    # in Gmail/Outlook and in the portal unified inbox.
+    _in_reply_to = ""
+    _references = ""
+    if step.step_order and step.step_order > 1:
+        first_event = (
+            db.query(OutreachEvent)
+            .join(SequenceStep, OutreachEvent.step_id == SequenceStep.step_id)
+            .filter(
+                OutreachEvent.campaign_id == campaign.campaign_id,
+                OutreachEvent.contact_id == cc.contact_id,
+                OutreachEvent.status == OutreachStatus.SENT,
+                OutreachEvent.message_id.isnot(None),
+                SequenceStep.step_order < step.step_order,
+            )
+            .order_by(SequenceStep.step_order.asc())
+            .first()
+        )
+        if first_event and first_event.message_id:
+            _in_reply_to = first_event.message_id
+            _references = first_event.message_id
+            # Prepend "Re: " to subject if not already present — critical for
+            # email client threading (Gmail, Outlook, Apple Mail)
+            if not subject.lower().startswith("re:"):
+                subject = f"Re: {first_event.subject or subject}"
+
     # Create outreach event
     event = OutreachEvent(
         tenant_id=campaign.tenant_id,
@@ -657,7 +684,7 @@ def _execute_email_step(
         body_html += unsub_footer["html"]
         body_text += unsub_footer["text"]
 
-    # Send
+    # Send (with threading headers for follow-up steps)
     result = send_outreach_email(
         sender_mailbox=mailbox,
         to_email=contact.email,
@@ -666,6 +693,8 @@ def _execute_email_step(
         body_text=body_text,
         db=db,
         unsub_url=unsub_footer.get("url", ""),
+        in_reply_to=_in_reply_to,
+        references=_references,
     )
 
     if result["success"]:
@@ -693,7 +722,7 @@ def _execute_email_step(
         # Sync to unified inbox immediately (don't wait for scheduled job)
         try:
             from app.services.pipelines.outreach import _sync_sent_to_inbox
-            _sync_sent_to_inbox(db, event, contact, mailbox)
+            _sync_sent_to_inbox(db, event, contact, mailbox, in_reply_to=_in_reply_to)
         except Exception as e:
             logger.warning("Campaign inbox sync failed", error=str(e))
 

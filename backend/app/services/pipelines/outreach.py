@@ -29,12 +29,20 @@ from app.services.outreach_draft_service import draft_outreach_email, clear_rese
 logger = structlog.get_logger()
 
 
-def _sync_sent_to_inbox(db, event: OutreachEvent, contact, mailbox: SenderMailbox) -> None:
+def _sync_sent_to_inbox(
+    db, event: OutreachEvent, contact, mailbox: SenderMailbox,
+    in_reply_to: str = "",
+) -> None:
     """Create an InboxMessage immediately after a successful send.
 
     This replaces reliance on the scheduled inbox_sync job (which only
     runs every 5 min, 8am-7pm UTC) — sent emails now appear in the
     unified inbox instantly.
+
+    Args:
+        in_reply_to: The Message-ID of the first email in this thread.
+            When provided, follow-up emails share the same thread_id as
+            the original, so the portal groups them as one conversation.
     """
     try:
         from app.services.inbox_syncer import compute_thread_id
@@ -42,6 +50,7 @@ def _sync_sent_to_inbox(db, event: OutreachEvent, contact, mailbox: SenderMailbo
 
         thread_id = compute_thread_id(
             message_id=event.message_id,
+            in_reply_to=in_reply_to or None,
             contact_email=contact.email if contact else None,
             subject=event.subject,
         )
@@ -65,6 +74,7 @@ def _sync_sent_to_inbox(db, event: OutreachEvent, contact, mailbox: SenderMailbo
             body_html=event.body_html,
             body_text=event.body_text,
             raw_message_id=event.message_id,
+            in_reply_to=in_reply_to or None,
             received_at=event.sent_at or datetime.utcnow(),
             is_read=True,
         )
@@ -136,6 +146,8 @@ def send_outreach_email(
     body_text: str,
     db=None,
     unsub_url: str = "",
+    in_reply_to: str = "",
+    references: str = "",
 ) -> Dict[str, Any]:
     """Send an outreach email using the sender mailbox's own SMTP credentials.
 
@@ -148,6 +160,11 @@ def send_outreach_email(
             temporary session (not recommended — token refresh may not persist
             if the mailbox belongs to a different session).
         unsub_url: Unsubscribe URL for List-Unsubscribe header (improves deliverability).
+        in_reply_to: Message-ID of the previous email in this thread chain.
+            When set, adds In-Reply-To header so email clients thread the
+            follow-up under the original conversation.
+        references: Space-separated Message-IDs for the full thread chain.
+            When set, adds References header (RFC 2822) for robust threading.
     """
     _own_db = False
     try:
@@ -159,6 +176,13 @@ def send_outreach_email(
         msg["Message-ID"] = f"<{uuid.uuid4()}@{sender_domain}>"
         msg["Reply-To"] = sender_mailbox.email
         msg["Date"] = formatdate(localtime=True)
+
+        # Threading headers — essential for Gmail/Outlook to group follow-ups
+        # under the original conversation thread
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+        if references:
+            msg["References"] = references
 
         # Deliverability headers — List-Unsubscribe is required by Gmail/Outlook
         # for bulk senders (RFC 8058). Missing this header is the #1 cause of
