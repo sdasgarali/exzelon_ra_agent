@@ -204,17 +204,24 @@ def unified_send_gate(
         return _blocked("SUPPRESSED", checks, reason=suppressed.reason or "unknown")
     checks.append(GateCheckResult("suppression", True))
 
-    # ── 3. Email validation ────────────────────────────────────────
-    valid_email = contact.validation_status in ("valid", "Valid")
-    if not valid_email:
-        validation = db.query(EmailValidationResult).filter(
-            EmailValidationResult.email == email_lower,
-        ).order_by(EmailValidationResult.validated_at.desc()).first()
-        valid_email = validation is not None and validation.status == ValidationStatus.VALID
-    if not valid_email:
-        checks.append(GateCheckResult("email_validation", False, "not validated"))
-        return _blocked("INVALID_EMAIL", checks)
-    checks.append(GateCheckResult("email_validation", True))
+    # ── 3. Email validation (skip when feature disabled for tenant) ──
+    from app.core.settings_resolver import get_tenant_setting_bool
+    validation_enabled = get_tenant_setting_bool(
+        db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+    )
+    if not validation_enabled:
+        checks.append(GateCheckResult("email_validation", True, "skipped (feature disabled)"))
+    else:
+        valid_email = contact.validation_status in ("valid", "Valid")
+        if not valid_email:
+            validation = db.query(EmailValidationResult).filter(
+                EmailValidationResult.email == email_lower,
+            ).order_by(EmailValidationResult.validated_at.desc()).first()
+            valid_email = validation is not None and validation.status == ValidationStatus.VALID
+        if not valid_email:
+            checks.append(GateCheckResult("email_validation", False, "not validated"))
+            return _blocked("INVALID_EMAIL", checks)
+        checks.append(GateCheckResult("email_validation", True))
 
     # ── Checks 4-8 have skip logic for replies and test contacts ──
 

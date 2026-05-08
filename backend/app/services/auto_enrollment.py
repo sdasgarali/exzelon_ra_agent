@@ -51,15 +51,18 @@ def find_matching_contacts(
     # Must be active outreach status
     query = query.filter(ContactDetails.outreach_status == OutreachStatus.ACTIVE)
 
-    # Validation status filter
-    validation_statuses = rules.get("validation_status")
-    if validation_statuses and isinstance(validation_statuses, list) and len(validation_statuses) > 0:
-        # Case-insensitive match
-        lower_statuses = [s.lower() for s in validation_statuses]
-        query = query.filter(func.lower(ContactDetails.validation_status).in_(lower_statuses))
-    else:
-        # Default: only Valid
-        query = query.filter(func.lower(ContactDetails.validation_status) == "valid")
+    # Validation status filter (skip when email validation feature is disabled)
+    from app.core.settings_resolver import get_tenant_setting_bool
+    validation_enabled = get_tenant_setting_bool(
+        db, "feature_email_validation_enabled", tenant_id=campaign.tenant_id, default=True
+    )
+    if validation_enabled:
+        validation_statuses = rules.get("validation_status")
+        if validation_statuses and isinstance(validation_statuses, list) and len(validation_statuses) > 0:
+            lower_statuses = [s.lower() for s in validation_statuses]
+            query = query.filter(func.lower(ContactDetails.validation_status).in_(lower_statuses))
+        else:
+            query = query.filter(func.lower(ContactDetails.validation_status) == "valid")
 
     # Priority level filter
     priority_levels = rules.get("priority_levels")
@@ -203,13 +206,18 @@ def preview_enrollment_matches(
     # Must be active outreach status
     query = query.filter(ContactDetails.outreach_status == OutreachStatus.ACTIVE)
 
-    # Validation status filter
-    validation_statuses = preview_rules.get("validation_status")
-    if validation_statuses and isinstance(validation_statuses, list) and len(validation_statuses) > 0:
-        lower_statuses = [s.lower() for s in validation_statuses]
-        query = query.filter(func.lower(ContactDetails.validation_status).in_(lower_statuses))
-    else:
-        query = query.filter(func.lower(ContactDetails.validation_status) == "valid")
+    # Validation status filter (skip when email validation feature is disabled)
+    from app.core.settings_resolver import get_tenant_setting_bool
+    validation_enabled = get_tenant_setting_bool(
+        db, "feature_email_validation_enabled", tenant_id=campaign.tenant_id, default=True
+    )
+    if validation_enabled:
+        validation_statuses = preview_rules.get("validation_status")
+        if validation_statuses and isinstance(validation_statuses, list) and len(validation_statuses) > 0:
+            lower_statuses = [s.lower() for s in validation_statuses]
+            query = query.filter(func.lower(ContactDetails.validation_status).in_(lower_statuses))
+        else:
+            query = query.filter(func.lower(ContactDetails.validation_status) == "valid")
 
     # Priority level filter
     priority_levels = preview_rules.get("priority_levels")

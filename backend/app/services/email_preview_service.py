@@ -261,11 +261,18 @@ def generate_pipeline_drafts(
 
     biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
 
-    contacts = db.query(ContactDetails).filter(
-        ContactDetails.validation_status == "valid",
+    # Only require valid status if email validation feature is enabled
+    from app.core.settings_resolver import get_tenant_setting_bool
+    validation_enabled = get_tenant_setting_bool(
+        db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
+    )
+    contact_query = db.query(ContactDetails).filter(
         ContactDetails.is_archived == False,
         ContactDetails.tenant_id == tenant_id,
-    ).limit(limit * 3).all()  # over-fetch to account for ineligible
+    )
+    if validation_enabled:
+        contact_query = contact_query.filter(ContactDetails.validation_status == "valid")
+    contacts = contact_query.limit(limit * 3).all()  # over-fetch to account for ineligible
 
     active_template = get_active_template(db, category="outreach", tenant_id=tenant_id)
 
