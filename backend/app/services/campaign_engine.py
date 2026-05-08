@@ -574,8 +574,16 @@ def _execute_email_step(
         pass
 
     # --- Inject signature AFTER AI/humanizer so it's never rewritten ---
+    logger.info(
+        "signature_debug",
+        mailbox_id=mailbox.mailbox_id,
+        has_sig_json=bool(mailbox.email_signature_json),
+        sig_html_len=len(signature_html),
+        body_html_len_before=len(body_html),
+    )
     if signature_html:
         body_html += signature_html
+        logger.info("signature_injected", body_html_len_after=len(body_html))
         # Build plain-text signature for body_text
         try:
             sig = json.loads(mailbox.email_signature_json)
