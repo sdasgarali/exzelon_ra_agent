@@ -4,7 +4,7 @@ import json
 import os
 import smtplib
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formatdate
@@ -110,7 +110,7 @@ def _save_to_imap_sent(sender_mailbox: SenderMailbox, msg_bytes: bytes, db) -> N
         status, response = imap.append(
             sent_folder,
             "\\Seen",
-            imaplib.Time2Internaldate(datetime.utcnow()),
+            imaplib.Time2Internaldate(datetime.now(timezone.utc)),
             msg_bytes,
         )
         if status != "OK":

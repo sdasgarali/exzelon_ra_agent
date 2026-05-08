@@ -82,13 +82,13 @@ def build_interaction_history(
         open_count = db.query(OutreachEvent).filter(
             OutreachEvent.contact_id == contact_id,
             OutreachEvent.tenant_id == tenant_id,
-            OutreachEvent.status == OutreachStatus.OPENED,
+            OutreachEvent.opened_at.isnot(None),
         ).count()
 
         click_count = db.query(OutreachEvent).filter(
             OutreachEvent.contact_id == contact_id,
             OutreachEvent.tenant_id == tenant_id,
-            OutreachEvent.status == OutreachStatus.CLICKED,
+            OutreachEvent.clicked_at.isnot(None),
         ).count()
 
         return {

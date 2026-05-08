@@ -70,7 +70,7 @@ def log_ai_decision(
         log_automation_event(
             db,
             event_type=f"ai_{decision_type}",
-            description=(
+            title=(
                 f"AI {decision_type}: {action_taken}"
                 if action_taken
                 else f"AI {decision_type}: confidence={confidence}"

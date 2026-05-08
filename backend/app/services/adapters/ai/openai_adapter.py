@@ -54,10 +54,14 @@ class OpenAIAdapter(AIAdapter):
         except Exception:
             return False
 
-    def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000) -> str:
+    def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000, system: str = None) -> str:
         """Make API call to OpenAI."""
         if not self.api_key:
             raise ValueError("OpenAI API key not configured")
+
+        # Prepend system message if provided separately
+        if system:
+            messages = [{"role": "system", "content": system}] + list(messages)
 
         with httpx.Client() as client:
             response = client.post(

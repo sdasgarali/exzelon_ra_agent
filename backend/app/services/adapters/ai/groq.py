@@ -55,12 +55,16 @@ class GroqAdapter(AIAdapter):
         except Exception:
             return False
 
-    def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000) -> str:
+    def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000, system: str = None) -> str:
         """Make API call to Groq with retry on transient failures."""
         import time
 
         if not self.api_key:
             raise ValueError("Groq API key not configured")
+
+        # Prepend system message if provided separately
+        if system:
+            messages = [{"role": "system", "content": system}] + list(messages)
 
         last_error = None
         for attempt in range(3):

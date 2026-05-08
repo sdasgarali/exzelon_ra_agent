@@ -31,7 +31,7 @@ def record_send_outcome(
         log_automation_event(
             db,
             event_type=f"ai_learning_{outcome}",
-            description=f"Send outcome: {outcome} for contact {contact_id}",
+            title=f"Send outcome: {outcome} for contact {contact_id}",
             details={
                 "contact_id": contact_id,
                 "campaign_id": campaign_id,
