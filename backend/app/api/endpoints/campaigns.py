@@ -2178,13 +2178,22 @@ def get_campaign_activity(
         # Best timestamp for this event type
         timestamp = ev.reply_detected_at or ev.clicked_at or ev.opened_at or ev.sent_at
 
+        # Resolve actual step_order from the SequenceStep table
+        _step_order = None
+        if ev.step_id:
+            step_row = db.query(SequenceStep.step_order).filter(
+                SequenceStep.step_id == ev.step_id
+            ).first()
+            if step_row:
+                _step_order = step_row[0]
+
         items.append({
             "event_id": ev.event_id,
             "contact_email": contact.email if contact else "",
             "contact_name": f"{contact.first_name} {contact.last_name}" if contact else f"Contact #{ev.contact_id}",
             "event_type": ev_type,
-            "timestamp": timestamp.isoformat() if timestamp else None,
-            "step_order": ev.step_id,
+            "timestamp": (timestamp.isoformat() + "Z") if timestamp else None,
+            "step_order": _step_order,
             "variant_index": ev.variant_index,
             "subject": ev.subject or "",
         })

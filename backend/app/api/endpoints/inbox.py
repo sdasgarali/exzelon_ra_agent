@@ -191,7 +191,7 @@ def list_threads(
         result.append({
             "thread_id": thread_id,
             "subject": first_msg.subject if first_msg else latest_msg.subject,
-            "latest_message_at": latest_at.isoformat() if latest_at else None,
+            "latest_message_at": (latest_at.isoformat() + "Z") if latest_at else None,
             "from_email": contact_name,
             "contact_name": contact_name,
             "contact_id": latest_msg.contact_id,
@@ -285,7 +285,7 @@ def get_thread(
                 "subject": m.subject,
                 "body_html": m.body_html,
                 "body_text": m.body_text,
-                "received_at": m.received_at.isoformat() if m.received_at else None,
+                "received_at": (m.received_at.isoformat() + "Z") if m.received_at else None,
                 "is_read": m.is_read,
                 "category": m.category,
                 "sentiment": m.sentiment,
