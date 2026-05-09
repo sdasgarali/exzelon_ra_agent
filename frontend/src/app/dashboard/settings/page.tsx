@@ -32,6 +32,11 @@ interface JobSourceConfig {
   company_size_no_preference: boolean
   exclude_it_keywords: string[]
   exclude_staffing_keywords: string[]
+  exclude_company_keywords: string[]
+  exclude_title_keywords: string[]
+  exclude_match_mode: 'word_boundary' | 'substring'
+  lead_sourcing_frequency: '2x' | '4x' | '6x'
+  location_diversification: boolean
   theirstack_api_key: string
   serpapi_api_key: string
   adzuna_app_id: string
@@ -192,17 +197,22 @@ const DEFAULT_STAFFING_EXCLUSIONS = [
   'employment agency', 'executive search firm',
   'recruitment', 'government', 'administration',
   'medical', 'non profit', 'nonprofit',
-  'civics', 'social services', 'chef',
-  'intern', 'entry level', 'media',
-  'education', 'banking', 'business consultant',
-  'internet', 'music', 'consultant',
+  'civics', 'social services',
   'computer security', 'network security', 'security agency',
-  'advertising', 'financial service', 'insurance',
-  'mental health', 'consumer service', 'telecommunication',
+  'telecommunication',
   'primary education', 'secondary education', 'university',
-  'religious', 'trust', 'church',
-  'brokerage', 'museum', 'airline',
-  'advisor', 'historical', 'zoo',
+  'religious', 'church',
+]
+
+const DEFAULT_COMPANY_EXCLUSIONS = [
+  'staffing agency', 'staffing firm', 'recruitment agency',
+  'talent acquisition agency', 'temp agency',
+  'employment agency', 'executive search firm',
+  'security agency',
+]
+
+const DEFAULT_TITLE_EXCLUSIONS = [
+  'intern', 'entry level',
 ]
 
 const DEFAULT_AI_PERSONALIZATION_PROMPT = `You are an expert cold email personalizer for a staffing/recruitment agency.
@@ -323,6 +333,11 @@ export default function SettingsPage() {
     company_size_no_preference: false,
     exclude_it_keywords: DEFAULT_IT_EXCLUSIONS,
     exclude_staffing_keywords: DEFAULT_STAFFING_EXCLUSIONS,
+    exclude_company_keywords: DEFAULT_COMPANY_EXCLUSIONS,
+    exclude_title_keywords: DEFAULT_TITLE_EXCLUSIONS,
+    exclude_match_mode: 'word_boundary',
+    lead_sourcing_frequency: '2x',
+    location_diversification: false,
     theirstack_api_key: '',
     serpapi_api_key: '',
     adzuna_app_id: '',
@@ -363,6 +378,8 @@ export default function SettingsPage() {
   // State for adding new exclusion keywords
   const [newITKeyword, setNewITKeyword] = useState('')
   const [newStaffingKeyword, setNewStaffingKeyword] = useState('')
+  const [newCompanyKeyword, setNewCompanyKeyword] = useState('')
+  const [newTitleKeyword, setNewTitleKeyword] = useState('')
 
   // AI configuration
   const [aiConfig, setAIConfig] = useState<AIConfig>({
@@ -559,6 +576,11 @@ export default function SettingsPage() {
         company_size_no_preference: settingsMap.company_size_no_preference === true,
         exclude_it_keywords: settingsMap.exclude_it_keywords || DEFAULT_IT_EXCLUSIONS,
         exclude_staffing_keywords: settingsMap.exclude_staffing_keywords || DEFAULT_STAFFING_EXCLUSIONS,
+        exclude_company_keywords: settingsMap.exclude_company_keywords || DEFAULT_COMPANY_EXCLUSIONS,
+        exclude_title_keywords: settingsMap.exclude_title_keywords || DEFAULT_TITLE_EXCLUSIONS,
+        exclude_match_mode: settingsMap.exclude_match_mode || 'word_boundary',
+        lead_sourcing_frequency: settingsMap.lead_sourcing_frequency || '2x',
+        location_diversification: settingsMap.location_diversification === true,
         theirstack_api_key: settingsMap.theirstack_api_key || '',
         serpapi_api_key: settingsMap.serpapi_api_key || '',
         adzuna_app_id: settingsMap.adzuna_app_id || '',
@@ -719,6 +741,9 @@ export default function SettingsPage() {
           saveSetting('company_size_no_preference', jobSourceConfig.company_size_no_preference, 'boolean'),
           saveSetting('exclude_it_keywords', jobSourceConfig.exclude_it_keywords, 'list'),
           saveSetting('exclude_staffing_keywords', jobSourceConfig.exclude_staffing_keywords, 'list'),
+          saveSetting('exclude_company_keywords', jobSourceConfig.exclude_company_keywords, 'list'),
+          saveSetting('exclude_title_keywords', jobSourceConfig.exclude_title_keywords, 'list'),
+          saveSetting('exclude_match_mode', jobSourceConfig.exclude_match_mode),
           saveSetting('job_title_categories', jobSourceConfig.job_title_categories, 'object'),
         ])
       } else if (configType === 'jobsourceapis') {
@@ -729,6 +754,8 @@ export default function SettingsPage() {
           saveSetting('apollo_api_key', jobSourceConfig.apollo_api_key),
           saveSetting('lead_sources', jobSourceConfig.lead_sources, 'list'),
           saveSetting('enabled_sources', jobSourceConfig.enabled_sources, 'list'),
+          saveSetting('lead_sourcing_frequency', jobSourceConfig.lead_sourcing_frequency),
+          saveSetting('location_diversification', jobSourceConfig.location_diversification, 'boolean'),
           saveSetting('theirstack_api_key', jobSourceConfig.theirstack_api_key),
           saveSetting('serpapi_api_key', jobSourceConfig.serpapi_api_key),
           saveSetting('adzuna_app_id', jobSourceConfig.adzuna_app_id),
@@ -1783,6 +1810,274 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-xs text-gray-400 mt-1">Checked = excluded from results. Uncheck to allow.</p>
               </div>
+
+              {/* Company Name Exclusions */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label mb-0">
+                    <span>Company Name Exclusions</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({jobSourceConfig.exclude_company_keywords.length} active)
+                    </span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (jobSourceConfig.exclude_company_keywords.length === 0) {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_company_keywords: DEFAULT_COMPANY_EXCLUSIONS })
+                        } else {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_company_keywords: [] })
+                        }
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      {jobSourceConfig.exclude_company_keywords.length === 0 ? 'Check All' : 'Uncheck All'}
+                    </button>
+                    <button
+                      onClick={() => setJobSourceConfig({ ...jobSourceConfig, exclude_company_keywords: [...DEFAULT_COMPANY_EXCLUSIONS] })}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Reset Defaults
+                    </button>
+                  </div>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set([...jobSourceConfig.exclude_company_keywords, ...DEFAULT_COMPANY_EXCLUSIONS])).sort().map((keyword) => {
+                      const isActive = jobSourceConfig.exclude_company_keywords.includes(keyword)
+                      const isDefault = DEFAULT_COMPANY_EXCLUSIONS.includes(keyword)
+                      return (
+                        <div
+                          key={keyword}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-orange-100 text-orange-800 border border-orange-300'
+                              : 'bg-gray-100 text-gray-400 border border-gray-200 line-through'
+                          }`}
+                          onClick={() => {
+                            if (isActive) {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_company_keywords: jobSourceConfig.exclude_company_keywords.filter(k => k !== keyword)
+                              })
+                            } else {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_company_keywords: [...jobSourceConfig.exclude_company_keywords, keyword]
+                              })
+                            }
+                          }}
+                        >
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <span>{keyword}</span>
+                          {!isDefault && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setJobSourceConfig({
+                                  ...jobSourceConfig,
+                                  exclude_company_keywords: jobSourceConfig.exclude_company_keywords.filter(k => k !== keyword)
+                                })
+                              }}
+                              className="ml-1 text-red-500 hover:text-red-700 font-bold"
+                              title="Remove custom keyword"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newCompanyKeyword}
+                    onChange={(e) => setNewCompanyKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newCompanyKeyword.trim()) {
+                        const kw = newCompanyKeyword.trim().toLowerCase()
+                        if (!jobSourceConfig.exclude_company_keywords.includes(kw)) {
+                          setJobSourceConfig({
+                            ...jobSourceConfig,
+                            exclude_company_keywords: [...jobSourceConfig.exclude_company_keywords, kw]
+                          })
+                        }
+                        setNewCompanyKeyword('')
+                      }
+                    }}
+                    placeholder="Add custom keyword..."
+                    className="input text-xs flex-1"
+                  />
+                  <button
+                    onClick={() => {
+                      const kw = newCompanyKeyword.trim().toLowerCase()
+                      if (kw && !jobSourceConfig.exclude_company_keywords.includes(kw)) {
+                        setJobSourceConfig({
+                          ...jobSourceConfig,
+                          exclude_company_keywords: [...jobSourceConfig.exclude_company_keywords, kw]
+                        })
+                      }
+                      setNewCompanyKeyword('')
+                    }}
+                    className="btn-secondary text-xs px-3"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Matched only against company name. Use for staffing agencies and similar.</p>
+              </div>
+
+              {/* Job Title Exclusions */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label mb-0">
+                    <span>Job Title Exclusions</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({jobSourceConfig.exclude_title_keywords.length} active)
+                    </span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (jobSourceConfig.exclude_title_keywords.length === 0) {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_title_keywords: DEFAULT_TITLE_EXCLUSIONS })
+                        } else {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_title_keywords: [] })
+                        }
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      {jobSourceConfig.exclude_title_keywords.length === 0 ? 'Check All' : 'Uncheck All'}
+                    </button>
+                    <button
+                      onClick={() => setJobSourceConfig({ ...jobSourceConfig, exclude_title_keywords: [...DEFAULT_TITLE_EXCLUSIONS] })}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Reset Defaults
+                    </button>
+                  </div>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set([...jobSourceConfig.exclude_title_keywords, ...DEFAULT_TITLE_EXCLUSIONS])).sort().map((keyword) => {
+                      const isActive = jobSourceConfig.exclude_title_keywords.includes(keyword)
+                      const isDefault = DEFAULT_TITLE_EXCLUSIONS.includes(keyword)
+                      return (
+                        <div
+                          key={keyword}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                              : 'bg-gray-100 text-gray-400 border border-gray-200 line-through'
+                          }`}
+                          onClick={() => {
+                            if (isActive) {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_title_keywords: jobSourceConfig.exclude_title_keywords.filter(k => k !== keyword)
+                              })
+                            } else {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_title_keywords: [...jobSourceConfig.exclude_title_keywords, keyword]
+                              })
+                            }
+                          }}
+                        >
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <span>{keyword}</span>
+                          {!isDefault && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setJobSourceConfig({
+                                  ...jobSourceConfig,
+                                  exclude_title_keywords: jobSourceConfig.exclude_title_keywords.filter(k => k !== keyword)
+                                })
+                              }}
+                              className="ml-1 text-red-500 hover:text-red-700 font-bold"
+                              title="Remove custom keyword"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newTitleKeyword}
+                    onChange={(e) => setNewTitleKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newTitleKeyword.trim()) {
+                        const kw = newTitleKeyword.trim().toLowerCase()
+                        if (!jobSourceConfig.exclude_title_keywords.includes(kw)) {
+                          setJobSourceConfig({
+                            ...jobSourceConfig,
+                            exclude_title_keywords: [...jobSourceConfig.exclude_title_keywords, kw]
+                          })
+                        }
+                        setNewTitleKeyword('')
+                      }
+                    }}
+                    placeholder="Add custom keyword..."
+                    className="input text-xs flex-1"
+                  />
+                  <button
+                    onClick={() => {
+                      const kw = newTitleKeyword.trim().toLowerCase()
+                      if (kw && !jobSourceConfig.exclude_title_keywords.includes(kw)) {
+                        setJobSourceConfig({
+                          ...jobSourceConfig,
+                          exclude_title_keywords: [...jobSourceConfig.exclude_title_keywords, kw]
+                        })
+                      }
+                      setNewTitleKeyword('')
+                    }}
+                    className="btn-secondary text-xs px-3"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Matched only against job title. Use for intern, entry-level roles, etc.</p>
+              </div>
+
+              {/* Keyword Matching Mode */}
+              <div>
+                <label className="label">Keyword Matching Mode</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="matchMode"
+                      value="word_boundary"
+                      checked={jobSourceConfig.exclude_match_mode === 'word_boundary'}
+                      onChange={() => setJobSourceConfig({ ...jobSourceConfig, exclude_match_mode: 'word_boundary' })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Word Boundary (Recommended)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="matchMode"
+                      value="substring"
+                      checked={jobSourceConfig.exclude_match_mode === 'substring'}
+                      onChange={() => setJobSourceConfig({ ...jobSourceConfig, exclude_match_mode: 'substring' })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Substring</span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Word boundary prevents &quot;intern&quot; from matching &quot;international&quot;. Substring matches any occurrence within text.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1906,26 +2201,31 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jsearch')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">JSearch (LinkedIn, Indeed, Glassdoor)</span>
+                        <span className="text-xs text-gray-400">Free: 500 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('apollo')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'apollo'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'apollo') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Apollo.io (Company/People Search)</span>
+                        <span className="text-xs text-gray-400">Free: 10k records/mo</span>
                         {jobSourceConfig.apollo_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
+                        <span className="text-xs text-gray-400">Free: 100 req/mo | Paid: from $49/mo</span>
                         {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('serpapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
+                        <span className="text-xs text-gray-400">Free: 100 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('adzuna')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
+                        <span className="text-xs text-gray-400">Free: 250 req/mo | Paid: from $99/mo</span>
                         {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -1955,6 +2255,7 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('coresignal')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
+                        <span className="text-xs text-gray-400">Contact-based pricing</span>
                         <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
                         {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
@@ -2098,6 +2399,51 @@ export default function SettingsPage() {
                   <p className="text-sm text-blue-700">
                     <strong>How it works:</strong> When multiple sources are enabled, leads are fetched in parallel from all sources.
                     Company names are normalized (removing Inc., Corp., LLC, etc.) and duplicates are merged, keeping the record with the most complete data.
+                  </p>
+                </div>
+
+                {/* Pipeline Scheduler */}
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 flex items-center mb-3">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                    Pipeline Scheduler
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Frequency</label>
+                      <select
+                        value={jobSourceConfig.lead_sourcing_frequency}
+                        onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, lead_sourcing_frequency: e.target.value as '2x' | '4x' | '6x' })}
+                        className="input"
+                      >
+                        <option value="2x">2x/day (6 AM, 6 PM UTC)</option>
+                        <option value="4x">4x/day (every 6 hours)</option>
+                        <option value="6x">6x/day (every 4 hours)</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">Lower frequency preserves API quota. 2x/day is recommended for free-tier API keys.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location Strategy */}
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 flex items-center mb-3">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
+                    Location Strategy
+                  </h4>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={jobSourceConfig.location_diversification}
+                      onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, location_diversification: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm font-medium">Search per state (multiplies results but uses more API calls)</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1 ml-6">
+                    Searches each target state individually instead of &quot;United States&quot;.
+                    Produces 3-5x more results but uses 10x more API quota.
+                    Recommended only with paid API plans.
                   </p>
                 </div>
               </div>

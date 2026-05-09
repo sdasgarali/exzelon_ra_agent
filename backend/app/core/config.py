@@ -190,17 +190,24 @@ class Settings(BaseSettings):
         "employment agency", "executive search firm",
         "recruitment", "government", "administration",
         "medical", "non profit", "nonprofit",
-        "civics", "social services", "chef",
-        "intern", "entry level", "media",
-        "education", "banking", "business consultant",
-        "internet", "music", "consultant",
+        "civics", "social services",
         "computer security", "network security", "security agency",
-        "advertising", "financial service", "insurance",
-        "mental health", "consumer service", "telecommunication",
+        "telecommunication",
         "primary education", "secondary education", "university",
-        "religious", "trust", "church",
-        "brokerage", "museum", "airline",
-        "advisor", "historical", "zoo",
+        "religious", "church",
+    ]
+
+    # Company-only exclusion keywords (matched only against company name)
+    EXCLUDE_COMPANY_KEYWORDS: list[str] = [
+        "staffing agency", "staffing firm", "recruitment agency",
+        "talent acquisition agency", "temp agency",
+        "employment agency", "executive search firm",
+        "security agency",
+    ]
+
+    # Title-only exclusion keywords (matched only against job title)
+    EXCLUDE_TITLE_KEYWORDS: list[str] = [
+        "intern", "entry level",
     ]
 
     # Available Job Titles

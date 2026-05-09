@@ -223,7 +223,13 @@ def fetch_from_source(
     adapter: Any,
     target_industries: List[str],
     exclude_keywords: List[str],
-    target_job_titles: List[str]
+    target_job_titles: List[str],
+    exclude_company_keywords: Optional[List[str]] = None,
+    exclude_title_keywords: Optional[List[str]] = None,
+    match_mode: str = "word_boundary",
+    location: str = "United States",
+    location_diversification: bool = False,
+    target_states: Optional[List[str]] = None,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
 
@@ -233,6 +239,11 @@ def fetch_from_source(
 
     Returns: (source_name, jobs_list, error_message, diagnostics)
     """
+    # Set split exclusion attributes on the adapter instance
+    adapter._exclude_company = exclude_company_keywords
+    adapter._exclude_title = exclude_title_keywords
+    adapter._match_mode = match_mode
+
     diagnostics: Dict[str, Any] = {
         "status": "success",
         "jobs_returned": 0,
@@ -240,13 +251,26 @@ def fetch_from_source(
         "error_message": None,
     }
     try:
-        jobs = adapter.fetch_jobs(
-            location="United States",
-            posted_within_days=30,  # IMPACT: 30-day window (was 1 = today only)
-            industries=target_industries,
-            exclude_keywords=exclude_keywords,
-            job_titles=target_job_titles
-        )
+        # Location diversification: search per-state instead of nationwide
+        if location_diversification and target_states:
+            jobs = []
+            for state in target_states:
+                state_jobs = adapter.fetch_jobs(
+                    location=state,
+                    posted_within_days=30,
+                    industries=target_industries,
+                    exclude_keywords=exclude_keywords,
+                    job_titles=target_job_titles,
+                )
+                jobs.extend(state_jobs)
+        else:
+            jobs = adapter.fetch_jobs(
+                location=location,
+                posted_within_days=30,  # IMPACT: 30-day window (was 1 = today only)
+                industries=target_industries,
+                exclude_keywords=exclude_keywords,
+                job_titles=target_job_titles,
+            )
         diagnostics["jobs_returned"] = len(jobs)
         if len(jobs) == 0:
             diagnostics["status"] = "warning"
@@ -577,6 +601,15 @@ def run_lead_sourcing_pipeline(
         target_job_titles = get_tenant_setting(db, "target_job_titles", tenant_id=tenant_id, default=settings.TARGET_JOB_TITLES)
         exclude_keywords = exclude_it_keywords + exclude_staffing_keywords
 
+        # Split exclusion lists (P1-C)
+        exclude_company_keywords = get_tenant_setting(db, "exclude_company_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_COMPANY_KEYWORDS)
+        exclude_title_keywords = get_tenant_setting(db, "exclude_title_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_TITLE_KEYWORDS)
+        match_mode = get_tenant_setting(db, "exclude_match_mode", tenant_id=tenant_id, default="word_boundary")
+
+        # Location diversification (P2-F)
+        location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
+        target_states = get_tenant_setting(db, "target_states", tenant_id=tenant_id, default=["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"])
+
         # "__ANY__" sentinel means skip filtering for that dimension
         if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
             target_job_titles = settings.BROAD_SEARCH_QUERIES
@@ -603,7 +636,12 @@ def run_lead_sourcing_pipeline(
                     adapter,
                     target_industries,
                     exclude_keywords,
-                    target_job_titles
+                    target_job_titles,
+                    exclude_company_keywords=exclude_company_keywords,
+                    exclude_title_keywords=exclude_title_keywords,
+                    match_mode=match_mode,
+                    location_diversification=location_diversification,
+                    target_states=target_states,
                 )
                 futures.append(future)
 

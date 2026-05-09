@@ -76,6 +76,52 @@ def normalize_employment_type(raw_value: str) -> str:
 class JobSourceAdapter(BaseAdapter):
     """Base adapter for job source providers."""
 
+    @staticmethod
+    def filter_excluded(
+        job: dict,
+        exclude_keywords: list = None,
+        exclude_company_keywords: list = None,
+        exclude_title_keywords: list = None,
+        match_mode: str = "word_boundary",
+    ) -> bool:
+        """Return True if the job should be EXCLUDED.
+
+        match_mode: "word_boundary" (regex \\b) or "substring" (python `in`)
+        """
+        import re
+
+        if not job:
+            return True
+
+        title = (job.get("job_title") or "").lower()
+        company = (job.get("client_name") or "").lower()
+        combined = f"{title} {company}"
+
+        def _matches(keyword, text):
+            if match_mode == "word_boundary":
+                return bool(re.search(r"\b" + re.escape(keyword.lower()) + r"\b", text))
+            return keyword.lower() in text
+
+        # General exclusions: match against combined title + company
+        if exclude_keywords:
+            for kw in exclude_keywords:
+                if _matches(kw, combined):
+                    return True
+
+        # Company-only exclusions
+        if exclude_company_keywords:
+            for kw in exclude_company_keywords:
+                if _matches(kw, company):
+                    return True
+
+        # Title-only exclusions
+        if exclude_title_keywords:
+            for kw in exclude_title_keywords:
+                if _matches(kw, title):
+                    return True
+
+        return False
+
     @abstractmethod
     def fetch_jobs(
         self,

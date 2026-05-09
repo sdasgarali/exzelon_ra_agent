@@ -36,7 +36,25 @@ def init_scheduler():
         _scheduler.add_job(job_daily_backup, CronTrigger(hour=2, minute=0), id="daily_backup", name="Daily Database Backup", replace_existing=True)
         _scheduler.add_job(job_backup_cleanup, CronTrigger(hour=2, minute=30), id="backup_cleanup", name="Backup Cleanup", replace_existing=True)
 
-        _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour="0,4,8,12,16,20", minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
+        # Configurable lead sourcing frequency (default: 2x/day to preserve API quota)
+        _lead_freq = "2x"
+        try:
+            from app.db.base import SessionLocal as _SchedSessionLocal
+            _sched_db = _SchedSessionLocal()
+            try:
+                from app.core.settings_resolver import get_tenant_setting
+                _lead_freq = get_tenant_setting(_sched_db, "lead_sourcing_frequency", default="2x")
+            finally:
+                _sched_db.close()
+        except Exception:
+            pass
+        _freq_map = {
+            "2x": "6,18",
+            "4x": "0,6,12,18",
+            "6x": "0,4,8,12,16,20",
+        }
+        _lead_hours = _freq_map.get(_lead_freq, "6,18")
+        _scheduler.add_job(job_lead_sourcing_run, CronTrigger(hour=_lead_hours, minute=0), id="lead_sourcing_run", name="Scheduled Lead Sourcing", replace_existing=True)
 
         _scheduler.add_job(job_campaign_processor, IntervalTrigger(minutes=2), id="campaign_processor", name="Campaign Sequence Processor", replace_existing=True)
         _scheduler.add_job(job_inbox_sync, CronTrigger(hour="8-19", minute="*/5"), id="inbox_sync", name="Inbox Sync", replace_existing=True)

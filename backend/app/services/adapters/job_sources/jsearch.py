@@ -191,16 +191,14 @@ class JSearchAdapter(JobSourceAdapter):
                 for result in data.get("data", []):
                     job = self.normalize(result)
 
-                    # Apply exclude keywords filter
-                    if exclude_keywords and job:
-                        should_exclude = False
-                        job_text = f"{job['job_title']} {job['client_name']}".lower()
-                        for keyword in exclude_keywords:
-                            if keyword.lower() in job_text:
-                                should_exclude = True
-                                break
-                        if should_exclude:
-                            continue
+                    if job and self.filter_excluded(
+                        job,
+                        exclude_keywords=exclude_keywords,
+                        exclude_company_keywords=getattr(self, '_exclude_company', None),
+                        exclude_title_keywords=getattr(self, '_exclude_title', None),
+                        match_mode=getattr(self, '_match_mode', 'word_boundary'),
+                    ):
+                        continue
 
                     if job:
                         jobs.append(job)

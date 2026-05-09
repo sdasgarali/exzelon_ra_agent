@@ -37,6 +37,9 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'company_size_no_preference': 'job_filters',
     'exclude_it_keywords': 'job_filters',
     'exclude_staffing_keywords': 'job_filters',
+    'exclude_company_keywords': 'job_filters',
+    'exclude_title_keywords': 'job_filters',
+    'exclude_match_mode': 'job_filters',
     'job_title_categories': 'job_filters',
     # Job Source APIs (provider selection, API keys, enabled sources)
     'job_source_provider': 'job_source_apis',
@@ -44,6 +47,8 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'indeed_publisher_id': 'job_source_apis',
     'apollo_api_key': 'job_source_apis',
     'lead_sources': 'job_source_apis',
+    'lead_sourcing_frequency': 'job_source_apis',
+    'location_diversification': 'job_source_apis',
     'enabled_sources': 'job_source_apis',
     'theirstack_api_key': 'job_source_apis',
     'serpapi_api_key': 'job_source_apis',
@@ -406,26 +411,59 @@ DEFAULT_SETTINGS = {
     # Staffing Company Exclusion Keywords
     "exclude_staffing_keywords": {
         "value": [
-            "staffing", "recruiting", "recruitment agency", "talent acquisition agency",
-            "us staffing", "it staffing", "technical staffing", "temp agency",
-            "employment agency", "headhunter", "executive search",
-            "consulting firm", "contractor", "outsourcing",
+            "staffing agency", "staffing firm", "recruitment agency",
+            "talent acquisition agency", "temp agency",
+            "employment agency", "executive search firm",
             "recruitment", "government", "administration",
             "medical", "non profit", "nonprofit",
-            "civics", "social services", "chef",
-            "intern", "entry level", "media",
-            "education", "banking", "business consultant",
-            "internet", "music", "consultant",
+            "civics", "social services",
             "computer security", "network security", "security agency",
-            "advertising", "financial service", "insurance",
-            "mental health", "consumer service", "telecommunication",
+            "telecommunication",
             "primary education", "secondary education", "university",
-            "religious", "trust", "church",
-            "brokerage", "museum", "airline",
-            "advisor", "historical", "zoo"
+            "religious", "church"
         ],
         "type": "list",
         "description": "Keywords to exclude staffing/recruitment companies and irrelevant industries"
+    },
+
+    # Company-only exclusion keywords
+    "exclude_company_keywords": {
+        "value": [
+            "staffing agency", "staffing firm", "recruitment agency",
+            "talent acquisition agency", "temp agency",
+            "employment agency", "executive search firm",
+            "security agency"
+        ],
+        "type": "list",
+        "description": "Exclusion keywords matched against company name only"
+    },
+
+    # Title-only exclusion keywords
+    "exclude_title_keywords": {
+        "value": ["intern", "entry level"],
+        "type": "list",
+        "description": "Exclusion keywords matched against job title only"
+    },
+
+    # Exclusion match mode
+    "exclude_match_mode": {
+        "value": "word_boundary",
+        "type": "string",
+        "description": "How exclusion keywords match: word_boundary (recommended) or substring"
+    },
+
+    # Lead sourcing scheduler frequency
+    "lead_sourcing_frequency": {
+        "value": "2x",
+        "type": "string",
+        "description": "Lead sourcing runs per day: 2x, 4x, or 6x"
+    },
+
+    # Location diversification
+    "location_diversification": {
+        "value": False,
+        "type": "boolean",
+        "description": "Search per-state instead of nationwide for more results (uses more API calls)"
     },
 
     # Job Title Categories (grouped by industry/function)

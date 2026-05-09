@@ -75,58 +75,71 @@ class TheirStackAdapter(JobSourceAdapter):
         ]
 
         # TheirStack uses POST with JSON body for search
+        # Batch titles in groups of 20 (API limit per request)
+        title_batches = [search_titles[i:i + 20] for i in range(0, len(search_titles), 20)]
+        if not title_batches:
+            title_batches = [search_titles]
+
         payload = {
             "limit": min(limit, 100),
             "page": 0,
             "job_country_code_or": ["US"],
             "posted_at_max_age_days": posted_within_days,
-            "job_title_or": search_titles[:20],  # API limit on title filters
             "order_by": [{"desc": True, "field": "date_posted"}],
         }
 
         with httpx.Client(timeout=30) as client:
             try:
                 pages_to_fetch = min(10, max(1, limit // 100))
-                for page in range(pages_to_fetch):
-                    payload["page"] = page
-                    self._api_calls += 1
-                    response = client.post(
-                        f"{self.BASE_URL}/jobs/search",
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json=payload,
-                        timeout=30,
-                    )
-                    if response.status_code == 429:
-                        for retry in range(3):
-                            wait = min(60, (2 ** retry) + random.uniform(0, 1))
-                            print(f"TheirStack 429, retrying in {wait:.1f}s (attempt {retry + 1})")
-                            time.sleep(wait)
-                            self._api_calls += 1
-                            response = client.post(f"{self.BASE_URL}/jobs/search", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=payload, timeout=30)
-                            if response.status_code != 429:
-                                break
-                    response.raise_for_status()
-                    data = response.json()
+                for title_batch in title_batches:
+                    payload["job_title_or"] = title_batch
+                    for page in range(pages_to_fetch):
+                        payload["page"] = page
+                        self._api_calls += 1
+                        response = client.post(
+                            f"{self.BASE_URL}/jobs/search",
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json=payload,
+                            timeout=30,
+                        )
+                        if response.status_code == 429:
+                            for retry in range(3):
+                                wait = min(60, (2 ** retry) + random.uniform(0, 1))
+                                print(f"TheirStack 429, retrying in {wait:.1f}s (attempt {retry + 1})")
+                                time.sleep(wait)
+                                self._api_calls += 1
+                                response = client.post(f"{self.BASE_URL}/jobs/search", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=payload, timeout=30)
+                                if response.status_code != 429:
+                                    break
+                        response.raise_for_status()
+                        data = response.json()
 
-                    results = data.get("data", [])
-                    if not results:
-                        break
+                        results = data.get("data", [])
+                        if not results:
+                            break
 
-                    for result in results:
-                        job = self.normalize(result)
-                        if not job:
-                            continue
-
-                        # Apply exclude keywords filter
-                        if exclude_keywords:
-                            job_text = f"{job['job_title']} {job['client_name']}".lower()
-                            if any(kw.lower() in job_text for kw in exclude_keywords):
+                        for result in results:
+                            job = self.normalize(result)
+                            if not job:
                                 continue
 
-                        jobs.append(job)
+                            # Apply exclude keywords filter
+                            if self.filter_excluded(
+                                job,
+                                exclude_keywords=exclude_keywords,
+                                exclude_company_keywords=getattr(self, '_exclude_company', None),
+                                exclude_title_keywords=getattr(self, '_exclude_title', None),
+                                match_mode=getattr(self, '_match_mode', 'word_boundary'),
+                            ):
+                                continue
+
+                            jobs.append(job)
+                            if len(jobs) >= limit:
+                                break
+
                         if len(jobs) >= limit:
                             break
 

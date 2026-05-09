@@ -178,10 +178,14 @@ class CoresignalAdapter(JobSourceAdapter):
                                 continue
 
                             # Apply exclude keywords filter
-                            if exclude_keywords:
-                                job_text = f"{job['job_title']} {job['client_name']}".lower()
-                                if any(kw.lower() in job_text for kw in exclude_keywords):
-                                    continue
+                            if self.filter_excluded(
+                                job,
+                                exclude_keywords=exclude_keywords,
+                                exclude_company_keywords=getattr(self, '_exclude_company', None),
+                                exclude_title_keywords=getattr(self, '_exclude_title', None),
+                                match_mode=getattr(self, '_match_mode', 'word_boundary'),
+                            ):
+                                continue
 
                             jobs.append(job)
                             if len(jobs) >= limit:
