@@ -707,3 +707,92 @@ export interface ApplyFixesResult {
   after_score: number
   delta: number
 }
+
+// ─── Reports types ──────────────────────────────────────────────
+
+export interface ClientAnalyticsRow {
+  client_name: string
+  industry: string | null
+  client_category: string | null
+  contacts: number
+  leads: number
+  sent: number
+  replied: number
+  reply_rate: number
+  bounced: number
+  bounce_rate: number
+  placements: number
+  placement_rate: number
+  unsubscribed: number
+}
+
+export interface CampaignPerformanceRow {
+  campaign_id: number
+  name: string
+  status: string
+  total_contacts: number
+  sent: number
+  opened: number
+  open_rate: number
+  replied: number
+  reply_rate: number
+  bounced: number
+  bounce_rate: number
+  unsubscribed: number
+  health_score: number | null
+  created_at: string | null
+}
+
+export interface MailboxHealthRow {
+  mailbox_id: number
+  email: string
+  provider: string | null
+  warmup_status: string | null
+  connection_status: string
+  emails_sent_today: number
+  daily_send_limit: number
+  total_emails_sent: number
+  bounce_count: number
+  bounce_rate: number
+  reply_count: number
+  complaint_count: number
+  complaint_rate: number
+}
+
+export interface DailyActivityPoint {
+  date: string
+  sent: number
+  opened: number
+  replied: number
+  bounced: number
+}
+
+export interface DailyActivityResponse {
+  days: number
+  granularity: string
+  series: DailyActivityPoint[]
+  totals: { sent: number; opened: number; replied: number; bounced: number }
+}
+
+export interface ContactEngagementRow {
+  contact_id: number
+  name: string
+  email: string
+  company: string | null
+  status: string
+  sent: number
+  opens: number
+  replies: number
+  last_activity: string | null
+}
+
+export interface DomainDeliverabilityRow {
+  domain: string
+  sent: number
+  opened: number
+  open_rate: number
+  replied: number
+  reply_rate: number
+  bounced: number
+  bounce_rate: number
+}

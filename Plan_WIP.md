@@ -1,20 +1,25 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 88: Categorized Job Titles System.
-> Implemented categorized job titles across the entire stack:
-> 1. Backend: JOB_TITLE_CATEGORIES (43 categories, 392 titles) in config.py, registered in settings.py, leads.py filter-options returns job_title_categories
-> 2. Settings page: accordion UI with expand/collapse per category, indeterminate checkboxes, search, category dropdown for adding custom titles, category manager (create/rename/delete)
-> 3. Leads page: SearchableMultiSelect switched to grouped mode using job_title_categories
-> 4. Campaigns page: WizardSearchableMultiSelect switched to grouped mode using job_title_categories
-> 5. TypeScript compiles clean, Next.js build passes, backend loads OK
-> Next: Commit and deploy to VPS
-> 3. Database ops (direct MySQL on VPS, no code changes):
->    - Permanently deleted contacts #1 (ali.infy@gmail.com) and #2 (ali.aitechs@gmail.com)
->      along with their FK references (outreach_events, inbox_messages, outreach_drafts, deals).
->    - Re-created both contacts linked to Lead #4639 (Pinnacle Engineering Group):
->      Contact #2445 ali.infy@gmail.com (Ali Khan, HR Director, TX)
->      Contact #2446 ali.aitechs@gmail.com (Asgar Ali, HR Director, NY)
+> Session 91: Reports module implemented.
+> **Created**: `backend/app/api/endpoints/reports.py` — 6 GET endpoints (client-analytics,
+> campaign-performance, mailbox-health, daily-activity, contact-engagement, domain-deliverability).
+> All with auth (admin/operator+), tenant filtering, pagination, export flag (cap 10K).
+> **Frontend**: `dashboard/reports/page.tsx` — 6 tabbed views with search/sort/filter/export XLSX.
+> Daily Activity tab uses Recharts AreaChart. xlsx npm package added.
+> **Navigation**: Reports entry added to sidebar (FileBarChart icon, emerald).
+> **Types/API**: 7 interfaces in `types/api.ts`, `reportsApi` namespace in `lib/api.ts`.
+> **Docs**: `CLAUDE_REFERENCE/api-endpoints.md` updated with reports section.
+> Previous session: Campaign follow-up email threading fix.
+> **Problem**: Follow-up emails (step 2+) appeared as separate conversations in both
+> recipient mailboxes (Gmail/Outlook) and the portal Inbox. No In-Reply-To/References
+> headers were set, no "Re:" prefix on subjects, and each email got its own thread_id.
+> **Fix (commit 4378c14)**: campaign_engine.py looks up step 1 message_id, passes
+> In-Reply-To + References to send_outreach_email(), prepends "Re:" to subject,
+> _sync_sent_to_inbox() uses in_reply_to for matching thread_id.
+> Also fixed Campaign 41 existing data: corrected 5 inbox message thread_ids on VPS.
+> Previous session: inbox timestamp Z-suffix fix, campaign activity step_order fix,
+> timeAgo improvement, validation bypass, campaign reply/health score fixes.
 
 ## REVERT CHECKPOINT
 > **Commit:** `1179998` — **Branch:** `master` — **Date:** 2026-04-12

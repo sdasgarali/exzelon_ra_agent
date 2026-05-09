@@ -10,7 +10,7 @@ from app.api.endpoints import (
     admin_tenants, billing, activity_log, onboarding,
     reply_macros, notifications, calendar, credits, goals, visitor_tracking,
     sms, objections, dfy, email_preview, deliverability,
-    outreach_roles,
+    outreach_roles, reports,
 )
 
 api_router = APIRouter()
@@ -69,3 +69,5 @@ api_router.include_router(email_preview.router)
 api_router.include_router(deliverability.router)
 # Outreach Roles
 api_router.include_router(outreach_roles.router)
+# Reports
+api_router.include_router(reports.router)

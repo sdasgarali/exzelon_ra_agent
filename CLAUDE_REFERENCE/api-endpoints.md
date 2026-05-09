@@ -75,3 +75,16 @@ All endpoints are mounted under `/api/v1`.
 | `/campaigns/{id}/contact-schedule` | Timezone-aware contact send schedule (East -> West) |
 | `/campaigns/{id}/ai-enhance` | LLM-based campaign name/description improvement |
 | `/campaigns/{id}/ai-suggest-subjects` | LLM-based subject line generation (5 A/B variants) |
+
+## Reports Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /reports/client-analytics` | Per-client KPI breakdown (contacts, leads, sent, replies, bounces, placements, unsubs). Filters: search, industry, client_category, date_from/to. Pagination + export. |
+| `GET /reports/campaign-performance` | Per-campaign metrics (denormalized stats + unsub count). Filters: search, status, date range. SQL sort/paginate. |
+| `GET /reports/mailbox-health` | Per-mailbox deliverability stats. Filters: search, warmup_status. SQL sort/paginate. |
+| `GET /reports/daily-activity` | Time-series sent/opened/replied/bounced. Params: days (7-180), granularity (daily/weekly). Returns series + totals. |
+| `GET /reports/contact-engagement` | Per-contact outreach aggregate. Filters: search, client_name, min_emails, has_replied. SQL sort/paginate. |
+| `GET /reports/domain-deliverability` | Recipient-domain-level stats. Params: days (7-180). MySQL `SUBSTRING_INDEX` / SQLite `SUBSTR` for domain extraction. |
+
+All reports endpoints require `SUPER_ADMIN`, `ADMIN`, or `OPERATOR` role. All support `export=true` (skip pagination, cap at 10K rows). File: `api/endpoints/reports.py`.

@@ -1746,3 +1746,31 @@ export const integrationsApi = {
     await api.delete(`/integrations/api-keys/${id}`)
   },
 }
+
+// Reports API
+export const reportsApi = {
+  clientAnalytics: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/client-analytics', { params })
+    return response.data
+  },
+  campaignPerformance: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/campaign-performance', { params })
+    return response.data
+  },
+  mailboxHealth: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/mailbox-health', { params })
+    return response.data
+  },
+  dailyActivity: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/daily-activity', { params })
+    return response.data
+  },
+  contactEngagement: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/contact-engagement', { params })
+    return response.data
+  },
+  domainDeliverability: async (params?: Record<string, any>) => {
+    const response = await api.get('/reports/domain-deliverability', { params })
+    return response.data
+  },
+}

@@ -52,6 +52,7 @@ import {
   FileSearch,
   ChevronsLeft,
   ChevronsRight,
+  FileBarChart,
 } from 'lucide-react'
 
 const navigation = [
@@ -83,6 +84,7 @@ const navigation = [
   { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-deals' },
 
   // Reporting & Monitoring
+  { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
