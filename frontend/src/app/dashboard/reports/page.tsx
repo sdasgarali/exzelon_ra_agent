@@ -333,22 +333,22 @@ function ClientAnalyticsTab() {
                   <td className="px-3 py-2.5 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">{row.client_name}</td>
                   <td className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 max-w-[140px] truncate">{row.industry || '--'}</td>
                   <td className="px-3 py-2.5"><StatusBadge status={row.client_category || 'prospect'} /></td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.contacts}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.leads}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.sent}</td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.contacts}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.leads}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.sent}</td>
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.replied}</span>
                     {row.reply_rate > 0 && <span className="ml-1 text-xs text-green-600">({row.reply_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.bounced}</span>
                     {row.bounce_rate > 0 && <span className="ml-1 text-xs text-red-500">({row.bounce_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.placements}</span>
                     {row.placement_rate > 0 && <span className="ml-1 text-xs text-blue-500">({row.placement_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.unsubscribed}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.unsubscribed}</td>
                 </tr>
               ))}
             </tbody>
@@ -472,21 +472,21 @@ function CampaignPerformanceTab() {
                 <tr key={row.campaign_id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-3 py-2.5 text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap max-w-[200px] truncate">{row.name}</td>
                   <td className="px-3 py-2.5"><StatusBadge status={row.status} /></td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.total_contacts}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.sent}</td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.total_contacts}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.sent}</td>
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.opened}</span>
                     {row.open_rate > 0 && <span className="ml-1 text-xs text-blue-500">({row.open_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.replied}</span>
                     {row.reply_rate > 0 && <span className="ml-1 text-xs text-green-600">({row.reply_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.bounced}</span>
                     {row.bounce_rate > 0 && <span className="ml-1 text-xs text-red-500">({row.bounce_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.unsubscribed}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.unsubscribed}</td>
                   <td className="px-3 py-2.5"><HealthBar score={row.health_score} /></td>
                   <td className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{row.created_at ? new Date(row.created_at).toLocaleDateString() : '--'}</td>
                 </tr>
@@ -602,14 +602,14 @@ function MailboxHealthTab() {
                   <td className="px-3 py-2.5"><StatusBadge status={row.provider || 'other'} /></td>
                   <td className="px-3 py-2.5"><StatusBadge status={row.warmup_status || 'inactive'} /></td>
                   <td className="px-3 py-2.5"><ConnectionDot status={row.connection_status} /></td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.emails_sent_today} / {row.daily_send_limit}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.total_emails_sent}</td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.emails_sent_today} / {row.daily_send_limit}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.total_emails_sent}</td>
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.bounce_count}</span>
                     {row.bounce_rate > 0 && <span className="ml-1 text-xs text-red-500">({row.bounce_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.reply_count}</td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.reply_count}</td>
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.complaint_count}</span>
                     {row.complaint_rate > 0 && <span className="ml-1 text-xs text-red-500">({row.complaint_rate}%)</span>}
                   </td>
@@ -838,9 +838,9 @@ function ContactEngagementTab() {
                   <td className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400">{row.email}</td>
                   <td className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 max-w-[160px] truncate">{row.company || '--'}</td>
                   <td className="px-3 py-2.5"><StatusBadge status={row.status} /></td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.sent}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.opens}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.replies}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.sent}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.opens}</td>
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.replies}</td>
                   <td className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{row.last_activity ? new Date(row.last_activity).toLocaleDateString() : '--'}</td>
                 </tr>
               ))}
@@ -940,16 +940,16 @@ function DomainDeliverabilityTab() {
               ) : data.items.map((row, i) => (
                 <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-3 py-2.5 text-sm font-medium text-gray-900 dark:text-white">{row.domain}</td>
-                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-right">{row.sent}</td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 text-center">{row.sent}</td>
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.opened}</span>
                     {row.open_rate > 0 && <span className="ml-1 text-xs text-blue-500">({row.open_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.replied}</span>
                     {row.reply_rate > 0 && <span className="ml-1 text-xs text-green-600">({row.reply_rate}%)</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-sm text-right">
+                  <td className="px-3 py-2.5 text-sm text-center">
                     <span className="text-gray-700 dark:text-gray-300">{row.bounced}</span>
                     {row.bounce_rate > 0 && <span className="ml-1 text-xs text-red-500">({row.bounce_rate}%)</span>}
                   </td>
