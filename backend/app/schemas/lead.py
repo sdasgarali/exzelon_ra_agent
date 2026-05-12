@@ -1,8 +1,9 @@
 """Lead schemas."""
+import json
 from datetime import date, datetime
 from typing import Optional, List
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from app.db.models.lead import LeadStatus, DataType
 
 
@@ -67,6 +68,9 @@ class LeadResponse(LeadBase):
     run_id: Optional[int] = None
     lob_id: Optional[int] = None
     metadata: Optional[dict] = None
+    intent_score: Optional[int] = None
+    intent_signals: Optional[List[str]] = None
+    intent_tier: Optional[str] = None
     is_archived: bool = False
     downloaded_at: Optional[datetime] = None
     created_at: datetime
@@ -79,6 +83,38 @@ class LeadResponse(LeadBase):
         if v is None or isinstance(v, dict):
             return v
         return None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_intent_from_metadata(cls, data):
+        """Extract intent data from metadata_json if present."""
+        if hasattr(data, "__dict__"):
+            # ORM model — read metadata_json attribute
+            metadata_json = getattr(data, "metadata_json", None)
+            if metadata_json:
+                try:
+                    meta = json.loads(metadata_json) if isinstance(metadata_json, str) else metadata_json
+                    intent = meta.get("intent", {}) if isinstance(meta, dict) else {}
+                    if intent:
+                        # Set as attributes on the ORM object for serialization
+                        object.__setattr__(data, "intent_score", intent.get("intent_score"))
+                        object.__setattr__(data, "intent_signals", intent.get("signals"))
+                        object.__setattr__(data, "intent_tier", intent.get("tier"))
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+        elif isinstance(data, dict):
+            metadata_json = data.get("metadata_json")
+            if metadata_json:
+                try:
+                    meta = json.loads(metadata_json) if isinstance(metadata_json, str) else metadata_json
+                    intent = meta.get("intent", {}) if isinstance(meta, dict) else {}
+                    if intent:
+                        data.setdefault("intent_score", intent.get("intent_score"))
+                        data.setdefault("intent_signals", intent.get("signals"))
+                        data.setdefault("intent_tier", intent.get("tier"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        return data
 
     class Config:
         from_attributes = True

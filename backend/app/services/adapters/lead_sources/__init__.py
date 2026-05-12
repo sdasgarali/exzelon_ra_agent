@@ -10,6 +10,8 @@ from app.services.adapters.lead_sources.crunchbase import CrunchbaseAdapter
 from app.services.adapters.lead_sources.builtwith import BuiltWithAdapter
 from app.services.adapters.lead_sources.pagespeed import PageSpeedAdapter
 from app.services.adapters.lead_sources.github_org import GitHubOrgAdapter
+from app.services.adapters.lead_sources.hiring_signal import HiringSignalAdapter
+from app.services.adapters.lead_sources.news_signal import NewsSignalAdapter
 
 __all__ = [
     "NPIRegistryAdapter",
@@ -18,4 +20,6 @@ __all__ = [
     "BuiltWithAdapter",
     "PageSpeedAdapter",
     "GitHubOrgAdapter",
+    "HiringSignalAdapter",
+    "NewsSignalAdapter",
 ]

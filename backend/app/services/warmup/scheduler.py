@@ -82,6 +82,10 @@ def init_scheduler():
         _scheduler.add_job(job_slow_ramp_increment, CronTrigger(hour=0, minute=10), id="slow_ramp_increment", name="Slow Ramp Day Increment", replace_existing=True)
         _scheduler.add_job(job_auto_pause_check, CronTrigger(hour="*/1"), id="auto_pause_check", name="Campaign Auto-Pause Check", replace_existing=True)
 
+        # Intent signal monitoring
+        _scheduler.add_job(job_intent_signals_daily, CronTrigger(hour=7, minute=0), id="intent_signals_daily", name="Daily Intent Signal Check", replace_existing=True)
+        _scheduler.add_job(job_intent_signals_weekly, CronTrigger(day_of_week="mon", hour=5, minute=0), id="intent_signals_weekly", name="Weekly Intent Signal Deep Scan", replace_existing=True)
+
         # Billing & Invoicing jobs
         _scheduler.add_job(job_generate_monthly_invoices, CronTrigger(day=1, hour=2, minute=0), id="monthly_invoices", name="Monthly Invoice Generation", replace_existing=True)
         _scheduler.add_job(job_check_overdue_invoices, CronTrigger(hour=6, minute=0), id="overdue_check", name="Overdue Invoice Check", replace_existing=True)
@@ -981,6 +985,76 @@ def job_retention_purge():
             return
         from app.services.retention import purge_archived_records
         purge_archived_records()
+
+
+def job_intent_signals_daily():
+    """Daily intent signal check — runs fast/free sources (NPI, Crunchbase, GitHub, Hiring Signal)."""
+    if not _is_job_enabled("intent_signals"):
+        logger.info("Job intent_signals_daily skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("intent_signals_daily") as acquired:
+        if not acquired:
+            return
+        logger.info("Running daily intent signal check")
+        for tid in _get_active_tenant_ids():
+            try:
+                from app.services.intent_engine import run_intent_engine
+                result = run_intent_engine(tenant_id=tid, schedule_type="daily")
+                logger.info(
+                    "Daily intent signals complete",
+                    tenant_id=tid,
+                    signals_checked=result.get("signals_checked", 0),
+                    leads_created=result.get("leads_created", 0),
+                    scores_updated=result.get("scores_updated", 0),
+                )
+                db = _get_db()
+                try:
+                    from app.services.automation_logger import log_automation_event
+                    log_automation_event(
+                        db, "intent_signals",
+                        f"Daily intent signals: {result.get('leads_created', 0)} leads, {result.get('scores_updated', 0)} scores updated",
+                        details=result,
+                    )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error("Daily intent signals failed", tenant_id=tid, error=str(e))
+
+
+def job_intent_signals_weekly():
+    """Weekly deep scan — runs heavier sources (BuiltWith, PageSpeed, News Signal)."""
+    if not _is_job_enabled("intent_signals"):
+        logger.info("Job intent_signals_weekly skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("intent_signals_weekly") as acquired:
+        if not acquired:
+            return
+        logger.info("Running weekly intent signal deep scan")
+        for tid in _get_active_tenant_ids():
+            try:
+                from app.services.intent_engine import run_intent_engine
+                result = run_intent_engine(tenant_id=tid, schedule_type="weekly")
+                logger.info(
+                    "Weekly intent signals complete",
+                    tenant_id=tid,
+                    signals_checked=result.get("signals_checked", 0),
+                    leads_created=result.get("leads_created", 0),
+                    scores_updated=result.get("scores_updated", 0),
+                )
+                db = _get_db()
+                try:
+                    from app.services.automation_logger import log_automation_event
+                    log_automation_event(
+                        db, "intent_signals",
+                        f"Weekly intent deep scan: {result.get('leads_created', 0)} leads, {result.get('scores_updated', 0)} scores updated",
+                        details=result,
+                    )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error("Weekly intent signals failed", tenant_id=tid, error=str(e))
 
 
 def _is_scheduler_running_in_another_worker() -> bool:

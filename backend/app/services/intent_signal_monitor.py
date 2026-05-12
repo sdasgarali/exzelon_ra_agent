@@ -55,6 +55,18 @@ SIGNAL_TYPES = {
         "lob_types": ["software_dev", "ai_services"],
         "default_interval_hours": 168,  # weekly
     },
+    "hiring_signal": {
+        "adapter": "hiring_signal",
+        "description": "Internal hiring pattern analysis for buying signals",
+        "lob_types": ["rcm", "software_dev", "ai_services", "digital_marketing"],
+        "default_interval_hours": 24,
+    },
+    "news_event": {
+        "adapter": "news_signal",
+        "description": "News and event monitoring for business triggers",
+        "lob_types": ["rcm", "software_dev", "ai_services", "digital_marketing"],
+        "default_interval_hours": 24,
+    },
 }
 
 
@@ -225,6 +237,33 @@ def _fetch_signal(
             limit=signal_params.get("limit", 30),
         )
 
+    elif adapter_name == "builtwith":
+        from app.services.adapters.lead_sources.builtwith import BuiltWithAdapter
+        api_key = get_tenant_setting(db, "builtwith_api_key", tenant_id=lob.tenant_id) or settings.BUILTWITH_API_KEY
+        if api_key:
+            adapter = BuiltWithAdapter(api_key=api_key)
+            leads = adapter.fetch_leads(
+                technology=signal_params.get("technology", ""),
+                limit=signal_params.get("limit", 20),
+            )
+
+    elif adapter_name == "hiring_signal":
+        from app.services.adapters.lead_sources.hiring_signal import HiringSignalAdapter
+        adapter = HiringSignalAdapter(db=db, tenant_id=lob.tenant_id)
+        leads = adapter.fetch_leads(
+            lob_type=lob.lob_type,
+            days_back=signal_params.get("days_back", 30),
+            limit=signal_params.get("limit", 50),
+        )
+
+    elif adapter_name == "news_signal":
+        from app.services.adapters.lead_sources.news_signal import NewsSignalAdapter
+        adapter = NewsSignalAdapter()
+        leads = adapter.fetch_leads(
+            lob_type=lob.lob_type,
+            limit=signal_params.get("limit", 20),
+        )
+
     return leads
 
 
@@ -284,17 +323,27 @@ def _default_signals_for_lob_type(lob_type: str) -> Dict[str, Any]:
         "staffing": {},
         "rcm": {
             "new_npi_registration": {"taxonomy": "Internal Medicine", "state": "", "limit": 50},
+            "hiring_signal": {"lob_type": "rcm", "days_back": 30, "limit": 50},
+            "news_event": {"lob_type": "rcm", "limit": 20},
         },
         "software_dev": {
             "funding_round": {"categories": ["software", "saas"], "funding_stage": "series_a", "limit": 25},
+            "tech_stack_change": {"technology": "WordPress", "limit": 20},
             "github_activity": {"query": "software", "min_repos": 20, "limit": 30},
+            "hiring_signal": {"lob_type": "software_dev", "days_back": 30, "limit": 50},
+            "news_event": {"lob_type": "software_dev", "limit": 20},
         },
         "ai_services": {
             "funding_round": {"categories": ["artificial-intelligence", "machine-learning"], "limit": 25},
             "github_activity": {"query": "ai machine-learning", "min_repos": 10, "limit": 30},
+            "hiring_signal": {"lob_type": "ai_services", "days_back": 30, "limit": 50},
+            "news_event": {"lob_type": "ai_services", "limit": 20},
         },
         "digital_marketing": {
             "poor_pagespeed": {"max_score": 0.4, "limit": 20},
+            "tech_stack_change": {"technology": "WordPress", "limit": 20},
+            "hiring_signal": {"lob_type": "digital_marketing", "days_back": 30, "limit": 50},
+            "news_event": {"lob_type": "digital_marketing", "limit": 20},
         },
         "custom": {},
     }

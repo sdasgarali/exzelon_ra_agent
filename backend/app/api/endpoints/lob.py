@@ -442,6 +442,85 @@ async def delete_lob(
     db.commit()
 
 
+@router.get("/{lob_id}/intent-signals")
+async def get_lob_intent_signals(
+    lob_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Return configured + available intent signals for a LOB with their status."""
+    query = db.query(LineOfBusiness).filter(
+        LineOfBusiness.lob_id == lob_id,
+        LineOfBusiness.is_archived == False,
+    )
+    query = tenant_filter(query, LineOfBusiness, tenant_id)
+    lob = query.first()
+
+    if not lob:
+        raise HTTPException(status_code=404, detail="LOB not found")
+
+    from app.services.intent_signal_monitor import get_available_signals, _default_signals_for_lob_type
+    from app.core.settings_resolver import get_lob_config
+
+    # Get configured signals
+    lead_source_config = get_lob_config(db, lob_id, "lead_source_config") or {}
+    configured_signals = lead_source_config.get("intent_signals", {})
+
+    if not configured_signals:
+        configured_signals = _default_signals_for_lob_type(
+            lob.lob_type.value if isinstance(lob.lob_type, LOBType) else lob.lob_type
+        )
+
+    # Get available signals for this LOB type
+    lob_type_str = lob.lob_type.value if isinstance(lob.lob_type, LOBType) else lob.lob_type
+    available = get_available_signals(lob_type_str)
+
+    # Merge status
+    result = []
+    for signal in available:
+        signal_name = signal["name"]
+        result.append({
+            **signal,
+            "configured": signal_name in configured_signals,
+            "config": configured_signals.get(signal_name, {}),
+        })
+
+    return {
+        "lob_id": lob_id,
+        "lob_type": lob_type_str,
+        "signals": result,
+    }
+
+
+@router.post("/{lob_id}/intent-signals/run")
+async def run_lob_intent_signals(
+    lob_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Manually trigger intent engine for a specific LOB."""
+    query = db.query(LineOfBusiness).filter(
+        LineOfBusiness.lob_id == lob_id,
+        LineOfBusiness.is_archived == False,
+    )
+    query = tenant_filter(query, LineOfBusiness, tenant_id)
+    lob = query.first()
+
+    if not lob:
+        raise HTTPException(status_code=404, detail="LOB not found")
+
+    from app.services.intent_engine import run_intent_engine
+    result = run_intent_engine(
+        tenant_id=lob.tenant_id,
+        lob_id=lob_id,
+        schedule_type="manual",
+    )
+
+    return result
+
+
 @router.post("/{lob_id}/set-default", response_model=LOBResponse)
 async def set_default_lob(
     lob_id: int,

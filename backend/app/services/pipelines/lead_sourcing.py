@@ -234,6 +234,8 @@ def get_lob_lead_source_adapters(
     from app.services.adapters.lead_sources.builtwith import BuiltWithAdapter
     from app.services.adapters.lead_sources.pagespeed import PageSpeedAdapter
     from app.services.adapters.lead_sources.github_org import GitHubOrgAdapter
+    from app.services.adapters.lead_sources.hiring_signal import HiringSignalAdapter
+    from app.services.adapters.lead_sources.news_signal import NewsSignalAdapter
     from app.core.settings_resolver import get_lob_config
 
     adapters = []
@@ -292,6 +294,16 @@ def get_lob_lead_source_adapters(
         adapters.append(("github_org", GitHubOrgAdapter(token=token)))
         logger.info("GitHub Org adapter configured for LOB", lob_id=lob_id)
 
+    # Hiring Signal (internal, zero API calls)
+    if "hiring_signal" in enabled_sources:
+        adapters.append(("hiring_signal", HiringSignalAdapter(db=db, tenant_id=tenant_id)))
+        logger.info("Hiring Signal adapter configured for LOB", lob_id=lob_id)
+
+    # News Signal (Google News RSS, free)
+    if "news_signal" in enabled_sources:
+        adapters.append(("news_signal", NewsSignalAdapter()))
+        logger.info("News Signal adapter configured for LOB", lob_id=lob_id)
+
     return adapters
 
 
@@ -299,10 +311,10 @@ def _default_sources_for_lob_type(lob_type: str) -> List[str]:
     """Return default lead source adapters for a LOB type."""
     defaults = {
         "staffing": [],  # Uses job board adapters, not LOB lead sources
-        "rcm": ["npi_registry", "google_business"],
-        "software_dev": ["crunchbase", "builtwith", "github_org"],
-        "ai_services": ["crunchbase", "github_org"],
-        "digital_marketing": ["google_business", "pagespeed", "builtwith"],
+        "rcm": ["npi_registry", "google_business", "hiring_signal", "news_signal"],
+        "software_dev": ["crunchbase", "builtwith", "github_org", "hiring_signal", "news_signal"],
+        "ai_services": ["crunchbase", "github_org", "hiring_signal", "news_signal"],
+        "digital_marketing": ["google_business", "pagespeed", "builtwith", "hiring_signal", "news_signal"],
         "custom": [],
     }
     return defaults.get(lob_type, [])

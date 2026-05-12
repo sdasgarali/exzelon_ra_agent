@@ -157,6 +157,13 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'complaint_rate_threshold': 'deliverability',
     'sequence_fatigue_window_days': 'deliverability',
     'sequence_fatigue_max_unanswered': 'deliverability',
+    # LOB Lead Source API Keys
+    'google_places_api_key': 'lob_lead_sources',
+    'crunchbase_api_key': 'lob_lead_sources',
+    'builtwith_api_key': 'lob_lead_sources',
+    'github_token': 'lob_lead_sources',
+    # Intent Signal Automation
+    'automation_intent_signals_enabled': 'automation',
 }
 
 # Default settings for seed data
@@ -568,6 +575,27 @@ DEFAULT_SETTINGS = {
     "automation_cost_aggregation_enabled": {"value": True, "type": "boolean", "description": "Enable daily cost aggregation job (23:45 UTC)"},
     "automation_cost_analysis_enabled": {"value": True, "type": "boolean", "description": "Enable monthly cost analysis job (1st of month)"},
 
+    # LOB Lead Source API Keys
+    "google_places_api_key": {
+        "value": "", "type": "string",
+        "description": "Google Places API key for business search (RCM, Digital Marketing). Get at console.cloud.google.com"
+    },
+    "crunchbase_api_key": {
+        "value": "", "type": "string",
+        "description": "Crunchbase API key for company intelligence (Software Dev, AI Services). Get at data.crunchbase.com"
+    },
+    "builtwith_api_key": {
+        "value": "", "type": "string",
+        "description": "BuiltWith API key for technographic data (Software Dev, Digital Marketing). Get at builtwith.com/api"
+    },
+    "github_token": {
+        "value": "", "type": "string",
+        "description": "GitHub personal access token for higher rate limits (5000/hr vs 60/hr). Get at github.com/settings/tokens"
+    },
+
+    # Intent Signal Automation
+    "automation_intent_signals_enabled": {"value": True, "type": "boolean", "description": "Enable scheduled intent signal monitoring jobs"},
+
     # Cost Budget
     "cost_monthly_budget_total": {"value": 500, "type": "number", "description": "Total monthly budget for API costs (USD)"},
 
@@ -953,6 +981,13 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
     'openai': 'ai_llm',
     'anthropic': 'ai_llm',
     'gemini': 'ai_llm',
+    # LOB Lead Source Providers
+    'npi_registry': 'lob_lead_sources',
+    'google_business': 'lob_lead_sources',
+    'crunchbase': 'lob_lead_sources',
+    'builtwith': 'lob_lead_sources',
+    'github_org': 'lob_lead_sources',
+    'pagespeed': 'lob_lead_sources',
 }
 
 
@@ -1269,6 +1304,72 @@ async def test_provider_connection(
             adapter = OpenCorporatesAdapter(api_key=api_key)
             result = adapter.test_connection()
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        # LOB Lead Source Providers
+        elif provider == "npi_registry":
+            from app.services.adapters.lead_sources.npi_registry import NPIRegistryAdapter
+            adapter = NPIRegistryAdapter()
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "NPI Registry accessible (free, no key needed)" if result else "Connection failed", "provider": provider}
+
+        elif provider == "google_business":
+            api_key = _gs("google_places_api_key") or app_config.GOOGLE_PLACES_API_KEY
+            if not api_key:
+                return {"status": "error", "message": "Google Places API key not configured. Get one at https://console.cloud.google.com", "provider": provider}
+            from app.services.adapters.lead_sources.google_business import GoogleBusinessAdapter
+            adapter = GoogleBusinessAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "crunchbase":
+            api_key = _gs("crunchbase_api_key") or app_config.CRUNCHBASE_API_KEY
+            if not api_key:
+                return {"status": "error", "message": "Crunchbase API key not configured. Get one at https://data.crunchbase.com", "provider": provider}
+            from app.services.adapters.lead_sources.crunchbase import CrunchbaseAdapter
+            adapter = CrunchbaseAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "builtwith":
+            api_key = _gs("builtwith_api_key") or app_config.BUILTWITH_API_KEY
+            if not api_key:
+                return {"status": "error", "message": "BuiltWith API key not configured. Get one at https://builtwith.com/api", "provider": provider}
+            from app.services.adapters.lead_sources.builtwith import BuiltWithAdapter
+            adapter = BuiltWithAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "github_org":
+            token = _gs("github_token") or app_config.GITHUB_TOKEN
+            from app.services.adapters.lead_sources.github_org import GitHubOrgAdapter
+            adapter = GitHubOrgAdapter(token=token)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your token", "provider": provider}
+
+        elif provider == "pagespeed":
+            api_key = _gs("google_places_api_key") or app_config.GOOGLE_PLACES_API_KEY
+            from app.services.adapters.lead_sources.pagespeed import PageSpeedAdapter
+            adapter = PageSpeedAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 
         else:
             return {"status": "error", "message": f"Unknown provider: {provider}", "provider": provider}

@@ -375,11 +375,202 @@ def _seed_outreach_roles():
 
 
 def _seed_default_lobs():
-    """Seed a default 'Staffing' LOB for every tenant that has no LOBs yet."""
+    """Seed a default 'Staffing' LOB for every tenant that has no LOBs yet.
+
+    Applies comprehensive LOB_DEFAULT_CONFIGS for lead_source_config, icp_config,
+    and business_rules to all newly-seeded LOBs.
+    """
     import json as _json_lob
     from app.db.base import SessionLocal
     from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
     from app.db.models.tenant import Tenant
+
+    # Comprehensive default configs per LOB type
+    LOB_DEFAULT_CONFIGS = {
+        "staffing": {
+            "lead_source_config": {
+                "enabled_sources": [],
+                "query": "",
+                "location": "United States",
+            },
+            "icp_config": {
+                "target_company_size": {"min": 50, "max": 5000},
+                "target_industries": ["Manufacturing", "Healthcare", "Logistics", "Retail", "Construction", "Energy", "Hospitality", "Food & Beverage"],
+                "target_titles": ["HR Manager", "HR Director", "Talent Acquisition", "Operations Manager", "Plant Manager", "Warehouse Manager"],
+                "exclude_industries": ["Staffing and Recruiting", "Government Administration"],
+                "geography": "United States",
+            },
+            "business_rules": {
+                "daily_send_limit": 30,
+                "cooldown_days": 10,
+                "max_contacts_per_company": 2,
+                "min_salary_threshold": 40000,
+            },
+        },
+        "rcm": {
+            "lead_source_config": {
+                "enabled_sources": ["npi_registry", "google_business", "hiring_signal", "news_signal"],
+                "query": "medical practice",
+                "location": "United States",
+                "intent_signals": {
+                    "new_npi_registration": {"taxonomy": "Internal Medicine", "state": "", "limit": 50},
+                    "hiring_signal": {"lob_type": "rcm", "days_back": 30, "limit": 50},
+                    "news_event": {"lob_type": "rcm", "limit": 20},
+                },
+                "npi_registry": {"taxonomy": "Internal Medicine", "limit": 100},
+                "google_business": {"business_type": "doctor", "limit": 20},
+            },
+            "icp_config": {
+                "target_company_size": {"min": 2, "max": 200},
+                "target_industries": ["Healthcare", "Medical Practice", "Dental", "Behavioral Health", "Urgent Care", "Specialty Clinic"],
+                "target_titles": ["Practice Manager", "Office Manager", "Billing Manager", "Revenue Cycle Director", "CFO", "Administrator"],
+                "target_specialties": ["Internal Medicine", "Family Medicine", "Cardiology", "Orthopedics", "Dermatology", "Gastroenterology", "Urology", "Neurology", "Oncology", "Pediatrics"],
+                "geography": "United States",
+            },
+            "business_rules": {
+                "daily_send_limit": 25,
+                "cooldown_days": 14,
+                "max_contacts_per_company": 2,
+                "min_salary_threshold": 0,
+            },
+        },
+        "software_dev": {
+            "lead_source_config": {
+                "enabled_sources": ["crunchbase", "builtwith", "github_org", "hiring_signal", "news_signal"],
+                "query": "software saas",
+                "location": "United States",
+                "intent_signals": {
+                    "funding_round": {"categories": ["software", "saas", "enterprise-software", "developer-tools"], "funding_stage": "series_a", "limit": 25},
+                    "tech_stack_change": {"technology": "WordPress", "limit": 20},
+                    "github_activity": {"query": "software", "min_repos": 20, "limit": 30},
+                    "hiring_signal": {"lob_type": "software_dev", "days_back": 30, "limit": 50},
+                    "news_event": {"lob_type": "software_dev", "limit": 20},
+                },
+                "crunchbase": {"categories": ["software", "saas"], "funding_stage": "series_a", "min_employees": 20, "limit": 25},
+                "builtwith": {"technology": "WordPress", "limit": 30},
+                "github_org": {"query": "software", "min_repos": 20, "limit": 30},
+            },
+            "icp_config": {
+                "target_company_size": {"min": 20, "max": 500},
+                "target_industries": ["Software", "SaaS", "Fintech", "Healthtech", "Edtech", "E-Commerce", "Cybersecurity"],
+                "target_titles": ["CTO", "VP Engineering", "Director of Engineering", "Head of Product", "Chief Technology Officer", "VP Product"],
+                "target_funding_stages": ["seed", "series_a", "series_b", "series_c"],
+                "geography": "United States",
+            },
+            "business_rules": {
+                "daily_send_limit": 30,
+                "cooldown_days": 10,
+                "max_contacts_per_company": 2,
+                "min_salary_threshold": 0,
+            },
+        },
+        "ai_services": {
+            "lead_source_config": {
+                "enabled_sources": ["crunchbase", "github_org", "hiring_signal", "news_signal"],
+                "query": "artificial intelligence machine learning",
+                "location": "United States",
+                "intent_signals": {
+                    "funding_round": {"categories": ["artificial-intelligence", "machine-learning", "deep-learning"], "limit": 25},
+                    "github_activity": {"query": "ai machine-learning", "min_repos": 10, "limit": 30},
+                    "hiring_signal": {"lob_type": "ai_services", "days_back": 30, "limit": 50},
+                    "news_event": {"lob_type": "ai_services", "limit": 20},
+                },
+                "crunchbase": {"categories": ["artificial-intelligence", "machine-learning"], "limit": 25},
+                "github_org": {"query": "ai machine-learning", "min_repos": 10, "limit": 30},
+            },
+            "icp_config": {
+                "target_company_size": {"min": 50, "max": 2000},
+                "target_industries": ["Technology", "Financial Services", "Healthcare", "Manufacturing", "Retail", "Logistics", "Insurance"],
+                "target_titles": ["CTO", "Chief AI Officer", "VP Data Science", "Head of AI", "Director of ML", "VP Engineering", "Chief Innovation Officer"],
+                "geography": "United States",
+            },
+            "business_rules": {
+                "daily_send_limit": 25,
+                "cooldown_days": 10,
+                "max_contacts_per_company": 2,
+                "min_salary_threshold": 0,
+            },
+        },
+        "digital_marketing": {
+            "lead_source_config": {
+                "enabled_sources": ["google_business", "pagespeed", "builtwith", "hiring_signal", "news_signal"],
+                "query": "local business",
+                "location": "United States",
+                "intent_signals": {
+                    "poor_pagespeed": {"max_score": 0.4, "limit": 20},
+                    "tech_stack_change": {"technology": "WordPress", "limit": 20},
+                    "hiring_signal": {"lob_type": "digital_marketing", "days_back": 30, "limit": 50},
+                    "news_event": {"lob_type": "digital_marketing", "limit": 20},
+                },
+                "google_business": {"business_type": "", "limit": 20},
+                "pagespeed": {"max_score": 0.5, "limit": 20},
+                "builtwith": {"technology": "WordPress", "limit": 30},
+            },
+            "icp_config": {
+                "target_company_size": {"min": 5, "max": 200},
+                "target_industries": ["Local Business", "Retail", "Hospitality", "Food & Beverage", "Health & Wellness", "Professional Services", "Automotive", "Real Estate"],
+                "target_titles": ["Owner", "CEO", "Marketing Director", "Marketing Manager", "VP Marketing", "General Manager", "COO"],
+                "geography": "United States",
+            },
+            "business_rules": {
+                "daily_send_limit": 35,
+                "cooldown_days": 7,
+                "max_contacts_per_company": 2,
+                "min_salary_threshold": 0,
+            },
+        },
+    }
+
+    # Tenant-specific prompt profile overrides (preserve existing behavior)
+    TENANT_PROMPT_PROFILES = {
+        "medeoan": {
+            "rcm": {
+                "company_description": "Medeoan — a healthcare revenue cycle management company powered by AI",
+                "value_proposition": "We increase collections 10-20% within 90 days with less than 3% denial rates. Performance-based — we only get paid when you do. 90-day money-back guarantee.",
+            },
+        },
+        "neuraforz": {
+            "software_dev": {
+                "company_description": "Neuraforz — a software development company that builds enterprise applications",
+                "value_proposition": "Get your software built in 6 weeks — no delays, no excuses. Fixed pricing with daily visibility.",
+            },
+            "ai_services": {
+                "company_description": "Neuraforz — an AI services company building custom AI agents and intelligent automation",
+                "value_proposition": "Production AI in 6 weeks, not 6 months. Custom AI agents that actually work.",
+            },
+            "digital_marketing": {
+                "company_description": "Neuraforz — a digital marketing agency delivering data-driven results",
+                "value_proposition": "Data-backed digital marketing that drives revenue, not vanity metrics.",
+            },
+        },
+    }
+
+    def _create_lob(tid, name, slug, lob_type_enum, description, is_default, color, icon, tenant_slug=""):
+        """Create a LOB with full default configs applied."""
+        lob_type_str = lob_type_enum.value if hasattr(lob_type_enum, "value") else str(lob_type_enum)
+        defaults = LOB_DEFAULT_CONFIGS.get(lob_type_str, {})
+
+        # Get tenant-specific prompt profile if any
+        prompt_profile = None
+        tenant_profiles = TENANT_PROMPT_PROFILES.get(tenant_slug, {})
+        if lob_type_str in tenant_profiles:
+            prompt_profile = _json_lob.dumps(tenant_profiles[lob_type_str])
+
+        return LineOfBusiness(
+            tenant_id=tid,
+            name=name,
+            slug=slug,
+            lob_type=lob_type_enum,
+            description=description,
+            is_default=is_default,
+            color=color,
+            icon=icon,
+            lead_source_config=_json_lob.dumps(defaults.get("lead_source_config")) if defaults.get("lead_source_config") else None,
+            icp_config=_json_lob.dumps(defaults.get("icp_config")) if defaults.get("icp_config") else None,
+            business_rules=_json_lob.dumps(defaults.get("business_rules")) if defaults.get("business_rules") else None,
+            prompt_profile=prompt_profile,
+        )
+
     db = SessionLocal()
     try:
         tenants = db.query(Tenant.tenant_id, Tenant.slug).all()
@@ -395,92 +586,41 @@ def _seed_default_lobs():
             if existing > 0:
                 continue
 
-            # Create default Staffing LOB
-            db.add(LineOfBusiness(
-                tenant_id=tid,
-                name="Staffing",
-                slug="staffing",
-                lob_type=LOBType.STAFFING,
-                description="Default staffing and recruiting line of business",
-                is_default=True,
-                color="#1A3C6E",
-                icon="briefcase",
+            # Create default Staffing LOB for all tenants
+            db.add(_create_lob(
+                tid, "Staffing", "staffing", LOBType.STAFFING,
+                "Default staffing and recruiting line of business",
+                True, "#1A3C6E", "briefcase", slug,
             ))
             seeded += 1
 
             # For known tenants, also seed their specific LOBs
             if slug == "medeoan":
-                db.add(LineOfBusiness(
-                    tenant_id=tid,
-                    name="Revenue Cycle Management",
-                    slug="rcm",
-                    lob_type=LOBType.RCM,
-                    description="Healthcare revenue cycle management services",
-                    is_default=False,
-                    color="#10B981",
-                    icon="heart-pulse",
-                    prompt_profile=_json_lob.dumps({
-                        "company_description": "Medeoan — a healthcare revenue cycle management company powered by AI",
-                        "value_proposition": "We increase collections 10-20% within 90 days with less than 3% denial rates. Performance-based — we only get paid when you do. 90-day money-back guarantee.",
-                    }),
+                db.add(_create_lob(
+                    tid, "Revenue Cycle Management", "rcm", LOBType.RCM,
+                    "Healthcare revenue cycle management services",
+                    False, "#10B981", "heart-pulse", slug,
                 ))
                 seeded += 1
 
             if slug == "neuraforz":
                 for lob_def in [
-                    {
-                        "name": "Software Development",
-                        "slug": "software-dev",
-                        "lob_type": LOBType.SOFTWARE_DEV,
-                        "description": "Custom software development services",
-                        "color": "#6366F1",
-                        "icon": "code",
-                        "prompt_profile": {
-                            "company_description": "Neuraforz — a software development company that builds enterprise applications",
-                            "value_proposition": "Get your software built in 6 weeks — no delays, no excuses. Fixed pricing with daily visibility.",
-                        },
-                    },
-                    {
-                        "name": "AI & Agent Services",
-                        "slug": "ai-services",
-                        "lob_type": LOBType.AI_SERVICES,
-                        "description": "AI agents, intelligent automation, and ML solutions",
-                        "color": "#F59E0B",
-                        "icon": "brain",
-                        "prompt_profile": {
-                            "company_description": "Neuraforz — an AI services company building custom AI agents and intelligent automation",
-                            "value_proposition": "Production AI in 6 weeks, not 6 months. Custom AI agents that actually work.",
-                        },
-                    },
-                    {
-                        "name": "Digital Marketing",
-                        "slug": "digital-marketing",
-                        "lob_type": LOBType.DIGITAL_MARKETING,
-                        "description": "Data-driven digital marketing services",
-                        "color": "#EC4899",
-                        "icon": "megaphone",
-                        "prompt_profile": {
-                            "company_description": "Neuraforz — a digital marketing agency delivering data-driven results",
-                            "value_proposition": "Data-backed digital marketing that drives revenue, not vanity metrics.",
-                        },
-                    },
+                    ("Software Development", "software-dev", LOBType.SOFTWARE_DEV,
+                     "Custom software development services", "#6366F1", "code"),
+                    ("AI & Agent Services", "ai-services", LOBType.AI_SERVICES,
+                     "AI agents, intelligent automation, and ML solutions", "#F59E0B", "brain"),
+                    ("Digital Marketing", "digital-marketing", LOBType.DIGITAL_MARKETING,
+                     "Data-driven digital marketing services", "#EC4899", "megaphone"),
                 ]:
-                    db.add(LineOfBusiness(
-                        tenant_id=tid,
-                        name=lob_def["name"],
-                        slug=lob_def["slug"],
-                        lob_type=lob_def["lob_type"],
-                        description=lob_def["description"],
-                        is_default=False,
-                        color=lob_def["color"],
-                        icon=lob_def["icon"],
-                        prompt_profile=_json_lob.dumps(lob_def["prompt_profile"]),
+                    db.add(_create_lob(
+                        tid, lob_def[0], lob_def[1], lob_def[2],
+                        lob_def[3], False, lob_def[4], lob_def[5], slug,
                     ))
                     seeded += 1
 
         if seeded > 0:
             db.commit()
-            logger.info(f"Seeded {seeded} default LOBs")
+            logger.info(f"Seeded {seeded} default LOBs with configs")
     except Exception as e:
         logger.error("Failed to seed default LOBs", error=str(e))
     finally:
