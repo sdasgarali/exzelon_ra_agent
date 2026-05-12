@@ -424,10 +424,18 @@ export const pipelinesApi = {
     const response = await api.get('/pipelines/runs', { params })
     return response.data
   },
-  runLeadSourcing: async (sources: string[]) => {
+  runLeadSourcing: async (sources: string[], lobId?: number | null) => {
+    const params: Record<string, any> = { sources }
+    if (lobId) params.lob_id = lobId
     const response = await api.post('/pipelines/lead-sourcing/run', null, {
-      params: { sources },
+      params,
     })
+    return response.data
+  },
+  getLobLeadSources: async (lobId?: number | null) => {
+    const params: Record<string, any> = {}
+    if (lobId) params.lob_id = lobId
+    const response = await api.get('/pipelines/lead-sourcing/lob-sources', { params })
     return response.data
   },
   runContactEnrichment: async (leadIds?: number[]) => {

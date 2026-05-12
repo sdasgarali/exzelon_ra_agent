@@ -151,6 +151,61 @@ class JobSourceAdapter(BaseAdapter):
         pass
 
 
+class LeadSourceAdapter(BaseAdapter):
+    """Base adapter for LOB-specific lead sources (non-job-board).
+
+    Unlike JobSourceAdapter which fetches job postings, LeadSourceAdapter
+    fetches business/organization records for targeted outreach across
+    different Lines of Business (RCM, Software Dev, Digital Marketing, etc.).
+
+    Returns list of dicts with standard keys:
+    - client_name: Organization/business name (required)
+    - industry: Industry category
+    - state: State (2-letter code)
+    - city: City name
+    - domain: Website domain
+    - source: Source identifier (e.g., "npi", "google_business")
+    - source_url: URL to source listing
+    - metadata: Dict with source-specific data (NPI number, PageSpeed score, etc.)
+    """
+
+    @abstractmethod
+    def fetch_leads(
+        self,
+        query: str = "",
+        location: str = "United States",
+        limit: int = 100,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """Fetch leads from the source.
+
+        Args:
+            query: Search query (industry, specialty, keyword, etc.)
+            location: Geographic filter
+            limit: Max results to return
+            **kwargs: Source-specific parameters
+
+        Returns:
+            List of normalized lead dicts.
+        """
+        pass
+
+    @abstractmethod
+    def normalize(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize raw source data to standard lead format."""
+        pass
+
+    @property
+    def source_name(self) -> str:
+        """Return the source identifier for this adapter."""
+        return self.__class__.__name__.lower().replace("adapter", "")
+
+    @property
+    def api_calls_made(self) -> int:
+        """Return count of API calls made in this session."""
+        return getattr(self, "_api_calls", 0)
+
+
 class ContactDiscoveryAdapter(BaseAdapter):
     """Base adapter for contact discovery providers."""
 
