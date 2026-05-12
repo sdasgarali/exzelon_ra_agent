@@ -762,62 +762,78 @@ def run_lead_sourcing_pipeline(
 
         logger.info(f"Pipeline config: {len(target_industries) if target_industries else 'Any'} industries, {len(exclude_keywords)} exclusions, {len(target_job_titles) if target_job_titles else 'Any'} job titles")
 
-        # Get all configured adapters
-        adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
-        logger.info(f"Using {len(adapters)} job source adapters")
+        # Determine LOB type to decide which adapter category to use
+        # Job board adapters (JSearch, SerpAPI, etc.) are only relevant for staffing LOBs.
+        # Non-staffing LOBs (RCM, software_dev, ai_services, digital_marketing) use
+        # LOB-specific lead source adapters instead (NPI, Crunchbase, PageSpeed, etc.).
+        lob_type = None
+        if lob_id:
+            from app.db.models.line_of_business import LineOfBusiness
+            lob_obj = db.query(LineOfBusiness).filter(LineOfBusiness.lob_id == lob_id).first()
+            if lob_obj:
+                lob_type = lob_obj.lob_type
+
+        use_job_boards = lob_type in (None, "staffing", "custom")
 
         all_jobs = []
 
-        # Fetch from all sources in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-            futures = []
-            for source_name, adapter in adapters:
-                future = executor.submit(
-                    fetch_from_source,
-                    source_name,
-                    adapter,
-                    target_industries,
-                    exclude_keywords,
-                    target_job_titles,
-                    exclude_company_keywords=exclude_company_keywords,
-                    exclude_title_keywords=exclude_title_keywords,
-                    match_mode=match_mode,
-                    location_diversification=location_diversification,
-                    target_states=target_states,
-                )
-                futures.append(future)
+        # --- Job board adapters (staffing + legacy/custom only) ---
+        if use_job_boards:
+            adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
+            logger.info(f"Using {len(adapters)} job source adapters (LOB type: {lob_type or 'none'})")
 
-            # Collect results
-            for future in concurrent.futures.as_completed(futures):
-                source_name, jobs, error, diag = future.result()
-                counters["sources_used"].append(source_name)
-                counters["jobs_per_source"][source_name] = len(jobs)
-                per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
-                api_diagnostics_list.append({
-                    "adapter": source_name,
-                    "status": diag["status"],
-                    "jobs_returned": diag["jobs_returned"],
-                    "error_type": diag["error_type"],
-                    "error_message": diag["error_message"],
-                })
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                futures = []
+                for source_name, adapter in adapters:
+                    future = executor.submit(
+                        fetch_from_source,
+                        source_name,
+                        adapter,
+                        target_industries,
+                        exclude_keywords,
+                        target_job_titles,
+                        exclude_company_keywords=exclude_company_keywords,
+                        exclude_title_keywords=exclude_title_keywords,
+                        match_mode=match_mode,
+                        location_diversification=location_diversification,
+                        target_states=target_states,
+                    )
+                    futures.append(future)
 
-                if error:
-                    counters["errors"] += 1
-                    logger.error(f"Source {source_name} failed", error=error)
-                else:
-                    logger.info(f"Fetched {len(jobs)} jobs from {source_name}")
-                    # Tag each job with its source for per-source tracking
-                    for job in jobs:
-                        job["_pipeline_source"] = source_name
-                        # Track sub-source (linkedin, indeed, glassdoor, etc.)
-                        sub_src = job.get("source", "unknown")
-                        job["_sub_source"] = sub_src
-                        if sub_src not in per_sub_source_detail:
-                            per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
-                        per_sub_source_detail[sub_src]["fetched"] += 1
-                    all_jobs.extend(jobs)
+                # Collect results
+                for future in concurrent.futures.as_completed(futures):
+                    source_name, jobs, error, diag = future.result()
+                    counters["sources_used"].append(source_name)
+                    counters["jobs_per_source"][source_name] = len(jobs)
+                    per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                    api_diagnostics_list.append({
+                        "adapter": source_name,
+                        "status": diag["status"],
+                        "jobs_returned": diag["jobs_returned"],
+                        "error_type": diag["error_type"],
+                        "error_message": diag["error_message"],
+                    })
 
-        logger.info(f"Total jobs fetched from all sources: {len(all_jobs)}")
+                    if error:
+                        counters["errors"] += 1
+                        logger.error(f"Source {source_name} failed", error=error)
+                    else:
+                        logger.info(f"Fetched {len(jobs)} jobs from {source_name}")
+                        # Tag each job with its source for per-source tracking
+                        for job in jobs:
+                            job["_pipeline_source"] = source_name
+                            # Track sub-source (linkedin, indeed, glassdoor, etc.)
+                            sub_src = job.get("source", "unknown")
+                            job["_sub_source"] = sub_src
+                            if sub_src not in per_sub_source_detail:
+                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                            per_sub_source_detail[sub_src]["fetched"] += 1
+                        all_jobs.extend(jobs)
+
+            logger.info(f"Total jobs fetched from job boards: {len(all_jobs)}")
+        else:
+            adapters = []
+            logger.info(f"Skipping job board adapters for LOB type '{lob_type}' — using LOB-specific sources only")
 
         # --- LOB-specific lead sources (Phase 2) ---
         lob_adapters = get_lob_lead_source_adapters(db, tenant_id=tenant_id, lob_id=lob_id)
