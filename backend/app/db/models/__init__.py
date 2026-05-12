@@ -47,6 +47,7 @@ from app.db.models.goal_target import GoalTarget
 from app.db.models.notification import NotificationEntry
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
 from app.db.models.outreach_role import OutreachRole
+from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 
 __all__ = [
     "User",
@@ -122,4 +123,7 @@ __all__ = [
     "DraftStatus",
     "DraftSource",
     "OutreachRole",
+    "LineOfBusiness",
+    "LOBType",
+    "LOBStatus",
 ]

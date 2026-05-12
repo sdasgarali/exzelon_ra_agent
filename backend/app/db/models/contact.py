@@ -34,6 +34,9 @@ class ContactDetails(Base):
     # Multi-tenancy
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
 
+    # Line of Business (nullable for backward compatibility — NULL = legacy/staffing)
+    lob_id = Column(Integer, ForeignKey("lines_of_business.lob_id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Direct link to the lead this contact was discovered for
     # SET NULL on lead delete — contacts must survive lead deletion to grow the database
     lead_id = Column(Integer, ForeignKey('lead_details.lead_id', ondelete='SET NULL'), nullable=True, index=True)

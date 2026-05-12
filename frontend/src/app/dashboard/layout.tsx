@@ -15,6 +15,7 @@ import { useTour } from '@/hooks/use-tour'
 import { CopilotChat } from '@/components/copilot-chat'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
+import { LobSelector } from '@/components/lob-selector'
 import {
   LayoutDashboard,
   Users,
@@ -53,6 +54,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   FileBarChart,
+  Layers,
 } from 'lucide-react'
 
 const navigation = [
@@ -96,6 +98,7 @@ const navigation = [
   { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
   { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
 ]
 
@@ -282,6 +285,9 @@ export default function DashboardLayout({
             </p>
           ) : null}
         </div>
+
+        {/* LOB Selector — switch between Lines of Business */}
+        <LobSelector collapsed={collapsed} />
 
         <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? 'p-2' : 'p-4'}`} aria-label="Main navigation" data-tour="sidebar">
           {navigation.filter(item => {

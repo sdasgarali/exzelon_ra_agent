@@ -1774,3 +1774,35 @@ export const reportsApi = {
     return response.data
   },
 }
+
+// Lines of Business API
+export const lobApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/lob/', { params })
+    return response.data
+  },
+  get: async (lobId: number) => {
+    const response = await api.get(`/lob/${lobId}`)
+    return response.data
+  },
+  create: async (data: Record<string, any>) => {
+    const response = await api.post('/lob/', data)
+    return response.data
+  },
+  update: async (lobId: number, data: Record<string, any>) => {
+    const response = await api.put(`/lob/${lobId}`, data)
+    return response.data
+  },
+  delete: async (lobId: number) => {
+    const response = await api.delete(`/lob/${lobId}`)
+    return response.data
+  },
+  setDefault: async (lobId: number) => {
+    const response = await api.post(`/lob/${lobId}/set-default`)
+    return response.data
+  },
+  listTypes: async () => {
+    const response = await api.get('/lob/types')
+    return response.data
+  },
+}
