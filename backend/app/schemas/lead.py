@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Optional, List
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from app.db.models.lead import LeadStatus, DataType
 
 
@@ -65,10 +65,20 @@ class LeadResponse(LeadBase):
     industry: Optional[str] = None
     company_size: Optional[str] = None
     run_id: Optional[int] = None
+    lob_id: Optional[int] = None
+    metadata: Optional[dict] = None
     is_archived: bool = False
     downloaded_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def coerce_metadata(cls, v):
+        """Ignore SQLAlchemy MetaData objects that collide with this field name."""
+        if v is None or isinstance(v, dict):
+            return v
+        return None
 
     class Config:
         from_attributes = True

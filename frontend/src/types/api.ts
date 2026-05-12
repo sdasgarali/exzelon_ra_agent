@@ -23,12 +23,28 @@ export interface Lead {
   last_name: string | null;
   contact_email: string | null;
   contact_title: string | null;
+  contact_phone: string | null;
   skip_reason: string | null;
   ra_name: string | null;
   contact_count: number;
+  industry: string | null;
+  company_size: string | null;
+  employment_type: string | null;
+  run_id: number | null;
+  data_type: string | null;
+  downloaded_at: string | null;
+  lob_id: number | null;
+  metadata: Record<string, any> | null;
   is_archived: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface LOBColumnConfig {
+  label_overrides: Record<string, string>;
+  hidden_columns: string[];
+  metadata_columns: { key: string; label: string; type: string }[];
+  filters: string[];
 }
 
 export interface Contact {

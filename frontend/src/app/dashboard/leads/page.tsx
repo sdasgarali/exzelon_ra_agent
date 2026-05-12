@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { leadsApi, pipelinesApi, api, getApiError } from '@/lib/api'
+import { leadsApi, pipelinesApi, lobApi, api, getApiError } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { useLobStore } from '@/lib/lob-store'
 import { ContactsWizard } from '@/components/contacts-wizard'
 
 interface Lead {
@@ -28,8 +29,17 @@ interface Lead {
   data_type: string
   is_archived: boolean
   downloaded_at: string | null
+  lob_id: number | null
+  metadata: Record<string, any> | null
   created_at: string
   updated_at: string
+}
+
+interface ColumnConfig {
+  label_overrides: Record<string, string>
+  hidden_columns: string[]
+  metadata_columns: { key: string; label: string; type: string }[]
+  filters: string[]
 }
 
 interface LeadFilterOptions {
@@ -80,6 +90,10 @@ const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporar
 export default function LeadsPage() {
   const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
+  const activeLobId = useLobStore((s) => s.activeLobId)
+  const getActiveLob = useLobStore((s) => s.getActiveLob)
+  const [columnConfig, setColumnConfig] = useState<ColumnConfig | null>(null)
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(null)
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -210,6 +224,16 @@ export default function LeadsPage() {
     leadsApi.filterOptions().then(setLeadFilterOptions).catch(() => {})
   }, [])
 
+  // Fetch column config when active LOB changes
+  useEffect(() => {
+    const lob = getActiveLob()
+    if (lob && lob.lob_type !== 'staffing') {
+      lobApi.getColumnConfig(lob.lob_type).then(setColumnConfig).catch(() => setColumnConfig(null))
+    } else {
+      setColumnConfig(null)
+    }
+  }, [activeLobId])
+
   // Fetch lead stats for status cards — refetch when leads change (covers mutations) or archive toggle
   useEffect(() => {
     leadsApi.stats({ show_archived: showArchived || undefined }).then(setLeadStats).catch(() => {})
@@ -229,12 +253,13 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived, activeLobId])
 
   const fetchLeads = async () => {
     try {
       setLoading(true)
       setError('')
+      setExpandedRowId(null)
       const params: Record<string, any> = {
         page,
         page_size: pageSize,
@@ -257,6 +282,11 @@ export default function LeadsPage() {
       if (filterExtractedTo) params.extracted_to = filterExtractedTo
       if (filterDownloaded) params.downloaded = filterDownloaded
       if (showArchived) params.show_archived = true
+      // Filter by active LOB if one is selected
+      const activeLob = getActiveLob()
+      if (activeLob && activeLob.lob_type !== 'staffing') {
+        params.lob_id = activeLob.lob_id
+      }
 
       const response = await leadsApi.list(params)
       setLeads(response.items || [])
@@ -826,6 +856,59 @@ export default function LeadsPage() {
   const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, filterEmploymentType, search].filter(Boolean).length
     + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
+  // Helper: get column label with LOB overrides
+  const colLabel = (field: string, defaultLabel: string): string => {
+    if (columnConfig?.label_overrides?.[field]) return columnConfig.label_overrides[field]
+    return defaultLabel
+  }
+
+  // Helper: check if a column is hidden by LOB config
+  const isHidden = (field: string): boolean => {
+    return columnConfig?.hidden_columns?.includes(field) ?? false
+  }
+
+  // Helper: render a metadata value by type
+  const renderMetaValue = (value: any, type: string) => {
+    if (value === null || value === undefined) return <span className="text-gray-400">-</span>
+    switch (type) {
+      case 'number':
+        return <span className="text-sm text-gray-700">{typeof value === 'number' ? value.toLocaleString() : value}</span>
+      case 'currency':
+        return <span className="text-sm text-gray-700 font-medium">
+          {typeof value === 'number' ? (value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M` : `$${(value / 1000).toFixed(0)}K`) : `$${value}`}
+        </span>
+      case 'badge':
+        return <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{value}</span>
+      case 'tags': {
+        const items = Array.isArray(value) ? value : String(value).split(',').map((s: string) => s.trim())
+        return <div className="flex flex-wrap gap-1">{items.slice(0, 3).map((t: string, i: number) => (
+          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{t}</span>
+        ))}{items.length > 3 && <span className="text-[10px] text-gray-400">+{items.length - 3}</span>}</div>
+      }
+      case 'score': {
+        const score = typeof value === 'number' ? value : parseFloat(value)
+        const pct = Math.round((isNaN(score) ? 0 : score) * 100)
+        const color = pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+        return <div className="flex items-center gap-2">
+          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-xs text-gray-600">{pct}</span>
+        </div>
+      }
+      case 'phone':
+        return <a href={`tel:${value}`} className="text-sm text-blue-600 hover:underline">{value}</a>
+      default:
+        return <span className="text-sm text-gray-700">{String(value)}</span>
+    }
+  }
+
+  // Compute total visible column count for colSpan
+  const baseColCount = 15
+    - (isHidden('salary_min') ? 0 : 0) // salary is not a separate column currently
+    - (isHidden('employment_type') ? 1 : 0)
+    + (columnConfig?.metadata_columns?.length ?? 0)
+
   return (
     <div>
       {/* Header */}
@@ -1342,7 +1425,7 @@ export default function LeadsPage() {
                   onClick={() => handleSort('client_name')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
-                  Company / Job Title <SortIcon field="client_name" />
+                  {colLabel('client_name', 'Company')} / {colLabel('job_title', 'Job Title')} <SortIcon field="client_name" />
                 </th>
                 <th
                   onClick={() => handleSort('state')}
@@ -1354,7 +1437,7 @@ export default function LeadsPage() {
                   onClick={() => handleSort('posting_date')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
-                  Posted <SortIcon field="posting_date" />
+                  {colLabel('posting_date', 'Posted')} <SortIcon field="posting_date" />
                 </th>
                 <th
                   onClick={() => handleSort('created_at')}
@@ -1374,12 +1457,14 @@ export default function LeadsPage() {
                 >
                   Source <SortIcon field="source" />
                 </th>
-                <th
-                  onClick={() => handleSort('employment_type')}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                >
-                  Type <SortIcon field="employment_type" />
-                </th>
+                {!isHidden('employment_type') && (
+                  <th
+                    onClick={() => handleSort('employment_type')}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  >
+                    Type <SortIcon field="employment_type" />
+                  </th>
+                )}
                 <th
                   onClick={() => handleSort('industry')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -1393,8 +1478,14 @@ export default function LeadsPage() {
                   Size <SortIcon field="company_size" />
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Link
+                  {colLabel('job_link', 'Link')}
                 </th>
+                {/* LOB metadata columns */}
+                {columnConfig?.metadata_columns?.map(mc => (
+                  <th key={mc.key} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {mc.label}
+                  </th>
+                ))}
                 <th
                   onClick={() => handleSort('contact_count')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -1412,20 +1503,28 @@ export default function LeadsPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={baseColCount} className="px-4 py-8 text-center text-gray-500">
                     Loading leads...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={baseColCount} className="px-4 py-8 text-center text-gray-500">
                     No leads found. {activeFiltersCount > 0 ? 'Try adjusting your filters.' : 'Run the Lead Sourcing pipeline to fetch jobs.'}
                   </td>
                 </tr>
               ) : (
                 leads.map((lead) => (
-                  <tr key={lead.lead_id} className={`${lead.is_archived ? "opacity-60 bg-gray-50" : ""} ${selectedIds.has(lead.lead_id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"}`}>
-                    <td className="px-3 py-3">
+                  <React.Fragment key={lead.lead_id}>
+                  <tr
+                    className={`${lead.is_archived ? "opacity-60 bg-gray-50" : ""} ${selectedIds.has(lead.lead_id) ? "bg-blue-50 hover:bg-blue-100" : "hover:bg-gray-50"} ${lead.metadata && columnConfig ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (lead.metadata && columnConfig) {
+                        setExpandedRowId(expandedRowId === lead.lead_id ? null : lead.lead_id)
+                      }
+                    }}
+                  >
+                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(lead.lead_id)}
@@ -1433,7 +1532,7 @@ export default function LeadsPage() {
                         className="w-4 h-4"
                       />
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">
                           #{lead.lead_id}
@@ -1445,7 +1544,7 @@ export default function LeadsPage() {
                     <td className="px-3 py-3 text-xs text-gray-500 font-mono">
                       {lead.run_id ? `R${lead.run_id}` : '-'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <Link href={`/dashboard/leads/${lead.lead_id}`} className="text-sm font-medium text-blue-700 hover:text-blue-900 hover:underline">
                         {lead.client_name}
                       </Link>
@@ -1474,21 +1573,23 @@ export default function LeadsPage() {
                         {lead.source}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      {lead.employment_type ? (
-                        <span className={`text-xs px-2 py-1 rounded ${
-                          lead.employment_type === 'Full-time' ? 'bg-green-100 text-green-700' :
-                          lead.employment_type === 'Contract' ? 'bg-orange-100 text-orange-700' :
-                          lead.employment_type === 'Part-time' ? 'bg-blue-100 text-blue-700' :
-                          lead.employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {lead.employment_type}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 text-sm">-</span>
-                      )}
-                    </td>
+                    {!isHidden('employment_type') && (
+                      <td className="px-4 py-3">
+                        {lead.employment_type ? (
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            lead.employment_type === 'Full-time' ? 'bg-green-100 text-green-700' :
+                            lead.employment_type === 'Contract' ? 'bg-orange-100 text-orange-700' :
+                            lead.employment_type === 'Part-time' ? 'bg-blue-100 text-blue-700' :
+                            lead.employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {lead.employment_type}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.industry || '-'}
                     </td>
@@ -1503,6 +1604,7 @@ export default function LeadsPage() {
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 hover:underline"
                           title={lead.job_link}
+                          onClick={e => e.stopPropagation()}
                         >
                           {truncateUrl(lead.job_link, 25)}
                         </a>
@@ -1510,7 +1612,13 @@ export default function LeadsPage() {
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    {/* LOB metadata column values */}
+                    {columnConfig?.metadata_columns?.map(mc => (
+                      <td key={mc.key} className="px-4 py-3">
+                        {renderMetaValue(lead.metadata?.[mc.key], mc.type)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => fetchContactsForLead(lead)}
                         className={`text-xs px-2 py-1 rounded-full ${
@@ -1522,7 +1630,7 @@ export default function LeadsPage() {
                         {lead.contact_count || 0} contacts
                       </button>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       {lead.campaign_status ? (
                         <span
                           title="Status set by campaign"
@@ -1546,6 +1654,31 @@ export default function LeadsPage() {
                       )}
                     </td>
                   </tr>
+                  {/* Expandable metadata detail row */}
+                  {expandedRowId === lead.lead_id && lead.metadata && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={baseColCount} className="px-6 py-4">
+                        <div className="text-xs font-semibold text-gray-500 uppercase mb-2">Metadata Details</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {Object.entries(lead.metadata).map(([key, value]) => (
+                            <div key={key} className="bg-white rounded-lg border border-gray-200 px-3 py-2">
+                              <div className="text-[10px] font-medium text-gray-400 uppercase">{key.replace(/_/g, ' ')}</div>
+                              <div className="text-sm text-gray-800 mt-0.5 break-words">
+                                {value === null || value === undefined
+                                  ? '-'
+                                  : Array.isArray(value)
+                                    ? value.join(', ')
+                                    : typeof value === 'object'
+                                      ? JSON.stringify(value)
+                                      : String(value)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))
               )}
             </tbody>

@@ -1,25 +1,16 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 91: Reports module implemented.
-> **Created**: `backend/app/api/endpoints/reports.py` — 6 GET endpoints (client-analytics,
-> campaign-performance, mailbox-health, daily-activity, contact-engagement, domain-deliverability).
-> All with auth (admin/operator+), tenant filtering, pagination, export flag (cap 10K).
-> **Frontend**: `dashboard/reports/page.tsx` — 6 tabbed views with search/sort/filter/export XLSX.
-> Daily Activity tab uses Recharts AreaChart. xlsx npm package added.
-> **Navigation**: Reports entry added to sidebar (FileBarChart icon, emerald).
-> **Types/API**: 7 interfaces in `types/api.ts`, `reportsApi` namespace in `lib/api.ts`.
-> **Docs**: `CLAUDE_REFERENCE/api-endpoints.md` updated with reports section.
-> Previous session: Campaign follow-up email threading fix.
-> **Problem**: Follow-up emails (step 2+) appeared as separate conversations in both
-> recipient mailboxes (Gmail/Outlook) and the portal Inbox. No In-Reply-To/References
-> headers were set, no "Re:" prefix on subjects, and each email got its own thread_id.
-> **Fix (commit 4378c14)**: campaign_engine.py looks up step 1 message_id, passes
-> In-Reply-To + References to send_outreach_email(), prepends "Re:" to subject,
-> _sync_sent_to_inbox() uses in_reply_to for matching thread_id.
-> Also fixed Campaign 41 existing data: corrected 5 inbox message thread_ids on VPS.
-> Previous session: inbox timestamp Z-suffix fix, campaign activity step_order fix,
-> timeAgo improvement, validation bypass, campaign reply/health score fixes.
+> Session 93: LOB-Aware Dynamic Leads UI + Adapter Settings — implemented.
+> **Branch**: `master` (uncommitted changes).
+> **Changes**:
+> - Backend: `lob_id` + `metadata` fields added to `LeadResponse` schema (with `field_validator` to handle SQLAlchemy MetaData collision). `lob_id` filter param added to `list_leads()`. `metadata_json` parsed into dict in response builder. `lob_id` added to SORT_COLUMNS.
+> - Backend: `GET /lob/column-config/{lob_type}` endpoint in `lob.py` — returns per-LOB column definitions (label_overrides, hidden_columns, metadata_columns, filters) for staffing, rcm, software_dev, ai_services, digital_marketing.
+> - Frontend: `Lead` interface updated with `lob_id`, `metadata`, and other missing fields. `LOBColumnConfig` type added. `lobApi.getColumnConfig()` added.
+> - Frontend: Leads page (`page.tsx`) — imports `useLobStore`, fetches column config on active LOB change, passes `lob_id` filter for non-staffing LOBs, dynamic column headers (label_overrides), hidden columns (employment_type), metadata columns with typed renderers (text, number, currency, badge, tags, score, phone), expandable metadata detail row on click.
+> - Frontend: LOB page (`page.tsx`) — adapter settings section in create/edit modal. Per-type forms: RCM (NPI taxonomy, state/city filter, Google Places query), Software Dev (Crunchbase categories, funding stage, GitHub language, min repos), AI Services (Crunchbase categories, GitHub query, min repos), Digital Marketing (domains textarea, max performance score slider, BuiltWith tech search), Custom (free-form JSON editor). Saves to `lead_source_config`.
+> **Tests**: 911 unit/integration + 12 e2e passed. Frontend builds clean.
+> Previous session: Multi-LOB Architecture all 4 phases deployed.
 
 ## REVERT CHECKPOINT
 > **Commit:** `1179998` — **Branch:** `master` — **Date:** 2026-04-12
@@ -27,6 +18,19 @@
 > **To revert here:** `git reset --hard 1179998` then redeploy.
 
 ## Immediate TODO
+- [x] Multi-LOB Architecture — Phase 1: Foundation (LOB model, settings, API, frontend) (2026-05-12)
+- [x] Multi-LOB Architecture — Phase 2: Lead Source Expansion (6 adapters, LOB-aware pipeline) (2026-05-12)
+- [x] Multi-LOB Architecture — Phase 3: LOB-Specific Intelligence (scoring, knowledge base, merge fields) (2026-05-12)
+- [x] Multi-LOB Architecture — Phase 4: Advanced Automation (website auditor, intent signals, LOB dashboard KPIs) (2026-05-12)
+- [x] Merge feature/multi-lob-architecture → master + push + deploy (2026-05-12)
+- [x] LOB-Aware Dynamic Leads UI + Adapter Settings (2026-05-12)
+  - Backend: metadata + lob_id in Lead API, column-config endpoint
+  - Frontend: dynamic table columns, metadata detail panel, adapter settings in LOB modal
+- [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
+- [ ] Enable IMAP in M365 Admin per-mailbox (for inbox syncing/warmup read)
+- [ ] Connect Gmail mailbox (mirzahabibbeg7@gmail.com) via OAuth2 in browser
+- [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
+- [ ] Configure API keys for new LOB adapters (Google Places, Crunchbase, BuiltWith, GitHub Token)
 - [x] Contacts: archived bulk restore + per-row edit/delete actions (2026-04-12)
   - Archived contacts: "Restore Selected" (green) replaces "Archive Selected", "Bulk Update" hidden
   - Per-row Edit (pencil) and Delete (trash) buttons in new Actions column
@@ -299,6 +303,15 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 92: Multi-LOB Architecture — 4 phases, merged & deployed (2026-05-12)
+  - Phase 1: LineOfBusiness model (6 types), nullable lob_id FKs on 6 models, LOB CRUD API, 5-layer settings resolver, AI prompt injection, frontend LOB selector + management page
+  - Phase 2: 6 new lead source adapters (NPI Registry, Google Business, Crunchbase, BuiltWith, PageSpeed, GitHub Org), LeadSourceAdapter base class, LOB-aware pipeline
+  - Phase 3: LOB scoring weights, 5 knowledge base JSONs, knowledge base injection into prompts, LOB merge fields in campaign engine + outreach templates, metadata_json column
+  - Phase 4: Website auditor service, intent signal monitor (5 signal types), LOB dashboard KPI endpoint + frontend widget
+  - 45 files changed, +5000 lines. 923 tests pass. Deployed to ra.partnerwithus.tech (aa61be3)
+  - Design spec: docs/superpowers/specs/2026-05-12-multi-lob-architecture-design.md
+- [x] Session 91: Reports module (2026-04-14)
+  - 6 report endpoints, 6 tabbed frontend views, XLSX export, Recharts charts
 - [x] Session 87: Contacts/Leads archived bulk actions + contact edit/delete + DB ops (2026-04-12)
   - Contacts page: "Restore Selected" for archived, per-row Edit/Delete actions, Edit Contact modal
   - Leads page: archived shows only "Restore Selected", all other bulk buttons hidden

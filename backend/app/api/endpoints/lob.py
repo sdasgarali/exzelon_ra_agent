@@ -170,7 +170,90 @@ LOB_TYPE_META = {
 }
 
 
+# ── Column Configuration per LOB type ─────────────────────────
+
+LOB_COLUMN_CONFIG = {
+    "staffing": {
+        "label_overrides": {},
+        "hidden_columns": [],
+        "metadata_columns": [],
+        "filters": ["status", "source", "state", "industry", "employment_type", "salary"],
+    },
+    "rcm": {
+        "label_overrides": {
+            "job_title": "Specialty",
+            "posting_date": "Registration Date",
+            "job_link": "NPI Lookup",
+            "client_name": "Practice Name",
+        },
+        "hidden_columns": ["salary_min", "salary_max", "employment_type"],
+        "metadata_columns": [
+            {"key": "npi_number", "label": "NPI #", "type": "text"},
+            {"key": "provider_count", "label": "Providers", "type": "number"},
+            {"key": "primary_specialty", "label": "Primary Specialty", "type": "text"},
+            {"key": "phone", "label": "Phone", "type": "phone"},
+        ],
+        "filters": ["status", "source", "state"],
+    },
+    "software_dev": {
+        "label_overrides": {
+            "job_title": "Category",
+            "posting_date": "Funding Date",
+            "job_link": "Profile URL",
+        },
+        "hidden_columns": ["salary_min", "salary_max", "employment_type"],
+        "metadata_columns": [
+            {"key": "last_funding_type", "label": "Funding Stage", "type": "badge"},
+            {"key": "funding_total_usd", "label": "Total Funding", "type": "currency"},
+            {"key": "employee_count", "label": "Employees", "type": "number"},
+            {"key": "tech_stack", "label": "Tech Stack", "type": "tags"},
+        ],
+        "filters": ["status", "source", "state", "industry"],
+    },
+    "ai_services": {
+        "label_overrides": {
+            "job_title": "AI Category",
+            "posting_date": "Founded Date",
+            "job_link": "Profile URL",
+        },
+        "hidden_columns": ["salary_min", "salary_max", "employment_type"],
+        "metadata_columns": [
+            {"key": "categories", "label": "Categories", "type": "tags"},
+            {"key": "public_repos", "label": "Repos", "type": "number"},
+            {"key": "employee_count", "label": "Team Size", "type": "number"},
+        ],
+        "filters": ["status", "source", "state"],
+    },
+    "digital_marketing": {
+        "label_overrides": {
+            "job_title": "Domain",
+            "posting_date": "Audit Date",
+            "job_link": "Website",
+            "client_name": "Business",
+        },
+        "hidden_columns": ["salary_min", "salary_max", "employment_type"],
+        "metadata_columns": [
+            {"key": "performance_score", "label": "Performance", "type": "score"},
+            {"key": "seo_score", "label": "SEO Score", "type": "score"},
+            {"key": "accessibility_score", "label": "Accessibility", "type": "score"},
+            {"key": "best_practices_score", "label": "Best Practices", "type": "score"},
+        ],
+        "filters": ["status", "source", "state"],
+    },
+}
+
+
 # ── Endpoints ──────────────────────────────────────────────────
+
+@router.get("/column-config/{lob_type}")
+async def get_column_config(lob_type: str):
+    """Return per-LOB column configuration for the leads table UI."""
+    config = LOB_COLUMN_CONFIG.get(lob_type)
+    if config is None:
+        # Fall back to staffing defaults for unknown types (including 'custom')
+        config = LOB_COLUMN_CONFIG["staffing"]
+    return config
+
 
 @router.get("/types", response_model=List[LOBTypeInfo])
 async def list_lob_types():

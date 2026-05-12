@@ -48,6 +48,7 @@ export default function LobPage() {
   const [formDesc, setFormDesc] = useState('')
   const [formColor, setFormColor] = useState('#1A3C6E')
   const [formIcon, setFormIcon] = useState('briefcase')
+  const [formAdapterSettings, setFormAdapterSettings] = useState<Record<string, any>>({})
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -75,6 +76,7 @@ export default function LobPage() {
     setFormDesc('')
     setFormColor('#1A3C6E')
     setFormIcon('briefcase')
+    setFormAdapterSettings({})
     setEditLob(null)
     setShowCreate(true)
   }
@@ -85,6 +87,7 @@ export default function LobPage() {
     setFormDesc(lob.description || '')
     setFormColor(lob.color || '#6366F1')
     setFormIcon(lob.icon || 'briefcase')
+    setFormAdapterSettings(lob.lead_source_config || {})
     setEditLob(lob)
     setShowCreate(true)
   }
@@ -94,12 +97,16 @@ export default function LobPage() {
     setSaving(true)
     setError('')
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         name: formName.trim(),
         lob_type: formType,
         description: formDesc.trim() || null,
         color: formColor,
         icon: formIcon,
+      }
+      // Include adapter settings if any fields are set
+      if (Object.keys(formAdapterSettings).length > 0) {
+        payload.lead_source_config = formAdapterSettings
       }
       if (editLob) {
         await lobApi.update(editLob.lob_id, payload)
@@ -280,7 +287,7 @@ export default function LobPage() {
       {/* Create/Edit Modal */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6 mx-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg p-6 mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 {editLob ? 'Edit LOB' : 'Create New LOB'}
@@ -334,6 +341,215 @@ export default function LobPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* Adapter Settings */}
+              {formType !== 'staffing' && (
+                <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/50">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Adapter Settings</label>
+
+                  {formType === 'rcm' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">NPI Taxonomy</label>
+                        <select
+                          value={formAdapterSettings.npi_taxonomy || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, npi_taxonomy: e.target.value || undefined }))}
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        >
+                          <option value="">All Taxonomies</option>
+                          <option value="207R00000X">Internal Medicine</option>
+                          <option value="208600000X">Surgery</option>
+                          <option value="207Q00000X">Family Medicine</option>
+                          <option value="2084P0800X">Psychiatry</option>
+                          <option value="207V00000X">Obstetrics & Gynecology</option>
+                          <option value="208000000X">Pediatrics</option>
+                          <option value="207X00000X">Orthopedic Surgery</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">State Filter</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.state_filter || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, state_filter: e.target.value || undefined }))}
+                          placeholder="e.g., TX, CA, NY"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">City Filter</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.city_filter || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, city_filter: e.target.value || undefined }))}
+                          placeholder="e.g., Houston, Dallas"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Google Places Query</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.google_places_query || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, google_places_query: e.target.value || undefined }))}
+                          placeholder="e.g., medical billing company"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {formType === 'software_dev' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Crunchbase Categories (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.crunchbase_categories || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, crunchbase_categories: e.target.value || undefined }))}
+                          placeholder="e.g., SaaS, Enterprise Software, FinTech"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Funding Stage</label>
+                        <select
+                          value={formAdapterSettings.funding_stage || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, funding_stage: e.target.value || undefined }))}
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        >
+                          <option value="">Any Stage</option>
+                          <option value="seed">Seed</option>
+                          <option value="series_a">Series A</option>
+                          <option value="series_b">Series B</option>
+                          <option value="series_c">Series C+</option>
+                          <option value="ipo">IPO / Public</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">GitHub Language</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.github_language || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, github_language: e.target.value || undefined }))}
+                          placeholder="e.g., Python, TypeScript"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Min Repos</label>
+                        <input
+                          type="number"
+                          value={formAdapterSettings.min_repos ?? ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, min_repos: e.target.value ? parseInt(e.target.value) : undefined }))}
+                          placeholder="e.g., 5"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {formType === 'ai_services' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Crunchbase Categories (comma-separated)</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.crunchbase_categories || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, crunchbase_categories: e.target.value || undefined }))}
+                          placeholder="e.g., Artificial Intelligence, Machine Learning"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">GitHub Query</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.github_query || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, github_query: e.target.value || undefined }))}
+                          placeholder="e.g., topic:llm topic:ai-agent"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Min Repos</label>
+                        <input
+                          type="number"
+                          value={formAdapterSettings.min_repos ?? ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, min_repos: e.target.value ? parseInt(e.target.value) : undefined }))}
+                          placeholder="e.g., 3"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {formType === 'digital_marketing' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Domains to Audit (one per line)</label>
+                        <textarea
+                          value={formAdapterSettings.domains || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, domains: e.target.value || undefined }))}
+                          placeholder="example.com&#10;another-site.com"
+                          rows={3}
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          Max Performance Score: {formAdapterSettings.max_performance_score ?? 1}
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={formAdapterSettings.max_performance_score ?? 1}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, max_performance_score: parseFloat(e.target.value) }))}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                          <span>0 (worst)</span>
+                          <span>1 (best)</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">BuiltWith Technology Search</label>
+                        <input
+                          type="text"
+                          value={formAdapterSettings.builtwith_tech || ''}
+                          onChange={e => setFormAdapterSettings(p => ({ ...p, builtwith_tech: e.target.value || undefined }))}
+                          placeholder="e.g., WordPress, Shopify, React"
+                          className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {formType === 'custom' && (
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Configuration JSON</label>
+                      <textarea
+                        value={typeof formAdapterSettings === 'object' && Object.keys(formAdapterSettings).length > 0
+                          ? JSON.stringify(formAdapterSettings, null, 2)
+                          : ''}
+                        onChange={e => {
+                          try {
+                            const parsed = e.target.value ? JSON.parse(e.target.value) : {}
+                            setFormAdapterSettings(parsed)
+                          } catch {
+                            // Allow typing — only update on valid JSON
+                          }
+                        }}
+                        placeholder='{"key": "value"}'
+                        rows={5}
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-4">
                 <div className="flex-1">

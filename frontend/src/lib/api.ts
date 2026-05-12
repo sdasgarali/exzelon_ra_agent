@@ -1817,4 +1817,8 @@ export const lobApi = {
     const response = await api.get('/lob/types')
     return response.data
   },
+  getColumnConfig: async (lobType: string) => {
+    const response = await api.get(`/lob/column-config/${lobType}`)
+    return response.data
+  },
 }

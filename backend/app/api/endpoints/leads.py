@@ -66,6 +66,7 @@ SORT_COLUMNS = {
     "lead_status": LeadDetails.lead_status,
     "run_id": LeadDetails.run_id,
     "downloaded_at": LeadDetails.downloaded_at,
+    "lob_id": LeadDetails.lob_id,
 }
 
 
@@ -90,6 +91,7 @@ async def list_leads(
     extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
     extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
     downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
+    lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
@@ -193,6 +195,8 @@ async def list_leads(
             query = query.filter(LeadDetails.downloaded_at.isnot(None))
         elif downloaded.lower() == 'no':
             query = query.filter(LeadDetails.downloaded_at.is_(None))
+    if lob_id is not None:
+        query = query.filter(LeadDetails.lob_id == lob_id)
     if search:
         # Support searching by numeric ID or run ID (e.g. "42", "#42", "R42", "run:42")
         search_stripped = search.lstrip('#').strip()
@@ -333,6 +337,13 @@ async def list_leads(
         lead_dict['company_size'] = lead.company_size or ci.get("company_size")
         lead_dict['data_type'] = lead.data_type.value if hasattr(lead.data_type, 'value') else (lead.data_type or 'prod')
         lead_dict['campaign_status'] = campaign_status_map.get(lead.lead_id)
+        lead_dict['lob_id'] = lead.lob_id
+        # Parse metadata_json into dict
+        if lead.metadata_json:
+            try:
+                lead_dict['metadata'] = json.loads(lead.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                lead_dict['metadata'] = None
         lead_responses.append(lead_dict)
 
     return {
