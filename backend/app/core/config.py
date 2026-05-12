@@ -171,6 +171,12 @@ class Settings(BaseSettings):
     JOBDATAFEEDS_API_KEY: str = ""
     CORESIGNAL_API_KEY: str = ""
 
+    # LOB-specific Lead Source API Keys
+    GOOGLE_PLACES_API_KEY: str = ""
+    CRUNCHBASE_API_KEY: str = ""
+    BUILTWITH_API_KEY: str = ""
+    GITHUB_TOKEN: str = ""  # Optional, for higher GitHub API rate limits
+
     # Company Size Preference (employees)
     COMPANY_SIZE_PRIORITY_1_MAX: int = 50
     COMPANY_SIZE_PRIORITY_2_MIN: int = 51

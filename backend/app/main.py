@@ -374,6 +374,119 @@ def _seed_outreach_roles():
         db.close()
 
 
+def _seed_default_lobs():
+    """Seed a default 'Staffing' LOB for every tenant that has no LOBs yet."""
+    import json as _json_lob
+    from app.db.base import SessionLocal
+    from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
+    from app.db.models.tenant import Tenant
+    db = SessionLocal()
+    try:
+        tenants = db.query(Tenant.tenant_id, Tenant.slug).all()
+        if not tenants:
+            tenants = [(1, "default")]
+
+        seeded = 0
+        for tid, slug in tenants:
+            existing = db.query(LineOfBusiness).filter(
+                LineOfBusiness.tenant_id == tid,
+                LineOfBusiness.is_archived == False,
+            ).count()
+            if existing > 0:
+                continue
+
+            # Create default Staffing LOB
+            db.add(LineOfBusiness(
+                tenant_id=tid,
+                name="Staffing",
+                slug="staffing",
+                lob_type=LOBType.STAFFING,
+                description="Default staffing and recruiting line of business",
+                is_default=True,
+                color="#1A3C6E",
+                icon="briefcase",
+            ))
+            seeded += 1
+
+            # For known tenants, also seed their specific LOBs
+            if slug == "medeoan":
+                db.add(LineOfBusiness(
+                    tenant_id=tid,
+                    name="Revenue Cycle Management",
+                    slug="rcm",
+                    lob_type=LOBType.RCM,
+                    description="Healthcare revenue cycle management services",
+                    is_default=False,
+                    color="#10B981",
+                    icon="heart-pulse",
+                    prompt_profile=_json_lob.dumps({
+                        "company_description": "Medeoan — a healthcare revenue cycle management company powered by AI",
+                        "value_proposition": "We increase collections 10-20% within 90 days with less than 3% denial rates. Performance-based — we only get paid when you do. 90-day money-back guarantee.",
+                    }),
+                ))
+                seeded += 1
+
+            if slug == "neuraforz":
+                for lob_def in [
+                    {
+                        "name": "Software Development",
+                        "slug": "software-dev",
+                        "lob_type": LOBType.SOFTWARE_DEV,
+                        "description": "Custom software development services",
+                        "color": "#6366F1",
+                        "icon": "code",
+                        "prompt_profile": {
+                            "company_description": "Neuraforz — a software development company that builds enterprise applications",
+                            "value_proposition": "Get your software built in 6 weeks — no delays, no excuses. Fixed pricing with daily visibility.",
+                        },
+                    },
+                    {
+                        "name": "AI & Agent Services",
+                        "slug": "ai-services",
+                        "lob_type": LOBType.AI_SERVICES,
+                        "description": "AI agents, intelligent automation, and ML solutions",
+                        "color": "#F59E0B",
+                        "icon": "brain",
+                        "prompt_profile": {
+                            "company_description": "Neuraforz — an AI services company building custom AI agents and intelligent automation",
+                            "value_proposition": "Production AI in 6 weeks, not 6 months. Custom AI agents that actually work.",
+                        },
+                    },
+                    {
+                        "name": "Digital Marketing",
+                        "slug": "digital-marketing",
+                        "lob_type": LOBType.DIGITAL_MARKETING,
+                        "description": "Data-driven digital marketing services",
+                        "color": "#EC4899",
+                        "icon": "megaphone",
+                        "prompt_profile": {
+                            "company_description": "Neuraforz — a digital marketing agency delivering data-driven results",
+                            "value_proposition": "Data-backed digital marketing that drives revenue, not vanity metrics.",
+                        },
+                    },
+                ]:
+                    db.add(LineOfBusiness(
+                        tenant_id=tid,
+                        name=lob_def["name"],
+                        slug=lob_def["slug"],
+                        lob_type=lob_def["lob_type"],
+                        description=lob_def["description"],
+                        is_default=False,
+                        color=lob_def["color"],
+                        icon=lob_def["icon"],
+                        prompt_profile=_json_lob.dumps(lob_def["prompt_profile"]),
+                    ))
+                    seeded += 1
+
+        if seeded > 0:
+            db.commit()
+            logger.info(f"Seeded {seeded} default LOBs")
+    except Exception as e:
+        logger.error("Failed to seed default LOBs", error=str(e))
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting application", app_name=settings.APP_NAME, env=settings.APP_ENV)
@@ -1755,10 +1868,64 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for client_info.data_type: {e}")
 
+    # Migration: add lob_id column to tables for Multi-LOB support
+    try:
+        from sqlalchemy import text as sa_text_lob, inspect as sa_inspect_lob
+        lob_tables = [
+            "lead_details", "contact_details", "campaigns",
+            "email_templates", "icp_profiles", "suppression_list",
+        ]
+        with engine.connect() as conn:
+            inspector_lob = sa_inspect_lob(engine)
+            for tbl in lob_tables:
+                try:
+                    cols = [c["name"] for c in inspector_lob.get_columns(tbl)]
+                except Exception:
+                    continue
+                if "lob_id" not in cols:
+                    try:
+                        conn.execute(sa_text_lob(
+                            f"ALTER TABLE {tbl} ADD COLUMN lob_id INTEGER NULL"
+                        ))
+                        conn.commit()
+                        logger.info(f"Migration: added lob_id column to {tbl}")
+                    except Exception as col_err:
+                        logger.debug(f"Migration lob_id for {tbl}: {col_err}")
+            # Add index on lob_id for key tables
+            for tbl in ["lead_details", "contact_details", "campaigns"]:
+                try:
+                    conn.execute(sa_text_lob(
+                        f"CREATE INDEX idx_{tbl}_lob_id ON {tbl} (lob_id)"
+                    ))
+                    conn.commit()
+                except Exception:
+                    pass  # Index may already exist
+    except Exception as e:
+        logger.warning(f"Migration check for lob_id columns: {e}")
+
+    # Migration: add metadata_json column to lead_details for LOB adapter metadata
+    try:
+        from sqlalchemy import text as sa_text_meta, inspect as sa_inspect_meta
+        with engine.connect() as conn:
+            inspector_meta = sa_inspect_meta(conn)
+            lead_cols = [c["name"] for c in inspector_meta.get_columns("lead_details")]
+            if "metadata_json" not in lead_cols:
+                try:
+                    conn.execute(sa_text_meta(
+                        "ALTER TABLE lead_details ADD COLUMN metadata_json TEXT NULL"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added metadata_json column to lead_details")
+                except Exception as col_err:
+                    logger.debug(f"Migration metadata_json: {col_err}")
+    except Exception as e:
+        logger.warning(f"Migration check for metadata_json: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()
     _seed_outreach_roles()
+    _seed_default_lobs()
 
     # Seed admin user
     try:

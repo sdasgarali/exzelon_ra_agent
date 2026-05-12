@@ -11,6 +11,9 @@ class SuppressionList(Base):
 
     suppression_id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+
+    # Line of Business (nullable — NULL = suppressed across all LOBs)
+    lob_id = Column(Integer, ForeignKey("lines_of_business.lob_id", ondelete="SET NULL"), nullable=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     reason = Column(Text, nullable=True)  # e.g., "unsubscribed", "bounced", "manual"
     expires_at = Column(DateTime, nullable=True)  # Optional expiry

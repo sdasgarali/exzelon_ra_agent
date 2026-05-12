@@ -23,6 +23,9 @@ class EmailTemplate(Base):
 
     template_id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+
+    # Line of Business (nullable — NULL = applies to all LOBs)
+    lob_id = Column(Integer, ForeignKey("lines_of_business.lob_id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     subject = Column(String(500), nullable=False)
     body_html = Column(Text, nullable=False)

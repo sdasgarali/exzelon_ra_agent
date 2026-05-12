@@ -58,6 +58,9 @@ class LeadDetails(Base):
     # Multi-tenancy
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
 
+    # Line of Business (nullable for backward compatibility — NULL = legacy/staffing)
+    lob_id = Column(Integer, ForeignKey("lines_of_business.lob_id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Company/Client information
     client_name = Column(String(255), nullable=False, index=True)
 
@@ -89,6 +92,9 @@ class LeadDetails(Base):
     contact_email = Column(String(255), nullable=True)
     contact_phone = Column(String(50), nullable=True)
     contact_source = Column(String(50), nullable=True)  # apollo, seamless
+
+    # LOB adapter metadata (JSON — stores source-specific data like NPI number, PageSpeed scores, etc.)
+    metadata_json = Column(Text, nullable=True)
 
     # Data type (test vs production)
     data_type = Column(Enum(DataType, values_callable=lambda x: [e.value for e in x]), default=DataType.PROD, nullable=False)

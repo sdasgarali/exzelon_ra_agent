@@ -340,6 +340,12 @@ def render_template(template, contact, lead, mailbox, signature_html, logo_url="
         "{{unsubscribe_link}}": unsub_url,
     }
 
+    # Add LOB-specific merge fields from lead metadata
+    from app.services.campaign_engine import _build_lob_merge_fields
+    lob_fields = _build_lob_merge_fields(lead)
+    for field_name, field_val in lob_fields.items():
+        placeholders[f"{{{{{field_name}}}}}"] = str(field_val)
+
     subject = template.subject
     body_html = template.body_html
     body_text = template.body_text or ""

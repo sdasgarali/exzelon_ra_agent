@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
+import { useLobStore } from '@/lib/lob-store'
 import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
 
 interface PipelineRun {
@@ -52,6 +53,7 @@ interface SelectorContact {
 
 export default function PipelinesPage() {
   const router = useRouter()
+  const { activeLobId, getActiveLob } = useLobStore()
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [stats, setStats] = useState<PipelineStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -532,8 +534,8 @@ export default function PipelinesPage() {
       // Start the pipeline
       switch (pipelineType) {
         case 'lead-sourcing':
-          await pipelinesApi.runLeadSourcing(['indeed', 'linkedin', 'glassdoor'])
-          setSuccess('Lead sourcing pipeline started!')
+          await pipelinesApi.runLeadSourcing(['indeed', 'linkedin', 'glassdoor'], activeLobId)
+          setSuccess(`Lead sourcing pipeline started!${activeLobId ? ` (LOB: ${getActiveLob()?.name || activeLobId})` : ''}`)
           break
         case 'contact-enrichment':
           await pipelinesApi.runContactEnrichment()
@@ -692,7 +694,17 @@ export default function PipelinesPage() {
         {/* Lead Sourcing */}
         <div className="card p-4 border-t-4 border-indigo-500">
           <h4 className="font-semibold text-gray-800 mb-2">Lead Sourcing</h4>
-          <p className="text-sm text-gray-500 mb-4">Scrape job postings from Indeed, LinkedIn, Glassdoor</p>
+          <p className="text-sm text-gray-500 mb-2">
+            {activeLobId && getActiveLob()
+              ? `LOB-specific + job board sources for ${getActiveLob()?.name}`
+              : 'Scrape job postings from Indeed, LinkedIn, Glassdoor'
+            }
+          </p>
+          {activeLobId && getActiveLob() && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mb-2" style={{ backgroundColor: `${getActiveLob()?.color || '#6366f1'}20`, color: getActiveLob()?.color || '#6366f1' }}>
+              {getActiveLob()?.name} sources active
+            </span>
+          )}
           <button
             onClick={() => setShowLeadSourcingConfirm(true)}
             disabled={leadSourcingRunning}

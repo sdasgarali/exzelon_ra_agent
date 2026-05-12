@@ -320,6 +320,7 @@ async def run_lead_sourcing(
     request: Request,
     background_tasks: BackgroundTasks,
     sources: List[str] = Query(default=["linkedin", "indeed"]),
+    lob_id: Optional[int] = Query(default=None, description="LOB to scope lead sources"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -332,12 +333,48 @@ async def run_lead_sourcing(
         sources=sources,
         triggered_by=current_user.email,
         tenant_id=tenant_id,
+        lob_id=lob_id,
     )
 
     return {
         "message": f"Lead sourcing started for sources: {sources}",
-        "status": "processing"
+        "status": "processing",
+        "lob_id": lob_id,
     }
+
+
+@router.get("/lead-sourcing/lob-sources")
+async def list_lob_lead_sources(
+    lob_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List available LOB-specific lead sources for a given LOB."""
+    from app.services.pipelines.lead_sourcing import _default_sources_for_lob_type
+    from app.core.settings_resolver import get_lob_config
+
+    all_sources = {
+        "npi_registry": {"name": "NPI Registry", "description": "Healthcare provider/practice directory (free)", "lobs": ["rcm"]},
+        "google_business": {"name": "Google Business", "description": "Local business listings via Google Places", "lobs": ["rcm", "digital_marketing"]},
+        "crunchbase": {"name": "Crunchbase", "description": "Company profiles, funding, and growth data", "lobs": ["software_dev", "ai_services"]},
+        "builtwith": {"name": "BuiltWith", "description": "Website technology stack analysis", "lobs": ["software_dev", "digital_marketing"]},
+        "pagespeed": {"name": "PageSpeed Insights", "description": "Website performance audit scores (free)", "lobs": ["digital_marketing"]},
+        "github_org": {"name": "GitHub Organizations", "description": "Software organizations and repos (free)", "lobs": ["software_dev", "ai_services"]},
+    }
+
+    if lob_id:
+        from app.db.models.line_of_business import LineOfBusiness
+        lob = db.query(LineOfBusiness).filter(LineOfBusiness.lob_id == lob_id).first()
+        if lob:
+            config = get_lob_config(db, lob_id, "lead_source_config") or {}
+            enabled = config.get("enabled_sources", _default_sources_for_lob_type(lob.lob_type))
+            for key, info in all_sources.items():
+                info["enabled"] = key in enabled
+                info["recommended"] = lob.lob_type in info["lobs"]
+            return {"lob_type": lob.lob_type, "sources": all_sources}
+
+    return {"lob_type": None, "sources": all_sources}
 
 
 @router.post("/lead-sourcing/upload")

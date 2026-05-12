@@ -402,6 +402,60 @@ def _is_within_send_window(
         return True  # default to allowing sends on parse errors
 
 
+def _build_lob_merge_fields(lead) -> dict:
+    """Build LOB-specific merge fields from lead metadata.
+
+    Extracts source-specific data stored in lead metadata (e.g., NPI number,
+    PageSpeed score, tech stack) and maps it to merge field names that can
+    be used in email templates.
+
+    Returns dict of {field_name: value} pairs.
+    """
+    fields = {}
+    if not lead:
+        return fields
+
+    # Try to load metadata from lead's source data
+    # Metadata is stored during lead sourcing from LOB adapters
+    metadata = {}
+    try:
+        # Check if lead has a metadata_json or similar field
+        if hasattr(lead, 'metadata_json') and lead.metadata_json:
+            import json
+            metadata = json.loads(lead.metadata_json) if isinstance(lead.metadata_json, str) else lead.metadata_json
+    except Exception:
+        pass
+
+    # RCM merge fields
+    fields["practice_specialty"] = metadata.get("specialty", "")
+    fields["provider_count"] = str(metadata.get("provider_count", ""))
+    fields["npi_number"] = metadata.get("npi_number", "")
+
+    # Software Dev merge fields
+    tech_stack = metadata.get("tech_stack", [])
+    fields["tech_stack"] = ", ".join(tech_stack[:5]) if tech_stack else ""
+    fields["funding_stage"] = metadata.get("last_funding_type", "")
+    fields["team_size"] = metadata.get("estimated_team_size", "") or str(metadata.get("num_employees", ""))
+
+    # AI Services merge fields
+    fields["ai_maturity"] = metadata.get("ai_adoption_level", "")
+    fields["automation_score"] = str(metadata.get("automation_score", ""))
+
+    # Digital Marketing merge fields
+    fields["domain_authority"] = str(metadata.get("domain_authority", ""))
+    fields["pagespeed_score"] = str(metadata.get("performance_score", ""))
+    if fields["pagespeed_score"]:
+        try:
+            score = float(fields["pagespeed_score"])
+            fields["pagespeed_score"] = f"{int(score * 100)}/100"
+        except (ValueError, TypeError):
+            pass
+    fields["review_count"] = str(metadata.get("review_count", ""))
+
+    # Clean up empty strings
+    return {k: v for k, v in fields.items() if v}
+
+
 def _execute_email_step(
     cc: CampaignContact,
     step: SequenceStep,
@@ -509,6 +563,9 @@ def _execute_email_step(
     _job_location = (contact_lead.state if contact_lead and contact_lead.state else "")
     _company = (contact_lead.client_name if contact_lead and contact_lead.client_name else (contact.client_name or ""))
     _sender_first = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
+    # Build LOB-specific merge fields from lead metadata
+    _lob_fields = _build_lob_merge_fields(contact_lead)
+
     template_context = {
         "contact_first_name": contact.first_name or "",
         "contact_last_name": contact.last_name or "",
@@ -534,6 +591,7 @@ def _execute_email_step(
             "email": mailbox.email or "",
             "first_name": _sender_first,
         },
+        **_lob_fields,
     }
     try:
         from jinja2 import Template as Jinja2Template
@@ -553,6 +611,10 @@ def _execute_email_step(
         "{{job_location}}": _job_location,
         "{{sender_first_name}}": _sender_first,
     }
+    # Add LOB-specific placeholders
+    for field_name, field_val in _lob_fields.items():
+        _placeholders[f"{{{{{field_name}}}}}"] = str(field_val)
+
     for ph, val in _placeholders.items():
         subject = subject.replace(ph, val)
         body_html = body_html.replace(ph, val)

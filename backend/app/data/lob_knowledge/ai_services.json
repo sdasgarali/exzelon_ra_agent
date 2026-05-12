@@ -1,0 +1,42 @@
+{
+  "lob_type": "ai_services",
+  "display_name": "AI & Agent Services",
+  "facts": [
+    "Global AI market is projected to reach $1.8 trillion by 2030",
+    "Only 15% of enterprises have deployed AI at scale — massive greenfield opportunity",
+    "Companies using AI report 20-30% improvement in operational efficiency",
+    "AI agent automation can handle 40-60% of routine business tasks",
+    "72% of business leaders say AI is a business advantage",
+    "Average ROI for AI projects is 3.5x within 14 months"
+  ],
+  "pain_points": [
+    "Lack of in-house AI/ML expertise to build custom solutions",
+    "Overwhelmed by AI hype — need practical, ROI-driven guidance",
+    "Manual processes consuming employee time on repetitive tasks",
+    "Poor customer service response times needing AI chatbot/agent solutions",
+    "Data siloed across systems, preventing intelligent automation",
+    "Competitors adopting AI faster, creating competitive pressure",
+    "High cost and long timelines for custom AI model development",
+    "Difficulty integrating AI into existing workflows and systems"
+  ],
+  "proof_points": [
+    "Deployed AI agent that handles 70% of customer inquiries, saving 200+ hours/month",
+    "Built predictive analytics pipeline reducing inventory costs by 25%",
+    "Automated document processing, reducing manual review time from 4 hours to 15 minutes",
+    "Created custom RAG chatbot trained on 10K+ internal docs, 92% accuracy rate",
+    "Implemented AI-powered lead scoring increasing sales conversion by 35%"
+  ],
+  "compliance_notes": [
+    "Be transparent about AI capabilities — avoid overpromising",
+    "Follow responsible AI practices (bias detection, explainability)",
+    "GDPR/CCPA compliance for data used in AI model training",
+    "EU AI Act considerations for high-risk AI applications",
+    "Do not claim AI can fully replace human judgment in critical decisions"
+  ],
+  "industry_terms": [
+    "LLM", "RAG", "fine-tuning", "prompt engineering", "AI agent",
+    "machine learning", "NLP", "computer vision", "MLOps", "GenAI",
+    "vector database", "embeddings", "inference", "GPT", "Claude",
+    "automation", "RPA", "intelligent automation", "digital twin"
+  ]
+}

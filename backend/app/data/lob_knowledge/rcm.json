@@ -1,0 +1,42 @@
+{
+  "lob_type": "rcm",
+  "display_name": "Revenue Cycle Management",
+  "facts": [
+    "US healthcare revenue cycle management market exceeds $150 billion",
+    "Average claim denial rate across hospitals is 5-10%, costing billions annually",
+    "Practices lose 3-5% of net revenue to billing errors and undercoding",
+    "The average days in accounts receivable (A/R) is 40-50 days for physician practices",
+    "Medical billing outsourcing reduces costs by 30-40% compared to in-house teams",
+    "ICD-10 has over 72,000 diagnosis codes, making accurate coding increasingly complex"
+  ],
+  "pain_points": [
+    "High claim denial rates eating into practice revenue",
+    "Increasing coding complexity with ICD-10 and CPT updates",
+    "Staff shortages in certified medical coders and billers",
+    "Slow reimbursement from insurance payers extending A/R days",
+    "Prior authorization backlogs delaying patient care and revenue",
+    "Compliance risks with changing CMS regulations and payer rules",
+    "Credentialing delays preventing providers from billing",
+    "Patient collection challenges with rising high-deductible health plans"
+  ],
+  "proof_points": [
+    "Reduced claim denial rate from 12% to 3% within 90 days",
+    "Decreased A/R days from 55 to 28 for a multi-location orthopedic group",
+    "Recovered $2.3M in underpaid claims through payer audit and appeals",
+    "Achieved 98.5% first-pass clean claim rate for a 50-provider practice",
+    "Reduced credentialing turnaround from 120 days to 30 days"
+  ],
+  "compliance_notes": [
+    "Must comply with HIPAA for all patient-related communications",
+    "Never reference specific patient data in outreach emails",
+    "Follow CMS guidelines for billing and coding references",
+    "Adhere to state medical practice licensing requirements",
+    "Anti-Kickback Statute: cannot offer financial incentives for referrals"
+  ],
+  "industry_terms": [
+    "clean claim rate", "denial management", "A/R days", "CPT codes",
+    "ICD-10", "prior authorization", "credentialing", "ERA/EOB",
+    "charge capture", "payment posting", "patient responsibility",
+    "payer mix", "HCPCS", "modifier", "undercoding", "upcoding"
+  ]
+}

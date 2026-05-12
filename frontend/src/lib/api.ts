@@ -416,6 +416,10 @@ export const dashboardApi = {
     const response = await api.get('/dashboard/stats')
     return response.data
   },
+  lobKpis: async (lobId: number, params?: Record<string, any>) => {
+    const response = await api.get('/dashboard/lob-kpis', { params: { lob_id: lobId, ...params } })
+    return response.data
+  },
 }
 
 // Pipelines API
@@ -424,10 +428,18 @@ export const pipelinesApi = {
     const response = await api.get('/pipelines/runs', { params })
     return response.data
   },
-  runLeadSourcing: async (sources: string[]) => {
+  runLeadSourcing: async (sources: string[], lobId?: number | null) => {
+    const params: Record<string, any> = { sources }
+    if (lobId) params.lob_id = lobId
     const response = await api.post('/pipelines/lead-sourcing/run', null, {
-      params: { sources },
+      params,
     })
+    return response.data
+  },
+  getLobLeadSources: async (lobId?: number | null) => {
+    const params: Record<string, any> = {}
+    if (lobId) params.lob_id = lobId
+    const response = await api.get('/pipelines/lead-sourcing/lob-sources', { params })
     return response.data
   },
   runContactEnrichment: async (leadIds?: number[]) => {
@@ -1771,6 +1783,38 @@ export const reportsApi = {
   },
   domainDeliverability: async (params?: Record<string, any>) => {
     const response = await api.get('/reports/domain-deliverability', { params })
+    return response.data
+  },
+}
+
+// Lines of Business API
+export const lobApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/lob/', { params })
+    return response.data
+  },
+  get: async (lobId: number) => {
+    const response = await api.get(`/lob/${lobId}`)
+    return response.data
+  },
+  create: async (data: Record<string, any>) => {
+    const response = await api.post('/lob/', data)
+    return response.data
+  },
+  update: async (lobId: number, data: Record<string, any>) => {
+    const response = await api.put(`/lob/${lobId}`, data)
+    return response.data
+  },
+  delete: async (lobId: number) => {
+    const response = await api.delete(`/lob/${lobId}`)
+    return response.data
+  },
+  setDefault: async (lobId: number) => {
+    const response = await api.post(`/lob/${lobId}/set-default`)
+    return response.data
+  },
+  listTypes: async () => {
+    const response = await api.get('/lob/types')
     return response.data
   },
 }

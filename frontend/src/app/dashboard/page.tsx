@@ -7,6 +7,7 @@ import { dashboardApi, pipelinesApi, leadsApi, contactsApi, onboardingApi, deals
 import { api } from '@/lib/api'
 import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
+import { useLobStore } from '@/lib/lob-store'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { GettingStarted } from '@/components/getting-started'
 import {
@@ -29,6 +30,11 @@ import {
   DollarSign,
   Shield,
   AlertCircle,
+  Stethoscope,
+  Globe,
+  Code,
+  Brain,
+  Briefcase,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -244,6 +250,200 @@ function ProgressRing({
   )
 }
 
+// --- LOB KPI Widget ---
+
+const LOB_TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; bgColor: string }> = {
+  staffing: { label: 'Staffing', icon: Briefcase, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+  rcm: { label: 'Revenue Cycle Management', icon: Stethoscope, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
+  software_dev: { label: 'Software Development', icon: Code, color: 'text-violet-600', bgColor: 'bg-violet-50' },
+  ai_services: { label: 'AI Services', icon: Brain, color: 'text-pink-600', bgColor: 'bg-pink-50' },
+  digital_marketing: { label: 'Digital Marketing', icon: Globe, color: 'text-orange-600', bgColor: 'bg-orange-50' },
+}
+
+function LobKpiWidget({ lobKpis }: { lobKpis: any }) {
+  const config = LOB_TYPE_CONFIG[lobKpis.lob_type] || LOB_TYPE_CONFIG.staffing
+  const Icon = config.icon
+  const specific = lobKpis.lob_specific || {}
+
+  return (
+    <div className="glass-card rounded-xl p-6">
+      <div className="flex items-center gap-3 mb-4">
+        <div className={`w-10 h-10 rounded-lg ${config.bgColor} flex items-center justify-center`}>
+          <Icon className={`w-5 h-5 ${config.color}`} />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            {lobKpis.lob_name} — LOB Insights
+          </h3>
+          <p className="text-xs text-gray-500">{config.label}</p>
+        </div>
+      </div>
+
+      {/* Standard LOB metrics */}
+      <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{lobKpis.total_leads || 0}</p>
+          <p className="text-xs text-gray-500">Leads (Period)</p>
+        </div>
+        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{lobKpis.total_companies || 0}</p>
+          <p className="text-xs text-gray-500">Companies</p>
+        </div>
+        <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+          <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{lobKpis.all_time_leads || 0}</p>
+          <p className="text-xs text-gray-500">All-Time Leads</p>
+        </div>
+      </div>
+
+      {/* LOB-type-specific metrics */}
+      {lobKpis.lob_type === 'rcm' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600 dark:text-gray-400">NPI Registrations</span>
+            <span className="text-sm font-semibold text-emerald-600">{specific.npi_registrations || 0}</span>
+          </div>
+          {specific.avg_provider_count != null && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Avg Provider Count</span>
+              <span className="text-sm font-semibold">{specific.avg_provider_count}</span>
+            </div>
+          )}
+          {specific.top_specialties?.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 mb-2">Top Specialties</p>
+              <div className="flex flex-wrap gap-2">
+                {specific.top_specialties.map((s: any) => (
+                  <span key={s.name} className="text-xs px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full">
+                    {s.name} ({s.count})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {lobKpis.lob_type === 'digital_marketing' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Avg Performance</span>
+              <span className={`text-sm font-semibold ${
+                (specific.avg_performance_score || 0) < 50 ? 'text-red-600' : 'text-green-600'
+              }`}>
+                {specific.avg_performance_score != null ? `${specific.avg_performance_score}/100` : 'N/A'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Avg SEO Score</span>
+              <span className={`text-sm font-semibold ${
+                (specific.avg_seo_score || 0) < 70 ? 'text-orange-600' : 'text-green-600'
+              }`}>
+                {specific.avg_seo_score != null ? `${specific.avg_seo_score}/100` : 'N/A'}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Sites Audited</span>
+              <span className="text-sm font-semibold">{specific.sites_audited || 0}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Poor Performers</span>
+              <span className="text-sm font-semibold text-red-600">{specific.poor_performers || 0}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lobKpis.lob_type === 'software_dev' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Funded Companies</span>
+              <span className="text-sm font-semibold text-violet-600">{specific.funded_companies || 0}</span>
+            </div>
+            {specific.avg_team_size != null && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Avg Team Size</span>
+                <span className="text-sm font-semibold">{specific.avg_team_size}</span>
+              </div>
+            )}
+          </div>
+          {specific.top_technologies?.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 mb-2">Top Technologies</p>
+              <div className="flex flex-wrap gap-2">
+                {specific.top_technologies.map((t: any) => (
+                  <span key={t.name} className="text-xs px-2 py-1 bg-violet-50 text-violet-700 rounded-full">
+                    {t.name} ({t.count})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {lobKpis.lob_type === 'ai_services' && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">With GitHub</span>
+              <span className="text-sm font-semibold text-pink-600">{specific.with_github || 0}</span>
+            </div>
+            {specific.avg_repo_count != null && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Avg Repos</span>
+                <span className="text-sm font-semibold">{specific.avg_repo_count}</span>
+              </div>
+            )}
+          </div>
+          {specific.top_categories?.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 mb-2">Top Categories</p>
+              <div className="flex flex-wrap gap-2">
+                {specific.top_categories.map((c: any) => (
+                  <span key={c.name} className="text-xs px-2 py-1 bg-pink-50 text-pink-700 rounded-full">
+                    {c.name} ({c.count})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {lobKpis.lob_type === 'staffing' && specific.top_industries?.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-2">Top Industries</p>
+          <div className="flex flex-wrap gap-2">
+            {specific.top_industries.map((i: any) => (
+              <span key={i.name} className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded-full">
+                {i.name} ({i.count})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lead source breakdown */}
+      {lobKpis.by_source && Object.keys(lobKpis.by_source).length > 0 && (
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-xs text-gray-500 mb-2">Lead Sources</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(lobKpis.by_source).map(([source, count]) => (
+              <span key={source} className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
+                {source}: {count as number}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // --- Main Dashboard ---
 
 const SELECTOR_PAGE_SIZE = 20
@@ -252,6 +452,8 @@ export default function DashboardPage() {
   const router = useRouter()
   const { toast } = useToast()
   const user = useAuthStore((s) => s.user)
+  const activeLobId = useLobStore((s) => s.activeLobId)
+  const getActiveLob = useLobStore((s) => s.getActiveLob)
   const [quickLoading, setQuickLoading] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<string | null>(null)
 
@@ -330,6 +532,12 @@ export default function DashboardPage() {
       outreach_enabled: true,
       export_mailmerge_enabled: true,
     })),
+  })
+
+  const { data: lobKpis } = useQuery({
+    queryKey: ['dashboard-lob-kpis', activeLobId],
+    queryFn: () => dashboardApi.lobKpis(activeLobId!),
+    enabled: !!activeLobId,
   })
 
   const showOnboarding = onboardingStatus?.should_show_onboarding &&
@@ -707,6 +915,11 @@ export default function DashboardPage() {
           icon={Mail}
         />
       </div>
+
+      {/* LOB-Specific KPIs */}
+      {lobKpis && lobKpis.lob_type && !lobKpis.error && (
+        <LobKpiWidget lobKpis={lobKpis} />
+      )}
 
       {/* Deliverability Health Card */}
       {delivHealth && delivHealth.total_mailboxes > 0 && (

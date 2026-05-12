@@ -1,6 +1,7 @@
 """Centralized tenant-aware settings resolver.
 
 Resolution order (highest to lowest priority):
+0. LOB business_rules[key]          <- LOB-specific override (highest, when lob_id provided)
 1. TenantSettings[tenant_id, key]   <- per-tenant override
 2. Settings[key]                    <- global DB default
 3. config.py / .env                 <- environment variable (not checked here)
@@ -16,6 +17,16 @@ from app.db.models.settings import Settings
 from app.db.models.tenant_settings import TenantSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _json_loads_safe(value: Optional[str]) -> Any:
+    """Safely parse JSON string."""
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return value
 
 
 def get_tenant_setting(
@@ -195,3 +206,93 @@ def get_all_tenant_settings(
                 merged[ts.key] = ts.value_json
 
     return merged
+
+
+# ── LOB-Aware Resolution ──────────────────────────────────────
+
+
+def resolve_lob_setting(
+    db: Session,
+    key: str,
+    tenant_id: Optional[int] = None,
+    lob_id: Optional[int] = None,
+    default: Any = None,
+) -> Any:
+    """Get a setting with 5-layer resolution including LOB overrides.
+
+    Resolution order:
+    0. LOB.business_rules[key]       <- LOB-specific override (highest)
+    1. TenantSettings[tenant_id, key] <- per-tenant override
+    2. Settings[key]                  <- global DB default
+    3. Caller-supplied default        <- hardcoded fallback
+
+    This is the preferred function for all LOB-aware code paths.
+    Falls back to get_tenant_setting when no lob_id is provided.
+    """
+    # Layer 0: LOB override
+    if lob_id is not None:
+        from app.db.models.line_of_business import LineOfBusiness
+        lob = db.query(LineOfBusiness).filter(
+            LineOfBusiness.lob_id == lob_id,
+        ).first()
+        if lob and lob.business_rules:
+            rules = _json_loads_safe(lob.business_rules)
+            if isinstance(rules, dict) and key in rules:
+                return rules[key]
+
+    # Layers 1-3: existing tenant/global resolution
+    return get_tenant_setting(db, key, tenant_id=tenant_id, default=default)
+
+
+def get_lob_config(
+    db: Session,
+    lob_id: int,
+    config_field: str,
+) -> Optional[dict]:
+    """Get a specific JSON config field from a LOB record.
+
+    Args:
+        lob_id: The LOB to read from.
+        config_field: One of 'lead_source_config', 'icp_config',
+                      'business_rules', 'prompt_profile'.
+
+    Returns:
+        Parsed dict or None.
+    """
+    from app.db.models.line_of_business import LineOfBusiness
+    lob = db.query(LineOfBusiness).filter(
+        LineOfBusiness.lob_id == lob_id,
+    ).first()
+    if not lob:
+        return None
+
+    raw = getattr(lob, config_field, None)
+    result = _json_loads_safe(raw)
+    return result if isinstance(result, dict) else None
+
+
+def get_lob_list_config(
+    db: Session,
+    lob_id: int,
+    config_field: str,
+) -> Optional[list]:
+    """Get a JSON array config field from a LOB record.
+
+    Args:
+        lob_id: The LOB to read from.
+        config_field: One of 'target_industries_json', 'target_job_titles_json',
+                      'exclude_keywords_json'.
+
+    Returns:
+        Parsed list or None.
+    """
+    from app.db.models.line_of_business import LineOfBusiness
+    lob = db.query(LineOfBusiness).filter(
+        LineOfBusiness.lob_id == lob_id,
+    ).first()
+    if not lob:
+        return None
+
+    raw = getattr(lob, config_field, None)
+    result = _json_loads_safe(raw)
+    return result if isinstance(result, list) else None

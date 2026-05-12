@@ -16,6 +16,7 @@ def generate_sequence(
     num_steps: int = 4,
     db: Optional[Session] = None,
     tenant_id: Optional[int] = None,
+    lob_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Generate an email sequence using AI.
 
@@ -28,6 +29,7 @@ def generate_sequence(
         num_steps: Number of email steps (2-6)
         db: Database session (required for AI path)
         tenant_id: Tenant context for AI adapter lookup
+        lob_id: Line of Business ID for LOB-specific prompt context
 
     Returns:
         List of step dicts: [{step_order, step_type, subject, body_html, delay_days, delay_hours}]
@@ -36,11 +38,48 @@ def generate_sequence(
 
     if db is not None:
         try:
-            return _generate_with_ai(goal, product, tone, num_steps, db, tenant_id)
+            return _generate_with_ai(goal, product, tone, num_steps, db, tenant_id, lob_id)
         except Exception as e:
             logger.warning("AI sequence generation failed, using template fallback", error=str(e))
 
     return _generate_template_based(goal, product, tone, num_steps)
+
+
+def _get_lob_context_for_sequence(db: Session, lob_id: Optional[int]) -> tuple:
+    """Retrieve LOB type and description for sequence generation.
+
+    Returns:
+        (company_description, value_proposition, lob_type)
+    """
+    if lob_id is None:
+        return "a staffing/recruitment agency", "", "staffing"
+
+    from app.db.models.line_of_business import LineOfBusiness
+    from app.services.ai_sales_agent.prompt_registry import LOB_DEFAULT_PROFILES
+
+    lob = db.query(LineOfBusiness).filter(LineOfBusiness.lob_id == lob_id).first()
+    if not lob:
+        return "a staffing/recruitment agency", "", "staffing"
+
+    lob_type = lob.lob_type.value if hasattr(lob.lob_type, 'value') else str(lob.lob_type)
+    defaults = LOB_DEFAULT_PROFILES.get(lob_type, LOB_DEFAULT_PROFILES.get("staffing", {}))
+
+    # Overlay custom prompt_profile if present
+    import json as _json
+    profile = {**defaults}
+    if lob.prompt_profile:
+        try:
+            custom = _json.loads(lob.prompt_profile)
+            if isinstance(custom, dict):
+                profile.update({k: v for k, v in custom.items() if v})
+        except (ValueError, TypeError):
+            pass
+
+    return (
+        profile.get("company_description", "a B2B services company"),
+        profile.get("value_proposition", ""),
+        lob_type,
+    )
 
 
 def _generate_with_ai(
@@ -50,6 +89,7 @@ def _generate_with_ai(
     num_steps: int,
     db: Session,
     tenant_id: Optional[int] = None,
+    lob_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Use AI adapter to generate email sequence."""
     from app.services.adapters.ai_content import get_ai_adapter
@@ -59,12 +99,15 @@ def _generate_with_ai(
     if adapter is None:
         raise RuntimeError("No AI adapter configured")
 
-    prompt = f"""Create a {num_steps}-step cold email sequence for a staffing/recruitment agency.
+    company_desc, value_prop, lob_type = _get_lob_context_for_sequence(db, lob_id)
+    value_prop_line = f"\n**Value Proposition:** {value_prop}" if value_prop else ""
+
+    prompt = f"""Create a {num_steps}-step cold email sequence for {company_desc}.
 
 **Campaign Goal:** {goal}
 **Product/Service:** {product}
 **Tone:** {tone}
-**Steps:** {num_steps}
+**Steps:** {num_steps}{value_prop_line}
 
 For each step, return a JSON array of objects with:
 - "step_order": 1-based integer
@@ -75,7 +118,7 @@ For each step, return a JSON array of objects with:
 - "delay_hours": additional hours (0 for most)
 
 Rules:
-- First email: introduce the value proposition tied to their hiring needs
+- First email: introduce the value proposition tied to the prospect's pain points
 - Follow-ups: completely different angles, do NOT reference previous emails
 - Last email: break-up style, gracious, leave the door open
 - Keep each email under 120 words

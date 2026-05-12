@@ -1,0 +1,36 @@
+{
+  "lob_type": "staffing",
+  "display_name": "Staffing & Recruitment",
+  "facts": [
+    "The US staffing industry generates over $200 billion in annual revenue",
+    "Average time-to-fill for open positions is 36-42 days",
+    "Companies using staffing agencies reduce hiring costs by 20-30%",
+    "70% of the global workforce is passive talent not actively job searching",
+    "Employee turnover costs range from 50-200% of the employee's annual salary"
+  ],
+  "pain_points": [
+    "Long time-to-fill causing project delays and lost revenue",
+    "High turnover rates in hourly and skilled positions",
+    "Difficulty finding qualified candidates for niche roles",
+    "Compliance burden with labor laws across multiple states",
+    "Rising recruitment costs with diminishing returns from job boards",
+    "Seasonal demand spikes creating urgent staffing shortages"
+  ],
+  "proof_points": [
+    "Reduced time-to-fill from 45 days to 12 days for manufacturing roles",
+    "94% retention rate for placed candidates over 12 months",
+    "Saved clients an average of $15,000 per hire in recruitment costs",
+    "Staffed 200+ positions in 30 days for a distribution center opening"
+  ],
+  "compliance_notes": [
+    "Adhere to EEOC guidelines in all communications",
+    "Never mention protected characteristics (age, race, gender, religion)",
+    "Comply with state-specific employment agency licensing requirements",
+    "Follow TCPA rules for outreach communications"
+  ],
+  "industry_terms": [
+    "time-to-fill", "retention rate", "cost-per-hire", "fill rate",
+    "temp-to-perm", "contract staffing", "direct hire", "RPO",
+    "MSP", "VMS", "contingent workforce", "bill rate", "markup"
+  ]
+}

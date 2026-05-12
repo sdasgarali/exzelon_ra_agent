@@ -218,6 +218,144 @@ def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tup
     return adapters
 
 
+def get_lob_lead_source_adapters(
+    db, tenant_id: Optional[int] = None, lob_id: Optional[int] = None
+) -> List[Tuple[str, Any]]:
+    """Get LOB-specific lead source adapters based on LOB configuration.
+
+    Reads the LOB's lead_source_config JSON to determine which non-job-board
+    adapters to use (NPI, Google Business, Crunchbase, BuiltWith, PageSpeed, GitHub).
+
+    Returns list of (source_name, adapter) tuples.
+    """
+    from app.services.adapters.lead_sources.npi_registry import NPIRegistryAdapter
+    from app.services.adapters.lead_sources.google_business import GoogleBusinessAdapter
+    from app.services.adapters.lead_sources.crunchbase import CrunchbaseAdapter
+    from app.services.adapters.lead_sources.builtwith import BuiltWithAdapter
+    from app.services.adapters.lead_sources.pagespeed import PageSpeedAdapter
+    from app.services.adapters.lead_sources.github_org import GitHubOrgAdapter
+    from app.core.settings_resolver import get_lob_config
+
+    adapters = []
+
+    if lob_id is None:
+        return adapters
+
+    # Get LOB lead source config
+    lob_sources_config = get_lob_config(db, lob_id, "lead_source_config") or {}
+    enabled_sources = lob_sources_config.get("enabled_sources", [])
+
+    if not enabled_sources:
+        # Infer default sources from LOB type
+        from app.db.models.line_of_business import LineOfBusiness
+        lob = db.query(LineOfBusiness).filter(LineOfBusiness.lob_id == lob_id).first()
+        if lob:
+            enabled_sources = _default_sources_for_lob_type(lob.lob_type)
+
+    logger.info(f"LOB lead sources enabled: {enabled_sources}", lob_id=lob_id)
+
+    # NPI Registry (free, no key)
+    if "npi_registry" in enabled_sources:
+        adapters.append(("npi_registry", NPIRegistryAdapter()))
+        logger.info("NPI Registry adapter configured for LOB", lob_id=lob_id)
+
+    # Google Business (needs API key)
+    if "google_business" in enabled_sources:
+        api_key = get_tenant_setting(db, "google_places_api_key", tenant_id=tenant_id) or settings.GOOGLE_PLACES_API_KEY
+        if api_key:
+            adapters.append(("google_business", GoogleBusinessAdapter(api_key=api_key)))
+            logger.info("Google Business adapter configured for LOB", lob_id=lob_id)
+
+    # Crunchbase (needs API key)
+    if "crunchbase" in enabled_sources:
+        api_key = get_tenant_setting(db, "crunchbase_api_key", tenant_id=tenant_id) or settings.CRUNCHBASE_API_KEY
+        if api_key:
+            adapters.append(("crunchbase", CrunchbaseAdapter(api_key=api_key)))
+            logger.info("Crunchbase adapter configured for LOB", lob_id=lob_id)
+
+    # BuiltWith (needs API key)
+    if "builtwith" in enabled_sources:
+        api_key = get_tenant_setting(db, "builtwith_api_key", tenant_id=tenant_id) or settings.BUILTWITH_API_KEY
+        if api_key:
+            adapters.append(("builtwith", BuiltWithAdapter(api_key=api_key)))
+            logger.info("BuiltWith adapter configured for LOB", lob_id=lob_id)
+
+    # PageSpeed (free, key optional)
+    if "pagespeed" in enabled_sources:
+        api_key = get_tenant_setting(db, "google_places_api_key", tenant_id=tenant_id) or settings.GOOGLE_PLACES_API_KEY
+        adapters.append(("pagespeed", PageSpeedAdapter(api_key=api_key)))
+        logger.info("PageSpeed adapter configured for LOB", lob_id=lob_id)
+
+    # GitHub Org (free, token optional)
+    if "github_org" in enabled_sources:
+        token = get_tenant_setting(db, "github_token", tenant_id=tenant_id) or settings.GITHUB_TOKEN
+        adapters.append(("github_org", GitHubOrgAdapter(token=token)))
+        logger.info("GitHub Org adapter configured for LOB", lob_id=lob_id)
+
+    return adapters
+
+
+def _default_sources_for_lob_type(lob_type: str) -> List[str]:
+    """Return default lead source adapters for a LOB type."""
+    defaults = {
+        "staffing": [],  # Uses job board adapters, not LOB lead sources
+        "rcm": ["npi_registry", "google_business"],
+        "software_dev": ["crunchbase", "builtwith", "github_org"],
+        "ai_services": ["crunchbase", "github_org"],
+        "digital_marketing": ["google_business", "pagespeed", "builtwith"],
+        "custom": [],
+    }
+    return defaults.get(lob_type, [])
+
+
+def fetch_from_lob_source(
+    source_name: str,
+    adapter: Any,
+    query: str = "",
+    location: str = "United States",
+    limit: int = 100,
+    extra_params: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
+    """Fetch leads from a LOB-specific source (for parallel execution).
+
+    Similar to fetch_from_source() but uses LeadSourceAdapter.fetch_leads().
+    Returns: (source_name, leads_list, error_message, diagnostics)
+    """
+    diagnostics: Dict[str, Any] = {
+        "status": "success",
+        "jobs_returned": 0,
+        "error_type": None,
+        "error_message": None,
+    }
+    try:
+        kwargs = extra_params or {}
+        leads = adapter.fetch_leads(
+            query=query,
+            location=location,
+            limit=limit,
+            **kwargs,
+        )
+        diagnostics["jobs_returned"] = len(leads)
+        if len(leads) == 0:
+            diagnostics["status"] = "warning"
+            diagnostics["error_type"] = "no_match"
+        logger.info(f"LOB source {source_name} returned {len(leads)} leads")
+        return (source_name, leads, None, diagnostics)
+    except RateLimitError as e:
+        partial = e.partial_results or []
+        diagnostics["status"] = "error"
+        diagnostics["error_type"] = "rate_limited"
+        diagnostics["error_message"] = str(e)[:300]
+        diagnostics["jobs_returned"] = len(partial)
+        return (source_name, partial, str(e), diagnostics)
+    except Exception as e:
+        diagnostics["status"] = "error"
+        diagnostics["error_type"] = "unknown"
+        diagnostics["error_message"] = str(e)[:300]
+        logger.error(f"Error fetching from LOB source {source_name}", error=str(e))
+        return (source_name, [], str(e), diagnostics)
+
+
 def fetch_from_source(
     source_name: str,
     adapter: Any,
@@ -532,12 +670,14 @@ def run_lead_sourcing_pipeline(
     sources: List[str],
     triggered_by: str = "system",
     tenant_id: Optional[int] = None,
+    lob_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the lead sourcing pipeline with multi-source support.
 
     Steps:
     1. Fetch jobs from all enabled sources in parallel
+    1b. If lob_id is set, also fetch from LOB-specific lead sources
     2. Normalize company names and deduplicate
     3. Store unique leads in lead_details
     4. Update client_info
@@ -546,6 +686,8 @@ def run_lead_sourcing_pipeline(
     Args:
         sources: List of sources (used for logging, actual sources from settings)
         triggered_by: User who triggered the pipeline
+        tenant_id: Tenant context
+        lob_id: Optional LOB to scope lead sources
 
     Returns:
         Counter dict with inserted, updated, skipped, errors counts
@@ -677,10 +819,66 @@ def run_lead_sourcing_pipeline(
 
         logger.info(f"Total jobs fetched from all sources: {len(all_jobs)}")
 
+        # --- LOB-specific lead sources (Phase 2) ---
+        lob_adapters = get_lob_lead_source_adapters(db, tenant_id=tenant_id, lob_id=lob_id)
+        if lob_adapters:
+            logger.info(f"Using {len(lob_adapters)} LOB-specific lead source adapters", lob_id=lob_id)
+
+            # Get LOB-specific query params from LOB config
+            from app.core.settings_resolver import get_lob_config
+            lob_source_config = get_lob_config(db, lob_id, "lead_source_config") or {} if lob_id else {}
+            lob_query = lob_source_config.get("query", "")
+            lob_location = lob_source_config.get("location", "United States")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                lob_futures = []
+                for source_name, adapter in lob_adapters:
+                    # Source-specific extra params from config
+                    extra = lob_source_config.get(source_name, {})
+                    future = executor.submit(
+                        fetch_from_lob_source,
+                        source_name,
+                        adapter,
+                        query=extra.get("query", lob_query),
+                        location=extra.get("location", lob_location),
+                        limit=extra.get("limit", 100),
+                        extra_params={k: v for k, v in extra.items() if k not in ("query", "location", "limit")},
+                    )
+                    lob_futures.append(future)
+
+                for future in concurrent.futures.as_completed(lob_futures):
+                    source_name, leads, error, diag = future.result()
+                    counters["sources_used"].append(source_name)
+                    counters["jobs_per_source"][source_name] = len(leads)
+                    per_source_detail[source_name] = {"fetched": len(leads), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                    api_diagnostics_list.append({
+                        "adapter": source_name,
+                        "status": diag["status"],
+                        "jobs_returned": diag["jobs_returned"],
+                        "error_type": diag["error_type"],
+                        "error_message": diag["error_message"],
+                    })
+                    if error:
+                        counters["errors"] += 1
+                        logger.error(f"LOB source {source_name} failed", error=error)
+                    else:
+                        logger.info(f"Fetched {len(leads)} leads from LOB source {source_name}")
+                        for lead in leads:
+                            lead["_pipeline_source"] = source_name
+                            lead["_sub_source"] = lead.get("source", source_name)
+                            sub_src = lead["_sub_source"]
+                            if sub_src not in per_sub_source_detail:
+                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                            per_sub_source_detail[sub_src]["fetched"] += 1
+                        all_jobs.extend(leads)
+
+            logger.info(f"Total leads after LOB sources: {len(all_jobs)}")
+
         # Record cost per source
+        all_adapters_for_cost = list(adapters) + list(lob_adapters if lob_adapters else [])
         try:
             from app.services.cost_tracker import record_pipeline_cost
-            for source_name, adapter in adapters:
+            for source_name, adapter in all_adapters_for_cost:
                 api_calls = getattr(adapter, 'api_calls_made', 0)
                 results = counters["jobs_per_source"].get(source_name, 0)
                 if api_calls > 0 or results > 0:
@@ -752,6 +950,8 @@ def run_lead_sourcing_pipeline(
                     industry=job_data.get("industry") or None,
                     company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
                     run_id=job_run.run_id,
+                    lob_id=lob_id,
+                    metadata_json=json.dumps(job_data["metadata"]) if job_data.get("metadata") else None,
                 )
                 db.add(lead)
                 # Flush immediately to catch IntegrityError per-lead

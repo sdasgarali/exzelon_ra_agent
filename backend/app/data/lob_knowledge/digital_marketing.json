@@ -1,0 +1,45 @@
+{
+  "lob_type": "digital_marketing",
+  "display_name": "Digital Marketing Services",
+  "facts": [
+    "US digital advertising spend exceeds $300 billion annually",
+    "93% of online experiences begin with a search engine",
+    "Businesses earn an average of $2 for every $1 spent on Google Ads",
+    "Companies with blogs generate 67% more leads than those without",
+    "Video content drives 80% more conversions than text-only pages",
+    "Mobile traffic accounts for 60%+ of all web traffic"
+  ],
+  "pain_points": [
+    "Low website traffic despite having a business website",
+    "Poor Google rankings for key business terms",
+    "Inconsistent social media presence and engagement",
+    "Low conversion rates on landing pages",
+    "Wasting ad spend on campaigns with poor ROI",
+    "No clear digital marketing strategy or measurement framework",
+    "Slow website loading speed hurting SEO and user experience",
+    "Negative or few online reviews damaging brand reputation",
+    "Not showing up in local search results (Google Maps, local pack)"
+  ],
+  "proof_points": [
+    "Increased organic traffic by 340% in 6 months through SEO optimization",
+    "Reduced cost-per-lead by 60% through Google Ads campaign restructuring",
+    "Grew social media following from 500 to 15K in 4 months",
+    "Improved website PageSpeed score from 28 to 92, reducing bounce rate by 45%",
+    "Generated 150 qualified leads/month through content marketing strategy",
+    "Improved Google Business rating from 3.2 to 4.7 stars through reputation management"
+  ],
+  "compliance_notes": [
+    "Follow FTC guidelines for advertising claims and endorsements",
+    "CAN-SPAM compliance for email marketing communications",
+    "GDPR/CCPA compliance for data collection and tracking",
+    "Google Ads policies for prohibited content and practices",
+    "Transparent disclosure of sponsored content and affiliate relationships"
+  ],
+  "industry_terms": [
+    "SEO", "SEM", "PPC", "CTR", "CPC", "CPM", "ROAS",
+    "organic traffic", "backlinks", "domain authority", "PageSpeed",
+    "Core Web Vitals", "local SEO", "Google My Business",
+    "content marketing", "social media management", "conversion rate",
+    "landing page", "A/B testing", "retargeting", "marketing funnel"
+  ]
+}

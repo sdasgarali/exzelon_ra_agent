@@ -1,4 +1,5 @@
 """Dashboard and KPI endpoints."""
+import json
 import time
 from datetime import date, datetime, timedelta
 from typing import Optional, List
@@ -17,6 +18,7 @@ from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.outreach_draft import OutreachDraft
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.email_template import EmailTemplate, TemplateStatus
+from app.db.models.line_of_business import LineOfBusiness
 from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -421,3 +423,163 @@ async def get_dashboard_stats(
             "active_count": active_templates
         }
     }
+
+
+@router.get("/lob-kpis")
+async def get_lob_kpis(
+    lob_id: int = Query(..., description="Line of Business ID"),
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Get LOB-specific KPIs for the dashboard.
+
+    Returns standard metrics filtered by LOB plus LOB-type-specific
+    KPIs (e.g., NPI registrations for RCM, PageSpeed audits for Digital Marketing).
+    """
+    if not to_date:
+        to_date = date.today()
+    if not from_date:
+        from_date = to_date - timedelta(days=30)
+
+    # Get LOB info
+    lob = db.query(LineOfBusiness).filter(LineOfBusiness.lob_id == lob_id).first()
+    if not lob:
+        return {"error": "LOB not found"}
+
+    lob_type = lob.lob_type
+
+    # --- Standard metrics filtered by LOB ---
+    lead_q = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id).filter(
+        LeadDetails.lob_id == lob_id
+    )
+
+    total_leads = lead_q.filter(
+        LeadDetails.posting_date >= from_date,
+        LeadDetails.posting_date <= to_date
+    ).with_entities(func.count(LeadDetails.lead_id)).scalar() or 0
+
+    total_companies = lead_q.filter(
+        LeadDetails.posting_date >= from_date,
+        LeadDetails.posting_date <= to_date
+    ).with_entities(func.count(func.distinct(LeadDetails.client_name))).scalar() or 0
+
+    all_time_leads = lead_q.with_entities(func.count(LeadDetails.lead_id)).scalar() or 0
+
+    by_status = lead_q.with_entities(
+        LeadDetails.lead_status, func.count(LeadDetails.lead_id)
+    ).group_by(LeadDetails.lead_status).all()
+
+    by_source = lead_q.with_entities(
+        LeadDetails.source, func.count(LeadDetails.lead_id)
+    ).group_by(LeadDetails.source).all()
+
+    # --- LOB-type-specific metrics from metadata_json ---
+    lob_specific = _extract_lob_specific_kpis(db, lob_id, lob_type, tenant_id)
+
+    return {
+        "lob_id": lob_id,
+        "lob_name": lob.name,
+        "lob_type": lob_type,
+        "period": {"from": from_date.isoformat(), "to": to_date.isoformat()},
+        "total_leads": total_leads,
+        "total_companies": total_companies,
+        "all_time_leads": all_time_leads,
+        "by_status": {s.value: c for s, c in by_status if s},
+        "by_source": {s: c for s, c in by_source if s},
+        "lob_specific": lob_specific,
+    }
+
+
+def _extract_lob_specific_kpis(
+    db: Session, lob_id: int, lob_type: str, tenant_id: Optional[int]
+) -> dict:
+    """Extract LOB-type-specific KPIs from lead metadata."""
+    result: dict = {"type": lob_type}
+
+    # Get leads with metadata for this LOB
+    lead_q = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id).filter(
+        LeadDetails.lob_id == lob_id,
+        LeadDetails.metadata_json.isnot(None),
+    )
+    leads_with_meta = lead_q.with_entities(
+        LeadDetails.metadata_json
+    ).limit(500).all()
+
+    metadata_list = []
+    for (raw,) in leads_with_meta:
+        try:
+            metadata_list.append(json.loads(raw))
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    if lob_type == "rcm":
+        # RCM: NPI-based metrics
+        npi_count = sum(1 for m in metadata_list if m.get("npi_number"))
+        specialties = {}
+        for m in metadata_list:
+            spec = m.get("primary_specialty") or m.get("taxonomy_description")
+            if spec:
+                specialties[spec] = specialties.get(spec, 0) + 1
+        top_specialties = sorted(specialties.items(), key=lambda x: -x[1])[:5]
+        result["npi_registrations"] = npi_count
+        result["top_specialties"] = [{"name": s, "count": c} for s, c in top_specialties]
+        result["avg_provider_count"] = _safe_avg(metadata_list, "provider_count")
+
+    elif lob_type == "digital_marketing":
+        # Digital Marketing: PageSpeed + web audit metrics
+        scores = [m.get("performance_score") for m in metadata_list if m.get("performance_score") is not None]
+        seo_scores = [m.get("seo_score") for m in metadata_list if m.get("seo_score") is not None]
+        audit_data = [m.get("website_audit") for m in metadata_list if m.get("website_audit")]
+        result["avg_performance_score"] = round(sum(scores) / len(scores) * 100, 1) if scores else None
+        result["avg_seo_score"] = round(sum(seo_scores) / len(seo_scores) * 100, 1) if seo_scores else None
+        result["sites_audited"] = len(audit_data)
+        result["poor_performers"] = sum(1 for s in scores if s < 0.5)
+
+    elif lob_type == "software_dev":
+        # Software Dev: funding + tech metrics
+        funded = sum(1 for m in metadata_list if m.get("last_funding_type") or m.get("funding_stage"))
+        tech_stacks = {}
+        for m in metadata_list:
+            for tech in (m.get("tech_stack") or []):
+                tech_stacks[tech] = tech_stacks.get(tech, 0) + 1
+        top_tech = sorted(tech_stacks.items(), key=lambda x: -x[1])[:5]
+        result["funded_companies"] = funded
+        result["top_technologies"] = [{"name": t, "count": c} for t, c in top_tech]
+        result["avg_team_size"] = _safe_avg(metadata_list, "employee_count")
+
+    elif lob_type == "ai_services":
+        # AI Services: AI-related metrics
+        ai_categories = {}
+        for m in metadata_list:
+            for cat in (m.get("categories") or []):
+                ai_categories[cat] = ai_categories.get(cat, 0) + 1
+        top_cats = sorted(ai_categories.items(), key=lambda x: -x[1])[:5]
+        result["top_categories"] = [{"name": c, "count": n} for c, n in top_cats]
+        result["with_github"] = sum(1 for m in metadata_list if m.get("public_repos"))
+        result["avg_repo_count"] = _safe_avg(metadata_list, "public_repos")
+
+    elif lob_type == "staffing":
+        # Staffing: job-based metrics
+        industries = {}
+        for m in metadata_list:
+            ind = m.get("industry")
+            if ind:
+                industries[ind] = industries.get(ind, 0) + 1
+        top_industries = sorted(industries.items(), key=lambda x: -x[1])[:5]
+        result["top_industries"] = [{"name": i, "count": c} for i, c in top_industries]
+
+    return result
+
+
+def _safe_avg(metadata_list: list, key: str) -> Optional[float]:
+    """Calculate average of a numeric metadata field, skipping None/missing."""
+    values = [m.get(key) for m in metadata_list if m.get(key) is not None]
+    if not values:
+        return None
+    try:
+        return round(sum(float(v) for v in values) / len(values), 1)
+    except (ValueError, TypeError):
+        return None
