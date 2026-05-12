@@ -93,6 +93,9 @@ class LeadDetails(Base):
     contact_phone = Column(String(50), nullable=True)
     contact_source = Column(String(50), nullable=True)  # apollo, seamless
 
+    # LOB adapter metadata (JSON — stores source-specific data like NPI number, PageSpeed scores, etc.)
+    metadata_json = Column(Text, nullable=True)
+
     # Data type (test vs production)
     data_type = Column(Enum(DataType, values_callable=lambda x: [e.value for e in x]), default=DataType.PROD, nullable=False)
 

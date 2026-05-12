@@ -1903,6 +1903,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for lob_id columns: {e}")
 
+    # Migration: add metadata_json column to lead_details for LOB adapter metadata
+    try:
+        from sqlalchemy import text as sa_text_meta, inspect as sa_inspect_meta
+        with engine.connect() as conn:
+            inspector_meta = sa_inspect_meta(conn)
+            lead_cols = [c["name"] for c in inspector_meta.get_columns("lead_details")]
+            if "metadata_json" not in lead_cols:
+                try:
+                    conn.execute(sa_text_meta(
+                        "ALTER TABLE lead_details ADD COLUMN metadata_json TEXT NULL"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added metadata_json column to lead_details")
+                except Exception as col_err:
+                    logger.debug(f"Migration metadata_json: {col_err}")
+    except Exception as e:
+        logger.warning(f"Migration check for metadata_json: {e}")
+
     _seed_warmup_profiles()
     _seed_default_email_template()
     _seed_deal_stages()

@@ -262,13 +262,49 @@ LOB_DEFAULT_PROFILES = {
 }
 
 
-def get_lob_context(lob_type: str, prompt_profile: dict = None) -> str:
+def _load_knowledge_base(lob_type: str) -> dict:
+    """Load LOB knowledge base from JSON file.
+
+    Returns dict with keys: facts, pain_points, proof_points, compliance_notes,
+    industry_terms. Returns empty dict if file not found.
+    """
+    import json
+    from pathlib import Path
+
+    kb_dir = Path(__file__).resolve().parent.parent / "data" / "lob_knowledge"
+    kb_file = kb_dir / f"{lob_type}.json"
+
+    if not kb_file.exists():
+        return {}
+
+    try:
+        with open(kb_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning("knowledge_base_load_error", lob_type=lob_type, error=str(e))
+        return {}
+
+
+# Cache loaded knowledge bases to avoid re-reading files
+_KB_CACHE: dict = {}
+
+
+def get_knowledge_base(lob_type: str) -> dict:
+    """Get cached knowledge base for a LOB type."""
+    if lob_type not in _KB_CACHE:
+        _KB_CACHE[lob_type] = _load_knowledge_base(lob_type)
+    return _KB_CACHE[lob_type]
+
+
+def get_lob_context(lob_type: str, prompt_profile: dict = None, include_knowledge: bool = True) -> str:
     """Build LOB context string to inject into AI prompts.
 
     Args:
         lob_type: The LOB type key (e.g., 'staffing', 'rcm').
         prompt_profile: Optional custom prompt profile dict from LOB record.
                         Overrides defaults when provided.
+        include_knowledge: Whether to include knowledge base data (pain points,
+                           proof points, industry terms).
 
     Returns:
         A formatted context string for AI prompt injection.
@@ -289,6 +325,26 @@ def get_lob_context(lob_type: str, prompt_profile: dict = None) -> str:
     compliance = profile.get("compliance_notes")
     if compliance:
         lines.append(f"Compliance: {compliance}")
+
+    # Inject knowledge base data
+    if include_knowledge:
+        kb = get_knowledge_base(lob_type)
+        if kb:
+            pain_points = kb.get("pain_points", [])
+            if pain_points:
+                lines.append(f"\nProspect pain points to address: {'; '.join(pain_points[:4])}")
+
+            proof_points = kb.get("proof_points", [])
+            if proof_points:
+                lines.append(f"Proof points you can reference: {'; '.join(proof_points[:3])}")
+
+            terms = kb.get("industry_terms", [])
+            if terms:
+                lines.append(f"Use these industry terms naturally: {', '.join(terms[:8])}")
+
+            kb_compliance = kb.get("compliance_notes", [])
+            if kb_compliance:
+                lines.append(f"Additional compliance: {'; '.join(kb_compliance[:3])}")
 
     return "\n".join(lines)
 

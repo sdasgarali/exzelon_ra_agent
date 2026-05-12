@@ -1,0 +1,41 @@
+{
+  "lob_type": "software_dev",
+  "display_name": "Software Development Services",
+  "facts": [
+    "Global software development outsourcing market exceeds $400 billion",
+    "68% of companies outsource at least some software development",
+    "Average developer salary in the US is $120K-$180K, making outsourcing cost-effective",
+    "Time-to-market is 30-40% faster with dedicated development teams",
+    "Technical debt costs companies an estimated $85 billion annually in the US",
+    "60% of software projects fail to meet deadlines or budget"
+  ],
+  "pain_points": [
+    "Difficulty hiring and retaining senior developers in competitive markets",
+    "Legacy systems requiring modernization but lacking internal expertise",
+    "Growing technical debt slowing down feature development",
+    "Need for specialized skills (AI/ML, cloud, mobile) not available in-house",
+    "Scaling development capacity for time-sensitive projects",
+    "High cost of maintaining a full in-house development team",
+    "Security vulnerabilities in aging codebases",
+    "Integration challenges with third-party systems and APIs"
+  ],
+  "proof_points": [
+    "Built and launched MVP in 8 weeks, saving client 6 months vs in-house",
+    "Migrated legacy .NET monolith to microservices, reducing deployment time by 80%",
+    "Augmented client team with 5 senior developers, delivering 3x sprint velocity",
+    "Reduced cloud infrastructure costs by 45% through architecture optimization",
+    "Eliminated critical security vulnerabilities in fintech platform within 30 days"
+  ],
+  "compliance_notes": [
+    "Respect NDA and intellectual property boundaries in discussions",
+    "Do not promise specific technologies without consulting the team",
+    "Follow SOC 2 / ISO 27001 security practices in all engagements",
+    "GDPR compliance required for EU-facing applications"
+  ],
+  "industry_terms": [
+    "MVP", "microservices", "CI/CD", "DevOps", "sprint",
+    "tech debt", "SaaS", "API", "cloud-native", "serverless",
+    "containerization", "Kubernetes", "React", "Node.js", "Python",
+    "staff augmentation", "dedicated team", "fixed-price", "T&M"
+  ]
+}

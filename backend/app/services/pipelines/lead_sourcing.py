@@ -951,6 +951,7 @@ def run_lead_sourcing_pipeline(
                     company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
                     run_id=job_run.run_id,
                     lob_id=lob_id,
+                    metadata_json=json.dumps(job_data["metadata"]) if job_data.get("metadata") else None,
                 )
                 db.add(lead)
                 # Flush immediately to catch IntegrityError per-lead
