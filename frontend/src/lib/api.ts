@@ -416,6 +416,10 @@ export const dashboardApi = {
     const response = await api.get('/dashboard/stats')
     return response.data
   },
+  lobKpis: async (lobId: number, params?: Record<string, any>) => {
+    const response = await api.get('/dashboard/lob-kpis', { params: { lob_id: lobId, ...params } })
+    return response.data
+  },
 }
 
 // Pipelines API
