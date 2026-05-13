@@ -254,6 +254,7 @@ const TAB_PERM_MAP: Record<string, string> = {
   outreach: 'outreach',
   business: 'business_rules',
   deliverability: 'deliverability',
+  lobleadsources: 'lob_lead_sources',
 }
 
 // Setting key to tab mapping (for All Settings filtering)
@@ -288,6 +289,9 @@ const SETTING_TAB_MAP: Record<string, string> = {
   data_retention_days: 'business_rules', domain_daily_limit_default: 'business_rules',
   domain_daily_limit_major_providers: 'business_rules', max_contacts_per_company_all_campaigns: 'business_rules',
   send_delay_min_sec: 'business_rules', send_delay_max_sec: 'business_rules',
+  // LOB Lead Source API Keys
+  google_places_api_key: 'lob_lead_sources', crunchbase_api_key: 'lob_lead_sources',
+  builtwith_api_key: 'lob_lead_sources', github_token: 'lob_lead_sources',
 }
 
 export default function SettingsPage() {
@@ -464,6 +468,14 @@ export default function SettingsPage() {
     max_contacts_per_company_all_campaigns: 5,
     sequence_fatigue_window_days: 90,
     sequence_fatigue_max_unanswered: 5,
+  })
+
+  // LOB Lead Source API Keys
+  const [lobLeadSourceConfig, setLobLeadSourceConfig] = useState({
+    google_places_api_key: '',
+    crunchbase_api_key: '',
+    builtwith_api_key: '',
+    github_token: '',
   })
 
   // Test results
@@ -676,6 +688,14 @@ export default function SettingsPage() {
         sequence_fatigue_window_days: settingsMap.sequence_fatigue_window_days ?? 90,
         sequence_fatigue_max_unanswered: settingsMap.sequence_fatigue_max_unanswered ?? 5,
       })
+
+      // LOB Lead Source API Keys
+      setLobLeadSourceConfig({
+        google_places_api_key: settingsMap.google_places_api_key || '',
+        crunchbase_api_key: settingsMap.crunchbase_api_key || '',
+        builtwith_api_key: settingsMap.builtwith_api_key || '',
+        github_token: settingsMap.github_token || '',
+      })
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
         setError(err.response?.data?.detail || 'Failed to fetch settings')
@@ -846,6 +866,13 @@ export default function SettingsPage() {
           saveSetting('sequence_fatigue_window_days', delivConfig.sequence_fatigue_window_days, 'integer'),
           saveSetting('sequence_fatigue_max_unanswered', delivConfig.sequence_fatigue_max_unanswered, 'integer'),
         ])
+      } else if (configType === 'lobleadsources') {
+        await Promise.all([
+          saveSetting('google_places_api_key', lobLeadSourceConfig.google_places_api_key),
+          saveSetting('crunchbase_api_key', lobLeadSourceConfig.crunchbase_api_key),
+          saveSetting('builtwith_api_key', lobLeadSourceConfig.builtwith_api_key),
+          saveSetting('github_token', lobLeadSourceConfig.github_token),
+        ])
       }
 
       setSuccess('Settings saved successfully!')
@@ -950,6 +977,7 @@ export default function SettingsPage() {
             { id: 'outreach', label: '6. Outreach', color: 'orange' },
             { id: 'business', label: '7. Business Rules', color: 'gray' },
             { id: 'deliverability', label: '8. Deliverability', color: 'teal' },
+            { id: 'lobleadsources', label: '9. LOB Lead Sources', color: 'emerald' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -3878,7 +3906,164 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 9: All Settings */}
+      {/* Tab 9: LOB Lead Source API Keys */}
+      {activeTab === 'lobleadsources' && (
+        <fieldset disabled={!canWriteTab('lobleadsources')} className="space-y-6">
+          {!canWriteTab('lobleadsources') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to this tab. Contact a super admin to request edit access.
+            </div>
+          )}
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+              <span className="w-3 h-3 bg-emerald-500 rounded-full mr-2"></span>
+              LOB Lead Source API Keys
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              API keys for LOB-specific lead sources (RCM, Software Dev, AI Services, Digital Marketing).
+              These are used by non-staffing LOBs to find leads from specialized sources.
+            </p>
+
+            <div className="space-y-5">
+              {/* Google Places API Key */}
+              <div>
+                <label className="label">Google Places API Key</label>
+                <p className="text-xs text-gray-500 mb-1">
+                  Used by: RCM (Google Business), Digital Marketing (Google Business, PageSpeed).
+                  Get at <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">console.cloud.google.com</a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={lobLeadSourceConfig.google_places_api_key}
+                    onChange={(e) => setLobLeadSourceConfig({ ...lobLeadSourceConfig, google_places_api_key: e.target.value })}
+                    placeholder="Enter Google Places API key"
+                    className="input flex-1"
+                  />
+                  <button
+                    onClick={() => testConnection('google_business')}
+                    disabled={testing === 'google_business' || !lobLeadSourceConfig.google_places_api_key}
+                    className="btn-secondary text-sm"
+                  >
+                    {testing === 'google_business' ? 'Testing...' : 'Test'}
+                  </button>
+                </div>
+                {testResults['google_business'] && (
+                  <p className={`text-xs mt-1 ${testResults['google_business'].success ? 'text-green-600' : 'text-red-600'}`}>
+                    {testResults['google_business'].message}
+                  </p>
+                )}
+              </div>
+
+              {/* Crunchbase API Key */}
+              <div>
+                <label className="label">Crunchbase API Key</label>
+                <p className="text-xs text-gray-500 mb-1">
+                  Used by: Software Dev, AI Services (company intelligence, funding data).
+                  Get at <a href="https://data.crunchbase.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">data.crunchbase.com</a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={lobLeadSourceConfig.crunchbase_api_key}
+                    onChange={(e) => setLobLeadSourceConfig({ ...lobLeadSourceConfig, crunchbase_api_key: e.target.value })}
+                    placeholder="Enter Crunchbase API key"
+                    className="input flex-1"
+                  />
+                  <button
+                    onClick={() => testConnection('crunchbase')}
+                    disabled={testing === 'crunchbase' || !lobLeadSourceConfig.crunchbase_api_key}
+                    className="btn-secondary text-sm"
+                  >
+                    {testing === 'crunchbase' ? 'Testing...' : 'Test'}
+                  </button>
+                </div>
+                {testResults['crunchbase'] && (
+                  <p className={`text-xs mt-1 ${testResults['crunchbase'].success ? 'text-green-600' : 'text-red-600'}`}>
+                    {testResults['crunchbase'].message}
+                  </p>
+                )}
+              </div>
+
+              {/* BuiltWith API Key */}
+              <div>
+                <label className="label">BuiltWith API Key</label>
+                <p className="text-xs text-gray-500 mb-1">
+                  Used by: Software Dev, Digital Marketing (technographic data, tech stack analysis).
+                  Get at <a href="https://builtwith.com/api" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">builtwith.com/api</a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={lobLeadSourceConfig.builtwith_api_key}
+                    onChange={(e) => setLobLeadSourceConfig({ ...lobLeadSourceConfig, builtwith_api_key: e.target.value })}
+                    placeholder="Enter BuiltWith API key"
+                    className="input flex-1"
+                  />
+                  <button
+                    onClick={() => testConnection('builtwith')}
+                    disabled={testing === 'builtwith' || !lobLeadSourceConfig.builtwith_api_key}
+                    className="btn-secondary text-sm"
+                  >
+                    {testing === 'builtwith' ? 'Testing...' : 'Test'}
+                  </button>
+                </div>
+                {testResults['builtwith'] && (
+                  <p className={`text-xs mt-1 ${testResults['builtwith'].success ? 'text-green-600' : 'text-red-600'}`}>
+                    {testResults['builtwith'].message}
+                  </p>
+                )}
+              </div>
+
+              {/* GitHub Token */}
+              <div>
+                <label className="label">GitHub Personal Access Token</label>
+                <p className="text-xs text-gray-500 mb-1">
+                  Used by: Software Dev, AI Services (GitHub Org adapter). Optional — increases rate limit from 60/hr to 5,000/hr.
+                  Get at <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">github.com/settings/tokens</a>
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={lobLeadSourceConfig.github_token}
+                    onChange={(e) => setLobLeadSourceConfig({ ...lobLeadSourceConfig, github_token: e.target.value })}
+                    placeholder="Enter GitHub token (optional)"
+                    className="input flex-1"
+                  />
+                  <button
+                    onClick={() => testConnection('github_org')}
+                    disabled={testing === 'github_org'}
+                    className="btn-secondary text-sm"
+                  >
+                    {testing === 'github_org' ? 'Testing...' : 'Test'}
+                  </button>
+                </div>
+                {testResults['github_org'] && (
+                  <p className={`text-xs mt-1 ${testResults['github_org'].success ? 'text-green-600' : 'text-red-600'}`}>
+                    {testResults['github_org'].message}
+                  </p>
+                )}
+              </div>
+
+              {/* Free adapters info */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                <strong>Free adapters (no API key needed):</strong> NPI Registry (healthcare providers), Hiring Signal (internal analysis), News Signal (Google News RSS).
+                These are always available for LOBs that use them.
+              </div>
+            </div>
+          </div>
+
+          {canWriteTab('lobleadsources') && (
+            <div className="flex justify-end">
+              <button onClick={() => saveAllSettings('lobleadsources')} disabled={saving} className="btn-primary">
+                {saving ? 'Saving...' : 'Save LOB Lead Source Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
+      )}
+
+      {/* Tab 10: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
           {!isSuperAdmin && (
