@@ -1,4 +1,5 @@
 """Super admin tenant management endpoints."""
+import json as _json_admin
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,9 +14,12 @@ from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.campaign import Campaign
+from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
+from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.api.deps.auth import get_current_active_user, require_role, UserRole
 from app.core.security import create_access_token
 from app.core.config import settings
+from app.core.lob_defaults import LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES
 from app.services.audit_helper import write_audit_log
 from app.services.tenant_service import generate_unique_slug
 from app.core.settings_resolver import get_tenant_setting_bool, set_tenant_setting
@@ -583,4 +587,228 @@ async def get_branding(
         "brand_secondary_color": tenant.brand_secondary_color,
         "custom_domain": tenant.custom_domain,
         "agency_mode": tenant.agency_mode,
+    }
+
+
+# ─── LOB Assignments ─────────────────────────────────────────────
+
+class LOBAssignmentUpdate(BaseModel):
+    lob_types: List[str]
+
+
+@router.get("/{tenant_id}/lob-assignments")
+async def get_lob_assignments(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Get LOB type assignments for a tenant. Super admin only."""
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    assignments = (
+        db.query(TenantLOBAssignment)
+        .filter(
+            TenantLOBAssignment.tenant_id == tenant_id,
+            TenantLOBAssignment.is_archived == False,
+        )
+        .all()
+    )
+
+    valid_lob_types = [lt.value for lt in LOBType if lt != LOBType.CUSTOM]
+
+    return {
+        "tenant_id": tenant_id,
+        "assigned_lob_types": [a.lob_type for a in assignments],
+        "available_lob_types": valid_lob_types,
+    }
+
+
+def _slugify_lob(text: str) -> str:
+    """Convert text to URL-friendly slug for LOB names."""
+    import re
+    slug = text.lower().strip()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    return slug.strip('-')
+
+
+@router.put("/{tenant_id}/lob-assignments")
+async def update_lob_assignments(
+    tenant_id: int,
+    data: LOBAssignmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(super_admin_dep),
+):
+    """Update LOB type assignments for a tenant. Super admin only.
+
+    Accepts the desired set of lob_types. Auto-provisions or archives
+    LOB instances when assignments change.
+    """
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    valid_lob_values = {lt.value for lt in LOBType if lt != LOBType.CUSTOM}
+    invalid = set(data.lob_types) - valid_lob_values
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid LOB types: {', '.join(sorted(invalid))}",
+        )
+
+    if not data.lob_types:
+        raise HTTPException(status_code=400, detail="At least one LOB type is required")
+
+    desired = set(data.lob_types)
+
+    # Current assignments
+    current_assignments = (
+        db.query(TenantLOBAssignment)
+        .filter(
+            TenantLOBAssignment.tenant_id == tenant_id,
+            TenantLOBAssignment.is_archived == False,
+        )
+        .all()
+    )
+    current_types = {a.lob_type for a in current_assignments}
+
+    to_add = desired - current_types
+    to_remove = current_types - desired
+
+    added = []
+    removed = []
+
+    # Add new assignments + auto-provision LOB instances
+    for lob_type_str in to_add:
+        # Check if an archived assignment exists -> unarchive
+        archived_assignment = (
+            db.query(TenantLOBAssignment)
+            .filter(
+                TenantLOBAssignment.tenant_id == tenant_id,
+                TenantLOBAssignment.lob_type == lob_type_str,
+                TenantLOBAssignment.is_archived == True,
+            )
+            .first()
+        )
+        if archived_assignment:
+            archived_assignment.is_archived = False
+            archived_assignment.assigned_by = current_user.email
+        else:
+            db.add(TenantLOBAssignment(
+                tenant_id=tenant_id,
+                lob_type=lob_type_str,
+                assigned_by=current_user.email,
+            ))
+
+        # Auto-provision LOB instance: check for archived first -> unarchive, else create
+        lob_type_enum = LOBType(lob_type_str)
+        existing_lob = (
+            db.query(LineOfBusiness)
+            .filter(
+                LineOfBusiness.tenant_id == tenant_id,
+                LineOfBusiness.lob_type == lob_type_enum,
+            )
+            .first()
+        )
+        if existing_lob:
+            if existing_lob.is_archived:
+                existing_lob.is_archived = False
+                existing_lob.status = LOBStatus.ACTIVE
+        else:
+            # Create new LOB instance with defaults
+            meta = LOB_TYPE_META.get(lob_type_str, {})
+            defaults = LOB_DEFAULT_CONFIGS.get(lob_type_str, {})
+            tenant_profiles = TENANT_PROMPT_PROFILES.get(tenant.slug, {})
+            prompt_profile = None
+            if lob_type_str in tenant_profiles:
+                prompt_profile = _json_admin.dumps(tenant_profiles[lob_type_str])
+
+            lob = LineOfBusiness(
+                tenant_id=tenant_id,
+                name=meta.get("label", lob_type_str.replace("_", " ").title()),
+                slug=_slugify_lob(meta.get("label", lob_type_str)),
+                lob_type=lob_type_enum,
+                description=meta.get("description", ""),
+                is_default=False,
+                color=meta.get("default_color", "#8B5CF6"),
+                icon=meta.get("default_icon", "settings"),
+                lead_source_config=_json_admin.dumps(defaults.get("lead_source_config")) if defaults.get("lead_source_config") else None,
+                icp_config=_json_admin.dumps(defaults.get("icp_config")) if defaults.get("icp_config") else None,
+                business_rules=_json_admin.dumps(defaults.get("business_rules")) if defaults.get("business_rules") else None,
+                prompt_profile=prompt_profile,
+            )
+            db.add(lob)
+
+        added.append(lob_type_str)
+
+    # Remove assignments + archive LOB instances
+    for lob_type_str in to_remove:
+        assignment = next(
+            (a for a in current_assignments if a.lob_type == lob_type_str), None
+        )
+        if assignment:
+            assignment.is_archived = True
+
+        # Archive the LOB instance (soft-delete preserves FK refs)
+        lob_type_enum = LOBType(lob_type_str)
+        lob = (
+            db.query(LineOfBusiness)
+            .filter(
+                LineOfBusiness.tenant_id == tenant_id,
+                LineOfBusiness.lob_type == lob_type_enum,
+                LineOfBusiness.is_archived == False,
+            )
+            .first()
+        )
+        if lob:
+            lob.is_archived = True
+            lob.status = LOBStatus.PAUSED
+
+        removed.append(lob_type_str)
+
+    # Ensure at least one LOB remains as is_default
+    remaining_lobs = (
+        db.query(LineOfBusiness)
+        .filter(
+            LineOfBusiness.tenant_id == tenant_id,
+            LineOfBusiness.is_archived == False,
+        )
+        .all()
+    )
+    if remaining_lobs and not any(l.is_default for l in remaining_lobs):
+        remaining_lobs[0].is_default = True
+
+    # Audit log
+    if added or removed:
+        write_audit_log(
+            db,
+            tenant_id=tenant_id,
+            entity_type="tenant",
+            entity_id=tenant_id,
+            action="lob_assignments_update",
+            changed_by=current_user.email,
+            notes=f"added={added}, removed={removed}",
+        )
+
+    db.commit()
+
+    # Re-query final state
+    final_assignments = (
+        db.query(TenantLOBAssignment)
+        .filter(
+            TenantLOBAssignment.tenant_id == tenant_id,
+            TenantLOBAssignment.is_archived == False,
+        )
+        .all()
+    )
+
+    return {
+        "message": "LOB assignments updated",
+        "tenant_id": tenant_id,
+        "assigned_lob_types": [a.lob_type for a in final_assignments],
+        "added": added,
+        "removed": removed,
     }

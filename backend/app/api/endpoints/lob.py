@@ -11,7 +11,9 @@ from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, get_current_tenant_id
 from app.db.models.user import User
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
+from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.db.query_helpers import tenant_filter
+from app.core.lob_defaults import LOB_TYPE_META as _LOB_TYPE_META_STR
 
 router = APIRouter(prefix="/lob", tags=["Lines of Business"])
 
@@ -128,46 +130,12 @@ def _to_response(lob: LineOfBusiness) -> dict:
     }
 
 
-# ── LOB Type Metadata ─────────────────────────────────────────
+# ── LOB Type Metadata (enum-keyed, built from shared module) ──
 
-LOB_TYPE_META = {
-    LOBType.STAFFING: {
-        "label": "Staffing & Recruiting",
-        "description": "Job board lead sourcing, hiring decision-maker targeting, staffing outreach",
-        "default_color": "#1A3C6E",
-        "default_icon": "briefcase",
-    },
-    LOBType.RCM: {
-        "label": "Revenue Cycle Management",
-        "description": "Healthcare provider targeting, medical billing/coding services outreach",
-        "default_color": "#10B981",
-        "default_icon": "heart-pulse",
-    },
-    LOBType.SOFTWARE_DEV: {
-        "label": "Software Development",
-        "description": "Tech company prospecting, CTO/VP Engineering targeting, dev services outreach",
-        "default_color": "#6366F1",
-        "default_icon": "code",
-    },
-    LOBType.AI_SERVICES: {
-        "label": "AI & Agent Services",
-        "description": "AI adoption signal tracking, innovation leader targeting, AI services outreach",
-        "default_color": "#F59E0B",
-        "default_icon": "brain",
-    },
-    LOBType.DIGITAL_MARKETING: {
-        "label": "Digital Marketing",
-        "description": "Website audit-based prospecting, SEO/SEM gap analysis, marketing services outreach",
-        "default_color": "#EC4899",
-        "default_icon": "megaphone",
-    },
-    LOBType.CUSTOM: {
-        "label": "Custom",
-        "description": "User-defined line of business with custom configuration",
-        "default_color": "#8B5CF6",
-        "default_icon": "settings",
-    },
-}
+LOB_TYPE_META = {}
+for _lt in LOBType:
+    if _lt.value in _LOB_TYPE_META_STR:
+        LOB_TYPE_META[_lt] = _LOB_TYPE_META_STR[_lt.value]
 
 
 # ── Column Configuration per LOB type ─────────────────────────
@@ -243,6 +211,28 @@ LOB_COLUMN_CONFIG = {
 }
 
 
+# ── Assignment helpers ─────────────────────────────────────────
+
+def _get_assigned_lob_types(db: Session, tenant_id: Optional[int]) -> Optional[set]:
+    """Return the set of assigned LOB type strings for a tenant.
+
+    Returns None if tenant has no assignment records (backward compatible: no filtering).
+    """
+    if tenant_id is None:
+        return None  # super admin — no filtering
+    assignments = (
+        db.query(TenantLOBAssignment.lob_type)
+        .filter(
+            TenantLOBAssignment.tenant_id == tenant_id,
+            TenantLOBAssignment.is_archived == False,
+        )
+        .all()
+    )
+    if not assignments:
+        return None  # no assignments configured — show all (backward compatible)
+    return {a.lob_type for a in assignments}
+
+
 # ── Endpoints ──────────────────────────────────────────────────
 
 @router.get("/column-config/{lob_type}")
@@ -256,18 +246,25 @@ async def get_column_config(lob_type: str):
 
 
 @router.get("/types", response_model=List[LOBTypeInfo])
-async def list_lob_types():
-    """List available LOB types with metadata."""
-    return [
-        {
+async def list_lob_types(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List available LOB types with metadata, filtered by tenant assignments."""
+    assigned = _get_assigned_lob_types(db, tenant_id)
+    result = []
+    for lob_type, meta in LOB_TYPE_META.items():
+        if assigned is not None and lob_type.value not in assigned:
+            continue
+        result.append({
             "lob_type": lob_type.value,
             "label": meta["label"],
             "description": meta["description"],
             "default_color": meta["default_color"],
             "default_icon": meta["default_icon"],
-        }
-        for lob_type, meta in LOB_TYPE_META.items()
-    ]
+        })
+    return result
 
 
 @router.get("/", response_model=List[LOBResponse])
@@ -277,9 +274,21 @@ async def list_lobs(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """List all LOBs for the current tenant."""
+    """List all LOBs for the current tenant, filtered by LOB assignments."""
     query = db.query(LineOfBusiness).filter(LineOfBusiness.is_archived == False)
     query = tenant_filter(query, LineOfBusiness, tenant_id)
+
+    # Filter by tenant LOB assignments (if configured)
+    assigned = _get_assigned_lob_types(db, tenant_id)
+    if assigned is not None:
+        assigned_enums = []
+        for v in assigned:
+            try:
+                assigned_enums.append(LOBType(v))
+            except ValueError:
+                pass
+        if assigned_enums:
+            query = query.filter(LineOfBusiness.lob_type.in_(assigned_enums))
 
     if status_filter:
         query = query.filter(LineOfBusiness.status == status_filter)
@@ -299,6 +308,16 @@ async def create_lob(
     """Create a new Line of Business."""
     if tenant_id is None:
         raise HTTPException(status_code=400, detail="Tenant context required")
+
+    # Check LOB assignment restrictions
+    assigned = _get_assigned_lob_types(db, tenant_id)
+    if assigned is not None:
+        lob_type_val = payload.lob_type.value if hasattr(payload.lob_type, 'value') else str(payload.lob_type)
+        if lob_type_val not in assigned:
+            raise HTTPException(
+                status_code=403,
+                detail=f"LOB type '{lob_type_val}' is not assigned to this tenant",
+            )
 
     slug = _slugify(payload.name)
 

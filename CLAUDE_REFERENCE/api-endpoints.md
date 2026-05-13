@@ -44,7 +44,7 @@ All endpoints are mounted under `/api/v1`.
 
 | Prefix | File | Purpose |
 |--------|------|---------|
-| `/admin/tenants` | `admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate). Tenant update supports `website` + `industry` fields |
+| `/admin/tenants` | `admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate, branding, features, LOB assignments). GET/PUT `/{id}/lob-assignments` for tenant LOB type control |
 | `/billing` | `billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
 | `/activity` | `activity_log.py` | Login history, 24h stats, auth audit, active users, my-login-history, unlock user (Super admin except my-login-history) |
 
@@ -88,3 +88,29 @@ All endpoints are mounted under `/api/v1`.
 | `GET /reports/domain-deliverability` | Recipient-domain-level stats. Params: days (7-180). MySQL `SUBSTRING_INDEX` / SQLite `SUBSTR` for domain extraction. |
 
 All reports endpoints require `SUPER_ADMIN`, `ADMIN`, or `OPERATOR` role. All support `export=true` (skip pagination, cap at 10K rows). File: `api/endpoints/reports.py`.
+
+## LOB Endpoints (`api/endpoints/lob.py`)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /lob/` | List all LOBs for current tenant |
+| `POST /lob/` | Create new LOB |
+| `GET /lob/types` | List available LOB types with metadata |
+| `GET /lob/column-config/{lob_type}` | Per-LOB column configuration for leads table UI |
+| `GET /lob/{lob_id}` | Get LOB details |
+| `PUT /lob/{lob_id}` | Update LOB |
+| `DELETE /lob/{lob_id}` | Soft-delete (archive) LOB |
+| `POST /lob/{lob_id}/set-default` | Set LOB as tenant default |
+| `GET /lob/{lob_id}/intent-signals` | Returns configured + available intent signals for a LOB with status |
+| `POST /lob/{lob_id}/intent-signals/run` | Manually trigger intent engine for a specific LOB, returns summary |
+
+## Settings — LOB Lead Sources Tab
+
+Settings key `lob_lead_sources` tab includes:
+- `google_places_api_key` — Google Places API key
+- `crunchbase_api_key` — Crunchbase API key
+- `builtwith_api_key` — BuiltWith API key
+- `github_token` — GitHub personal access token
+- `automation_intent_signals_enabled` — Enable/disable scheduled intent signal jobs
+
+Test-connection providers: `npi_registry`, `google_business`, `crunchbase`, `builtwith`, `github_org`, `pagespeed`

@@ -64,10 +64,11 @@
 - **CreditUsage** — credit/usage metering per tenant (usage_type, credits_used, reference tracking)
 - **GoalTarget** — KPI goal tracking (metric targets: leads/emails/deals/revenue, period tracking)
 - **NotificationEntry** — notification center entries (category, priority, link, read status, per-user/broadcast)
+- **TenantLOBAssignment** — maps which LOB types each tenant can access (`tenant_lob_assignments` table: tenant_id FK, lob_type String(50), assigned_by, UQ(tenant_id, lob_type)). Super Admin managed. Backward compatible: no records = all LOBs visible.
 
 ## Key Relationships
 
-- All 39 models have `tenant_id` column (NOT NULL, FK to `tenants.tenant_id`, indexed)
+- All 40 models have `tenant_id` column (NOT NULL, FK to `tenants.tenant_id`, indexed)
 - Lead <-> Contact is many-to-many via `LeadContactAssociation`
 - Campaign -> SequenceStep -> OutreachEvent (hierarchical)
 - Campaign -> CampaignContact -> ContactDetails (enrollment)

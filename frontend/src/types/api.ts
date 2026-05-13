@@ -812,3 +812,9 @@ export interface DomainDeliverabilityRow {
   bounced: number
   bounce_rate: number
 }
+
+export interface TenantLOBAssignment {
+  tenant_id: number
+  assigned_lob_types: string[]
+  available_lob_types: string[]
+}

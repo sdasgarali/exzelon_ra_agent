@@ -38,6 +38,22 @@ const ROLE_COLORS: Record<string, string> = {
   viewer: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
 }
 
+const LOB_TYPE_LABELS: Record<string, string> = {
+  staffing: 'Staffing & Recruiting',
+  rcm: 'Revenue Cycle Management',
+  software_dev: 'Software Development',
+  ai_services: 'AI & Agent Services',
+  digital_marketing: 'Digital Marketing',
+}
+
+const LOB_TYPE_COLORS: Record<string, string> = {
+  staffing: '#1A3C6E',
+  rcm: '#10B981',
+  software_dev: '#6366F1',
+  ai_services: '#F59E0B',
+  digital_marketing: '#EC4899',
+}
+
 export default function TenantManagementPage() {
   const router = useRouter()
   const { isSuperAdmin, startImpersonation } = useAuthStore()
@@ -52,6 +68,7 @@ export default function TenantManagementPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailTenant, setDetailTenant] = useState<TenantDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailLobTypes, setDetailLobTypes] = useState<string[]>([])
 
   // Edit modal
   const [editOpen, setEditOpen] = useState(false)
@@ -78,6 +95,8 @@ export default function TenantManagementPage() {
     feature_export_mailmerge_enabled: true,
   })
   const [editSaving, setEditSaving] = useState(false)
+  const [editLobAssignments, setEditLobAssignments] = useState<string[]>([])
+  const [availableLobTypes, setAvailableLobTypes] = useState<string[]>([])
 
   // Create modal
   const [createOpen, setCreateOpen] = useState(false)
@@ -145,8 +164,12 @@ export default function TenantManagementPage() {
     try {
       setDetailLoading(true)
       setDetailOpen(true)
-      const data = await tenantsApi.get(tenantId)
+      const [data, lobAssignments] = await Promise.all([
+        tenantsApi.get(tenantId),
+        tenantsApi.getLobAssignments(tenantId),
+      ])
       setDetailTenant(data)
+      setDetailLobTypes(lobAssignments.assigned_lob_types || [])
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load tenant detail')
       setDetailOpen(false)
@@ -157,9 +180,10 @@ export default function TenantManagementPage() {
 
   const handleOpenEdit = async (tenantId: number) => {
     try {
-      const [data, features] = await Promise.all([
+      const [data, features, lobAssignments] = await Promise.all([
         tenantsApi.get(tenantId),
         tenantsApi.getFeatures(tenantId),
+        tenantsApi.getLobAssignments(tenantId),
       ])
       setEditTenant(data)
       setEditForm({
@@ -183,6 +207,8 @@ export default function TenantManagementPage() {
         feature_outreach_enabled: features.feature_outreach_enabled ?? true,
         feature_export_mailmerge_enabled: features.feature_export_mailmerge_enabled ?? true,
       })
+      setEditLobAssignments(lobAssignments.assigned_lob_types || [])
+      setAvailableLobTypes(lobAssignments.available_lob_types || [])
       setEditOpen(true)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load tenant for editing')
@@ -193,10 +219,14 @@ export default function TenantManagementPage() {
     if (!editTenant) return
     try {
       setEditSaving(true)
-      await Promise.all([
+      const promises: Promise<any>[] = [
         tenantsApi.update(editTenant.tenant_id, editForm),
         tenantsApi.updateFeatures(editTenant.tenant_id, editFeatures),
-      ])
+      ]
+      if (editLobAssignments.length > 0) {
+        promises.push(tenantsApi.updateLobAssignments(editTenant.tenant_id, editLobAssignments))
+      }
+      await Promise.all(promises)
       setSuccess(`Tenant "${editForm.name}" updated successfully`)
       setEditOpen(false)
       fetchTenants()
@@ -494,6 +524,27 @@ export default function TenantManagementPage() {
               </div>
             )}
 
+            {/* LOB Assignments */}
+            {detailLobTypes.length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">LOB Assignments</h3>
+                <div className="flex flex-wrap gap-2">
+                  {detailLobTypes.map((lt) => (
+                    <span
+                      key={lt}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: LOB_TYPE_COLORS[lt] || '#8B5CF6' }}
+                      />
+                      {LOB_TYPE_LABELS[lt] || lt}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Users table */}
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Users ({detailTenant.users.length})</h3>
@@ -725,6 +776,39 @@ export default function TenantManagementPage() {
                   <p className="text-xs text-gray-500 dark:text-gray-400">Allow this tenant to export mailmerge CSV files</p>
                 </div>
               </label>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">LOB Assignments</h4>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Select which Lines of Business this tenant can access</p>
+            <div className="space-y-3">
+              {availableLobTypes.map((lt) => (
+                <label key={lt} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editLobAssignments.includes(lt)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setEditLobAssignments([...editLobAssignments, lt])
+                      } else {
+                        if (editLobAssignments.length <= 1) return
+                        setEditLobAssignments(editLobAssignments.filter((t) => t !== lt))
+                      }
+                    }}
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  />
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: LOB_TYPE_COLORS[lt] || '#8B5CF6' }}
+                    />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {LOB_TYPE_LABELS[lt] || lt}
+                    </span>
+                  </div>
+                </label>
+              ))}
             </div>
           </div>
 

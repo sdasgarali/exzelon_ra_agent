@@ -1,16 +1,29 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Session 93: LOB-Aware Dynamic Leads UI + Adapter Settings — implemented.
-> **Branch**: `master` (uncommitted changes).
+> Session 95: Tenant-to-LOB Mapping (Super Admin Managed) — implemented.
+> **Branch**: `master`, **Previous Commit**: `437bf6a`
 > **Changes**:
-> - Backend: `lob_id` + `metadata` fields added to `LeadResponse` schema (with `field_validator` to handle SQLAlchemy MetaData collision). `lob_id` filter param added to `list_leads()`. `metadata_json` parsed into dict in response builder. `lob_id` added to SORT_COLUMNS.
-> - Backend: `GET /lob/column-config/{lob_type}` endpoint in `lob.py` — returns per-LOB column definitions (label_overrides, hidden_columns, metadata_columns, filters) for staffing, rcm, software_dev, ai_services, digital_marketing.
-> - Frontend: `Lead` interface updated with `lob_id`, `metadata`, and other missing fields. `LOBColumnConfig` type added. `lobApi.getColumnConfig()` added.
-> - Frontend: Leads page (`page.tsx`) — imports `useLobStore`, fetches column config on active LOB change, passes `lob_id` filter for non-staffing LOBs, dynamic column headers (label_overrides), hidden columns (employment_type), metadata columns with typed renderers (text, number, currency, badge, tags, score, phone), expandable metadata detail row on click.
-> - Frontend: LOB page (`page.tsx`) — adapter settings section in create/edit modal. Per-type forms: RCM (NPI taxonomy, state/city filter, Google Places query), Software Dev (Crunchbase categories, funding stage, GitHub language, min repos), AI Services (Crunchbase categories, GitHub query, min repos), Digital Marketing (domains textarea, max performance score slider, BuiltWith tech search), Custom (free-form JSON editor). Saves to `lead_source_config`.
-> **Tests**: 911 unit/integration + 12 e2e passed. Frontend builds clean.
-> Previous session: Multi-LOB Architecture all 4 phases deployed.
+> - Step 1: Extracted LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES to `core/lob_defaults.py` shared module. Updated imports in main.py and lob.py.
+> - Step 2: Created `TenantLOBAssignment` model (`tenant_lob_assignments` table) with tenant_id FK, lob_type, assigned_by, UQ constraint.
+> - Step 3: Added GET/PUT `/{tenant_id}/lob-assignments` endpoints to admin_tenants.py. Auto-provisions/archives LOB instances on assignment changes.
+> - Step 4: Modified lob.py `list_lobs`, `create_lob`, `list_lob_types` to filter by tenant LOB assignments. Backward compatible (no assignments = all LOBs visible).
+> - Step 5: Updated `_seed_default_lobs()` to create assignment records. Added `_backfill_lob_assignments()` for existing data.
+> - Step 6: Added `getLobAssignments`/`updateLobAssignments` to frontend `tenantsApi`. Added `TenantLOBAssignment` interface.
+> - Step 7: Added LOB Assignments UI in tenant edit modal (checkboxes with color dots) and detail modal (colored badges).
+> **Tests**: 923 passed, 0 failures. Frontend TypeScript clean.
+> **Files**: 9 changed (2 new, 7 modified).
+>
+> Previous session: Session 94 — Intent-Based Lead Generation Engine + LOB Defaults + API Key Infrastructure.
+> **Changes**:
+> - Phase 1: LOB adapter API keys (Google Places, Crunchbase, BuiltWith, GitHub) added to Settings UI (`lob_lead_sources` tab) with 6 test-connection handlers for all LOB adapters. Added `automation_intent_signals_enabled` toggle.
+> - Phase 2: Two new zero-cost intent signal adapters — `HiringSignalAdapter` (mines existing leads for LOB-specific hiring patterns) and `NewsSignalAdapter` (Google News RSS monitoring for business triggers). Registered in pipeline with updated default sources for all non-staffing LOBs.
+> - Phase 3: `IntentEngine` orchestrator (`intent_engine.py`) coordinates signal checks + batch LOB-aware intent score recalculation. `calculate_intent_score_v2()` with 5 LOB weight matrices (15+ signal evaluators), 4-tier classification (Cold/Warm/Hot/Burning). Added `builtwith`, `hiring_signal`, `news_signal` handlers to `intent_signal_monitor.py`.
+> - Phase 4: Scheduler wired — daily (7AM) + weekly (Monday 5AM) intent signal jobs. `LeadResponse` schema extended with `intent_score`, `intent_signals`, `intent_tier` (auto-extracted from `metadata_json` via `model_validator`). Two new LOB endpoints: `GET /lob/{id}/intent-signals` and `POST /lob/{id}/intent-signals/run`.
+> - Phase 5: `_seed_default_lobs()` enhanced with `LOB_DEFAULT_CONFIGS` — comprehensive `lead_source_config`, `icp_config`, `business_rules` for all 5 LOB types. All seeded LOBs now have full configs instead of NULL.
+> **Tests**: 663 passed, 0 failures. All imports verified.
+> **Files**: 12 changed (3 new, 9 modified), +1483 lines.
+> Previous session: LOB-Aware Dynamic Leads UI + Adapter Settings.
 
 ## REVERT CHECKPOINT
 > **Commit:** `1179998` — **Branch:** `master` — **Date:** 2026-04-12
@@ -26,6 +39,15 @@
 - [x] LOB-Aware Dynamic Leads UI + Adapter Settings (2026-05-12)
   - Backend: metadata + lob_id in Lead API, column-config endpoint
   - Frontend: dynamic table columns, metadata detail panel, adapter settings in LOB modal
+- [x] Intent-Based Lead Generation Engine + LOB Defaults + API Key Infrastructure (2026-05-12)
+  - Phase 1: LOB API keys in Settings UI + 6 test-connection handlers
+  - Phase 2: HiringSignalAdapter + NewsSignalAdapter (zero-cost intent sources)
+- [x] Tenant-to-LOB Mapping (Super Admin Managed) (2026-05-12)
+  - Shared lob_defaults module, TenantLOBAssignment model, admin endpoints, LOB filtering, seed/backfill, frontend UI
+  - Phase 3: IntentEngine orchestrator + calculate_intent_score_v2 (LOB-aware, 5 weight profiles)
+  - Phase 4: Scheduler wiring (daily+weekly jobs) + intent data in LeadResponse + LOB intent endpoints
+  - Phase 5: LOB_DEFAULT_CONFIGS with full lead_source_config/icp_config/business_rules for all 5 LOB types
+  - 12 files, +1483 lines, 663 tests pass, deployed (437bf6a)
 - [ ] Change super_admin password from default (SA@Admin#123) to a stronger one
 - [ ] Enable IMAP in M365 Admin per-mailbox (for inbox syncing/warmup read)
 - [ ] Connect Gmail mailbox (mirzahabibbeg7@gmail.com) via OAuth2 in browser
@@ -303,6 +325,15 @@
 - [ ] Get Apollo API key ($49/mo) or other contact provider for real enrichment
 
 ## Completed
+- [x] Session 94: Intent-Based Lead Generation Engine + LOB Defaults + API Key Infrastructure (2026-05-12)
+  - 3 new files: hiring_signal.py, news_signal.py, intent_engine.py
+  - 9 modified: settings.py, lob.py, main.py, lead.py (schema), __init__.py, intent_data.py, intent_signal_monitor.py, lead_sourcing.py, scheduler.py
+  - 7 signal types total (5 existing + hiring_signal + news_event), 5 LOB weight profiles, 4-tier classification
+  - LOB_DEFAULT_CONFIGS: full configs for staffing, rcm, software_dev, ai_services, digital_marketing
+  - Daily (7AM) + weekly (Monday 5AM) scheduled intent signal jobs
+  - GET/POST /lob/{id}/intent-signals endpoints for config + manual trigger
+  - 663 tests pass, deployed to ra.partnerwithus.tech (437bf6a)
+- [x] Session 93: LOB-Aware Dynamic Leads UI + Adapter Settings (2026-05-12)
 - [x] Session 92: Multi-LOB Architecture — 4 phases, merged & deployed (2026-05-12)
   - Phase 1: LineOfBusiness model (6 types), nullable lob_id FKs on 6 models, LOB CRUD API, 5-layer settings resolver, AI prompt injection, frontend LOB selector + management page
   - Phase 2: 6 new lead source adapters (NPI Registry, Google Business, Crunchbase, BuiltWith, PageSpeed, GitHub Org), LeadSourceAdapter base class, LOB-aware pipeline

@@ -122,6 +122,7 @@ Domain reputation management subsystem:
 | CRM Sync Engine | `services/crm_sync_engine.py` | Bidirectional HubSpot/Salesforce sync |
 | CRM Auto-Forward | `services/crm_auto_forward.py` | Auto-forward interested inbox replies to CRM |
 | IMAP Reader | `services/warmup/imap_reader.py` | Read emulation for warmup |
+| LOB Defaults | `core/lob_defaults.py` | Shared LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES (used by main.py seeding, admin_tenants.py provisioning, lob.py type listing) |
 
 ---
 
@@ -133,7 +134,9 @@ Domain reputation management subsystem:
 | Auto-Pause Monitor | `services/auto_pause_monitor.py` | Hourly campaign health check, auto-pause on threshold breach |
 | Forecast Engine | `services/forecast_engine.py` | AI-powered deal pipeline forecasting |
 | Visitor Tracker | `services/visitor_tracker.py` | Website visitor tracking (JS pixel, page visits, stats) |
-| Intent Data | `services/intent_data.py` | Buying intent scoring |
+| Intent Data | `services/intent_data.py` | Buying intent scoring — `calculate_intent_score()` (v1, flat weights) + `calculate_intent_score_v2()` (LOB-aware, 5 weight profiles, 4-tier: Cold/Warm/Hot/Burning) |
+| Intent Engine | `services/intent_engine.py` | Central orchestrator — `run_intent_engine()` runs signal checks + batch LOB-aware score recalculation, stores results in `metadata_json` |
+| Intent Signal Monitor | `services/intent_signal_monitor.py` | Trigger-based prospecting — 7 signal types (npi, funding, pagespeed, tech_stack, github, hiring, news), `check_intent_signals()` creates leads from signal matches |
 | Objection Handler | `services/objection_handler.py` | AI objection handling library (7 system templates) |
 | Lead Assigner | `services/lead_assigner.py` | Round-robin lead assignment |
 | DFY Service | `services/dfy_service.py` | Done-For-You setup |

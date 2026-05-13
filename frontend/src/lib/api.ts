@@ -1479,6 +1479,14 @@ export const tenantsApi = {
     const response = await api.put(`/admin/tenants/${id}/features`, data)
     return response.data
   },
+  getLobAssignments: async (id: number) => {
+    const response = await api.get(`/admin/tenants/${id}/lob-assignments`)
+    return response.data
+  },
+  updateLobAssignments: async (id: number, lob_types: string[]) => {
+    const response = await api.put(`/admin/tenants/${id}/lob-assignments`, { lob_types })
+    return response.data
+  },
 }
 
 // Billing API
