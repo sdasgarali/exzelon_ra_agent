@@ -1083,7 +1083,22 @@ export default function DashboardPage() {
                 <Search className="w-4 h-4" />
                 {quickLoading === 'sourcing' ? 'Starting...' : 'Run Lead Sourcing'}
               </button>
-              <p className="text-xs text-gray-500 mt-2">Scrape job postings from Indeed, LinkedIn, and Glassdoor</p>
+              <p className="text-xs text-gray-500 mt-2">
+                {(() => {
+                  const lob = getActiveLob()
+                  if (lob) {
+                    const descs: Record<string, string> = {
+                      staffing: 'Scrape job postings from Indeed, LinkedIn, and Glassdoor',
+                      rcm: 'Discover healthcare providers via NPI registry and Google Business',
+                      software_dev: 'Find tech companies via Crunchbase, BuiltWith, and GitHub',
+                      ai_services: 'Discover AI-adopting companies via Crunchbase and GitHub',
+                      digital_marketing: 'Audit local businesses via Google Business and PageSpeed',
+                    }
+                    return descs[lob.lob_type] || 'Source leads from configured adapters'
+                  }
+                  return 'Scrape job postings from Indeed, LinkedIn, and Glassdoor'
+                })()}
+              </p>
             </div>
             <div className="flex flex-col">
               <button
@@ -1365,12 +1380,25 @@ export default function DashboardPage() {
 
       {/* ===== Confirmation Dialogs ===== */}
 
-      {/* Lead Sourcing (still uses simple ConfirmDialog) */}
+      {/* Lead Sourcing (LOB-aware ConfirmDialog) */}
       <ConfirmDialog
         open={confirmAction === 'sourcing'}
         onClose={() => setConfirmAction(null)}
-        title="Run Lead Sourcing?"
-        message="This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records."
+        title={`Run Lead Sourcing${getActiveLob() ? ` — ${getActiveLob()?.name}` : ''}?`}
+        message={(() => {
+          const lob = getActiveLob()
+          if (lob) {
+            const msgs: Record<string, string> = {
+              staffing: 'This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records.',
+              rcm: 'This will search for healthcare providers using NPI registry lookups, Google Business listings, and intent signals (hiring activity, news events). New leads will be deduplicated against existing records.',
+              software_dev: 'This will prospect software companies using Crunchbase funding data, BuiltWith tech stack analysis, GitHub organization activity, and intent signals. New leads will be deduplicated against existing records.',
+              ai_services: 'This will find companies investing in AI using Crunchbase funding data, GitHub activity, and intent signals (hiring patterns, news events). New leads will be deduplicated against existing records.',
+              digital_marketing: 'This will find businesses needing digital marketing using Google Business listings, PageSpeed performance audits, BuiltWith tech analysis, and intent signals. New leads will be deduplicated against existing records.',
+            }
+            return msgs[lob.lob_type] || 'This will source leads from all configured adapters for the active LOB. New leads will be deduplicated against existing records.'
+          }
+          return 'This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records.'
+        })()}
         confirmLabel="Run Pipeline"
         variant="info"
         loading={quickLoading === 'sourcing'}

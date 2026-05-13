@@ -8,6 +8,35 @@ import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
 import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
 
+// LOB-type-specific lead sourcing descriptions
+const LOB_SOURCE_DESCRIPTIONS: Record<string, { card: string; confirm: string }> = {
+  staffing: {
+    card: 'Scrape job postings from Indeed, LinkedIn, Glassdoor',
+    confirm: 'This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records.',
+  },
+  rcm: {
+    card: 'Discover healthcare providers via NPI registry, Google Business, and intent signals',
+    confirm: 'This will search for healthcare providers using NPI registry lookups, Google Business listings, and intent signals (hiring activity, news events). New leads will be deduplicated against existing records.',
+  },
+  software_dev: {
+    card: 'Find tech companies via Crunchbase, BuiltWith, GitHub, and intent signals',
+    confirm: 'This will prospect software companies using Crunchbase funding data, BuiltWith tech stack analysis, GitHub organization activity, and intent signals. New leads will be deduplicated against existing records.',
+  },
+  ai_services: {
+    card: 'Discover AI-adopting companies via Crunchbase, GitHub, and intent signals',
+    confirm: 'This will find companies investing in AI using Crunchbase funding data, GitHub activity, and intent signals (hiring patterns, news events). New leads will be deduplicated against existing records.',
+  },
+  digital_marketing: {
+    card: 'Audit local businesses via Google Business, PageSpeed, BuiltWith, and intent signals',
+    confirm: 'This will find businesses needing digital marketing using Google Business listings, PageSpeed performance audits, BuiltWith tech analysis, and intent signals. New leads will be deduplicated against existing records.',
+  },
+}
+
+const DEFAULT_SOURCE_DESC = {
+  card: 'Source leads from all configured adapters',
+  confirm: 'This will source leads from all configured adapters for the active LOB. New leads will be deduplicated against existing records.',
+}
+
 interface PipelineRun {
   run_id: number
   pipeline_name: string
@@ -695,10 +724,13 @@ export default function PipelinesPage() {
         <div className="card p-4 border-t-4 border-indigo-500">
           <h4 className="font-semibold text-gray-800 mb-2">Lead Sourcing</h4>
           <p className="text-sm text-gray-500 mb-2">
-            {activeLobId && getActiveLob()
-              ? `LOB-specific + job board sources for ${getActiveLob()?.name}`
-              : 'Scrape job postings from Indeed, LinkedIn, Glassdoor'
-            }
+            {(() => {
+              const lob = getActiveLob()
+              if (lob) {
+                return (LOB_SOURCE_DESCRIPTIONS[lob.lob_type]?.card || DEFAULT_SOURCE_DESC.card)
+              }
+              return 'Scrape job postings from Indeed, LinkedIn, Glassdoor'
+            })()}
           </p>
           {activeLobId && getActiveLob() && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mb-2" style={{ backgroundColor: `${getActiveLob()?.color || '#6366f1'}20`, color: getActiveLob()?.color || '#6366f1' }}>
@@ -1006,8 +1038,14 @@ export default function PipelinesPage() {
       <ConfirmDialog
         open={showLeadSourcingConfirm}
         onClose={() => setShowLeadSourcingConfirm(false)}
-        title="Run Lead Sourcing?"
-        message="This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records."
+        title={`Run Lead Sourcing${getActiveLob() ? ` — ${getActiveLob()?.name}` : ''}?`}
+        message={(() => {
+          const lob = getActiveLob()
+          if (lob) {
+            return (LOB_SOURCE_DESCRIPTIONS[lob.lob_type]?.confirm || DEFAULT_SOURCE_DESC.confirm)
+          }
+          return 'This will scrape job postings from all configured sources (Indeed, LinkedIn, Glassdoor). New leads will be deduplicated against existing records.'
+        })()}
         confirmLabel="Run Pipeline"
         variant="info"
         onConfirm={() => {
