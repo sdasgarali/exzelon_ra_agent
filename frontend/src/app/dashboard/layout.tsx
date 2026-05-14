@@ -55,6 +55,7 @@ import {
   ChevronsRight,
   FileBarChart,
   Layers,
+  Ban,
 } from 'lucide-react'
 
 const navigation = [
@@ -99,6 +100,7 @@ const navigation = [
   { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-red-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
 ]
 

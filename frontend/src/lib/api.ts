@@ -1830,3 +1830,53 @@ export const lobApi = {
     return response.data
   },
 }
+
+export const companyExclusionsApi = {
+  list: async (params?: Record<string, any>) => {
+    const response = await api.get('/company-exclusions', { params })
+    return response.data
+  },
+  count: async (params?: Record<string, any>) => {
+    const response = await api.get('/company-exclusions/count', { params })
+    return response.data
+  },
+  categories: async () => {
+    const response = await api.get('/company-exclusions/categories')
+    return response.data
+  },
+  create: async (data: { company_name: string; category?: string; lob_id?: number; is_active?: boolean }) => {
+    const response = await api.post('/company-exclusions', data)
+    return response.data
+  },
+  bulkCreate: async (companies: Array<{ company_name: string; category?: string; lob_id?: number; is_active?: boolean }>) => {
+    const response = await api.post('/company-exclusions/bulk', { companies })
+    return response.data
+  },
+  update: async (id: number, data: { company_name?: string; category?: string; is_active?: boolean }) => {
+    const response = await api.put(`/company-exclusions/${id}`, data)
+    return response.data
+  },
+  toggleAll: async (data: { is_active: boolean; lob_id?: number; category?: string }) => {
+    const response = await api.put('/company-exclusions/toggle-all', data)
+    return response.data
+  },
+  delete: async (id: number) => {
+    const response = await api.delete(`/company-exclusions/${id}`)
+    return response.data
+  },
+  bulkDelete: async (exclusion_ids: number[]) => {
+    const response = await api.delete('/company-exclusions/bulk/delete', { data: { exclusion_ids } })
+    return response.data
+  },
+  uploadXlsx: async (file: File, lobId?: number) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const params: Record<string, any> = {}
+    if (lobId) params.lob_id = lobId
+    const response = await api.post('/company-exclusions/upload-xlsx', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      params,
+    })
+    return response.data
+  },
+}

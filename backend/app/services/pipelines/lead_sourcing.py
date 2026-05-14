@@ -937,6 +937,34 @@ def run_lead_sourcing_pipeline(
 
         logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {skipped_count} duplicates)")
 
+        # --- Company exclusion filter ---
+        # Load active excluded company names for this tenant (normalized)
+        from app.db.models.company_exclusion import CompanyExclusion, normalize_company_for_exclusion
+        excluded_companies_set = set()
+        try:
+            excluded_rows = db.query(CompanyExclusion.company_name_normalized).filter(
+                CompanyExclusion.tenant_id == (tenant_id or 1),
+                CompanyExclusion.is_active == True,
+            )
+            # If LOB is specified, include both LOB-specific and global (lob_id=NULL) exclusions
+            if lob_id:
+                excluded_rows = excluded_rows.filter(
+                    (CompanyExclusion.lob_id == lob_id) | (CompanyExclusion.lob_id == None)
+                )
+            excluded_companies_set = {r[0] for r in excluded_rows.all()}
+        except Exception as e:
+            logger.warning(f"Failed to load company exclusions: {e}")
+
+        if excluded_companies_set:
+            pre_exclusion_count = len(unique_jobs)
+            unique_jobs = [
+                job for job in unique_jobs
+                if normalize_company_for_exclusion(job.get("client_name") or "") not in excluded_companies_set
+            ]
+            excluded_count = pre_exclusion_count - len(unique_jobs)
+            counters["excluded_companies"] = excluded_count
+            logger.info(f"Company exclusion filter: removed {excluded_count} leads from {len(excluded_companies_set)} excluded companies")
+
         # Process unique jobs
         newly_inserted_leads = []
         total_unique = len(unique_jobs)

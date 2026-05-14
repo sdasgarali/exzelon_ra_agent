@@ -49,6 +49,7 @@ from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
 from app.db.models.outreach_role import OutreachRole
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
+from app.db.models.company_exclusion import CompanyExclusion
 
 __all__ = [
     "User",
@@ -128,4 +129,5 @@ __all__ = [
     "LOBType",
     "LOBStatus",
     "TenantLOBAssignment",
+    "CompanyExclusion",
 ]
