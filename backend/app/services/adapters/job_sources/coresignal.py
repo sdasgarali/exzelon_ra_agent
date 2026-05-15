@@ -76,6 +76,7 @@ class CoresignalAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Coresignal Multi-Source Jobs API.
 
@@ -93,11 +94,14 @@ class CoresignalAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles into groups of 5 for broader queries
+        # Batch titles for broader queries
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 5))
+        _max_pages = int(_t.get('max_pages', 5))
+        _results_per_page = int(_t.get('results_per_page', 100))
         title_batches = []
-        batch_size = 5
-        for i in range(0, len(search_titles), batch_size):
-            title_batches.append(search_titles[i:i + batch_size])
+        for i in range(0, len(search_titles), _batch_size):
+            title_batches.append(search_titles[i:i + _batch_size])
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -117,11 +121,11 @@ class CoresignalAdapter(JobSourceAdapter):
                     "title": title_query,
                     "application_active": True,
                     "created_at_gte": _days_ago_iso(posted_within_days),
-                    "page_size": 100,
+                    "page_size": _results_per_page,
                     "page": 0,
                 }
 
-                pages_to_fetch = min(5, max(1, limit // 100))
+                pages_to_fetch = min(_max_pages, max(1, limit // _results_per_page))
                 for page in range(pages_to_fetch):
                     if len(jobs) >= limit:
                         break

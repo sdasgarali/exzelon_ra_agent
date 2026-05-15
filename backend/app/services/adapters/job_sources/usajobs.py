@@ -76,6 +76,7 @@ class USAJobsAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from USAJOBS API."""
         if not self.api_key:
@@ -86,8 +87,12 @@ class USAJobsAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles in pairs (USAJOBS Keyword is simple text search)
-        title_batches = [search_titles[i:i+2] for i in range(0, len(search_titles), 2)]
+        # Batch titles (USAJOBS Keyword is simple text search)
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 2))
+        _max_pages = int(_t.get('max_pages', 5))
+        _results_per_page = int(_t.get('results_per_page', 100))
+        title_batches = [search_titles[i:i+_batch_size] for i in range(0, len(search_titles), _batch_size)]
 
         # Date range for posted_within_days
         date_from = (date.today() - timedelta(days=posted_within_days)).strftime("%Y-%m-%d")
@@ -99,8 +104,8 @@ class USAJobsAdapter(JobSourceAdapter):
 
                 keyword = " OR ".join(batch)
 
-                # Paginate (1-based pages, 100 per page)
-                for page in range(1, 6):  # Max 5 pages per query
+                # Paginate (1-based pages)
+                for page in range(1, _max_pages + 1):
                     if len(jobs) >= limit:
                         break
 
@@ -108,7 +113,7 @@ class USAJobsAdapter(JobSourceAdapter):
                         "Keyword": keyword,
                         "LocationName": "United States",
                         "DatePosted": str(posted_within_days),
-                        "ResultsPerPage": 100,
+                        "ResultsPerPage": _results_per_page,
                         "Page": page,
                     }
 

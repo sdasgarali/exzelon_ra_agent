@@ -91,7 +91,7 @@ Event-driven webhook delivery:
 
 Four sequential data-processing stages, each independently executable via API:
 
-1. **Lead Sourcing** — fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id -> employer_linkedin -> company+title+state+city), sub-source tracking
+1. **Lead Sourcing** — fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id -> employer_linkedin -> company+title+state+city), sub-source tracking. Supports configurable per-adapter tuning (`job_source_tuning` setting), adapter result limit (`pipeline_adapter_limit`), and thread pool size (`pipeline_max_workers`) — all managed via Settings → Source Tuning tab.
 2. **Contact Enrichment** — discover decision-makers via Apollo/Seamless/Hunter/Snov.io/RocketReach/PDL/Proxycurl
 3. **Email Validation** — verify email addresses before sending
 4. **Outreach** — AI-generate email content, enforce rate limits and cooldowns, send (supports `preview_mode`)

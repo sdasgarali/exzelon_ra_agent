@@ -57,6 +57,7 @@ class AdzunaAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Adzuna API."""
         if not self.app_id or not self.api_key:
@@ -70,21 +71,25 @@ class AdzunaAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles (4 per query)
+        # Batch titles
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        _max_pages = int(_t.get('max_pages', 10))
+        _results_per_page = int(_t.get('results_per_page', 50))
         batched_queries = []
-        for i in range(0, len(search_titles), 4):
-            batch = search_titles[i:i+4]
+        for i in range(0, len(search_titles), _batch_size):
+            batch = search_titles[i:i+_batch_size]
             batched_queries.append(" OR ".join(batch))
 
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
                 try:
                     # Adzuna uses page-based pagination (1-indexed)
-                    for page in range(1, 11):  # Up to 10 pages per query
+                    for page in range(1, _max_pages + 1):
                         params = {
                             "app_id": self.app_id,
                             "app_key": self.api_key,
-                            "results_per_page": 50,
+                            "results_per_page": _results_per_page,
                             "what": query,
                             "where": location,
                             "max_days_old": posted_within_days,

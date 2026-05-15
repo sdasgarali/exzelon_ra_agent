@@ -380,6 +380,8 @@ def fetch_from_source(
     location: str = "United States",
     location_diversification: bool = False,
     target_states: Optional[List[str]] = None,
+    tuning: Optional[Dict[str, Any]] = None,
+    adapter_limit: int = 1000,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
 
@@ -411,6 +413,8 @@ def fetch_from_source(
                     industries=target_industries,
                     exclude_keywords=exclude_keywords,
                     job_titles=target_job_titles,
+                    limit=adapter_limit,
+                    tuning=tuning,
                 )
                 jobs.extend(state_jobs)
         else:
@@ -420,6 +424,8 @@ def fetch_from_source(
                 industries=target_industries,
                 exclude_keywords=exclude_keywords,
                 job_titles=target_job_titles,
+                limit=adapter_limit,
+                tuning=tuning,
             )
         diagnostics["jobs_returned"] = len(jobs)
         if len(jobs) == 0:
@@ -764,6 +770,13 @@ def run_lead_sourcing_pipeline(
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
         target_states = get_tenant_setting(db, "target_states", tenant_id=tenant_id, default=["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"])
 
+        # Source tuning — per-adapter performance parameters
+        job_source_tuning = get_tenant_setting(db, "job_source_tuning", tenant_id=tenant_id, default={})
+        if not isinstance(job_source_tuning, dict):
+            job_source_tuning = {}
+        pipeline_adapter_limit = int(get_tenant_setting(db, "pipeline_adapter_limit", tenant_id=tenant_id, default=1000))
+        pipeline_max_workers = int(get_tenant_setting(db, "pipeline_max_workers", tenant_id=tenant_id, default=6))
+
         # "__ANY__" sentinel means skip filtering for that dimension
         if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
             target_job_titles = settings.BROAD_SEARCH_QUERIES
@@ -794,9 +807,10 @@ def run_lead_sourcing_pipeline(
             adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
             logger.info(f"Using {len(adapters)} job source adapters (LOB type: {lob_type or 'none'})")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers) as executor:
                 futures = []
                 for source_name, adapter in adapters:
+                    adapter_tuning = job_source_tuning.get(source_name, {})
                     future = executor.submit(
                         fetch_from_source,
                         source_name,
@@ -809,6 +823,8 @@ def run_lead_sourcing_pipeline(
                         match_mode=match_mode,
                         location_diversification=location_diversification,
                         target_states=target_states,
+                        tuning=adapter_tuning,
+                        adapter_limit=pipeline_adapter_limit,
                     )
                     futures.append(future)
 
@@ -858,7 +874,7 @@ def run_lead_sourcing_pipeline(
             lob_query = lob_source_config.get("query", "")
             lob_location = lob_source_config.get("location", "United States")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers) as executor:
                 lob_futures = []
                 for source_name, adapter in lob_adapters:
                     # Source-specific extra params from config

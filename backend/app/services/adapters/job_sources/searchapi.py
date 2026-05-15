@@ -72,6 +72,7 @@ class SearchAPIAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from SearchAPI.io Google Jobs engine."""
         if not self.api_key:
@@ -94,8 +95,11 @@ class SearchAPIAdapter(JobSourceAdapter):
             "week" if posted_within_days <= 7 else "month"
         )
 
-        # Batch titles into groups of 4 for OR queries (unquoted, matching SerpAPI)
-        title_batches = [search_titles[i:i+4] for i in range(0, len(search_titles), 4)]
+        # Batch titles for OR queries (unquoted, matching SerpAPI)
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        _max_pages = int(_t.get('max_pages', 3))
+        title_batches = [search_titles[i:i+_batch_size] for i in range(0, len(search_titles), _batch_size)]
 
         with httpx.Client(timeout=30) as client:
             for batch in title_batches:
@@ -105,7 +109,7 @@ class SearchAPIAdapter(JobSourceAdapter):
                 query = " OR ".join(batch)
 
                 # Paginate with offset (start param, 10 per page)
-                for start in range(0, 30, 10):  # 3 pages per batch
+                for start in range(0, _max_pages * 10, 10):
                     if len(jobs) >= limit:
                         break
 

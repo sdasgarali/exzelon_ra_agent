@@ -255,6 +255,7 @@ const TAB_PERM_MAP: Record<string, string> = {
   business: 'business_rules',
   deliverability: 'deliverability',
   lobleadsources: 'lob_lead_sources',
+  sourcetuning: 'source_tuning',
 }
 
 // Setting key to tab mapping (for All Settings filtering)
@@ -292,6 +293,9 @@ const SETTING_TAB_MAP: Record<string, string> = {
   // LOB Lead Source API Keys
   google_places_api_key: 'lob_lead_sources', crunchbase_api_key: 'lob_lead_sources',
   builtwith_api_key: 'lob_lead_sources', github_token: 'lob_lead_sources',
+  // Source Tuning
+  job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
+  pipeline_max_workers: 'source_tuning',
 }
 
 export default function SettingsPage() {
@@ -476,6 +480,27 @@ export default function SettingsPage() {
     crunchbase_api_key: '',
     builtwith_api_key: '',
     github_token: '',
+  })
+
+  // Source Tuning config
+  const [sourceTuningConfig, setSourceTuningConfig] = useState<{
+    job_source_tuning: Record<string, Record<string, number>>;
+    pipeline_adapter_limit: number;
+    pipeline_max_workers: number;
+  }>({
+    job_source_tuning: {
+      jsearch: { batch_size: 4, num_pages: 10 },
+      serpapi: { batch_size: 4, max_pages: 3 },
+      searchapi: { batch_size: 4, max_pages: 3 },
+      adzuna: { batch_size: 4, max_pages: 10, results_per_page: 50 },
+      theirstack: { batch_size: 20, max_pages: 10 },
+      usajobs: { batch_size: 2, max_pages: 5, results_per_page: 100 },
+      jooble: { batch_size: 4, max_pages: 5 },
+      jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
+      coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
+    },
+    pipeline_adapter_limit: 1000,
+    pipeline_max_workers: 6,
   })
 
   // Test results
@@ -696,6 +721,30 @@ export default function SettingsPage() {
         builtwith_api_key: settingsMap.builtwith_api_key || '',
         github_token: settingsMap.github_token || '',
       })
+
+      // Source Tuning
+      const defaultTuning = {
+        jsearch: { batch_size: 4, num_pages: 10 },
+        serpapi: { batch_size: 4, max_pages: 3 },
+        searchapi: { batch_size: 4, max_pages: 3 },
+        adzuna: { batch_size: 4, max_pages: 10, results_per_page: 50 },
+        theirstack: { batch_size: 20, max_pages: 10 },
+        usajobs: { batch_size: 2, max_pages: 5, results_per_page: 100 },
+        jooble: { batch_size: 4, max_pages: 5 },
+        jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
+        coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
+      }
+      const loadedTuning = settingsMap.job_source_tuning
+      // Merge loaded tuning on top of defaults so any new adapter keys are present
+      const mergedTuning: Record<string, Record<string, number>> = {}
+      for (const [adapter, defaults] of Object.entries(defaultTuning)) {
+        mergedTuning[adapter] = { ...(defaults as Record<string, number>), ...(loadedTuning?.[adapter] || {}) }
+      }
+      setSourceTuningConfig({
+        job_source_tuning: mergedTuning,
+        pipeline_adapter_limit: settingsMap.pipeline_adapter_limit ?? 1000,
+        pipeline_max_workers: settingsMap.pipeline_max_workers ?? 6,
+      })
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
         setError(err.response?.data?.detail || 'Failed to fetch settings')
@@ -873,6 +922,12 @@ export default function SettingsPage() {
           saveSetting('builtwith_api_key', lobLeadSourceConfig.builtwith_api_key),
           saveSetting('github_token', lobLeadSourceConfig.github_token),
         ])
+      } else if (configType === 'sourcetuning') {
+        await Promise.all([
+          saveSetting('job_source_tuning', sourceTuningConfig.job_source_tuning, 'object'),
+          saveSetting('pipeline_adapter_limit', sourceTuningConfig.pipeline_adapter_limit, 'integer'),
+          saveSetting('pipeline_max_workers', sourceTuningConfig.pipeline_max_workers, 'integer'),
+        ])
       }
 
       setSuccess('Settings saved successfully!')
@@ -978,6 +1033,7 @@ export default function SettingsPage() {
             { id: 'business', label: '7. Business Rules', color: 'gray' },
             { id: 'deliverability', label: '8. Deliverability', color: 'teal' },
             { id: 'lobleadsources', label: '9. LOB Lead Sources', color: 'emerald' },
+            { id: 'sourcetuning', label: '10. Source Tuning', color: 'amber' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -4063,7 +4119,205 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 10: All Settings */}
+      {/* Tab 10: Source Tuning */}
+      {activeTab === 'sourcetuning' && (
+        <fieldset disabled={!canWriteTab('sourcetuning')} className="space-y-6">
+          {!canWriteTab('sourcetuning') && (
+            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+              You have read-only access to Source Tuning settings.
+            </div>
+          )}
+
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Source Tuning</h3>
+            <p className="text-sm text-gray-500 mb-4">Configure adapter performance parameters to control how deeply each job source searches.</p>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+              <p className="text-sm text-blue-800">
+                Higher values = more leads but more API credits consumed. Recommended values are shown as badges.
+                The pipeline uses these when running lead sourcing.
+              </p>
+            </div>
+
+            {/* Pipeline-level settings */}
+            <div className="mb-8">
+              <h4 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                Pipeline Settings
+                <span className="text-xs font-normal bg-gray-100 text-gray-600 px-2 py-0.5 rounded">Global</span>
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Adapter Result Limit
+                    <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 5000</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={50000}
+                    value={sourceTuningConfig.pipeline_adapter_limit}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, pipeline_adapter_limit: parseInt(e.target.value) || 1000 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Max results per adapter. High-volume adapters need 5000+.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Workers (Threads)
+                    <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 10</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={sourceTuningConfig.pipeline_max_workers}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, pipeline_max_workers: parseInt(e.target.value) || 6 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Parallel threads. Set equal to or greater than number of enabled adapters.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Per-adapter tuning cards */}
+            <h4 className="text-md font-semibold text-gray-800 mb-3">Per-Adapter Tuning</h4>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {([
+                {
+                  key: 'jsearch', label: 'JSearch', desc: 'LinkedIn, Indeed, Glassdoor aggregator',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query. Higher = fewer API calls.' },
+                    { k: 'num_pages', label: 'Num Pages', def: 10, rec: 20, min: 1, max: 100, impact: 'Pages fetched per query. Each page ~ 10 results.' },
+                  ],
+                },
+                {
+                  key: 'serpapi', label: 'SerpAPI', desc: 'Google Jobs via SerpAPI',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query (OR-joined).' },
+                    { k: 'max_pages', label: 'Max Pages', def: 3, rec: 10, min: 1, max: 50, impact: 'Pages per batch. Each page = 1 API credit.' },
+                  ],
+                },
+                {
+                  key: 'searchapi', label: 'SearchAPI', desc: 'Google Jobs via SearchAPI.io',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query (OR-joined).' },
+                    { k: 'max_pages', label: 'Max Pages', def: 3, rec: 10, min: 1, max: 50, impact: 'Pages per batch. Each = 1 API credit.' },
+                  ],
+                },
+                {
+                  key: 'adzuna', label: 'Adzuna', desc: 'Adzuna job board API',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 10, rec: 10, min: 1, max: 50, impact: 'Already optimal at 10.' },
+                    { k: 'results_per_page', label: 'Results/Page', def: 50, rec: 50, min: 10, max: 50, impact: 'Max 50 per Adzuna API.' },
+                  ],
+                },
+                {
+                  key: 'theirstack', label: 'TheirStack', desc: 'Tech company job postings',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 20, rec: 20, min: 1, max: 50, impact: 'Already groups 20 titles.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 10, rec: 20, min: 1, max: 100, impact: '100 results/page. Double = 2x results.' },
+                  ],
+                },
+                {
+                  key: 'usajobs', label: 'USAJobs', desc: 'Federal government jobs (free)',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 2, rec: 4, min: 1, max: 20, impact: 'Titles per query. Free API, safe to increase.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 5, rec: 10, min: 1, max: 50, impact: '100 results/page. Free API.' },
+                    { k: 'results_per_page', label: 'Results/Page', def: 100, rec: 100, min: 10, max: 500, impact: 'Results per page from API.' },
+                  ],
+                },
+                {
+                  key: 'jooble', label: 'Jooble', desc: '71-country job aggregator (free)',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 5, rec: 10, min: 1, max: 50, impact: 'Free API, safe to double.' },
+                  ],
+                },
+                {
+                  key: 'jobdatafeeds', label: 'JobDataFeeds', desc: 'Bulk job data feed',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 4, rec: 8, min: 1, max: 50, impact: 'Titles per query.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 50, rec: 50, min: 1, max: 200, impact: 'Already excellent (5000/query).' },
+                    { k: 'results_per_page', label: 'Results/Page', def: 100, rec: 100, min: 10, max: 500, impact: 'Results per page from API.' },
+                  ],
+                },
+                {
+                  key: 'coresignal', label: 'Coresignal', desc: 'Jobs + recruiter contacts (premium)',
+                  fields: [
+                    { k: 'batch_size', label: 'Batch Size', def: 5, rec: 10, min: 1, max: 50, impact: 'Titles per query.' },
+                    { k: 'max_pages', label: 'Max Pages', def: 5, rec: 10, min: 1, max: 50, impact: '2 credits/record — watch cost.' },
+                    { k: 'results_per_page', label: 'Results/Page', def: 100, rec: 100, min: 10, max: 500, impact: 'Results per page from API.' },
+                  ],
+                },
+              ] as const).map((adapter) => {
+                const isEnabled = jobSourceConfig.lead_sources?.includes(adapter.key)
+                return (
+                  <div key={adapter.key} className={`border rounded-lg p-4 ${isEnabled ? 'border-green-200 bg-green-50/30' : 'border-gray-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="text-sm font-semibold text-gray-900">{adapter.label}</h5>
+                      {isEnabled ? (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Enabled</span>
+                      ) : (
+                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Disabled</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mb-3">{adapter.desc}</p>
+                    <div className="space-y-3">
+                      {adapter.fields.map((field) => {
+                        const currentVal = sourceTuningConfig.job_source_tuning[adapter.key]?.[field.k] ?? field.def
+                        return (
+                          <div key={field.k}>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-xs font-medium text-gray-700">{field.label}</label>
+                              <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Rec: {field.rec}</span>
+                            </div>
+                            <input
+                              type="number"
+                              min={field.min}
+                              max={field.max}
+                              value={currentVal}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || field.def
+                                setSourceTuningConfig(prev => ({
+                                  ...prev,
+                                  job_source_tuning: {
+                                    ...prev.job_source_tuning,
+                                    [adapter.key]: {
+                                      ...prev.job_source_tuning[adapter.key],
+                                      [field.k]: val,
+                                    },
+                                  },
+                                }))
+                              }}
+                              className="input w-full text-sm"
+                            />
+                            <p className="text-[11px] text-gray-400 mt-0.5">{field.impact}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {canWriteTab('sourcetuning') && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => saveAllSettings('sourcetuning')}
+                disabled={saving}
+                className="btn btn-primary"
+              >
+                {saving ? 'Saving...' : 'Save Source Tuning Settings'}
+              </button>
+            </div>
+          )}
+        </fieldset>
+      )}
+
+      {/* Tab 11: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
           {!isSuperAdmin && (

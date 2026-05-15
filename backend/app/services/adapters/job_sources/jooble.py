@@ -71,6 +71,7 @@ class JoobleAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Jooble API."""
         if not self.api_key:
@@ -81,8 +82,11 @@ class JoobleAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles into groups of 4
-        title_batches = [search_titles[i:i+4] for i in range(0, len(search_titles), 4)]
+        # Batch titles
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        _max_pages = int(_t.get('max_pages', 5))
+        title_batches = [search_titles[i:i+_batch_size] for i in range(0, len(search_titles), _batch_size)]
 
         with httpx.Client(timeout=30) as client:
             for batch in title_batches:
@@ -92,7 +96,7 @@ class JoobleAdapter(JobSourceAdapter):
                 keywords = " | ".join(batch)
 
                 # Paginate (1-based pages)
-                for page in range(1, 6):  # Max 5 pages per query
+                for page in range(1, _max_pages + 1):
                     if len(jobs) >= limit:
                         break
 

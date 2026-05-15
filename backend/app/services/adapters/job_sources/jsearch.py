@@ -100,7 +100,8 @@ class JSearchAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        limit: int = 1000  # IMPACT: Increased from 500 for higher throughput
+        limit: int = 1000,  # IMPACT: Increased from 500 for higher throughput
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from JSearch API (aggregates LinkedIn, Indeed, Glassdoor).
 
@@ -143,8 +144,9 @@ class JSearchAdapter(JobSourceAdapter):
         )
 
         # IMPACT: Batch titles into grouped queries to save API calls
-        # 37 titles / 4 per batch = ~9 queries instead of 37
-        search_queries = self._batch_queries(search_queries, location, batch_size=4)
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        search_queries = self._batch_queries(search_queries, location, batch_size=_batch_size)
 
         # Reuse a single HTTP client for all queries (connection pooling)
         with httpx.Client(timeout=30) as client:
@@ -161,7 +163,7 @@ class JSearchAdapter(JobSourceAdapter):
                     params={
                         "query": query,
                         "page": "1",
-                        "num_pages": "10",  # IMPACT: 10 pages = 100 results per call
+                        "num_pages": str(int(_t.get('num_pages', 10))),
                         "date_posted": date_posted,
                         "remote_jobs_only": "false"
                     },

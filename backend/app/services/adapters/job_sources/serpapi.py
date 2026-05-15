@@ -53,6 +53,7 @@ class SerpAPIAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from Google Jobs via SerpAPI."""
         if not self.api_key:
@@ -78,17 +79,20 @@ class SerpAPIAdapter(JobSourceAdapter):
             "week" if posted_within_days <= 7 else "month"
         )
 
-        # Batch titles (4 per query using OR)
+        # Batch titles using OR
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        _max_pages = int(_t.get('max_pages', 3))
         batched_queries = []
-        for i in range(0, len(search_titles), 4):
-            batch = search_titles[i:i+4]
+        for i in range(0, len(search_titles), _batch_size):
+            batch = search_titles[i:i+_batch_size]
             batched_queries.append(" OR ".join(batch))
 
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
                 try:
                     # Google Jobs supports offset-based pagination via `start` param
-                    for start_offset in range(0, 30, 10):  # 3 pages: 0, 10, 20
+                    for start_offset in range(0, _max_pages * 10, 10):
                         params = {
                             "engine": "google_jobs",
                             "q": query,

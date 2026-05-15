@@ -61,6 +61,7 @@ class TheirStackAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from TheirStack API."""
         if not self.api_key:
@@ -75,8 +76,10 @@ class TheirStackAdapter(JobSourceAdapter):
         ]
 
         # TheirStack uses POST with JSON body for search
-        # Batch titles in groups of 20 (API limit per request)
-        title_batches = [search_titles[i:i + 20] for i in range(0, len(search_titles), 20)]
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 20))
+        _max_pages = int(_t.get('max_pages', 10))
+        title_batches = [search_titles[i:i + _batch_size] for i in range(0, len(search_titles), _batch_size)]
         if not title_batches:
             title_batches = [search_titles]
 
@@ -90,7 +93,7 @@ class TheirStackAdapter(JobSourceAdapter):
 
         with httpx.Client(timeout=30) as client:
             try:
-                pages_to_fetch = min(10, max(1, limit // 100))
+                pages_to_fetch = min(_max_pages, max(1, limit // 100))
                 for title_batch in title_batches:
                     payload["job_title_or"] = title_batch
                     for page in range(pages_to_fetch):

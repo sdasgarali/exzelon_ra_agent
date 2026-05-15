@@ -164,6 +164,10 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'github_token': 'lob_lead_sources',
     # Intent Signal Automation
     'automation_intent_signals_enabled': 'automation',
+    # Source Tuning (adapter performance parameters)
+    'job_source_tuning': 'source_tuning',
+    'pipeline_adapter_limit': 'source_tuning',
+    'pipeline_max_workers': 'source_tuning',
 }
 
 # Default settings for seed data
@@ -596,6 +600,25 @@ DEFAULT_SETTINGS = {
     # Intent Signal Automation
     "automation_intent_signals_enabled": {"value": True, "type": "boolean", "description": "Enable scheduled intent signal monitoring jobs"},
 
+    # Source Tuning — per-adapter performance parameters
+    "job_source_tuning": {
+        "value": {
+            "jsearch": {"batch_size": 4, "num_pages": 10},
+            "serpapi": {"batch_size": 4, "max_pages": 3},
+            "searchapi": {"batch_size": 4, "max_pages": 3},
+            "adzuna": {"batch_size": 4, "max_pages": 10, "results_per_page": 50},
+            "theirstack": {"batch_size": 20, "max_pages": 10},
+            "usajobs": {"batch_size": 2, "max_pages": 5, "results_per_page": 100},
+            "jooble": {"batch_size": 4, "max_pages": 5},
+            "jobdatafeeds": {"batch_size": 4, "max_pages": 50, "results_per_page": 100},
+            "coresignal": {"batch_size": 5, "max_pages": 5, "results_per_page": 100},
+        },
+        "type": "object",
+        "description": "Per-adapter tuning parameters (batch_size, max_pages, results_per_page)"
+    },
+    "pipeline_adapter_limit": {"value": 1000, "type": "integer", "description": "Max results per adapter in lead sourcing pipeline"},
+    "pipeline_max_workers": {"value": 6, "type": "integer", "description": "Thread pool size for parallel adapter execution"},
+
     # Cost Budget
     "cost_monthly_budget_total": {"value": 500, "type": "number", "description": "Total monthly budget for API costs (USD)"},
 
@@ -833,6 +856,45 @@ async def update_setting(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="backup_retention_days must be between 1 and 90",
             )
+
+    # Validate source tuning keys
+    if key == "pipeline_max_workers":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_max_workers must be an integer")
+        if val < 1 or val > 20:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_max_workers must be between 1 and 20")
+
+    if key == "pipeline_adapter_limit":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_adapter_limit must be an integer")
+        if val < 10 or val > 50000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_adapter_limit must be between 10 and 50000")
+
+    if key == "job_source_tuning":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        if not isinstance(raw, dict):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="job_source_tuning must be a JSON object")
+        valid_adapters = {"jsearch", "serpapi", "searchapi", "adzuna", "theirstack", "usajobs", "jooble", "jobdatafeeds", "coresignal"}
+        for adapter_name, params in raw.items():
+            if adapter_name not in valid_adapters:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown adapter: {adapter_name}")
+            if not isinstance(params, dict):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Params for {adapter_name} must be an object")
+            for pk, pv in params.items():
+                if not isinstance(pv, (int, float)) or pv < 1:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{adapter_name}.{pk} must be a positive number")
 
     # Determine the value to store
     if setting_in.value_json is not None:

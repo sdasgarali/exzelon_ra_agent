@@ -75,6 +75,7 @@ class JobDataFeedsAdapter(JobSourceAdapter):
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
         limit: int = 1000,
+        tuning: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch jobs from JobDataFeeds API."""
         if not self.api_key:
@@ -85,8 +86,12 @@ class JobDataFeedsAdapter(JobSourceAdapter):
             "HR Manager", "Operations Manager", "Warehouse Manager",
         ]
 
-        # Batch titles into groups of 4
-        title_batches = [search_titles[i:i+4] for i in range(0, len(search_titles), 4)]
+        # Batch titles
+        _t = tuning or {}
+        _batch_size = int(_t.get('batch_size', 4))
+        _max_pages = int(_t.get('max_pages', 50))
+        _results_per_page = int(_t.get('results_per_page', 100))
+        title_batches = [search_titles[i:i+_batch_size] for i in range(0, len(search_titles), _batch_size)]
 
         # Date filter
         date_from = (date.today() - timedelta(days=posted_within_days)).strftime("%Y-%m-%d")
@@ -98,8 +103,8 @@ class JobDataFeedsAdapter(JobSourceAdapter):
 
                 query = " OR ".join(batch)
 
-                # Bulk pagination: 100 per page, up to 50 pages
-                for page in range(1, 51):
+                # Bulk pagination
+                for page in range(1, _max_pages + 1):
                     if len(jobs) >= limit:
                         break
 
@@ -107,7 +112,7 @@ class JobDataFeedsAdapter(JobSourceAdapter):
                         "country": "US",
                         "q": query,
                         "date_from": date_from,
-                        "page_size": 100,
+                        "page_size": _results_per_page,
                         "page": page,
                     }
 
