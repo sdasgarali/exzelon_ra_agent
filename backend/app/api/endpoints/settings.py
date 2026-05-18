@@ -48,7 +48,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'apollo_api_key': 'job_source_apis',
     'lead_sources': 'job_source_apis',
     'lead_sourcing_frequency': 'job_source_apis',
-    'location_diversification': 'job_source_apis',
+    'location_diversification': 'source_tuning',
     'enabled_sources': 'job_source_apis',
     'theirstack_api_key': 'job_source_apis',
     'serpapi_api_key': 'job_source_apis',
@@ -168,6 +168,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'job_source_tuning': 'source_tuning',
     'pipeline_adapter_limit': 'source_tuning',
     'pipeline_max_workers': 'source_tuning',
+    'posted_within_days': 'source_tuning',
 }
 
 # Default settings for seed data
@@ -220,7 +221,17 @@ DEFAULT_SETTINGS = {
     "jsearch_api_key": {"value": "", "type": "string", "description": "JSearch RapidAPI key"},
     "indeed_publisher_id": {"value": "", "type": "string", "description": "Indeed Publisher ID"},
     "enabled_sources": {"value": ["linkedin", "indeed", "glassdoor", "simplyhired"], "type": "list", "description": "Enabled job sources"},
-    "target_states": {"value": ["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"], "type": "list", "description": "Target US states"},
+    "target_states": {
+        "value": [
+            "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+            "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+            "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+            "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+            "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
+        ],
+        "type": "list",
+        "description": "Target US states for location diversification"
+    },
 
     # Target Industries (Non-IT only)
     "target_industries": {
@@ -618,6 +629,7 @@ DEFAULT_SETTINGS = {
     },
     "pipeline_adapter_limit": {"value": 1000, "type": "integer", "description": "Max results per adapter in lead sourcing pipeline"},
     "pipeline_max_workers": {"value": 6, "type": "integer", "description": "Thread pool size for parallel adapter execution"},
+    "posted_within_days": {"value": 7, "type": "integer", "description": "Only fetch jobs posted within this many days (1-90). Lower = fewer duplicates."},
 
     # Cost Budget
     "cost_monthly_budget_total": {"value": 500, "type": "number", "description": "Total monthly budget for API costs (USD)"},
@@ -879,6 +891,17 @@ async def update_setting(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_adapter_limit must be an integer")
         if val < 10 or val > 50000:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pipeline_adapter_limit must be between 10 and 50000")
+
+    if key == "posted_within_days":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be an integer")
+        if val < 1 or val > 90:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be between 1 and 90")
 
     if key == "job_source_tuning":
         raw = setting_in.value if setting_in.value is not None else (

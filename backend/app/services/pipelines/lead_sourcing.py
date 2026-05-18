@@ -382,6 +382,7 @@ def fetch_from_source(
     target_states: Optional[List[str]] = None,
     tuning: Optional[Dict[str, Any]] = None,
     adapter_limit: int = 1000,
+    posted_within_days: int = 7,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
 
@@ -409,7 +410,7 @@ def fetch_from_source(
             for state in target_states:
                 state_jobs = adapter.fetch_jobs(
                     location=state,
-                    posted_within_days=30,
+                    posted_within_days=posted_within_days,
                     industries=target_industries,
                     exclude_keywords=exclude_keywords,
                     job_titles=target_job_titles,
@@ -420,7 +421,7 @@ def fetch_from_source(
         else:
             jobs = adapter.fetch_jobs(
                 location=location,
-                posted_within_days=30,  # IMPACT: 30-day window (was 1 = today only)
+                posted_within_days=posted_within_days,
                 industries=target_industries,
                 exclude_keywords=exclude_keywords,
                 job_titles=target_job_titles,
@@ -776,6 +777,7 @@ def run_lead_sourcing_pipeline(
             job_source_tuning = {}
         pipeline_adapter_limit = int(get_tenant_setting(db, "pipeline_adapter_limit", tenant_id=tenant_id, default=1000))
         pipeline_max_workers = int(get_tenant_setting(db, "pipeline_max_workers", tenant_id=tenant_id, default=6))
+        posted_within_days = int(get_tenant_setting(db, "posted_within_days", tenant_id=tenant_id, default=7))
 
         # "__ANY__" sentinel means skip filtering for that dimension
         if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
@@ -825,6 +827,7 @@ def run_lead_sourcing_pipeline(
                         target_states=target_states,
                         tuning=adapter_tuning,
                         adapter_limit=pipeline_adapter_limit,
+                        posted_within_days=posted_within_days,
                     )
                     futures.append(future)
 

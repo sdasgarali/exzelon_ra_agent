@@ -295,7 +295,8 @@ const SETTING_TAB_MAP: Record<string, string> = {
   builtwith_api_key: 'lob_lead_sources', github_token: 'lob_lead_sources',
   // Source Tuning
   job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
-  pipeline_max_workers: 'source_tuning',
+  pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
+  location_diversification: 'source_tuning',
 }
 
 export default function SettingsPage() {
@@ -487,6 +488,9 @@ export default function SettingsPage() {
     job_source_tuning: Record<string, Record<string, number>>;
     pipeline_adapter_limit: number;
     pipeline_max_workers: number;
+    posted_within_days: number;
+    location_diversification: boolean;
+    target_states: string[];
   }>({
     job_source_tuning: {
       jsearch: { batch_size: 4, num_pages: 10 },
@@ -501,6 +505,9 @@ export default function SettingsPage() {
     },
     pipeline_adapter_limit: 1000,
     pipeline_max_workers: 6,
+    posted_within_days: 7,
+    location_diversification: false,
+    target_states: [...US_STATES],
   })
 
   // Test results
@@ -744,6 +751,9 @@ export default function SettingsPage() {
         job_source_tuning: mergedTuning,
         pipeline_adapter_limit: settingsMap.pipeline_adapter_limit ?? 1000,
         pipeline_max_workers: settingsMap.pipeline_max_workers ?? 6,
+        posted_within_days: settingsMap.posted_within_days ?? 7,
+        location_diversification: settingsMap.location_diversification === true,
+        target_states: settingsMap.target_states || [...US_STATES],
       })
     } catch (err: any) {
       if (err.code !== 'ERR_CANCELED') {
@@ -824,7 +834,6 @@ export default function SettingsPage() {
           saveSetting('lead_sources', jobSourceConfig.lead_sources, 'list'),
           saveSetting('enabled_sources', jobSourceConfig.enabled_sources, 'list'),
           saveSetting('lead_sourcing_frequency', jobSourceConfig.lead_sourcing_frequency),
-          saveSetting('location_diversification', jobSourceConfig.location_diversification, 'boolean'),
           saveSetting('theirstack_api_key', jobSourceConfig.theirstack_api_key),
           saveSetting('serpapi_api_key', jobSourceConfig.serpapi_api_key),
           saveSetting('adzuna_app_id', jobSourceConfig.adzuna_app_id),
@@ -927,6 +936,9 @@ export default function SettingsPage() {
           saveSetting('job_source_tuning', sourceTuningConfig.job_source_tuning, 'object'),
           saveSetting('pipeline_adapter_limit', sourceTuningConfig.pipeline_adapter_limit, 'integer'),
           saveSetting('pipeline_max_workers', sourceTuningConfig.pipeline_max_workers, 'integer'),
+          saveSetting('posted_within_days', sourceTuningConfig.posted_within_days, 'integer'),
+          saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
+          saveSetting('target_states', sourceTuningConfig.target_states, 'list'),
         ])
       }
 
@@ -2509,26 +2521,21 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Location Strategy */}
+                {/* Location Strategy — moved to Source Tuning */}
                 <div className="mt-6 border-t pt-4">
                   <h4 className="text-sm font-semibold text-gray-700 flex items-center mb-3">
                     <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
                     Location Strategy
                   </h4>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={jobSourceConfig.location_diversification}
-                      onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, location_diversification: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm font-medium">Search per state (multiplies results but uses more API calls)</span>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1 ml-6">
-                    Searches each target state individually instead of &quot;United States&quot;.
-                    Produces 3-5x more results but uses 10x more API quota.
-                    Recommended only with paid API plans.
-                  </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-800">
+                      Location diversification and posted-within-days settings have moved to the <button
+                        type="button"
+                        onClick={() => setActiveTab('sourcetuning')}
+                        className="font-semibold underline hover:text-blue-900"
+                      >Source Tuning</button> tab for centralized pipeline configuration.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -4148,6 +4155,21 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Posted Within Days
+                    <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 7</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={sourceTuningConfig.posted_within_days}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, posted_within_days: parseInt(e.target.value) || 7 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Only fetch jobs posted within this many days. Lower = fewer duplicates per run. Was hardcoded at 30.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Adapter Result Limit
                     <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 5000</span>
                   </label>
@@ -4177,6 +4199,71 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mt-1">Parallel threads. Set equal to or greater than number of enabled adapters.</p>
                 </div>
               </div>
+            </div>
+
+            {/* Location Diversification */}
+            <div className="mb-8 border-t pt-6">
+              <h4 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                Location Diversification
+                <span className="text-xs font-normal bg-gray-100 text-gray-600 px-2 py-0.5 rounded">Search Strategy</span>
+              </h4>
+              <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={sourceTuningConfig.location_diversification}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, location_diversification: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Search per state instead of nationwide</span>
+              </label>
+              <p className="text-xs text-gray-500 ml-6 mb-4">
+                Searches each selected state individually instead of &quot;United States&quot;.
+                Produces 3-5x more results but uses proportionally more API quota.
+                Recommended only with paid API plans.
+              </p>
+
+              {sourceTuningConfig.location_diversification && (
+                <div className="border rounded-lg bg-gray-50 mt-3">
+                  <div className="px-3 py-2 border-b bg-gray-100 rounded-t-lg flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sourceTuningConfig.target_states.length === US_STATES.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSourceTuningConfig({ ...sourceTuningConfig, target_states: [...US_STATES] })
+                          } else {
+                            setSourceTuningConfig({ ...sourceTuningConfig, target_states: [] })
+                          }
+                        }}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm font-medium">
+                        Select All ({sourceTuningConfig.target_states.length}/{US_STATES.length} states)
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2 p-3">
+                    {US_STATES.map((state) => (
+                      <label key={state} className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={sourceTuningConfig.target_states.includes(state)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSourceTuningConfig({ ...sourceTuningConfig, target_states: [...sourceTuningConfig.target_states, state] })
+                            } else {
+                              setSourceTuningConfig({ ...sourceTuningConfig, target_states: sourceTuningConfig.target_states.filter(s => s !== state) })
+                            }
+                          }}
+                          className="w-3 h-3"
+                        />
+                        <span className="text-xs">{state}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Per-adapter tuning cards */}
