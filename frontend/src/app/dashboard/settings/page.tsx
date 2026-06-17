@@ -295,7 +295,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   // Source Tuning
   job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
   pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
-  location_diversification: 'source_tuning',
+  location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
 }
 
 export default function SettingsPage() {
@@ -488,6 +488,7 @@ export default function SettingsPage() {
     pipeline_max_workers: number;
     posted_within_days: number;
     location_diversification: boolean;
+    lead_sourcing_target_per_run: number;
     target_states: string[];
   }>({
     job_source_tuning: {
@@ -505,6 +506,7 @@ export default function SettingsPage() {
     pipeline_max_workers: 6,
     posted_within_days: 7,
     location_diversification: false,
+    lead_sourcing_target_per_run: 500,
     target_states: [...US_STATES],
   })
 
@@ -750,6 +752,7 @@ export default function SettingsPage() {
         pipeline_max_workers: settingsMap.pipeline_max_workers ?? 6,
         posted_within_days: settingsMap.posted_within_days ?? 7,
         location_diversification: settingsMap.location_diversification === true,
+        lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
         target_states: settingsMap.target_states || [...US_STATES],
       })
     } catch (err: any) {
@@ -934,6 +937,7 @@ export default function SettingsPage() {
           saveSetting('pipeline_max_workers', sourceTuningConfig.pipeline_max_workers, 'integer'),
           saveSetting('posted_within_days', sourceTuningConfig.posted_within_days, 'integer'),
           saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
+          saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
           saveSetting('target_states', sourceTuningConfig.target_states, 'list'),
         ])
       }
@@ -4175,6 +4179,38 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-gray-500 mt-1">Parallel threads. Set equal to or greater than number of enabled adapters.</p>
                 </div>
+              </div>
+            </div>
+
+            {/* API Cost Optimization — tiered waterfall */}
+            <div className="mb-8 border-t pt-6">
+              <h4 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                API Cost Optimization
+                <span className="text-xs font-normal bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">Tiered Waterfall</span>
+              </h4>
+              <p className="text-xs text-gray-500 mb-3">
+                Free/cheap/unique sources (USAJOBS, Jooble, JSearch, Adzuna, TheirStack) run first.
+                Expensive or overlapping sources (Google Jobs, JobDataFeeds, Coresignal) are called
+                only to fill the gap toward this many unique leads per run — then skipped to save API spend.
+                Providers that share an index (SerpAPI &amp; SearchAPI = Google Jobs) never run together.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Unique Leads Target Per Run
+                  <span className="ml-2 text-xs font-normal bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">0 = run all sources</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  value={sourceTuningConfig.lead_sourcing_target_per_run}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_target_per_run: parseInt(e.target.value) || 0 })}
+                  className="input w-full max-w-xs"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Once the cheap tier reaches this many unique leads, expensive Google-Jobs/premium APIs are skipped.
+                  Raise it for more coverage; set 0 to disable early-stop (call every enabled source each run).
+                </p>
               </div>
             </div>
 
