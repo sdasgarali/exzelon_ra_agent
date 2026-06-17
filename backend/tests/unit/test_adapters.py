@@ -722,3 +722,38 @@ class TestOpenCorporatesAdapter:
         """normalize returns None for None input."""
         adapter = OpenCorporatesAdapter(api_key="test")
         assert adapter.normalize(None) is None
+
+
+class TestApolloNotAJobSource:
+    """Regression: Apollo must NOT be a lead/job source — only contact enrichment."""
+
+    def test_apollo_not_exported_by_job_sources_package(self):
+        import app.services.adapters.job_sources as js
+        assert "ApolloJobSourceAdapter" not in js.__all__
+        assert not hasattr(js, "ApolloJobSourceAdapter")
+
+    def test_get_all_job_source_adapters_ignores_apollo(self, db_session, monkeypatch):
+        """Even if 'apollo' lingers in lead_sources config, no apollo adapter is built."""
+        import app.services.pipelines.lead_sourcing as ls
+
+        def fake_setting(db, key, tenant_id=None, default=None):
+            if key == "lead_sources":
+                return ["apollo", "jsearch", "mock"]
+            if key == "jsearch_api_key":
+                return "test-key"
+            return default
+
+        monkeypatch.setattr(ls, "get_tenant_setting", fake_setting)
+        adapters = ls.get_all_job_source_adapters(db_session, tenant_id=1)
+        names = [name for name, _ in adapters]
+        assert "apollo" not in names
+
+    def test_apollo_still_available_for_contact_discovery(self):
+        from app.services.adapters.contact_discovery.apollo import ApolloAdapter
+        adapter = ApolloAdapter(api_key="test")
+        assert adapter is not None
+
+    def test_apollo_provider_tab_is_contacts(self):
+        from app.api.endpoints.settings import PROVIDER_TAB_MAP, SETTINGS_TAB_MAP
+        assert PROVIDER_TAB_MAP["apollo"] == "contacts"
+        assert SETTINGS_TAB_MAP["apollo_api_key"] == "contacts"

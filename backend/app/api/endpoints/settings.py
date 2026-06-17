@@ -45,7 +45,6 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'job_source_provider': 'job_source_apis',
     'jsearch_api_key': 'job_source_apis',
     'indeed_publisher_id': 'job_source_apis',
-    'apollo_api_key': 'job_source_apis',
     'lead_sources': 'job_source_apis',
     'lead_sourcing_frequency': 'job_source_apis',
     'location_diversification': 'source_tuning',
@@ -69,9 +68,10 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'ai_model': 'ai_llm',
     'ai_personalize_emails': 'ai_llm',
     'ai_personalization_prompt': 'ai_llm',
-    # Contacts
+    # Contacts (Apollo is a contact-enrichment provider, not a lead source)
     'contact_provider': 'contacts',
     'contact_providers': 'contacts',
+    'apollo_api_key': 'contacts',
     'seamless_api_key': 'contacts',
     'hunter_contact_api_key': 'contacts',
     'snovio_client_id': 'contacts',
@@ -1039,7 +1039,7 @@ async def remove_tenant_override(
 
 
 PROVIDER_TAB_MAP: Dict[str, str] = {
-    'apollo': 'job_sources',
+    'apollo': 'contacts',  # Apollo is contact-enrichment only, not a job source
     'jsearch': 'job_sources',
     'indeed': 'job_sources',
     'theirstack': 'job_sources',
