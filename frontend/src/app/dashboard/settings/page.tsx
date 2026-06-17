@@ -18,8 +18,7 @@ interface JobSourceConfig {
   job_source_provider: string
   jsearch_api_key: string
   indeed_publisher_id: string
-  apollo_api_key: string  // Apollo can also be used for lead sourcing
-  lead_sources: string[]  // Enabled lead sources: jsearch, apollo, theirstack, serpapi, adzuna
+  lead_sources: string[]  // Enabled lead sources: jsearch, theirstack, serpapi, adzuna (Apollo is contact-enrichment only)
   enabled_sources: string[]
   target_states: string[]
   available_job_titles: string[]  // Master list of all available titles (derived from categories)
@@ -266,7 +265,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   company_size_no_preference: 'job_filters',
   exclude_it_keywords: 'job_filters', exclude_staffing_keywords: 'job_filters', job_title_categories: 'job_filters',
   job_source_provider: 'job_source_apis', jsearch_api_key: 'job_source_apis', indeed_publisher_id: 'job_source_apis',
-  apollo_api_key: 'job_source_apis', lead_sources: 'job_source_apis', enabled_sources: 'job_source_apis',
+  apollo_api_key: 'contacts', lead_sources: 'job_source_apis', enabled_sources: 'job_source_apis',
   theirstack_api_key: 'job_source_apis', serpapi_api_key: 'job_source_apis',
   adzuna_app_id: 'job_source_apis', adzuna_api_key: 'job_source_apis',
   searchapi_api_key: 'job_source_apis', usajobs_api_key: 'job_source_apis', usajobs_email: 'job_source_apis',
@@ -328,7 +327,6 @@ export default function SettingsPage() {
     job_source_provider: 'jsearch',
     jsearch_api_key: '',
     indeed_publisher_id: '',
-    apollo_api_key: '',
     lead_sources: ['jsearch'],
     enabled_sources: ['linkedin', 'indeed', 'glassdoor', 'simplyhired'],
     target_states: ['CA', 'TX', 'FL', 'NY', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI'],
@@ -606,8 +604,7 @@ export default function SettingsPage() {
         job_source_provider: settingsMap.job_source_provider || 'jsearch',
         jsearch_api_key: settingsMap.jsearch_api_key || '',
         indeed_publisher_id: settingsMap.indeed_publisher_id || '',
-        apollo_api_key: settingsMap.apollo_api_key || '',
-        lead_sources: settingsMap.lead_sources || (isLocal ? ['jsearch', 'mock'] : ['jsearch']),
+        lead_sources: (settingsMap.lead_sources || (isLocal ? ['jsearch', 'mock'] : ['jsearch'])).filter((s: string) => s !== 'apollo'),
         enabled_sources: settingsMap.enabled_sources || ['linkedin', 'indeed', 'glassdoor', 'simplyhired'],
         target_states: settingsMap.target_states || ['CA', 'TX', 'FL', 'NY', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI'],
         available_job_titles: mergedAvailable,
@@ -830,7 +827,6 @@ export default function SettingsPage() {
           saveSetting('job_source_provider', jobSourceConfig.job_source_provider),
           saveSetting('jsearch_api_key', jobSourceConfig.jsearch_api_key),
           saveSetting('indeed_publisher_id', jobSourceConfig.indeed_publisher_id),
-          saveSetting('apollo_api_key', jobSourceConfig.apollo_api_key),
           saveSetting('lead_sources', jobSourceConfig.lead_sources, 'list'),
           saveSetting('enabled_sources', jobSourceConfig.enabled_sources, 'list'),
           saveSetting('lead_sourcing_frequency', jobSourceConfig.lead_sourcing_frequency),
@@ -2301,12 +2297,6 @@ export default function SettingsPage() {
                         {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('apollo')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'apollo'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'apollo') }) } }} className="w-4 h-4" />
-                        <span className="text-sm font-medium">Apollo.io (Company/People Search)</span>
-                        <span className="text-xs text-gray-400">Free: 10k records/mo</span>
-                        {jobSourceConfig.apollo_api_key && <span className="text-xs text-green-600">API key configured</span>}
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
                         <span className="text-xs text-gray-400">Free: 100 req/mo | Paid: from $49/mo</span>
@@ -2367,19 +2357,6 @@ export default function SettingsPage() {
                       {jobSourceConfig.lead_sources.length > 1 && `Using ${jobSourceConfig.lead_sources.length} sources with automatic deduplication`}
                     </p>
                   </div>
-
-                  {/* Apollo API Key */}
-                  {jobSourceConfig.lead_sources.includes('apollo') && (
-                    <div>
-                      <label className="label">Apollo API Key (for Lead Sourcing)</label>
-                      <div className="flex gap-2">
-                        <input type="password" value={jobSourceConfig.apollo_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, apollo_api_key: e.target.value })} placeholder="Enter Apollo API key" className="input flex-1" />
-                        <button onClick={() => testConnection('apollo')} disabled={testing === 'apollo' || !jobSourceConfig.apollo_api_key} className="btn-secondary text-sm">{testing === 'apollo' ? 'Testing...' : 'Test'}</button>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">Get key at <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" className="text-blue-600 underline">apollo.io/settings</a></p>
-                      {testResults.apollo && <p className={`text-sm mt-1 ${testResults.apollo.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.apollo.message}</p>}
-                    </div>
-                  )}
 
                   {/* TheirStack API Key */}
                   {jobSourceConfig.lead_sources.includes('theirstack') && (

@@ -72,7 +72,7 @@ const STATUS_OPTIONS = [
 // Pipeline statuses that can be set via the dropdown (excludes campaign-derived statuses)
 const PIPELINE_STATUS_OPTIONS = STATUS_OPTIONS.filter(s => !s.value.startsWith('campaign_'))
 
-const SOURCE_OPTIONS = ['jsearch', 'apollo', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
+const SOURCE_OPTIONS = ['jsearch', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',

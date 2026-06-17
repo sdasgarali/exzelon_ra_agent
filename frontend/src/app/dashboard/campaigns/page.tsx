@@ -35,7 +35,7 @@ const LEAD_STATUS_OPTIONS = [
   { value: 'closed_test', label: 'Closed-Test' },
 ]
 
-const LEAD_SOURCE_OPTIONS = ['jsearch', 'apollo', 'indeed', 'linkedin', 'glassdoor', 'theirstack', 'serpapi', 'adzuna', 'searchapi', 'usajobs', 'jooble', 'jobdatafeeds', 'coresignal', 'mock', 'import']
+const LEAD_SOURCE_OPTIONS = ['jsearch', 'indeed', 'linkedin', 'glassdoor', 'theirstack', 'serpapi', 'adzuna', 'searchapi', 'usajobs', 'jooble', 'jobdatafeeds', 'coresignal', 'mock', 'import']
 
 const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
 
