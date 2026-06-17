@@ -721,6 +721,23 @@ def run_contact_enrichment_pipeline(
 
         counters["adapter_stats"] = adapter_stats
         counters["api_diagnostics"] = api_diag
+
+        # Record per-adapter contact-discovery cost (skips $0 cache-only runs)
+        try:
+            from app.services.cost_tracker import record_pipeline_cost
+            for aname, astats in adapter_stats.items():
+                calls = astats.get("calls", 0)
+                contacts = astats.get("contacts_returned", 0)
+                if calls > 0:
+                    record_pipeline_cost(
+                        db, aname, calls, contacts,
+                        run_id=job_run.run_id,
+                        category="contact_discovery",
+                        tenant_id=tenant_id,
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to record contact-discovery costs: {e}")
+
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
         db.commit()

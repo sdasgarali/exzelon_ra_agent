@@ -148,9 +148,14 @@ class JSearchAdapter(JobSourceAdapter):
         _batch_size = int(_t.get('batch_size', 4))
         search_queries = self._batch_queries(search_queries, location, batch_size=_batch_size)
 
+        # Push exclusions into the query (JSearch uses Google-style syntax) so
+        # excluded postings are filtered server-side, not after we pay for them.
+        neg_suffix = self.google_negative_suffix(self._negative_terms(exclude_keywords))
+
         # Reuse a single HTTP client for all queries (connection pooling)
         with httpx.Client(timeout=30) as client:
           for query in search_queries:
+            full_query = f"{query}{neg_suffix}"
             try:
                 # IMPACT: num_pages=10 fetches 100 results per call
                 self._api_calls += 1
@@ -161,7 +166,7 @@ class JSearchAdapter(JobSourceAdapter):
                         "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
                     },
                     params={
-                        "query": query,
+                        "query": full_query,
                         "page": "1",
                         "num_pages": str(int(_t.get('num_pages', 10))),
                         "date_posted": date_posted,
@@ -179,7 +184,7 @@ class JSearchAdapter(JobSourceAdapter):
                         response = client.get(
                             f"{self.BASE_URL}/search",
                             headers={"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"},
-                            params={"query": query, "page": "1", "num_pages": "10", "date_posted": date_posted, "remote_jobs_only": "false"},
+                            params={"query": full_query, "page": "1", "num_pages": "10", "date_posted": date_posted, "remote_jobs_only": "false"},
                             timeout=30,
                         )
                         if response.status_code != 429:

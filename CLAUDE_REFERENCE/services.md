@@ -91,10 +91,12 @@ Event-driven webhook delivery:
 
 Four sequential data-processing stages, each independently executable via API:
 
-1. **Lead Sourcing** — fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id -> employer_linkedin -> company+title+state+city), sub-source tracking. Supports configurable per-adapter tuning (`job_source_tuning` setting), adapter result limit (`pipeline_adapter_limit`), and thread pool size (`pipeline_max_workers`) — all managed via Settings → Source Tuning tab.
-2. **Contact Enrichment** — discover decision-makers via Apollo/Seamless/Hunter/Snov.io/RocketReach/PDL/Proxycurl
+1. **Lead Sourcing** — fetch jobs from boards, normalize, 3-layer deduplicate (external_job_id -> employer_linkedin -> company+title+state+city), sub-source tracking. Supports configurable per-adapter tuning (`job_source_tuning` setting), adapter result limit (`pipeline_adapter_limit`), and thread pool size (`pipeline_max_workers`) — all managed via Settings → Source Tuning tab. Exclusion keywords are pushed into upstream queries (JSearch/SerpAPI Google-syntax negatives, Adzuna `what_exclude`) when `push_exclusions_to_query` is on (default), so excluded postings are filtered server-side; the local `filter_excluded()` still runs as a backstop. Records per-source cost via `cost_tracker.record_pipeline_cost()`.
+2. **Contact Enrichment** — discover decision-makers via Apollo/Seamless/Hunter/Snov.io/RocketReach/PDL/Proxycurl. Records per-adapter cost (`category="contact_discovery"`) from `adapter_stats` at end of run.
 3. **Email Validation** — verify email addresses before sending
 4. **Outreach** — AI-generate email content, enforce rate limits and cooldowns, send (supports `preview_mode`)
+
+**Cost tracking** (`services/cost_tracker.py`): `DEFAULT_PROVIDER_PRICING` (job + contact providers, per-request) and `AI_MODEL_PRICING` (per-1M-token, by model with provider fallback) — both overridable via Settings keys `provider_pricing` / `ai_model_pricing`. `record_ai_cost()` records LLM token cost (`category="ai"`) using the caller's session inside a SAVEPOINT; activated automatically because `get_ai_adapter()` factories attach `_cost_db`/`_cost_tenant_id` to the adapter, and each AI adapter's `_call_api()` calls `self._track_ai_cost()`. All costs surface in `/analytics/costs/per-source`.
 
 ---
 

@@ -21,6 +21,7 @@ class GroqAdapter(AIAdapter):
     """
 
     BASE_URL = "https://api.groq.com/openai/v1"
+    PROVIDER_NAME = "groq"
 
     # Available models
     MODELS = {
@@ -101,6 +102,7 @@ class GroqAdapter(AIAdapter):
                         "input_tokens": usage.get("prompt_tokens", 0),
                         "output_tokens": usage.get("completion_tokens", 0),
                     }
+                    self._track_ai_cost()
                     return data["choices"][0]["message"]["content"]
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 last_error = e

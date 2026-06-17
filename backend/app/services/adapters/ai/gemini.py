@@ -19,6 +19,7 @@ class GeminiAdapter(AIAdapter):
     """
 
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+    PROVIDER_NAME = "gemini"
 
     # Available models
     MODELS = {
@@ -86,6 +87,7 @@ class GeminiAdapter(AIAdapter):
                 "input_tokens": usage_meta.get("promptTokenCount", 0),
                 "output_tokens": usage_meta.get("candidatesTokenCount", 0),
             }
+            self._track_ai_cost()
             return data["candidates"][0]["content"]["parts"][0]["text"]
 
     def research_company(

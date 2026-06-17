@@ -10,8 +10,9 @@ class CostEntry(Base):
 
     cost_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
-    category = Column(String(50), nullable=False, index=True)  # lead_sourcing, contact_discovery, validation, sending
-    amount = Column(Numeric(10, 2), nullable=False)
+    category = Column(String(50), nullable=False, index=True)  # lead_sourcing, contact_discovery, validation, sending, ai
+    # 6dp precision so sub-cent per-call AI/token costs are not truncated to $0.00.
+    amount = Column(Numeric(12, 6), nullable=False)
     entry_date = Column(Date, nullable=False, index=True)
     notes = Column(Text, nullable=True)
     user_id = Column(Integer, nullable=True)  # Who entered this cost

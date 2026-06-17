@@ -15,6 +15,7 @@ logger = structlog.get_logger()
 
 # Hardcoded default pricing — overridable via settings key "provider_pricing"
 DEFAULT_PROVIDER_PRICING = {
+    # --- Job board / lead sourcing ---
     "jsearch":      {"model": "per_request", "cost_per_request": 0.005, "free_monthly": 500},
     "apollo":       {"model": "per_request", "cost_per_request": 0.01,  "free_monthly": 0},
     "theirstack":   {"model": "per_request", "cost_per_request": 0.005, "free_monthly": 100},
@@ -24,6 +25,50 @@ DEFAULT_PROVIDER_PRICING = {
     "usajobs":       {"model": "free",        "cost_per_request": 0,     "free_monthly": 0},
     "jooble":        {"model": "free",        "cost_per_request": 0,     "free_monthly": 0},
     "jobdatafeeds":  {"model": "monthly_flat", "cost_per_request": 0,    "monthly_base": 300},
+    "npi_registry":  {"model": "free",        "cost_per_request": 0,     "free_monthly": 0},
+    # --- Contact discovery (per successful lookup/call) ---
+    # Note: "apollo" above doubles as contact discovery; the same per-request
+    # rate applies. Remaining providers are estimates, overridable in Settings.
+    "seamless":      {"model": "per_request", "cost_per_request": 0.02,  "free_monthly": 0},
+    "hunter_contact": {"model": "per_request", "cost_per_request": 0.01, "free_monthly": 25},
+    "snovio":        {"model": "per_request", "cost_per_request": 0.01,  "free_monthly": 50},
+    "rocketreach":   {"model": "per_request", "cost_per_request": 0.10,  "free_monthly": 5},
+    "pdl":           {"model": "per_request", "cost_per_request": 0.01,  "free_monthly": 100},
+    "proxycurl":     {"model": "per_request", "cost_per_request": 0.01,  "free_monthly": 0},
+    "mock":          {"model": "free",        "cost_per_request": 0,     "free_monthly": 0},
+}
+
+
+# AI/LLM token pricing — USD per 1M tokens as (input_rate, output_rate).
+# Overridable via settings key "ai_model_pricing". Groq free tier ≈ $0.
+AI_MODEL_PRICING = {
+    # OpenAI
+    "gpt-4.1-nano":  (0.10, 0.40),
+    "gpt-4.1-mini":  (0.40, 1.60),
+    "gpt-4.1":       (2.00, 8.00),
+    "gpt-4o-mini":   (0.15, 0.60),
+    "gpt-4o":        (2.50, 10.00),
+    # Anthropic
+    "claude-3-5-sonnet-20241022": (3.00, 15.00),
+    "claude-3-5-haiku-20241022":  (0.80, 4.00),
+    "claude-3-opus-20240229":     (15.00, 75.00),
+    # Gemini
+    "gemini-1.5-pro":   (1.25, 5.00),
+    "gemini-1.5-flash": (0.075, 0.30),
+    "gemini-1.0-pro":   (0.50, 1.50),
+    # Groq (free tier)
+    "llama-3.3-70b-versatile": (0.0, 0.0),
+    "llama-3.1-8b-instant":    (0.0, 0.0),
+    "meta-llama/llama-4-scout-17b-16e-instruct": (0.0, 0.0),
+    "qwen/qwen3-32b": (0.0, 0.0),
+}
+
+# Fallback per-provider rate (input, output) when a model id is unknown.
+AI_PROVIDER_FALLBACK = {
+    "groq":      (0.0, 0.0),
+    "openai":    (0.15, 0.60),
+    "anthropic": (0.80, 4.00),
+    "gemini":    (0.075, 0.30),
 }
 
 
@@ -89,6 +134,8 @@ def record_pipeline_cost(
     api_calls: int,
     results: int,
     run_id: Optional[int] = None,
+    category: str = "lead_sourcing",
+    tenant_id: Optional[int] = None,
 ) -> Optional[object]:
     """Auto-record a cost entry after a pipeline adapter run.
 
@@ -96,8 +143,11 @@ def record_pipeline_cost(
         db: Database session
         source: Adapter name
         api_calls: Number of API calls made
-        results: Number of job results returned
+        results: Number of results returned (jobs sourced or contacts found)
         run_id: Optional job_run ID for linking
+        category: Cost category — "lead_sourcing" (job boards) or
+            "contact_discovery" (enrichment providers).
+        tenant_id: Owning tenant (defaults to 1 for single-tenant pipelines).
 
     Returns:
         Created CostEntry or None on error
@@ -108,8 +158,8 @@ def record_pipeline_cost(
         estimated_cost = estimate_run_cost(source, api_calls, results, db)
 
         entry = CostEntry(
-            tenant_id=1,
-            category="lead_sourcing",
+            tenant_id=tenant_id or 1,
+            category=category,
             amount=estimated_cost,
             entry_date=date.today(),
             notes=f"Auto: {source} — {api_calls} API calls, {results} results" + (f", run #{run_id}" if run_id else ""),
@@ -124,6 +174,7 @@ def record_pipeline_cost(
         logger.info(
             "Recorded pipeline cost",
             source=source,
+            category=category,
             api_calls=api_calls,
             results=results,
             estimated_cost=estimated_cost,
@@ -132,6 +183,76 @@ def record_pipeline_cost(
 
     except Exception as e:
         logger.error("Failed to record pipeline cost", source=source, error=str(e))
+        return None
+
+
+def _ai_token_cost(provider: str, model: str, input_tokens: int, output_tokens: int, db: Session = None) -> float:
+    """Compute USD cost for an AI/LLM call from token counts.
+
+    Pricing resolves in order: settings override `ai_model_pricing` (by model),
+    built-in AI_MODEL_PRICING (by model), then AI_PROVIDER_FALLBACK (by provider).
+    """
+    rates = None
+    # Settings override (optional): {"<model>": [input_per_m, output_per_m]}
+    if db is not None:
+        try:
+            from app.db.models.settings import Settings
+            row = db.query(Settings).filter(Settings.key == "ai_model_pricing").first()
+            if row and row.value_json:
+                overrides = json.loads(row.value_json)
+                if isinstance(overrides, dict) and model in overrides:
+                    pair = overrides[model]
+                    if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                        rates = (float(pair[0]), float(pair[1]))
+        except Exception:
+            rates = None
+    if rates is None:
+        rates = AI_MODEL_PRICING.get(model) or AI_PROVIDER_FALLBACK.get(provider, (0.0, 0.0))
+    in_rate, out_rate = rates
+    cost = (input_tokens / 1_000_000.0) * in_rate + (output_tokens / 1_000_000.0) * out_rate
+    return round(cost, 6)
+
+
+def record_ai_cost(
+    db: Session,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    feature: Optional[str] = None,
+    tenant_id: Optional[int] = None,
+) -> Optional[object]:
+    """Record the cost of a single AI/LLM call as a CostEntry (category="ai").
+
+    Uses the CALLER'S session inside a SAVEPOINT (begin_nested) so a recording
+    failure can never corrupt the caller's transaction, and so we never open a
+    second SessionLocal (which would create side effects in tests). The entry
+    persists when the caller eventually commits.
+    """
+    try:
+        if not input_tokens and not output_tokens:
+            return None
+        from app.db.models.cost_tracking import CostEntry
+
+        cost = _ai_token_cost(provider, model, input_tokens, output_tokens, db)
+        entry = CostEntry(
+            tenant_id=tenant_id or 1,
+            category="ai",
+            amount=cost,
+            entry_date=date.today(),
+            notes=f"AI: {provider}/{model} — {input_tokens} in, {output_tokens} out tokens"
+                  + (f" ({feature})" if feature else ""),
+            source_adapter=provider,
+            is_automated=True,
+            api_calls_count=1,
+            results_count=0,
+        )
+        # SAVEPOINT isolation — failure here rolls back only this insert.
+        with db.begin_nested():
+            db.add(entry)
+        return entry
+    except Exception as e:
+        logger.warning("Failed to record AI cost", provider=provider, model=model, error=str(e))
         return None
 
 

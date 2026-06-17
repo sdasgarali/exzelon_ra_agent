@@ -383,6 +383,7 @@ def fetch_from_source(
     tuning: Optional[Dict[str, Any]] = None,
     adapter_limit: int = 1000,
     posted_within_days: int = 7,
+    push_negatives: bool = True,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
 
@@ -390,12 +391,18 @@ def fetch_from_source(
     internally. No secondary filtering is done here to avoid double-filtering
     which previously dropped ~20% extra leads redundantly.
 
+    IMPACT ON API COST: When ``push_negatives`` is True, exclusion keywords are
+    also pushed into the upstream query (where the source supports it: JSearch,
+    SerpAPI, Adzuna), so excluded postings are filtered server-side rather than
+    fetched-then-discarded. The local filter still runs as a backstop.
+
     Returns: (source_name, jobs_list, error_message, diagnostics)
     """
     # Set split exclusion attributes on the adapter instance
     adapter._exclude_company = exclude_company_keywords
     adapter._exclude_title = exclude_title_keywords
     adapter._match_mode = match_mode
+    adapter._push_negatives = push_negatives
 
     diagnostics: Dict[str, Any] = {
         "status": "success",
@@ -766,6 +773,9 @@ def run_lead_sourcing_pipeline(
         exclude_company_keywords = get_tenant_setting(db, "exclude_company_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_COMPANY_KEYWORDS)
         exclude_title_keywords = get_tenant_setting(db, "exclude_title_keywords", tenant_id=tenant_id, default=settings.EXCLUDE_TITLE_KEYWORDS)
         match_mode = get_tenant_setting(db, "exclude_match_mode", tenant_id=tenant_id, default="word_boundary")
+        # When True, exclusion keywords are pushed into upstream queries to cut
+        # wasted API result volume (sources that support it). Default on.
+        push_exclusions_to_query = bool(get_tenant_setting(db, "push_exclusions_to_query", tenant_id=tenant_id, default=True))
 
         # Location diversification (P2-F)
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
@@ -828,6 +838,7 @@ def run_lead_sourcing_pipeline(
                         tuning=adapter_tuning,
                         adapter_limit=pipeline_adapter_limit,
                         posted_within_days=posted_within_days,
+                        push_negatives=push_exclusions_to_query,
                     )
                     futures.append(future)
 

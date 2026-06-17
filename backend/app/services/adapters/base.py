@@ -122,6 +122,65 @@ class JobSourceAdapter(BaseAdapter):
 
         return False
 
+    @staticmethod
+    def build_negative_terms(
+        exclude_keywords: list = None,
+        exclude_title_keywords: list = None,
+        max_terms: int = 12,
+    ) -> list:
+        """Build a de-duplicated, bounded list of keywords to exclude server-side.
+
+        Combines general + title exclusions (company exclusions are too numerous
+        and unsupported by job-board query syntax, so they stay client-side).
+        Bounded by max_terms to respect API query-length limits.
+        """
+        terms = []
+        seen = set()
+        for src in (exclude_keywords or [], exclude_title_keywords or []):
+            for kw in src:
+                k = (kw or "").strip()
+                if not k:
+                    continue
+                low = k.lower()
+                if low in seen:
+                    continue
+                seen.add(low)
+                terms.append(k)
+                if len(terms) >= max_terms:
+                    return terms
+        return terms
+
+    @staticmethod
+    def google_negative_suffix(terms: list) -> str:
+        """Render terms as a Google-style negative suffix (e.g. ' -intern -"staffing agency"').
+
+        Used by Google-backed sources (JSearch, SerpAPI Google Jobs). Multi-word
+        terms are quoted. Returns '' when there are no terms.
+        """
+        if not terms:
+            return ""
+        parts = []
+        for t in terms:
+            t = (t or "").strip()
+            if not t:
+                continue
+            parts.append(f'-"{t}"' if " " in t else f"-{t}")
+        return (" " + " ".join(parts)) if parts else ""
+
+    def _negative_terms(self, exclude_keywords: list = None) -> list:
+        """Resolve negative terms for this adapter call, honoring the push flag.
+
+        Returns [] when query-side exclusion is disabled (``_push_negatives``
+        is set False by the pipeline). Pulls title exclusions from the instance
+        attribute set in fetch_from_source.
+        """
+        if not getattr(self, "_push_negatives", True):
+            return []
+        return self.build_negative_terms(
+            exclude_keywords=exclude_keywords,
+            exclude_title_keywords=getattr(self, "_exclude_title", None),
+        )
+
     @abstractmethod
     def fetch_jobs(
         self,
@@ -345,6 +404,34 @@ class CompanyEnrichmentAdapter(BaseAdapter):
 
 class AIAdapter(BaseAdapter):
     """Base adapter for AI/LLM providers used for email content generation."""
+
+    # Subclasses set this; used to attribute AI cost to a provider.
+    PROVIDER_NAME: str = "ai"
+
+    def _track_ai_cost(self, feature: Optional[str] = None) -> None:
+        """Record the cost of the last AI call.
+
+        No-op unless a caller (e.g. get_ai_adapter) attached a `_cost_db`
+        session. Reads `self._last_usage` (set by each adapter's _call_api).
+        Wrapped defensively so cost tracking can never break a generation.
+        """
+        db = getattr(self, "_cost_db", None)
+        if db is None:
+            return
+        try:
+            usage = getattr(self, "_last_usage", None) or {}
+            from app.services.cost_tracker import record_ai_cost
+            record_ai_cost(
+                db,
+                provider=getattr(self, "PROVIDER_NAME", "ai"),
+                model=getattr(self, "model", "") or "",
+                input_tokens=int(usage.get("input_tokens", 0) or 0),
+                output_tokens=int(usage.get("output_tokens", 0) or 0),
+                feature=feature or getattr(self, "_cost_feature", None),
+                tenant_id=getattr(self, "_cost_tenant_id", None),
+            )
+        except Exception:
+            pass
 
     def research_company(
         self,
