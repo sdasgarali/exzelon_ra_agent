@@ -26,18 +26,24 @@ def get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
     if not api_key:
         return None
     try:
+        adapter = None
         if provider == "groq":
             from app.services.adapters.ai.groq import GroqAdapter
-            return GroqAdapter(api_key=api_key, model=model or None)
+            adapter = GroqAdapter(api_key=api_key, model=model or None)
         elif provider == "openai":
             from app.services.adapters.ai.openai_adapter import OpenAIAdapter
-            return OpenAIAdapter(api_key=api_key, model=model or None)
+            adapter = OpenAIAdapter(api_key=api_key, model=model or None)
         elif provider == "anthropic":
             from app.services.adapters.ai.anthropic_adapter import AnthropicAdapter
-            return AnthropicAdapter(api_key=api_key, model=model or None)
+            adapter = AnthropicAdapter(api_key=api_key, model=model or None)
         elif provider == "gemini":
             from app.services.adapters.ai.gemini import GeminiAdapter
-            return GeminiAdapter(api_key=api_key, model=model or None)
+            adapter = GeminiAdapter(api_key=api_key, model=model or None)
+        if adapter is not None:
+            # Enable automatic AI cost tracking (uses this session via SAVEPOINT).
+            adapter._cost_db = db
+            adapter._cost_tenant_id = tenant_id
+        return adapter
     except Exception:
         pass
     return None

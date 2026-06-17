@@ -88,6 +88,10 @@ class SerpAPIAdapter(JobSourceAdapter):
             batch = search_titles[i:i+_batch_size]
             batched_queries.append(" OR ".join(batch))
 
+        # Push exclusions into the Google Jobs query (server-side) to avoid
+        # paying for / paginating through results we would only discard.
+        neg_suffix = self.google_negative_suffix(self._negative_terms(exclude_keywords))
+
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
                 try:
@@ -95,7 +99,7 @@ class SerpAPIAdapter(JobSourceAdapter):
                     for start_offset in range(0, _max_pages * 10, 10):
                         params = {
                             "engine": "google_jobs",
-                            "q": query,
+                            "q": f"{query}{neg_suffix}",
                             "location": location,
                             "api_key": self.api_key,
                             "chips": f"date_posted:{date_filter}",

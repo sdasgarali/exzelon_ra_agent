@@ -937,6 +937,15 @@ async def lifespan(app: FastAPI):
                     logger.info("Migration: added index idx_cost_source_adapter")
                 except Exception:
                     pass  # Index already exists
+                # Widen amount precision to 6dp so sub-cent AI/token costs are
+                # not truncated to $0.00 (MySQL only; SQLite ignores precision).
+                try:
+                    if engine.dialect.name == "mysql":
+                        conn.execute(sa_text_cost("ALTER TABLE cost_entries MODIFY COLUMN amount DECIMAL(12,6) NOT NULL"))
+                        conn.commit()
+                        logger.info("Migration: widened cost_entries.amount to DECIMAL(12,6)")
+                except Exception:
+                    pass  # Already widened or unsupported
     except Exception as e:
         logger.warning(f"Migration check for cost_entries columns: {e}")
 

@@ -19,6 +19,7 @@ class AnthropicAdapter(AIAdapter):
     """
 
     BASE_URL = "https://api.anthropic.com/v1"
+    PROVIDER_NAME = "anthropic"
 
     # Available models
     MODELS = {
@@ -93,6 +94,7 @@ class AnthropicAdapter(AIAdapter):
                 "input_tokens": usage.get("input_tokens", 0),
                 "output_tokens": usage.get("output_tokens", 0),
             }
+            self._track_ai_cost()
             return data["content"][0]["text"]
 
     def research_company(

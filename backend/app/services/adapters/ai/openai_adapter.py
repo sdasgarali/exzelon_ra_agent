@@ -19,6 +19,7 @@ class OpenAIAdapter(AIAdapter):
     """
 
     BASE_URL = "https://api.openai.com/v1"
+    PROVIDER_NAME = "openai"
 
     # Available models (updated April 2026)
     MODELS = {
@@ -85,6 +86,7 @@ class OpenAIAdapter(AIAdapter):
                 "input_tokens": usage.get("prompt_tokens", 0),
                 "output_tokens": usage.get("completion_tokens", 0),
             }
+            self._track_ai_cost()
             return data["choices"][0]["message"]["content"]
 
     def research_company(

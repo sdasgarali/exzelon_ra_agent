@@ -81,6 +81,11 @@ class AdzunaAdapter(JobSourceAdapter):
             batch = search_titles[i:i+_batch_size]
             batched_queries.append(" OR ".join(batch))
 
+        # Adzuna supports a native `what_exclude` param (space-separated words to
+        # exclude) — push exclusions server-side instead of filtering after fetch.
+        neg_terms = self._negative_terms(exclude_keywords)
+        what_exclude = " ".join(neg_terms) if neg_terms else None
+
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
                 try:
@@ -95,6 +100,8 @@ class AdzunaAdapter(JobSourceAdapter):
                             "max_days_old": posted_within_days,
                             "sort_by": "date",
                         }
+                        if what_exclude:
+                            params["what_exclude"] = what_exclude
 
                         self._api_calls += 1
                         response = client.get(
