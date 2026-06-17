@@ -114,6 +114,74 @@ def normalize_job_title(title: str) -> str:
     return normalized
 
 
+# =============================================================================
+# Source optimization — overlap groups + coverage tiers
+#
+# Goal: stop paying multiple providers for the SAME job posting. Several APIs
+# share an underlying index (SerpAPI and SearchAPI are both Google Jobs; Google
+# Jobs + JSearch both surface LinkedIn/Indeed). Running them all in parallel
+# means duplicate postings = duplicate API spend. These structures drive a
+# tiered waterfall that runs cheap/unique sources first and only calls the
+# expensive/overlapping ones to fill a gap toward a per-run target.
+# =============================================================================
+
+# Providers that share the same underlying index. Only the highest-priority
+# enabled member of each group is run. Order = priority (first wins).
+SOURCE_OVERLAP_GROUPS: Dict[str, List[str]] = {
+    # SerpAPI and SearchAPI both call engine=google_jobs — identical results.
+    # SearchAPI preferred (cheaper $40/mo flat); SerpAPI is the disabled fallback.
+    "google_jobs": ["searchapi", "serpapi"],
+}
+
+# Coverage tier per source. Tier 1 = free / cheap / unique broad coverage
+# (always run). Tier 2 = expensive or heavily-overlapping fill-ins (run only to
+# fill a gap toward the per-run target). Unlisted sources default to tier 1.
+SOURCE_TIERS: Dict[str, int] = {
+    "usajobs": 1, "jooble": 1, "jsearch": 1, "adzuna": 1, "theirstack": 1, "mock": 1,
+    "searchapi": 2, "serpapi": 2, "jobdatafeeds": 2, "coresignal": 2,
+}
+
+# Run order (lower = cheaper, runs first). Spends the cheapest fill-in API first
+# and stops as soon as the per-run target is met.
+SOURCE_COST_RANK: Dict[str, int] = {
+    "usajobs": 0, "jooble": 0, "mock": 0,
+    "adzuna": 1, "jsearch": 2, "theirstack": 3,
+    "searchapi": 5, "serpapi": 6, "jobdatafeeds": 8, "coresignal": 9,
+}
+
+
+def _filter_overlap_groups(
+    adapters: List[Tuple[str, Any]],
+    groups: Dict[str, List[str]],
+) -> Tuple[List[Tuple[str, Any]], List[str]]:
+    """Keep only the highest-priority enabled adapter in each overlap group.
+
+    Returns (kept_adapters, skipped_source_names). A group with 0 or 1 enabled
+    member is left untouched (the single fallback still runs).
+    """
+    present = {name for name, _ in adapters}
+    drop: set = set()
+    for _group, priority in (groups or {}).items():
+        members = [p for p in priority if p in present]
+        for loser in members[1:]:  # keep members[0], drop the rest
+            drop.add(loser)
+    kept = [(n, a) for n, a in adapters if n not in drop]
+    return kept, sorted(drop)
+
+
+def _partition_tiers(
+    adapters: List[Tuple[str, Any]],
+    tier_map: Dict[str, int],
+) -> Tuple[List[Tuple[str, Any]], List[Tuple[str, Any]]]:
+    """Split adapters into (tier1, tier2). Tier 2 is sorted cheapest-first."""
+    tier1 = [(n, a) for n, a in adapters if int(tier_map.get(n, 1)) <= 1]
+    tier2 = sorted(
+        [(n, a) for n, a in adapters if int(tier_map.get(n, 1)) >= 2],
+        key=lambda x: int(SOURCE_COST_RANK.get(x[0], 5)),
+    )
+    return tier1, tier2
+
+
 def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tuple[str, Any]]:
     """Get all configured job source adapters.
 
@@ -814,16 +882,18 @@ def run_lead_sourcing_pipeline(
 
         all_jobs = []
 
-        # --- Job board adapters (staffing + legacy/custom only) ---
-        if use_job_boards:
-            adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
-            logger.info(f"Using {len(adapters)} job source adapters (LOB type: {lob_type or 'none'})")
-
+        # Reusable parallel collector — fetches a subset of job-source adapters
+        # and updates the run-scoped bookkeeping (counters, diagnostics, per-source
+        # detail). Closure over the pipeline config above.
+        def _collect_from_adapters(adapter_subset: List[Tuple[str, Any]]) -> List[Dict[str, Any]]:
+            collected: List[Dict[str, Any]] = []
+            if not adapter_subset:
+                return collected
             with concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers) as executor:
                 futures = []
-                for source_name, adapter in adapters:
+                for source_name, adapter in adapter_subset:
                     adapter_tuning = job_source_tuning.get(source_name, {})
-                    future = executor.submit(
+                    futures.append(executor.submit(
                         fetch_from_source,
                         source_name,
                         adapter,
@@ -839,10 +909,7 @@ def run_lead_sourcing_pipeline(
                         adapter_limit=pipeline_adapter_limit,
                         posted_within_days=posted_within_days,
                         push_negatives=push_exclusions_to_query,
-                    )
-                    futures.append(future)
-
-                # Collect results
+                    ))
                 for future in concurrent.futures.as_completed(futures):
                     source_name, jobs, error, diag = future.result()
                     counters["sources_used"].append(source_name)
@@ -855,23 +922,89 @@ def run_lead_sourcing_pipeline(
                         "error_type": diag["error_type"],
                         "error_message": diag["error_message"],
                     })
-
                     if error:
                         counters["errors"] += 1
                         logger.error(f"Source {source_name} failed", error=error)
                     else:
                         logger.info(f"Fetched {len(jobs)} jobs from {source_name}")
-                        # Tag each job with its source for per-source tracking
                         for job in jobs:
                             job["_pipeline_source"] = source_name
-                            # Track sub-source (linkedin, indeed, glassdoor, etc.)
                             sub_src = job.get("source", "unknown")
                             job["_sub_source"] = sub_src
                             if sub_src not in per_sub_source_detail:
                                 per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
                             per_sub_source_detail[sub_src]["fetched"] += 1
-                        all_jobs.extend(jobs)
+                        collected.extend(jobs)
+            all_jobs.extend(collected)
+            return collected
 
+        # --- Job board adapters (staffing + legacy/custom only) ---
+        if use_job_boards:
+            adapters = get_all_job_source_adapters(db, tenant_id=tenant_id)
+
+            # 1) Drop redundant providers that share an index (e.g. SerpAPI vs
+            #    SearchAPI — both Google Jobs). Only the preferred one runs.
+            overlap_groups = get_tenant_setting(db, "source_overlap_groups", tenant_id=tenant_id, default=None) or SOURCE_OVERLAP_GROUPS
+            adapters, overlap_skipped = _filter_overlap_groups(adapters, overlap_groups)
+            if overlap_skipped:
+                logger.info(f"Overlap groups: skipping redundant providers {overlap_skipped} (share an index with a higher-priority source)")
+
+            # 2) Split into coverage tiers (tier 1 = free/cheap/unique, tier 2 = expensive/overlapping)
+            tier_map = get_tenant_setting(db, "source_tiers", tenant_id=tenant_id, default=None) or SOURCE_TIERS
+            tier1, tier2 = _partition_tiers(adapters, tier_map)
+
+            # 3) Per-run target. Tier 2 (expensive) runs only to fill a gap toward
+            #    this many unique leads. 0 disables early-stop (all tiers run).
+            target = int(get_tenant_setting(db, "lead_sourcing_target_per_run", tenant_id=tenant_id, default=500) or 0)
+            optimization = {
+                "target_per_run": target,
+                "overlap_skipped": overlap_skipped,
+                "tier1": [n for n, _ in tier1],
+                "tier2_available": [n for n, _ in tier2],
+                "tier2_ran": [],
+                "tier2_skipped": [],
+                "early_stopped": False,
+                "unique_after_tier1": None,
+            }
+            logger.info(
+                f"Source optimization — tier1: {optimization['tier1']}, tier2: {optimization['tier2_available']}, "
+                f"target/run: {target}, overlap_skipped: {overlap_skipped}"
+            )
+
+            # 4) Always run tier 1 (parallel)
+            _collect_from_adapters(tier1)
+
+            # 5) Run tier 2 only to fill a gap, cheapest-first, stop when target met
+            if tier2:
+                if target > 0:
+                    unique_now = deduplicate_jobs(all_jobs, db, tenant_id=tenant_id)
+                    optimization["unique_after_tier1"] = len(unique_now)
+                    if len(unique_now) >= target:
+                        optimization["tier2_skipped"] = [n for n, _ in tier2]
+                        optimization["early_stopped"] = True
+                        logger.info(
+                            f"Target {target} met by tier-1 ({len(unique_now)} unique) — "
+                            f"skipping tier-2 entirely: {optimization['tier2_skipped']} (saved API spend)"
+                        )
+                    else:
+                        for source_name, adapter in tier2:
+                            _collect_from_adapters([(source_name, adapter)])
+                            optimization["tier2_ran"].append(source_name)
+                            unique_now = deduplicate_jobs(all_jobs, db, tenant_id=tenant_id)
+                            if len(unique_now) >= target:
+                                optimization["tier2_skipped"] = [n for n, _ in tier2 if n not in optimization["tier2_ran"]]
+                                optimization["early_stopped"] = True
+                                logger.info(
+                                    f"Target {target} met after {source_name} ({len(unique_now)} unique) — "
+                                    f"skipping remaining tier-2: {optimization['tier2_skipped']} (saved API spend)"
+                                )
+                                break
+                else:
+                    # Early-stop disabled — run all tier-2 in parallel too
+                    _collect_from_adapters(tier2)
+                    optimization["tier2_ran"] = [n for n, _ in tier2]
+
+            counters["source_optimization"] = optimization
             logger.info(f"Total jobs fetched from job boards: {len(all_jobs)}")
         else:
             adapters = []
