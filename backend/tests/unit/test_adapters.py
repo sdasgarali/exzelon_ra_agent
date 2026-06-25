@@ -757,3 +757,25 @@ class TestApolloNotAJobSource:
         from app.api.endpoints.settings import PROVIDER_TAB_MAP, SETTINGS_TAB_MAP
         assert PROVIDER_TAB_MAP["apollo"] == "contacts"
         assert SETTINGS_TAB_MAP["apollo_api_key"] == "contacts"
+
+    def test_job_source_providers_use_job_source_apis_tab(self):
+        """Regression: PROVIDER_TAB_MAP must use the canonical 'job_source_apis'
+        tab key (not 'job_sources'), or test-connection falsely 403s admins."""
+        from app.api.endpoints.settings import PROVIDER_TAB_MAP
+        for provider in [
+            "jsearch", "indeed", "theirstack", "serpapi", "adzuna",
+            "searchapi", "usajobs", "jooble", "jobdatafeeds", "coresignal",
+        ]:
+            assert PROVIDER_TAB_MAP[provider] == "job_source_apis", provider
+
+    def test_provider_tab_map_values_are_valid_settings_tabs(self):
+        """Every PROVIDER_TAB_MAP value must be a real settings tab key so that
+        per-tab permission lookups resolve instead of defaulting to no_access."""
+        from app.api.endpoints.settings import PROVIDER_TAB_MAP
+        valid_tabs = {
+            'job_filters', 'job_source_apis', 'ai_llm', 'contacts', 'validation',
+            'outreach', 'business_rules', 'deliverability', 'lob_lead_sources',
+            'automation', 'source_tuning',
+        }
+        for provider, tab in PROVIDER_TAB_MAP.items():
+            assert tab in valid_tabs, f"{provider} -> unknown tab '{tab}'"

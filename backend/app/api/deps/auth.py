@@ -145,7 +145,7 @@ def get_user_settings_tab_access(db: Session, user: User, tab_key: str) -> str:
 def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
     """Returns all settings tab permissions for the user.
 
-    Returns a dict like {'job_sources': 'full', 'ai_llm': 'read', ...}
+    Returns a dict like {'job_source_apis': 'full', 'ai_llm': 'read', ...}
     """
     tabs = ['job_filters', 'job_source_apis', 'ai_llm', 'contacts', 'validation', 'outreach', 'business_rules', 'deliverability', 'lob_lead_sources', 'automation', 'source_tuning']
 
