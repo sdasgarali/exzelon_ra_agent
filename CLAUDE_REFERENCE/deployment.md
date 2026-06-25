@@ -128,15 +128,19 @@ journalctl -u nginx -f                    # Nginx access/error
 
 ## SSH Access from Local Machine
 
+Auth is via the **passphrase-less deploy key** `~/.ssh/id_ed25519_deploy` (already
+authorized on the VPS). The old root password was rotated and is now rejected — do
+not use password/askpass auth.
+
 ```bash
-# Interactive SSH (requires password):
-ssh -o PubkeyAuthentication=no root@187.124.74.175
+# Autonomous SSH (deploy key, no prompts):
+ssh -i ~/.ssh/id_ed25519_deploy -o IdentitiesOnly=yes root@187.124.74.175 "command"
 
-# Non-interactive (from scripts — uses askpass):
-DISPLAY=:0 SSH_ASKPASS=/tmp/vps_askpass.sh ssh -o PubkeyAuthentication=no root@187.124.74.175 "command" < /dev/null
-
-# Using the helper script:
+# Using the helper script (recommended — uses the deploy key, BatchMode, no prompts):
 ./deploy/vps_ssh.sh "command to run on VPS"
+
+# Override key/host without editing the script:
+VPS_SSH_KEY=~/.ssh/other_key VPS_HOST=root@1.2.3.4 ./deploy/vps_ssh.sh "command"
 ```
 
 ## Rollback
