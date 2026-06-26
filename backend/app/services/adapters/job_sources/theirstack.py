@@ -27,6 +27,67 @@ class TheirStackAdapter(JobSourceAdapter):
     def api_calls_made(self) -> int:
         return self._api_calls
 
+    def _apply_firmographic_filters(self, payload: Dict[str, Any], tuning: Dict[str, Any]) -> Dict[str, Any]:
+        """Push the business-rule firmographic filters into the search payload so
+        they run server-side instead of being filtered out after fetch.
+
+        Sourced from the per-adapter ``tuning`` dict (job_source_tuning.theirstack.*)
+        and the exclusion attributes the pipeline sets on the adapter instance.
+        """
+        _t = tuning or {}
+
+        # Company size: default ≤200 employees (business rule). Set tuning
+        # ``max_employee_count: null`` to disable. ``include_unknown_size: true``
+        # also keeps companies whose size TheirStack doesn't know (more volume,
+        # but may include >200-employee firms).
+        if "max_employee_count" in _t:
+            max_emp = _t.get("max_employee_count")
+        else:
+            max_emp = getattr(settings, "THEIRSTACK_MAX_EMPLOYEE_COUNT", 200)
+        if max_emp is not None:
+            size_key = "max_employee_count_or_null" if _t.get("include_unknown_size") else "max_employee_count"
+            payload[size_key] = int(max_emp)
+
+        min_emp = _t.get("min_employee_count")
+        if min_emp is not None:
+            payload["min_employee_count"] = int(min_emp)
+
+        # Industry (non-IT). Opt-in via tuning using LinkedIn Industry Codes V2 —
+        # include only target industries and/or exclude IT industries. No hardcoded
+        # defaults (codes are operator-configured in Source Tuning).
+        if _t.get("industry_id_or"):
+            payload["industry_id_or"] = list(_t["industry_id_or"])
+        if _t.get("industry_id_not"):
+            payload["industry_id_not"] = list(_t["industry_id_not"])
+
+        # Exclusions pushed server-side (staffing agencies by company name, and
+        # unwanted titles), gated by the shared push-negatives flag. The local
+        # filter_excluded() backstop still runs regardless.
+        if getattr(self, "_push_negatives", True):
+            exclude_company = getattr(self, "_exclude_company", None)
+            if exclude_company:
+                payload["company_name_partial_match_not"] = list(exclude_company)
+            exclude_title = getattr(self, "_exclude_title", None)
+            if exclude_title:
+                payload["job_title_not"] = list(exclude_title)
+
+        return payload
+
+    def _build_base_payload(self, posted_within_days: int, limit: int, tuning: Dict[str, Any]) -> Dict[str, Any]:
+        """Build the base TheirStack search payload (firmographic filters included).
+
+        ``job_title_or`` and ``page`` are set per-batch/per-page by the caller.
+        """
+        payload = {
+            "limit": min(limit, 100),
+            "page": 0,
+            "job_country_code_or": ["US"],
+            "posted_at_max_age_days": posted_within_days,
+            "order_by": [{"desc": True, "field": "date_posted"}],
+        }
+        self._apply_firmographic_filters(payload, tuning or {})
+        return payload
+
     def test_connection(self) -> bool:
         """Test connection to TheirStack API."""
         if not self.api_key:
@@ -83,13 +144,7 @@ class TheirStackAdapter(JobSourceAdapter):
         if not title_batches:
             title_batches = [search_titles]
 
-        payload = {
-            "limit": min(limit, 100),
-            "page": 0,
-            "job_country_code_or": ["US"],
-            "posted_at_max_age_days": posted_within_days,
-            "order_by": [{"desc": True, "field": "date_posted"}],
-        }
+        payload = self._build_base_payload(posted_within_days, limit, _t)
 
         with httpx.Client(timeout=30) as client:
             try:
