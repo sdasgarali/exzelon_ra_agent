@@ -181,6 +181,10 @@ class Settings(BaseSettings):
     COMPANY_SIZE_PRIORITY_1_MAX: int = 50
     COMPANY_SIZE_PRIORITY_2_MIN: int = 51
     COMPANY_SIZE_PRIORITY_2_MAX: int = 500
+    # Hard upper bound on company size for lead sourcing. Pushed server-side into
+    # TheirStack's `max_employee_count` filter so >200-employee companies are never
+    # fetched. Override per-tenant via job_source_tuning.theirstack.max_employee_count.
+    THEIRSTACK_MAX_EMPLOYEE_COUNT: int = 200
 
     # Excluded patterns
     EXCLUDE_IT_KEYWORDS: list[str] = [

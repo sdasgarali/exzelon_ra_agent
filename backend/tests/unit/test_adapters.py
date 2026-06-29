@@ -246,6 +246,89 @@ class TestTheirStackAdapter:
         adapter = TheirStackAdapter(api_key="test")
         assert adapter.normalize(None) is None
 
+    # --- Server-side firmographic filters (non-IT / ≤200-employee / no-staffing) ---
+
+    def test_base_payload_keeps_core_fields(self):
+        """Base payload still carries the required core search fields."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert payload["job_country_code_or"] == ["US"]
+        assert payload["posted_at_max_age_days"] == 7
+        assert payload["limit"] == 100
+
+    def test_default_max_employee_count_is_200(self):
+        """By default the ≤200-employee business rule is pushed server-side."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert payload["max_employee_count"] == 200
+        assert "max_employee_count_or_null" not in payload
+
+    def test_tuning_overrides_max_employee_count(self):
+        """Tuning can tighten the size cap."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={"max_employee_count": 50})
+        assert payload["max_employee_count"] == 50
+
+    def test_null_max_employee_count_disables_size_filter(self):
+        """Setting max_employee_count to null disables the size filter entirely."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={"max_employee_count": None})
+        assert "max_employee_count" not in payload
+        assert "max_employee_count_or_null" not in payload
+
+    def test_include_unknown_size_uses_or_null_variant(self):
+        """include_unknown_size keeps companies of unknown size (more volume)."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(
+            posted_within_days=7, limit=100,
+            tuning={"max_employee_count": 200, "include_unknown_size": True},
+        )
+        assert payload["max_employee_count_or_null"] == 200
+        assert "max_employee_count" not in payload
+
+    def test_min_employee_count_passthrough(self):
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={"min_employee_count": 10})
+        assert payload["min_employee_count"] == 10
+
+    def test_industry_filters_passthrough_when_set(self):
+        """Industry codes (non-IT targeting) are forwarded only when configured."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(
+            posted_within_days=7, limit=100,
+            tuning={"industry_id_or": [14, 25], "industry_id_not": [4, 96]},
+        )
+        assert payload["industry_id_or"] == [14, 25]
+        assert payload["industry_id_not"] == [4, 96]
+
+    def test_no_industry_filter_by_default(self):
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert "industry_id_or" not in payload
+        assert "industry_id_not" not in payload
+
+    def test_staffing_excluded_by_company_name_when_push_negatives(self):
+        """Staffing-agency company names are excluded server-side."""
+        adapter = TheirStackAdapter(api_key="test")
+        adapter._push_negatives = True
+        adapter._exclude_company = ["staffing agency", "recruitment agency"]
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert payload["company_name_partial_match_not"] == ["staffing agency", "recruitment agency"]
+
+    def test_company_exclusion_skipped_when_push_negatives_off(self):
+        adapter = TheirStackAdapter(api_key="test")
+        adapter._push_negatives = False
+        adapter._exclude_company = ["staffing agency"]
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert "company_name_partial_match_not" not in payload
+
+    def test_exclude_titles_pushed_when_push_negatives(self):
+        adapter = TheirStackAdapter(api_key="test")
+        adapter._push_negatives = True
+        adapter._exclude_title = ["intern", "entry level"]
+        payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
+        assert payload["job_title_not"] == ["intern", "entry level"]
+
 
 class TestSerpAPIAdapter:
     """Tests for SerpAPIAdapter."""

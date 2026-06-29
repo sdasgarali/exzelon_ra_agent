@@ -48,7 +48,7 @@ All 9 job source adapters accept a `tuning: Optional[Dict] = None` parameter in 
 | SerpAPI | `batch_size`, `max_pages` | 4, 3 | Titles per OR query; pages (1 API credit each) |
 | SearchAPI | `batch_size`, `max_pages` | 4, 3 | Titles per OR query; pages (1 API credit each) |
 | Adzuna | `batch_size`, `max_pages`, `results_per_page` | 4, 10, 50 | Titles per query; pages; results/page (max 50) |
-| TheirStack | `batch_size`, `max_pages` | 20, 10 | Titles per batch (API limit 20); pages (100/page) |
+| TheirStack | `batch_size`, `max_pages`, `max_employee_count`, `min_employee_count`, `include_unknown_size`, `industry_id_or`, `industry_id_not` | 20, 10, 200, –, false, –, – | Titles per batch (API limit 20); pages (100/page). **Firmographic filters pushed server-side**: `max_employee_count` (≤200 default; `null` disables; `include_unknown_size:true` switches to `max_employee_count_or_null` for more volume), `industry_id_*` = LinkedIn Industry Codes V2 (opt-in, for non-IT targeting). Staffing-agency company names (`_exclude_company`) and excluded titles (`_exclude_title`) are pushed as `company_name_partial_match_not` / `job_title_not` when push-negatives is on. |
 | USAJobs | `batch_size`, `max_pages`, `results_per_page` | 2, 5, 100 | Titles per query; pages; results/page |
 | Jooble | `batch_size`, `max_pages` | 4, 5 | Titles per query; pages |
 | JobDataFeeds | `batch_size`, `max_pages`, `results_per_page` | 4, 50, 100 | Titles per query; pages; results/page |
