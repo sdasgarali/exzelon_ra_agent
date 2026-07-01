@@ -113,20 +113,21 @@ class IndeedAdapter(JobSourceAdapter):
 
                     for result in data.get("results", []):
                         job = self.normalize(result)
+                        if not job:
+                            continue
 
-                        # Apply exclude keywords filter
-                        if exclude_keywords and job:
-                            should_exclude = False
-                            job_text = f"{job['job_title']} {job['client_name']}".lower()
-                            for keyword in exclude_keywords:
-                                if keyword.lower() in job_text:
-                                    should_exclude = True
-                                    break
-                            if should_exclude:
-                                continue
+                        # Apply exclude keywords filter (shared word-boundary
+                        # matcher + split company/title lists, like other adapters)
+                        if self.filter_excluded(
+                            job,
+                            exclude_keywords=exclude_keywords,
+                            exclude_company_keywords=getattr(self, '_exclude_company', None),
+                            exclude_title_keywords=getattr(self, '_exclude_title', None),
+                            match_mode=getattr(self, '_match_mode', 'word_boundary'),
+                        ):
+                            continue
 
-                        if job:
-                            jobs.append(job)
+                        jobs.append(job)
 
             except Exception as e:
                 print(f"Indeed API error for query '{query}': {str(e)}")
