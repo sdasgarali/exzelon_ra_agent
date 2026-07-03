@@ -527,8 +527,11 @@ def fetch_from_source(
         # Classify error type
         if "401" in error_msg or "unauthorized" in error_lower or "invalid" in error_lower and "key" in error_lower:
             diagnostics["error_type"] = "api_key_invalid"
-        elif "credit" in error_lower or "quota" in error_lower or "exhausted" in error_lower:
+        elif "credit" in error_lower or "quota" in error_lower or "exhausted" in error_lower \
+                or "402" in error_msg or "payment required" in error_lower:
             diagnostics["error_type"] = "credits_exhausted"
+        elif "403" in error_msg or "premium functionality" in error_lower or "plan allows" in error_lower or "forbidden" in error_lower:
+            diagnostics["error_type"] = "plan_limit"
         elif "429" in error_msg or "rate" in error_lower and "limit" in error_lower:
             diagnostics["error_type"] = "rate_limited"
         elif "timeout" in error_lower or "connection" in error_lower:
