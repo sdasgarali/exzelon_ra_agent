@@ -254,6 +254,20 @@ class TestTheirStackAdapter:
         payload = adapter._build_base_payload(posted_within_days=7, limit=100, tuning={})
         assert payload["job_country_code_or"] == ["US"]
         assert payload["posted_at_max_age_days"] == 7
+
+    def test_base_payload_caps_per_page_at_plan_limit(self):
+        """Per-page ``limit`` is capped at 25 (plan max); larger requests would
+        otherwise get HTTP 403 (E-020) and silently return 0 leads."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(posted_within_days=7, limit=1000, tuning={})
+        assert payload["limit"] == 25
+
+    def test_base_payload_per_page_tunable_for_higher_plans(self):
+        """A higher-tier plan can raise the per-page cap via tuning."""
+        adapter = TheirStackAdapter(api_key="test")
+        payload = adapter._build_base_payload(
+            posted_within_days=7, limit=1000, tuning={"max_results_per_page": 100}
+        )
         assert payload["limit"] == 100
 
     def test_default_max_employee_count_is_200(self):

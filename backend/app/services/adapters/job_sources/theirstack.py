@@ -19,6 +19,12 @@ class TheirStackAdapter(JobSourceAdapter):
 
     BASE_URL = "https://api.theirstack.com/v1"
 
+    # TheirStack caps results-per-page by plan tier. Free/entry plans allow only
+    # 25 per page and return HTTP 403 (E-020 "Premium functionality limitation")
+    # for anything larger. Requesting more silently yielded 0 leads. Override via
+    # tuning ``max_results_per_page`` once on a plan that permits a higher cap.
+    DEFAULT_MAX_RESULTS_PER_PAGE = 25
+
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'THEIRSTACK_API_KEY', None)
         self._api_calls = 0
@@ -78,8 +84,10 @@ class TheirStackAdapter(JobSourceAdapter):
 
         ``job_title_or`` and ``page`` are set per-batch/per-page by the caller.
         """
+        per_page = int((tuning or {}).get("max_results_per_page", self.DEFAULT_MAX_RESULTS_PER_PAGE))
+        per_page = max(1, min(per_page, int(limit) if limit else per_page))
         payload = {
-            "limit": min(limit, 100),
+            "limit": per_page,
             "page": 0,
             "job_country_code_or": ["US"],
             "posted_at_max_age_days": posted_within_days,
@@ -145,10 +153,13 @@ class TheirStackAdapter(JobSourceAdapter):
             title_batches = [search_titles]
 
         payload = self._build_base_payload(posted_within_days, limit, _t)
+        per_page = payload.get("limit") or self.DEFAULT_MAX_RESULTS_PER_PAGE
 
         with httpx.Client(timeout=30) as client:
             try:
-                pages_to_fetch = min(_max_pages, max(1, limit // 100))
+                # Ceil-divide so a small per-page cap still fetches enough pages
+                # to reach the requested total (e.g. 25/page x 40 pages = 1000).
+                pages_to_fetch = min(_max_pages, max(1, -(-limit // per_page)))
                 for title_batch in title_batches:
                     payload["job_title_or"] = title_batch
                     for page in range(pages_to_fetch):
@@ -205,8 +216,19 @@ class TheirStackAdapter(JobSourceAdapter):
                         break
 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
+                code = e.response.status_code
+                if code == 429:
                     print(f"TheirStack rate limit hit after {len(jobs)} jobs.")
+                elif not jobs:
+                    # Surface plan/auth errors (e.g. 403 E-020 "Premium
+                    # functionality limitation") instead of returning an empty
+                    # list that the pipeline mislabels as "no_match".
+                    body = ""
+                    try:
+                        body = e.response.text[:300]
+                    except Exception:
+                        body = ""
+                    raise RuntimeError(f"TheirStack HTTP {code}: {body}") from e
                 else:
                     print(f"TheirStack API error: {e}")
             except Exception as e:
