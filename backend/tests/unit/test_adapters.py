@@ -270,6 +270,39 @@ class TestTheirStackAdapter:
         )
         assert payload["limit"] == 100
 
+    def test_max_total_results_caps_credit_spend(self, monkeypatch):
+        """tuning max_total_results hard-caps total jobs returned per run
+        (TheirStack bills 1 credit/job), independent of the requested limit."""
+        import app.services.adapters.job_sources.theirstack as ts_mod
+
+        class _Resp:
+            status_code = 200
+            def raise_for_status(self):
+                pass
+            def json(self):
+                # Always return a full page of valid, non-excluded jobs
+                return {"data": [
+                    {"company_name": f"Co{i}", "job_title": "HR Manager",
+                     "date_posted": "2026-07-01", "job_location": "Dallas, TX"}
+                    for i in range(100)
+                ]}
+
+        class _Client:
+            def __init__(self, *a, **k): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def post(self, *a, **k): return _Resp()
+
+        monkeypatch.setattr(ts_mod.httpx, "Client", _Client)
+        adapter = TheirStackAdapter(api_key="test")
+        adapter._match_mode = "word_boundary"
+        jobs = adapter.fetch_jobs(
+            job_titles=["HR Manager", "Operations Manager"],
+            limit=5000,
+            tuning={"max_results_per_page": 100, "max_total_results": 330},
+        )
+        assert len(jobs) == 330
+
     def test_default_max_employee_count_is_200(self):
         """By default the ≤200-employee business rule is pushed server-side."""
         adapter = TheirStackAdapter(api_key="test")
