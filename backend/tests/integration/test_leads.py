@@ -29,6 +29,34 @@ class TestLeadsEndpoints:
         db_session.refresh(lead)
         return lead
 
+    def test_export_csv_post_with_lead_ids(self, client, auth_headers, sample_lead):
+        """POST export with lead_ids in the body streams a CSV (no URL limit)."""
+        response = client.post(
+            "/api/v1/leads/export/csv",
+            headers=auth_headers,
+            json={"lead_ids": [sample_lead.lead_id]},
+        )
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+        body = response.text
+        assert "Company Name" in body  # header row
+        assert "Test Company" in body  # the exported lead
+
+    def test_export_csv_post_filtered(self, client, auth_headers, sample_lead):
+        """POST export honors status/search filters like the GET route."""
+        response = client.post(
+            "/api/v1/leads/export/csv",
+            headers=auth_headers,
+            json={"status": "new", "search": "Test Company"},
+        )
+        assert response.status_code == 200
+        assert "Test Company" in response.text
+
+    def test_export_csv_post_unauthenticated(self, client):
+        """POST export requires auth."""
+        response = client.post("/api/v1/leads/export/csv", json={"lead_ids": [1]})
+        assert response.status_code == 401
+
     def test_list_leads(self, client, auth_headers, sample_lead):
         """Test listing leads."""
         response = client.get("/api/v1/leads", headers=auth_headers)
