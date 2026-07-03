@@ -207,38 +207,50 @@ class TestTheirStackAdapter:
             adapter.fetch_jobs()
 
     def test_normalize_basic(self):
-        """normalize produces standard job dict."""
+        """normalize maps the real TheirStack v1 field names."""
         adapter = TheirStackAdapter(api_key="test")
         raw = {
             "id": "ts-123",
-            "company_name": "Acme Corp",
+            "company": "Acme Corp",
+            "company_domain": "acme.com",
             "job_title": "HR Manager",
-            "job_location": "Austin, TX",
+            "short_location": "Austin, TX",
+            "state_code": "TX",
+            "cities": ["Austin"],
             "date_posted": "2026-03-01T10:30:00Z",
             "url": "https://example.com/job/123",
             "min_annual_salary": 50000,
             "max_annual_salary": 70000,
-            "company_linkedin_url": "https://linkedin.com/company/acme",
-            "company_url": "https://acme.com",
+            "company_object": {"name": "Acme Corp", "domain": "acme.com"},
         }
         result = adapter.normalize(raw)
         assert result["client_name"] == "Acme Corp"
         assert result["job_title"] == "HR Manager"
+        assert result["state"] == "TX"
+        assert result["city"] == "Austin"
+        assert result["employer_website"] == "https://acme.com"
         assert result["source"] == "theirstack"
         assert result["external_job_id"] == "ts-123"
         assert isinstance(result["posting_date"], date)
 
-    def test_normalize_handles_missing_fields(self):
-        """normalize handles missing optional fields."""
+    def test_normalize_company_from_nested_object(self):
+        """Falls back to company_object.name when the flat 'company' is absent."""
         adapter = TheirStackAdapter(api_key="test")
         raw = {
-            "company_name": "Test Co",
-            "job_title": "Manager",
-            "job_location": "Unknown",
+            "job_title": "Operations Manager",
             "date_posted": "2026-01-01",
+            "company_object": {"name": "Nested Co", "domain": "nested.io"},
         }
         result = adapter.normalize(raw)
-        assert result["client_name"] == "Test Co"
+        assert result["client_name"] == "Nested Co"
+        assert result["employer_website"] == "https://nested.io"
+
+    def test_normalize_missing_company_falls_back_to_placeholder(self):
+        """No company anywhere → explicit placeholder (never a crash)."""
+        adapter = TheirStackAdapter(api_key="test")
+        result = adapter.normalize({"job_title": "Manager", "date_posted": "2026-01-01"})
+        assert result["client_name"] == "Unknown Company"
+        assert result["employer_website"] == ""
         assert result["source"] == "theirstack"
 
     def test_normalize_returns_none_for_none_input(self):
@@ -282,8 +294,9 @@ class TestTheirStackAdapter:
             def json(self):
                 # Always return a full page of valid, non-excluded jobs
                 return {"data": [
-                    {"company_name": f"Co{i}", "job_title": "HR Manager",
-                     "date_posted": "2026-07-01", "job_location": "Dallas, TX"}
+                    {"company": f"Co{i}", "job_title": "HR Manager",
+                     "date_posted": "2026-07-01", "short_location": "Dallas, TX",
+                     "state_code": "TX"}
                     for i in range(100)
                 ]}
 
