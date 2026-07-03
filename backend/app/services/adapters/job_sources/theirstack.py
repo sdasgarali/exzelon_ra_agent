@@ -148,6 +148,15 @@ class TheirStackAdapter(JobSourceAdapter):
         _t = tuning or {}
         _batch_size = int(_t.get('batch_size', 20))
         _max_pages = int(_t.get('max_pages', 10))
+
+        # Per-source hard cap on total results per run. TheirStack bills 1 API
+        # credit per job returned, so this bounds monthly spend independently of
+        # the global ``pipeline_adapter_limit``. Set via tuning
+        # ``max_total_results`` (None/absent = unbounded, uses ``limit``).
+        _max_total = _t.get('max_total_results')
+        if _max_total is not None:
+            limit = min(int(limit), int(_max_total))
+
         title_batches = [search_titles[i:i + _batch_size] for i in range(0, len(search_titles), _batch_size)]
         if not title_batches:
             title_batches = [search_titles]

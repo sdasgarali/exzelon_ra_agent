@@ -49,6 +49,7 @@ def init_scheduler():
         except Exception:
             pass
         _freq_map = {
+            "1x": "6",
             "2x": "6,18",
             "4x": "0,6,12,18",
             "6x": "0,4,8,12,16,20",
