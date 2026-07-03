@@ -247,33 +247,46 @@ class TheirStackAdapter(JobSourceAdapter):
         return jobs
 
     def normalize(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize TheirStack API response to standard format."""
+        """Normalize TheirStack API response to standard format.
+
+        Maps the actual TheirStack v1 ``/jobs/search`` field names. The company
+        name is ``company`` (or nested ``company_object.name``) — NOT
+        ``company_name`` — and location comes from ``state_code`` /
+        ``short_location`` rather than ``job_location``. Reading the wrong keys
+        previously produced "Unknown Company" rows with empty state/city and no
+        domain (unusable for outreach/enrichment).
+        """
         if not raw_data:
             return None
 
+        company_object = raw_data.get("company_object") or {}
+
         # Parse posting date
-        date_str = raw_data.get("date_posted", "")
+        date_str = raw_data.get("date_posted", "") or ""
         try:
             posting_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
         except Exception:
             posting_date = date.today()
 
-        # Extract state from location
-        location = raw_data.get("job_location", "") or ""
-        state = ""
-        if location:
-            parts = [p.strip() for p in location.split(",")]
-            for part in parts:
+        # Company name: v1 field is "company"; fall back to company_object.name
+        client_name = (raw_data.get("company") or company_object.get("name") or "").strip() or "Unknown Company"
+
+        # Location: v1 provides state_code directly; short_location is "City, ST"
+        short_loc = (raw_data.get("short_location") or raw_data.get("location")
+                     or raw_data.get("long_location") or "")
+        state = (raw_data.get("state_code") or "").strip().upper()
+        if not (len(state) == 2 and state.isalpha()):
+            state = ""
+            for part in [p.strip() for p in short_loc.split(",")]:
                 if len(part) == 2 and part.isalpha():
                     state = part.upper()
                     break
 
-        # Extract city
-        city = ""
-        if location:
-            parts = [p.strip() for p in location.split(",")]
-            if parts:
-                city = parts[0]
+        # City: prefer the cities array, else first segment of short_location
+        cities = raw_data.get("cities") or []
+        city = (cities[0].strip() if cities and isinstance(cities, list) and cities[0] else "")
+        if not city and short_loc:
+            city = short_loc.split(",")[0].strip()
 
         salary_min = raw_data.get("min_annual_salary")
         salary_max = raw_data.get("max_annual_salary")
@@ -283,12 +296,19 @@ class TheirStackAdapter(JobSourceAdapter):
         emp_statuses = raw_data.get("employment_statuses") or []
         emp_type = normalize_employment_type(emp_statuses[0] if emp_statuses else "")
 
+        # Company domain → website (contact enrichment keys off the domain)
+        domain = (raw_data.get("company_domain") or company_object.get("domain") or "").strip()
+        employer_website = f"https://{domain}" if domain else ""
+
+        job_link = (raw_data.get("url") or raw_data.get("final_url")
+                    or raw_data.get("source_url") or "")
+
         return {
-            "client_name": raw_data.get("company_name", "Unknown Company"),
+            "client_name": client_name,
             "job_title": raw_data.get("job_title", "Unknown Position"),
             "state": state,
             "posting_date": posting_date,
-            "job_link": raw_data.get("url", "") or raw_data.get("job_url", ""),
+            "job_link": job_link,
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
             "source": "theirstack",
@@ -296,6 +316,6 @@ class TheirStackAdapter(JobSourceAdapter):
             "external_job_id": str(raw_data.get("id", "")) if raw_data.get("id") else "",
             "city": city,
             "employer_linkedin_url": raw_data.get("company_linkedin_url") or "",
-            "employer_website": raw_data.get("company_url") or "",
+            "employer_website": employer_website,
             "job_publisher": "theirstack",
         }
