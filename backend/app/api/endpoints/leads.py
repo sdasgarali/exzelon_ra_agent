@@ -651,6 +651,17 @@ async def export_leads_csv(
             (LeadDetails.job_title.ilike(f"%{search}%"))
         )
 
+    return _export_leads_stream(db, lead_query)
+
+
+def _export_leads_stream(db: Session, lead_query):
+    """Stamp downloaded_at and stream Lead×Contact rows as CSV.
+
+    Shared by the GET (query-param) and POST (JSON-body) export routes. Large
+    "selected" exports must use the POST route so lead_ids travel in the body
+    instead of the URL — a GET with hundreds of lead_ids query params exceeds
+    the proxy's request-line limit and the request is rejected.
+    """
     # Stamp downloaded_at on all exported leads
     now = datetime.now()
     export_query = lead_query.with_entities(LeadDetails.lead_id)
@@ -783,6 +794,63 @@ async def export_leads_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+class LeadExportRequest(BaseModel):
+    """Body for POST /leads/export/csv — filters and/or an explicit lead_ids set.
+
+    Sending lead_ids in the body (rather than GET query params) lets large
+    "selected" exports work: the URL length limit no longer applies.
+    """
+    lead_ids: Optional[List[int]] = None
+    status: Optional[LeadStatus] = None
+    source: Optional[str] = None
+    state: Optional[List[str]] = None
+    from_date: Optional[date] = None
+    to_date: Optional[date] = None
+    search: Optional[str] = None
+    show_archived: bool = False
+
+
+@router.post("/export/csv")
+async def export_leads_csv_post(
+    body: LeadExportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Export leads to CSV via JSON body (mirrors the GET route).
+
+    Used for "selected" exports of many leads, whose ids would overflow the
+    URL if sent as GET query params.
+    """
+    lead_query = db.query(LeadDetails)
+    lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
+
+    if body.lead_ids:
+        lead_query = lead_query.filter(LeadDetails.lead_id.in_(body.lead_ids))
+    else:
+        lead_query = lead_query.filter(
+            LeadDetails.is_archived == (True if body.show_archived else False)
+        )
+
+    if body.status:
+        lead_query = lead_query.filter(LeadDetails.lead_status == body.status)
+    if body.source:
+        lead_query = lead_query.filter(LeadDetails.source == body.source)
+    if body.state:
+        lead_query = lead_query.filter(LeadDetails.state.in_(body.state))
+    if body.from_date:
+        lead_query = lead_query.filter(LeadDetails.posting_date >= body.from_date)
+    if body.to_date:
+        lead_query = lead_query.filter(LeadDetails.posting_date <= body.to_date)
+    if body.search:
+        lead_query = lead_query.filter(
+            (LeadDetails.client_name.ilike(f"%{body.search}%")) |
+            (LeadDetails.job_title.ilike(f"%{body.search}%"))
+        )
+
+    return _export_leads_stream(db, lead_query)
 
 
 @router.get("/filter-options")

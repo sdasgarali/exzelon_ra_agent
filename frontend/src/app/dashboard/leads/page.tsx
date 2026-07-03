@@ -349,19 +349,22 @@ export default function LeadsPage() {
     try {
       setExporting(true)
       setShowExportModal(false)
-      const params = new URLSearchParams()
+      // POST with a JSON body (not GET query params): a "selected" export of many
+      // leads would otherwise put hundreds of lead_ids in the URL and exceed the
+      // proxy's request-line limit, failing the request.
+      const body: Record<string, unknown> = {}
       if (mode === 'selected') {
-        Array.from(selectedIds).forEach(id => params.append('lead_ids', String(id)))
+        body.lead_ids = Array.from(selectedIds)
       } else {
-        if (filterStatus) params.append('status', filterStatus)
-        if (filterSource) params.append('source', filterSource)
-        filterState.forEach(s => params.append('state', s))
-        if (filterFromDate) params.append('from_date', filterFromDate)
-        if (filterToDate) params.append('to_date', filterToDate)
-        if (debouncedSearch) params.append('search', debouncedSearch)
+        if (filterStatus) body.status = filterStatus
+        if (filterSource) body.source = filterSource
+        if (filterState.length) body.state = filterState
+        if (filterFromDate) body.from_date = filterFromDate
+        if (filterToDate) body.to_date = filterToDate
+        if (debouncedSearch) body.search = debouncedSearch
       }
 
-      const response = await api.get(`/leads/export/csv?${params.toString()}`, {
+      const response = await api.post('/leads/export/csv', body, {
         responseType: 'blob'
       })
 
