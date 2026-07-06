@@ -56,6 +56,8 @@ All 9 job source adapters accept a `tuning: Optional[Dict] = None` parameter in 
 
 Pipeline-level settings: `pipeline_adapter_limit` (default 1000) caps results per adapter; `pipeline_max_workers` (default 6) sets thread pool size.
 
+**Company attributes captured at source:** TheirStack (`company_object.industry`/`employee_count`) and Coresignal (`company_industry`/`company_employees_count`) map company `industry` + `company_size` into job_data. These feed the size/industry exclusion gate (`_apply_company_gate` in `pipelines/lead_sourcing.py`, helpers in `services/company_filters.py`), which drops companies over `lead_sourcing_max_employee_count` (default 500), excluded industries (IT/staffing/government via `lead_sourcing_excluded_industries`), and confidential/blank employers (`lead_sourcing_drop_confidential`). Sources lacking these attributes are filled by a bounded, cached Groq LLM step (`company_enrichment.resolve_company_metadata_batch`, gated by `lead_sourcing_enrich_company_at_source` / `lead_sourcing_enrich_max_companies`). Unknown size/industry is never dropped.
+
 All configurable via Settings → Source Tuning tab (tab permission key: `source_tuning`).
 
 ## Adding a New Adapter
