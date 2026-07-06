@@ -186,6 +186,20 @@ class Settings(BaseSettings):
     # fetched. Override per-tenant via job_source_tuning.theirstack.max_employee_count.
     THEIRSTACK_MAX_EMPLOYEE_COUNT: int = 200
 
+    # Pipeline-wide company-size ceiling applied to ALL sources (not just
+    # TheirStack) after fetch/enrichment. Companies with >this many employees are
+    # dropped at sourcing. Override per-tenant via `lead_sourcing_max_employee_count`.
+    LEAD_SOURCING_MAX_EMPLOYEE_COUNT: int = 500
+    # Drop postings with a placeholder/confidential/blank employer name.
+    LEAD_SOURCING_DROP_CONFIDENTIAL: bool = True
+    # Fill missing industry/size at sourcing via the configured AI adapter (Groq),
+    # cached on ClientInfo. Bounded per run to control cost/latency.
+    LEAD_SOURCING_ENRICH_COMPANY_AT_SOURCE: bool = True
+    LEAD_SOURCING_ENRICH_MAX_COMPANIES: int = 300
+    # Industries hard-dropped regardless of size. Empty list falls back to
+    # company_filters.DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS.
+    EXCLUDED_INDUSTRY_KEYWORDS: list[str] = []
+
     # Excluded patterns
     EXCLUDE_IT_KEYWORDS: list[str] = [
         "software developer", "software engineer", "web developer",

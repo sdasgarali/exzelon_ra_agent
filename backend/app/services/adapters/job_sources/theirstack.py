@@ -300,6 +300,22 @@ class TheirStackAdapter(JobSourceAdapter):
         domain = (raw_data.get("company_domain") or company_object.get("domain") or "").strip()
         employer_website = f"https://{domain}" if domain else ""
 
+        # Company attributes captured at source (used by the size/industry gate).
+        # TheirStack's company_object carries these; the top-level record repeats
+        # a few as fallbacks.
+        industry = (
+            company_object.get("industry")
+            or company_object.get("industry_sector")
+            or raw_data.get("company_industry")
+            or ""
+        )
+        employee_count = (
+            company_object.get("employee_count")
+            or company_object.get("num_employees")
+            or raw_data.get("company_employee_count")
+        )
+        company_size = str(employee_count) if employee_count else ""
+
         job_link = (raw_data.get("url") or raw_data.get("final_url")
                     or raw_data.get("source_url") or "")
 
@@ -317,5 +333,7 @@ class TheirStackAdapter(JobSourceAdapter):
             "city": city,
             "employer_linkedin_url": raw_data.get("company_linkedin_url") or "",
             "employer_website": employer_website,
+            "industry": industry,
+            "company_size": company_size,
             "job_publisher": "theirstack",
         }

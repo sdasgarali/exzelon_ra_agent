@@ -848,6 +848,17 @@ def run_lead_sourcing_pipeline(
         # wasted API result volume (sources that support it). Default on.
         push_exclusions_to_query = bool(get_tenant_setting(db, "push_exclusions_to_query", tenant_id=tenant_id, default=True))
 
+        # Company size/industry gate (drops big / IT / staffing / government /
+        # confidential companies that keyword filters can't catch by name alone).
+        max_employee_count = int(get_tenant_setting(db, "lead_sourcing_max_employee_count", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_EMPLOYEE_COUNT))
+        drop_confidential = bool(get_tenant_setting(db, "lead_sourcing_drop_confidential", tenant_id=tenant_id, default=settings.LEAD_SOURCING_DROP_CONFIDENTIAL))
+        excluded_industries = get_tenant_setting(db, "lead_sourcing_excluded_industries", tenant_id=tenant_id, default=settings.EXCLUDED_INDUSTRY_KEYWORDS)
+        if not isinstance(excluded_industries, list) or not excluded_industries:
+            from app.services.company_filters import DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS
+            excluded_industries = DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS
+        enrich_company_at_source = bool(get_tenant_setting(db, "lead_sourcing_enrich_company_at_source", tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_COMPANY_AT_SOURCE))
+        enrich_max_companies = int(get_tenant_setting(db, "lead_sourcing_enrich_max_companies", tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_MAX_COMPANIES))
+
         # Location diversification (P2-F)
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
         target_states = get_tenant_setting(db, "target_states", tenant_id=tenant_id, default=["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"])
@@ -1131,6 +1142,23 @@ def run_lead_sourcing_pipeline(
             counters["excluded_companies"] = excluded_count
             logger.info(f"Company exclusion filter: removed {excluded_count} leads from {len(excluded_companies_set)} excluded companies")
 
+        # --- Company size / industry / placeholder gate ---
+        # Drops big companies (>ceiling employees), out-of-scope industries
+        # (IT / staffing / government), and confidential/blank employers — cases
+        # the keyword filters cannot detect from a bare brand name. Missing
+        # attributes are filled by a bounded, cached LLM enrichment step first.
+        unique_jobs = _apply_company_gate(
+            db,
+            unique_jobs,
+            counters,
+            tenant_id=tenant_id,
+            max_employee_count=max_employee_count,
+            drop_confidential=drop_confidential,
+            excluded_industries=excluded_industries,
+            enrich=enrich_company_at_source,
+            enrich_max_companies=enrich_max_companies,
+        )
+
         # Process unique jobs
         newly_inserted_leads = []
         total_unique = len(unique_jobs)
@@ -1243,6 +1271,11 @@ def run_lead_sourcing_pipeline(
             "skipped": counters["skipped"],
             "errors": counters["errors"],
             "auto_enriched": counters.get("auto_enriched", 0),
+            "excluded_companies": counters.get("excluded_companies", 0),
+            "excluded_confidential": counters.get("excluded_confidential", 0),
+            "excluded_too_large": counters.get("excluded_too_large", 0),
+            "excluded_industry": counters.get("excluded_industry", 0),
+            "enriched_companies": counters.get("enriched_companies", 0),
             "sources": counters["sources_used"],
             "per_source": counters["jobs_per_source"],
             "per_source_detail": per_source_detail,
@@ -1311,6 +1344,109 @@ def _extract_domain(url: str) -> str:
         return host
     except Exception:
         return ""
+
+
+def _apply_company_gate(
+    db,
+    jobs: List[Dict[str, Any]],
+    counters: Dict[str, Any],
+    tenant_id: Optional[int] = None,
+    max_employee_count: int = 500,
+    drop_confidential: bool = True,
+    excluded_industries: Optional[List[str]] = None,
+    enrich: bool = True,
+    enrich_max_companies: int = 300,
+) -> List[Dict[str, Any]]:
+    """Drop out-of-scope companies by size / industry / placeholder name.
+
+    Runs after keyword + company-name exclusion. Fills missing industry/size via
+    a bounded, cached LLM step (``resolve_company_metadata_batch``) so the gate
+    can act on sources that don't return company attributes. Mutates ``counters``
+    with per-reason drop counts and returns the surviving jobs.
+    """
+    from app.services.company_filters import (
+        is_placeholder_company,
+        industry_is_excluded,
+        exceeds_size_ceiling,
+    )
+
+    counters.setdefault("excluded_confidential", 0)
+    counters.setdefault("excluded_too_large", 0)
+    counters.setdefault("excluded_industry", 0)
+    counters.setdefault("enriched_companies", 0)
+
+    if not jobs:
+        return jobs
+
+    # 1) Placeholder / confidential employers — no enrichment needed.
+    if drop_confidential:
+        kept = []
+        for job in jobs:
+            if is_placeholder_company(job.get("client_name")):
+                counters["excluded_confidential"] += 1
+            else:
+                kept.append(job)
+        jobs = kept
+
+    # 2) Fill missing industry/size (ClientInfo cache + bounded LLM), annotate jobs.
+    if enrich and jobs:
+        missing = [
+            (job.get("client_name"), job.get("employer_website") or "")
+            for job in jobs
+            if not (job.get("industry") and (job.get("company_size") or job.get("_employee_count")))
+        ]
+        if missing:
+            try:
+                from app.services.company_enrichment import resolve_company_metadata_batch
+                meta = resolve_company_metadata_batch(
+                    db, missing, tenant_id=tenant_id, max_llm_calls=enrich_max_companies,
+                )
+            except Exception as e:  # enrichment is best-effort; never fail the run
+                logger.warning(f"Company metadata enrichment failed: {e}")
+                meta = {}
+
+            enriched = 0
+            for job in jobs:
+                key = (job.get("client_name") or "").strip().lower()
+                m = meta.get(key)
+                if not m:
+                    continue
+                filled = False
+                if not job.get("industry") and m.get("industry"):
+                    job["industry"] = m["industry"]
+                    filled = True
+                if m.get("employee_count") is not None:
+                    job["_employee_count"] = m["employee_count"]
+                    if not job.get("company_size"):
+                        job["company_size"] = str(m["employee_count"])
+                    filled = True
+                if not job.get("company_size") and m.get("company_size"):
+                    job["company_size"] = m["company_size"]
+                    filled = True
+                if filled:
+                    enriched += 1
+            counters["enriched_companies"] += enriched
+
+    # 3) Size + industry gate.
+    final = []
+    for job in jobs:
+        size_signal = job.get("_employee_count")
+        if size_signal is None:
+            size_signal = job.get("company_size")
+        if exceeds_size_ceiling(size_signal, max_employee_count):
+            counters["excluded_too_large"] += 1
+            continue
+        if industry_is_excluded(job.get("industry"), excluded_industries):
+            counters["excluded_industry"] += 1
+            continue
+        final.append(job)
+
+    logger.info(
+        "Company gate: dropped %s confidential, %s too-large, %s industry-excluded (enriched %s companies)",
+        counters["excluded_confidential"], counters["excluded_too_large"],
+        counters["excluded_industry"], counters["enriched_companies"],
+    )
+    return final
 
 
 def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None, industry: str = None, company_size: str = None):

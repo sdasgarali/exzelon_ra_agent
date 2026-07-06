@@ -233,6 +233,119 @@ def enrich_client(db: Session, client: ClientInfo, tenant_id: Optional[int] = No
     return result
 
 
+def resolve_company_metadata_batch(
+    db: Session,
+    companies,
+    tenant_id: Optional[int] = None,
+    max_llm_calls: int = 300,
+    use_llm: bool = True,
+) -> dict:
+    """Resolve {industry, company_size, employee_count} for many companies.
+
+    Used by the lead-sourcing size/industry gate to fill attributes for sources
+    that don't return them. Strategy per company:
+      1. Cache — read from an existing ClientInfo row (free, no API).
+      2. LLM — the configured AI adapter's ``research_company`` (Groq), bounded
+         to ``max_llm_calls`` per run and run in a thread pool.
+
+    Args:
+        companies: iterable of ``(client_name, domain)`` tuples (domain optional).
+        max_llm_calls: hard ceiling on AI lookups this run (cost/latency guard).
+        use_llm: when False, only the ClientInfo cache is consulted.
+
+    Returns:
+        dict keyed by ``client_name.strip().lower()`` →
+        ``{"industry", "company_size", "employee_count"}`` (values may be None).
+        Threads never touch the DB session — all DB reads happen up front.
+    """
+    result: dict = {}
+
+    # Dedupe by lowercased name; keep the first non-empty domain seen.
+    unique: dict = {}
+    for name, domain in companies:
+        key = (name or "").strip().lower()
+        if not key:
+            continue
+        if key not in unique:
+            unique[key] = {"name": (name or "").strip(), "domain": (domain or "").strip()}
+        elif domain and not unique[key]["domain"]:
+            unique[key]["domain"] = (domain or "").strip()
+
+    if not unique:
+        return result
+
+    # 1) Cache from ClientInfo (case-insensitive on exact stored name).
+    cached: dict = {}
+    names = [v["name"] for v in unique.values()]
+    if names:
+        q = db.query(
+            ClientInfo.client_name,
+            ClientInfo.industry,
+            ClientInfo.company_size,
+            ClientInfo.employee_count,
+            ClientInfo.website,
+        ).filter(ClientInfo.client_name.in_(names))
+        if tenant_id is not None:
+            q = q.filter(ClientInfo.tenant_id == tenant_id)
+        for cn, ind, size, emp, web in q.all():
+            cached[cn.strip().lower()] = {
+                "industry": ind, "company_size": size, "employee_count": emp, "website": web,
+            }
+
+    to_enrich = []
+    for key, info in unique.items():
+        c = cached.get(key)
+        result[key] = {
+            "industry": (c or {}).get("industry"),
+            "company_size": (c or {}).get("company_size"),
+            "employee_count": (c or {}).get("employee_count"),
+        }
+        # Fully cached (industry + a size signal) → no LLM needed.
+        if c and c.get("industry") and (c.get("employee_count") or c.get("company_size")):
+            continue
+        to_enrich.append((key, info, c))
+
+    if not use_llm or max_llm_calls <= 0 or not to_enrich:
+        return result
+
+    adapter = _get_ai_adapter(db, tenant_id=tenant_id)
+    if not adapter:
+        return result
+    # Threads must not write to the DB session; disable per-call cost DB writes.
+    adapter._cost_db = None
+
+    to_enrich = to_enrich[:max_llm_calls]
+
+    def _research(item):
+        key, info, c = item
+        domain = info["domain"] or _extract_domain((c or {}).get("website") or "")
+        try:
+            data = adapter.research_company(company_name=info["name"], domain=domain, location=None)
+        except Exception:
+            return key, None
+        return key, data if isinstance(data, dict) else None
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for key, data in ex.map(_research, to_enrich):
+            if not data:
+                continue
+            merged = result.get(key, {})
+            if not merged.get("industry") and data.get("industry"):
+                merged["industry"] = str(data["industry"])[:100]
+            if not merged.get("company_size") and data.get("company_size"):
+                merged["company_size"] = str(data["company_size"])[:50]
+            if not merged.get("employee_count") and data.get("employee_count") is not None:
+                try:
+                    merged["employee_count"] = int(data["employee_count"])
+                except (ValueError, TypeError):
+                    pass
+            result[key] = merged
+
+    return result
+
+
 def bulk_enrich_clients(db: Session, client_ids: list[int], tenant_id: Optional[int] = None) -> dict:
     """Enrich multiple clients."""
     results = []
