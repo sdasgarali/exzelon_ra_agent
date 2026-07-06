@@ -299,11 +299,11 @@ async def list_leads(
     client_names = list({lead.client_name for lead in leads if lead.client_name})
     client_info_map = {}
     if client_names:
-        client_rows = db.query(ClientInfo.client_name, ClientInfo.industry, ClientInfo.company_size).filter(
+        client_rows = db.query(ClientInfo.client_name, ClientInfo.industry, ClientInfo.company_size, ClientInfo.website).filter(
             ClientInfo.client_name.in_(client_names)
         ).all()
-        for name, ind, size in client_rows:
-            client_info_map[name] = {"industry": ind, "company_size": size}
+        for name, ind, size, website in client_rows:
+            client_info_map[name] = {"industry": ind, "company_size": size, "website": website}
 
     # Batch fetch campaign status for leads via campaign_contacts → campaigns
     campaign_status_map: dict[int, str] = {}
@@ -335,6 +335,7 @@ async def list_leads(
         ci = client_info_map.get(lead.client_name, {})
         lead_dict['industry'] = lead.industry or ci.get("industry")
         lead_dict['company_size'] = lead.company_size or ci.get("company_size")
+        lead_dict['employer_website'] = lead.employer_website or ci.get("website")
         lead_dict['data_type'] = lead.data_type.value if hasattr(lead.data_type, 'value') else (lead.data_type or 'prod')
         lead_dict['campaign_status'] = campaign_status_map.get(lead.lead_id)
         lead_dict['lob_id'] = lead.lob_id
