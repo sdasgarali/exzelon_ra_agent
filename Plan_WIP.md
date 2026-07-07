@@ -1,28 +1,38 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Implementing 3 deliverables on branch `feature/cost-tracking-and-query-negatives`:
-> (a) API cost report as .docx, (b) cost tracking for contact-discovery + AI layers,
-> (c) query-side negative-keyword filtering for job boards that support it.
-> Then commit, push, deploy to VPS.
-> (Prior session 95 — Tenant-to-LOB Mapping — already merged to master.)
+> Branch `feature/pre-enrichment-exclusion-gate`. Foolproof pre-enrichment
+> exclusion gate — guarantee ZERO paid API (contact-discovery + LLM) spend on
+> unwanted leads via ANY entry path. Full plan + design in
+> `Plan_Exclusion_Gate_Foolproof.md`.
+> Implementation is COMMITTED (e652dde enrichment choke-point + c487532 sealed
+> entry paths). Remaining = tests + verification + commit tests + push + PR.
+> STATUS (2026-07-07): new tests written; fixed 2 test-only bugs in
+> test_enrichment_exclusion_gate.py (return-shape `result["excluded"]`, and
+> `_make_lead` duplicate lead_status kwarg). Unit + integration gate tests GREEN.
+> Full backend suite running to confirm zero regressions, THEN commit the
+> uncommitted BACKEND test files and open PR.
 
 ## Immediate TODO
-- [ ] (a) Generate API cost report .docx (scripts/generate_api_cost_report.py)
-- [ ] (b1) cost_tracker.py: add CONTACT_DISCOVERY + AI model pricing; generalize record_pipeline_cost (category, tenant_id); add record_ai_cost()
-- [ ] (b2) contact_enrichment.py: record per-adapter cost from adapter_stats at end of run
-- [ ] (b3) AI adapters (openai/groq/gemini/anthropic): record token cost in _call_api via base helper; wire _cost_db/_cost_tenant_id in get_ai_adapter factories
-- [ ] (c1) base.py: helpers build_negative_terms() + google_negative_suffix()
-- [ ] (c2) serpapi.py, jsearch.py (Google-syntax -kw), adzuna.py (what_exclude) — push negatives into query; keep local filter as backstop
-- [ ] (c3) lead_sourcing.py: read `push_exclusions_to_query` setting, pass _push_negatives to adapters
-- [ ] Tests: add unit tests for new pricing/recording + negative-term builders; run full backend suite
-- [ ] Update CLAUDE_REFERENCE (services.md / adapters.md) + memory
-- [ ] Commit, push, open PR, merge, deploy to VPS, verify
+- [x] Implement gate (lead_eligibility.py) + wire enrichment choke-point (committed)
+- [x] Seal entry paths + ad-hoc search + salary + EXCLUDED status (committed)
+- [x] Write unit tests (test_lead_eligibility.py) — GREEN
+- [x] Write integration tests (test_enrichment_exclusion_gate.py) — fixed 2 test bugs, GREEN
+- [x] Salary unit tests in test_company_filters.py + rate-limiter reset fixture in conftest.py
+- [ ] Full backend suite green (running)
+- [ ] Commit backend test files, push, open PR to master
+- [ ] Decide on unrelated uncommitted FRONTEND changes (see Blockers)
 
 ## Completed
-- [x] Analyzed cost tracking + filter data flow; produced production cost report (2026-06-17)
+- [x] Traced pipeline, mapped paid call sites, locked design decisions (2026-07-07)
+- [x] Gate + entry-path sealing implemented and committed (2026-07-07)
 
 ## Blockers / Notes
-- AI cost recording uses caller's db session via begin_nested() SAVEPOINT for isolation (no new SessionLocal → no test side effects; adapters built without _cost_db simply skip recording).
-- Local filter_excluded() stays in place as backstop; query-side negatives are an optimization only.
-- Pricing values are estimates, overridable via Settings key `provider_pricing`.
+- UNRELATED uncommitted frontend changes present, NOT part of this gate feature:
+  - `frontend/src/app/dashboard/lob/page.tsx`: adds `useAuthStore` import that is
+    NEVER used → orphaned/broken edit, would fail ESLint. Likely revert.
+  - `login/__tests__/login.test.tsx`, `mailboxes/__tests__/page.test.tsx`: stale-test
+    alignment to current UI (NeuraLeads AI Agent, /signup link, mailbox wizard,
+    refresh_token). Legitimate but separate concern from the backend gate.
+  - `frontend/tsconfig.tsbuildinfo`: build artifact.
+  → Plan: keep this PR backend-only (the gate). Handle frontend fixes separately.

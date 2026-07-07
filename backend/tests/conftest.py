@@ -17,9 +17,11 @@ from app.main import app
 from app.db.base import Base
 from app.api.deps.database import get_db
 
-# Disable API rate limiting during tests. Otherwise the shared in-memory slowapi
-# limiter accumulates across tests and returns 429 for endpoints like /auth/login
-# when the suite exercises them repeatedly (flaky, environment-dependent).
+# Disable API rate limiting during tests. The shared in-memory slowapi limiter
+# otherwise accumulates hits across tests (all TestClient requests share one key)
+# and returns 429 for endpoints like /auth/login (flaky, ordering/CI-dependent).
+# `enabled = False` alone proved unreliable across slowapi/runtime combos, so an
+# autouse fixture also clears the storage before every test — belt and suspenders.
 from app.core.rate_limiter import limiter as _rate_limiter
 _rate_limiter.enabled = False
 from app.core.security import get_password_hash, create_access_token
@@ -61,6 +63,18 @@ def db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Clear rate-limiter state before every test so no test inherits another's
+    accumulated hits (which caused flaky 429s on /auth/login in CI)."""
+    _rate_limiter.enabled = False
+    try:
+        _rate_limiter._storage.reset()
+    except Exception:
+        pass
+    yield
 
 
 @pytest.fixture(scope="function")
