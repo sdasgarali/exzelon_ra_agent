@@ -22,6 +22,10 @@ jest.mock('@/lib/api', () => ({
   warmupApi: {
     getUnreadCount: jest.fn().mockResolvedValue({ unread_count: 0 }),
   },
+  tenantsApi: {
+    list: jest.fn().mockResolvedValue({ items: [] }),
+    impersonate: jest.fn().mockResolvedValue({}),
+  },
 }))
 
 jest.mock('@/components/error-boundary', () => ({

@@ -19,7 +19,14 @@ jest.mock('@/lib/api', () => ({
     resetDailyCounts: jest.fn(),
     getAvailable: jest.fn(),
     get: jest.fn(),
+    getDetail: jest.fn(),
     oauthCallback: jest.fn(),
+  },
+  outreachRolesApi: {
+    list: jest.fn().mockResolvedValue([]),
+  },
+  deliverabilityApi: {
+    mailboxHealth: jest.fn().mockResolvedValue({}),
   },
 }))
 

@@ -30,6 +30,8 @@ jest.mock('next/navigation', () => ({
     prefetch: jest.fn(),
     refresh: jest.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/login',
 }))
 
 describe('LoginPage', () => {
