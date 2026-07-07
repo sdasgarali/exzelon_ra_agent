@@ -186,8 +186,9 @@ describe('MailboxesPage', () => {
     const addButtons = screen.getAllByText('Add Mailbox')
     await userEvent.click(addButtons[0])
     await waitFor(() => {
-      // Modal shows Cancel button
-      expect(screen.getByText('Cancel')).toBeInTheDocument()
+      // Modal is now a provider wizard starting on the "Connect Email Account" step
+      expect(screen.getByText('Connect Email Account')).toBeInTheDocument()
+      expect(screen.getByText('Choose your email provider to get started')).toBeInTheDocument()
     })
   })
 
