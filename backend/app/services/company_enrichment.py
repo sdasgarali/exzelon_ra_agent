@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.client import ClientInfo
 from app.db.models.lead import LeadDetails
+from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 
 logger = structlog.get_logger()
@@ -318,6 +319,47 @@ def resolve_company_metadata_batch(
         if c and c.get("industry") and (c.get("employee_count") or c.get("company_size")):
             continue
         to_enrich.append((key, info, c))
+
+    # 1b) Firmographic provider (Apollo) — authoritative company SIZE by domain.
+    # The LLM step below fills industry for recognizable names but rarely a real
+    # headcount; a data provider does. Runs ONLY when the caller allows paid
+    # lookups (never under free_only, which the pre-enrichment gate uses to avoid
+    # spend) and only for companies that carry a domain (Apollo needs one).
+    if to_enrich and not free_only:
+        from app.services.company_firmographics import (
+            enrich_firmographics_batch,
+            get_firmographic_provider,
+        )
+        if get_firmographic_provider(db, tenant_id=tenant_id) == "apollo":
+            max_firmo = int(get_tenant_setting(
+                db, "company_firmographic_max_lookups",
+                tenant_id=tenant_id, default=settings.COMPANY_FIRMOGRAPHIC_MAX_LOOKUPS,
+            ))
+            firmo_items = [
+                (info["name"], info["domain"] or _extract_domain((c or {}).get("website") or ""))
+                for (key, info, c) in to_enrich
+            ]
+            firmo = enrich_firmographics_batch(
+                db, firmo_items, tenant_id=tenant_id, max_lookups=max_firmo,
+            )
+            if firmo:
+                remaining = []
+                for (key, info, c) in to_enrich:
+                    m = firmo.get(key)
+                    if m:
+                        r = result.get(key, {})
+                        if not r.get("industry") and m.get("industry"):
+                            r["industry"] = str(m["industry"])[:100]
+                        if not r.get("employee_count") and m.get("employee_count") is not None:
+                            r["employee_count"] = m["employee_count"]
+                        if not r.get("company_size") and m.get("company_size"):
+                            r["company_size"] = str(m["company_size"])[:50]
+                        result[key] = r
+                    rr = result.get(key, {})
+                    # Still needs the LLM only if industry or a size signal is missing.
+                    if not (rr.get("industry") and (rr.get("employee_count") or rr.get("company_size"))):
+                        remaining.append((key, info, c))
+                to_enrich = remaining
 
     if not use_llm or max_llm_calls <= 0 or not to_enrich:
         return result
