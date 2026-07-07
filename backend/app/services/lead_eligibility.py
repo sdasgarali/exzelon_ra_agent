@@ -26,7 +26,7 @@ filled before the final decision, preserving recall.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import structlog
 
