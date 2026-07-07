@@ -60,6 +60,17 @@ def database_search_contacts(
     location = data.get("location", "")
     limit = min(data.get("limit", 25), 100)
 
+    # Exclusion gate — do not spend Apollo credits on out-of-scope companies.
+    # Name-based rules apply here (placeholder / blacklist / keyword); industry
+    # and size are unknown for a free-typed company name so they don't gate.
+    from app.services.lead_eligibility import check_lead_eligibility
+    eligible, reason = check_lead_eligibility(
+        db, {"client_name": company, "job_title": job_title}, tenant_id=tenant_id
+    )
+    if not eligible:
+        logger.info("database_search blocked by exclusion gate", company=company, reason=reason)
+        return {"results": [], "count": 0, "excluded": True, "reason": reason}
+
     try:
         from app.services.adapters.contact_discovery.apollo import ApolloAdapter
         adapter = ApolloAdapter()

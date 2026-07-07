@@ -857,6 +857,7 @@ def run_lead_sourcing_pipeline(
             excluded_industries = DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS
         enrich_company_at_source = bool(get_tenant_setting(db, "lead_sourcing_enrich_company_at_source", tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_COMPANY_AT_SOURCE))
         enrich_max_companies = int(get_tenant_setting(db, "lead_sourcing_enrich_max_companies", tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_MAX_COMPANIES))
+        min_salary_threshold = int(get_tenant_setting(db, "min_salary_threshold", tenant_id=tenant_id, default=settings.MIN_SALARY_THRESHOLD))
 
         # Location diversification (P2-F)
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
@@ -1156,6 +1157,7 @@ def run_lead_sourcing_pipeline(
             excluded_industries=excluded_industries,
             enrich=enrich_company_at_source,
             enrich_max_companies=enrich_max_companies,
+            min_salary_threshold=min_salary_threshold,
         )
 
         # Process unique jobs
@@ -1355,6 +1357,7 @@ def _apply_company_gate(
     excluded_industries: Optional[List[str]] = None,
     enrich: bool = True,
     enrich_max_companies: int = 300,
+    min_salary_threshold: int = 0,
 ) -> List[Dict[str, Any]]:
     """Drop out-of-scope companies by size / industry / placeholder name.
 
@@ -1367,11 +1370,13 @@ def _apply_company_gate(
         is_placeholder_company,
         industry_is_excluded,
         exceeds_size_ceiling,
+        salary_below_threshold,
     )
 
     counters.setdefault("excluded_confidential", 0)
     counters.setdefault("excluded_too_large", 0)
     counters.setdefault("excluded_industry", 0)
+    counters.setdefault("excluded_salary", 0)
     counters.setdefault("enriched_companies", 0)
 
     if not jobs:
@@ -1426,9 +1431,12 @@ def _apply_company_gate(
                     enriched += 1
             counters["enriched_companies"] += enriched
 
-    # 3) Size + industry gate.
+    # 3) Salary + size + industry gate.
     final = []
     for job in jobs:
+        if salary_below_threshold(job.get("salary_min"), job.get("salary_max"), min_salary_threshold):
+            counters["excluded_salary"] += 1
+            continue
         size_signal = job.get("_employee_count")
         if size_signal is None:
             size_signal = job.get("company_size")
@@ -1603,6 +1611,10 @@ def import_leads_from_file(
         df = pd.read_excel(filepath)
         logger.info(f"Reading {len(df)} rows from {filepath}")
 
+        from app.services.lead_eligibility import LeadEligibilityGate
+        gate = LeadEligibilityGate(db, tenant_id=tenant_id)
+        counters.setdefault("excluded", 0)
+
         for _, row in df.iterrows():
             try:
                 client_name = str(row.get("Company", row.get("client_name", "")))
@@ -1610,6 +1622,15 @@ def import_leads_from_file(
 
                 if not client_name or not job_title:
                     counters["skipped"] += 1
+                    continue
+
+                # Exclusion gate — do not import out-of-scope companies. Name-based
+                # rules apply (placeholder / blacklist / keyword); industry/size
+                # are unknown at import and resolved later by the enrichment gate.
+                eligible, reason = gate.check({"client_name": client_name, "job_title": job_title})
+                if not eligible:
+                    counters["excluded"] += 1
+                    logger.info("Import row excluded by gate", company=client_name, reason=reason)
                     continue
 
                 # Check for existing using normalized name

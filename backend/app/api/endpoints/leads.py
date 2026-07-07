@@ -1115,9 +1115,13 @@ def _parse_and_import_lead_rows(
     """
     imported = 0
     skipped = 0
+    excluded = 0
     contacts_created = 0
     errors = []
     imported_lead_ids = []
+
+    from app.services.lead_eligibility import LeadEligibilityGate
+    gate = LeadEligibilityGate(db, tenant_id=tenant_id)
 
     for row_num, row in enumerate(rows, start=2):
         try:
@@ -1138,6 +1142,14 @@ def _parse_and_import_lead_rows(
             if not client_name or not job_title:
                 errors.append(f"Row {row_num}: Missing company name or job title")
                 skipped += 1
+                continue
+
+            # Exclusion gate — never import out-of-scope companies (they would
+            # otherwise be handed to enrichment via imported_lead_ids).
+            eligible, reason = gate.check({"client_name": client_name, "job_title": job_title})
+            if not eligible:
+                excluded += 1
+                errors.append(f"Row {row_num}: Excluded ({reason}): {client_name}")
                 continue
 
             job_link = (
@@ -1300,6 +1312,7 @@ def _parse_and_import_lead_rows(
     return {
         "imported": imported,
         "skipped": skipped,
+        "excluded": excluded,
         "contacts_created": contacts_created,
         "errors": errors[:10] if errors else [],
         "imported_lead_ids": imported_lead_ids,
@@ -2256,6 +2269,17 @@ async def create_lead(
 
     lead = LeadDetails(**lead_in.model_dump())
     lead.tenant_id = tenant_id or 1  # fallback for super admin without X-Tenant-ID
+
+    # Exclusion gate — an out-of-scope lead is recorded (auditable) but marked
+    # terminal (EXCLUDED) so contact enrichment never spends API on it.
+    from app.services.lead_eligibility import check_lead_eligibility
+    eligible, reason = check_lead_eligibility(
+        db, lead, tenant_id=tenant_id, lob_id=getattr(lead, "lob_id", None)
+    )
+    if not eligible:
+        lead.lead_status = LeadStatus.EXCLUDED
+        lead.skip_reason = f"excluded: {reason}"
+
     db.add(lead)
     db.commit()
     db.refresh(lead)
