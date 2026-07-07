@@ -16,6 +16,12 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 from app.main import app
 from app.db.base import Base
 from app.api.deps.database import get_db
+
+# Disable API rate limiting during tests. Otherwise the shared in-memory slowapi
+# limiter accumulates across tests and returns 429 for endpoints like /auth/login
+# when the suite exercises them repeatedly (flaky, environment-dependent).
+from app.core.rate_limiter import limiter as _rate_limiter
+_rate_limiter.enabled = False
 from app.core.security import get_password_hash, create_access_token
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant, TenantPlan
