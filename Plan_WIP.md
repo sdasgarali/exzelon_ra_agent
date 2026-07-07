@@ -19,9 +19,19 @@
 - [x] Write unit tests (test_lead_eligibility.py) — GREEN
 - [x] Write integration tests (test_enrichment_exclusion_gate.py) — fixed 2 test bugs, GREEN
 - [x] Salary unit tests in test_company_filters.py + rate-limiter reset fixture in conftest.py
-- [ ] Full backend suite green (running)
-- [ ] Commit backend test files, push, open PR to master
-- [ ] Decide on unrelated uncommitted FRONTEND changes (see Blockers)
+- [x] Full backend suite green — 1052 passed, 0 failed (212s)
+- [x] Commit backend test files (797d5d8), push, open PR to master → PR #15
+- [x] Frontend login+mailboxes stale-test alignment (5869e02) — 16 passed
+- [x] Reverted orphaned lob/page.tsx unused import
+- [x] CI: backend green (1052). Frontend CI was HANGING (not failing).
+- [x] Root-caused frontend hang: infinite render loop in `command-palette.tsx`
+      (`setSearchResults([])` new array every render + unstable `searchApi` dep →
+      "Maximum update depth exceeded"). DashboardLayout renders CommandPalette so
+      layout.test hung → whole jest suite hung → CI frontend-test-build timed out.
+- [x] Fixed (7dc0307): functional-updater guard returns same ref when already
+      empty. Aligned layout.test to responsive dual-sidebar (907cc62).
+      Full frontend suite: 57 passed, jest exits cleanly (no --forceExit needed).
+- [ ] Await re-run CI on PR #15 (both checks), then squash-merge (own PR → --squash --admin)
 
 ## Completed
 - [x] Traced pipeline, mapped paid call sites, locked design decisions (2026-07-07)
