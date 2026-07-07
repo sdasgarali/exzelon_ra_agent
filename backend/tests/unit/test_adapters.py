@@ -233,6 +233,22 @@ class TestTheirStackAdapter:
         assert result["external_job_id"] == "ts-123"
         assert isinstance(result["posting_date"], date)
 
+    def test_normalize_captures_industry_and_size(self):
+        """company_object industry + employee_count flow into job_data for the gate."""
+        adapter = TheirStackAdapter(api_key="test")
+        raw = {
+            "company": "Acme Corp",
+            "job_title": "HR Manager",
+            "date_posted": "2026-03-01T10:30:00Z",
+            "company_object": {
+                "name": "Acme Corp", "domain": "acme.com",
+                "industry": "Manufacturing", "employee_count": 180,
+            },
+        }
+        result = adapter.normalize(raw)
+        assert result["industry"] == "Manufacturing"
+        assert result["company_size"] == "180"
+
     def test_normalize_company_from_nested_object(self):
         """Falls back to company_object.name when the flat 'company' is absent."""
         adapter = TheirStackAdapter(api_key="test")

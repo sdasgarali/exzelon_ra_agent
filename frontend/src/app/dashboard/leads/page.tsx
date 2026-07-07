@@ -25,6 +25,7 @@ interface Lead {
   contact_count: number  // Number of contacts linked to this lead
   industry: string | null
   company_size: string | null
+  employer_website: string | null
   run_id: number | null
   data_type: string
   is_archived: boolean
@@ -661,6 +662,16 @@ export default function LeadsPage() {
     }
   }
 
+  const formatSalary = (min: number | null, max: number | null) => {
+    const fmt = (n: number) => n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${n}`
+    const lo = min && min > 0 ? min : null
+    const hi = max && max > 0 ? max : null
+    if (lo && hi) return lo === hi ? fmt(lo) : `${fmt(lo)} - ${fmt(hi)}`
+    if (lo) return `${fmt(lo)}+`
+    if (hi) return `Up to ${fmt(hi)}`
+    return '-'
+  }
+
   const truncateUrl = (url: string | null, maxLength: number = 30) => {
     if (!url) return '-'
     if (url.length <= maxLength) return url
@@ -907,7 +918,7 @@ export default function LeadsPage() {
   }
 
   // Compute total visible column count for colSpan
-  const baseColCount = 15
+  const baseColCount = 17
     - (isHidden('salary_min') ? 0 : 0) // salary is not a separate column currently
     - (isHidden('employment_type') ? 1 : 0)
     + (columnConfig?.metadata_columns?.length ?? 0)
@@ -1430,6 +1441,9 @@ export default function LeadsPage() {
                 >
                   {colLabel('client_name', 'Company')} / {colLabel('job_title', 'Job Title')} <SortIcon field="client_name" />
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Salary
+                </th>
                 <th
                   onClick={() => handleSort('state')}
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -1473,6 +1487,9 @@ export default function LeadsPage() {
                   className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 >
                   Industry <SortIcon field="industry" />
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Website
                 </th>
                 <th
                   onClick={() => handleSort('company_size')}
@@ -1553,6 +1570,9 @@ export default function LeadsPage() {
                       </Link>
                       <div className="text-sm text-gray-500">{lead.job_title}</div>
                     </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                      {formatSalary(lead.salary_min, lead.salary_max)}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.state || '-'}
                     </td>
@@ -1595,6 +1615,22 @@ export default function LeadsPage() {
                     )}
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.industry || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {lead.employer_website ? (
+                        <a
+                          href={/^https?:\/\//i.test(lead.employer_website) ? lead.employer_website : `https://${lead.employer_website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                          title={lead.employer_website}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {truncateUrl(lead.employer_website.replace(/^https?:\/\//i, ''), 25)}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {lead.company_size || '-'}

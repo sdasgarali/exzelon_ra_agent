@@ -284,6 +284,22 @@ class CoresignalAdapter(JobSourceAdapter):
             else raw_data.get("company_website", "")
         )
 
+        # Company attributes captured at source (used by the size/industry gate).
+        company_obj = raw_data.get("company") if isinstance(raw_data.get("company"), dict) else {}
+        company_industry = (
+            raw_data.get("company_industry")
+            or company_obj.get("industry")
+            or raw_data.get("industry")
+            or ""
+        )
+        company_employees = (
+            raw_data.get("company_employees_count")
+            or raw_data.get("company_size")
+            or company_obj.get("employees_count")
+            or company_obj.get("size")
+        )
+        company_size = str(company_employees) if company_employees else ""
+
         # UNIQUE: Extract recruiter/contact data (Coresignal's differentiator)
         # This pre-populates lead contact info, skipping the enrichment step
         recruiter = raw_data.get("recruiter", {}) or {}
@@ -333,6 +349,8 @@ class CoresignalAdapter(JobSourceAdapter):
             "city": city,
             "employer_linkedin_url": company_linkedin or "",
             "employer_website": company_website or "",
+            "industry": company_industry or "",
+            "company_size": company_size,
             "job_publisher": "coresignal",
         }
 

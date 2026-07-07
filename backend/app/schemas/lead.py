@@ -65,6 +65,7 @@ class LeadResponse(LeadBase):
     contact_count: Optional[int] = 0
     industry: Optional[str] = None
     company_size: Optional[str] = None
+    employer_website: Optional[str] = None
     run_id: Optional[int] = None
     lob_id: Optional[int] = None
     metadata: Optional[dict] = None
