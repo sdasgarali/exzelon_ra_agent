@@ -196,6 +196,12 @@ class Settings(BaseSettings):
     # cached on ClientInfo. Bounded per run to control cost/latency.
     LEAD_SOURCING_ENRICH_COMPANY_AT_SOURCE: bool = True
     LEAD_SOURCING_ENRICH_MAX_COMPANIES: int = 300
+    # Firmographic (company size/industry) enrichment via a data provider keyed by
+    # DOMAIN. Fills company SIZE, which the free LLM resolver cannot do reliably.
+    # "none" disables; "apollo" enables (needs apollo_api_key). Paid — bounded per
+    # run and NEVER used on the free_only pre-enrichment gate path.
+    COMPANY_FIRMOGRAPHIC_PROVIDER: str = "none"
+    COMPANY_FIRMOGRAPHIC_MAX_LOOKUPS: int = 100
     # Industries hard-dropped regardless of size. Empty list falls back to
     # company_filters.DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS.
     EXCLUDED_INDUSTRY_KEYWORDS: list[str] = []
