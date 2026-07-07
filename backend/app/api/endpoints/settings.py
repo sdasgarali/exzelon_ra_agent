@@ -49,6 +49,11 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'lead_sourcing_frequency': 'job_source_apis',
     'location_diversification': 'source_tuning',
     'lead_sourcing_target_per_run': 'source_tuning',
+    'lead_sourcing_max_employee_count': 'source_tuning',
+    'lead_sourcing_drop_confidential': 'source_tuning',
+    'lead_sourcing_excluded_industries': 'source_tuning',
+    'lead_sourcing_enrich_company_at_source': 'source_tuning',
+    'lead_sourcing_enrich_max_companies': 'source_tuning',
     'source_tiers': 'source_tuning',
     'source_overlap_groups': 'source_tuning',
     'enabled_sources': 'job_source_apis',
@@ -633,6 +638,11 @@ DEFAULT_SETTINGS = {
     "pipeline_adapter_limit": {"value": 1000, "type": "integer", "description": "Max results per adapter in lead sourcing pipeline"},
     "pipeline_max_workers": {"value": 6, "type": "integer", "description": "Thread pool size for parallel adapter execution"},
     "posted_within_days": {"value": 7, "type": "integer", "description": "Only fetch jobs posted within this many days (1-90). Lower = fewer duplicates."},
+    "lead_sourcing_max_employee_count": {"value": 500, "type": "integer", "description": "Drop companies larger than this many employees at sourcing (0 = no size limit)"},
+    "lead_sourcing_drop_confidential": {"value": True, "type": "boolean", "description": "Drop confidential/blank employer postings at sourcing"},
+    "lead_sourcing_excluded_industries": {"value": [], "type": "list", "description": "Industries hard-dropped at sourcing (substring match); empty = built-in IT/staffing/government defaults"},
+    "lead_sourcing_enrich_company_at_source": {"value": True, "type": "boolean", "description": "Fill missing company industry/size via AI (Groq) at sourcing, cached on ClientInfo"},
+    "lead_sourcing_enrich_max_companies": {"value": 300, "type": "integer", "description": "Max AI company lookups per sourcing run (cost/latency cap)"},
 
     # Cost Budget
     "cost_monthly_budget_total": {"value": 500, "type": "number", "description": "Total monthly budget for API costs (USD)"},
@@ -905,6 +915,35 @@ async def update_setting(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be an integer")
         if val < 1 or val > 90:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be between 1 and 90")
+
+    if key == "lead_sourcing_max_employee_count":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lead_sourcing_max_employee_count must be an integer")
+        if val < 0 or val > 1_000_000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lead_sourcing_max_employee_count must be between 0 and 1000000 (0 disables the size limit)")
+
+    if key == "lead_sourcing_enrich_max_companies":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lead_sourcing_enrich_max_companies must be an integer")
+        if val < 0 or val > 5000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lead_sourcing_enrich_max_companies must be between 0 and 5000")
+
+    if key == "lead_sourcing_excluded_industries":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        if raw is not None and not isinstance(raw, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lead_sourcing_excluded_industries must be a list of strings")
 
     if key == "job_source_tuning":
         raw = setting_in.value if setting_in.value is not None else (

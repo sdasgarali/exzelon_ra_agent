@@ -296,7 +296,23 @@ const SETTING_TAB_MAP: Record<string, string> = {
   job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
   pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
   location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
+  lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
+  lead_sourcing_excluded_industries: 'source_tuning', lead_sourcing_enrich_company_at_source: 'source_tuning',
+  lead_sourcing_enrich_max_companies: 'source_tuning',
 }
+
+// Default out-of-scope industries for the company exclusion gate. Mirrors
+// backend company_filters.DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS — shown pre-filled
+// so users can edit; clearing the box makes the backend fall back to this list.
+const DEFAULT_EXCLUDED_INDUSTRIES = [
+  'information technology', 'it services', 'computer software', 'software development',
+  'software', 'saas', 'information services', 'computer hardware', 'computer networking',
+  'semiconductor', 'technology, information and internet',
+  'staffing', 'recruiting', 'recruitment', 'human resources services', 'employment services',
+  'executive search',
+  'government administration', 'public administration', 'government relations', 'military',
+  'legislative office', 'international affairs',
+]
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -489,6 +505,11 @@ export default function SettingsPage() {
     posted_within_days: number;
     location_diversification: boolean;
     lead_sourcing_target_per_run: number;
+    lead_sourcing_max_employee_count: number;
+    lead_sourcing_drop_confidential: boolean;
+    lead_sourcing_excluded_industries: string[];
+    lead_sourcing_enrich_company_at_source: boolean;
+    lead_sourcing_enrich_max_companies: number;
     target_states: string[];
   }>({
     job_source_tuning: {
@@ -507,6 +528,11 @@ export default function SettingsPage() {
     posted_within_days: 7,
     location_diversification: false,
     lead_sourcing_target_per_run: 500,
+    lead_sourcing_max_employee_count: 500,
+    lead_sourcing_drop_confidential: true,
+    lead_sourcing_excluded_industries: [...DEFAULT_EXCLUDED_INDUSTRIES],
+    lead_sourcing_enrich_company_at_source: true,
+    lead_sourcing_enrich_max_companies: 300,
     target_states: [...US_STATES],
   })
 
@@ -753,6 +779,13 @@ export default function SettingsPage() {
         posted_within_days: settingsMap.posted_within_days ?? 7,
         location_diversification: settingsMap.location_diversification === true,
         lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
+        lead_sourcing_max_employee_count: settingsMap.lead_sourcing_max_employee_count ?? 500,
+        lead_sourcing_drop_confidential: settingsMap.lead_sourcing_drop_confidential !== false,
+        lead_sourcing_excluded_industries: (Array.isArray(settingsMap.lead_sourcing_excluded_industries) && settingsMap.lead_sourcing_excluded_industries.length > 0)
+          ? settingsMap.lead_sourcing_excluded_industries
+          : [...DEFAULT_EXCLUDED_INDUSTRIES],
+        lead_sourcing_enrich_company_at_source: settingsMap.lead_sourcing_enrich_company_at_source !== false,
+        lead_sourcing_enrich_max_companies: settingsMap.lead_sourcing_enrich_max_companies ?? 300,
         target_states: settingsMap.target_states || [...US_STATES],
       })
     } catch (err: any) {
@@ -938,6 +971,11 @@ export default function SettingsPage() {
           saveSetting('posted_within_days', sourceTuningConfig.posted_within_days, 'integer'),
           saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
           saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
+          saveSetting('lead_sourcing_max_employee_count', sourceTuningConfig.lead_sourcing_max_employee_count, 'integer'),
+          saveSetting('lead_sourcing_drop_confidential', sourceTuningConfig.lead_sourcing_drop_confidential, 'boolean'),
+          saveSetting('lead_sourcing_excluded_industries', sourceTuningConfig.lead_sourcing_excluded_industries, 'list'),
+          saveSetting('lead_sourcing_enrich_company_at_source', sourceTuningConfig.lead_sourcing_enrich_company_at_source, 'boolean'),
+          saveSetting('lead_sourcing_enrich_max_companies', sourceTuningConfig.lead_sourcing_enrich_max_companies, 'integer'),
           saveSetting('target_states', sourceTuningConfig.target_states, 'list'),
         ])
       }
@@ -4211,6 +4249,106 @@ export default function SettingsPage() {
                   Once the cheap tier reaches this many unique leads, expensive Google-Jobs/premium APIs are skipped.
                   Raise it for more coverage; set 0 to disable early-stop (call every enabled source each run).
                 </p>
+              </div>
+            </div>
+
+            {/* Company Exclusion Gate */}
+            <div className="mb-8 border-t pt-6">
+              <h4 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                Company Exclusion Gate
+                <span className="text-xs font-normal bg-rose-100 text-rose-700 px-2 py-0.5 rounded">Quality Filter</span>
+              </h4>
+              <p className="text-xs text-gray-500 mb-4">
+                Drops out-of-scope employers at sourcing based on company attributes that keyword
+                filters can&apos;t catch by name alone (big brands, IT/staffing/government, confidential
+                postings). Missing industry/size is filled by a bounded, cached AI lookup so the gate
+                works even for sources that don&apos;t return firmographics. Unknown size/industry is never dropped.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Company Size (employees)
+                    <span className="ml-2 text-xs font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">0 = no size limit</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000000}
+                    value={sourceTuningConfig.lead_sourcing_max_employee_count}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_employee_count: parseInt(e.target.value) || 0 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Companies larger than this are dropped (default 500).</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max AI Enrichment Lookups / Run
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5000}
+                    value={sourceTuningConfig.lead_sourcing_enrich_max_companies}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_enrich_max_companies: parseInt(e.target.value) || 0 })}
+                    className="input w-full"
+                    disabled={!sourceTuningConfig.lead_sourcing_enrich_company_at_source}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Caps AI company lookups per run for cost/latency (default 300).</p>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={sourceTuningConfig.lead_sourcing_drop_confidential}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_drop_confidential: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Drop confidential / blank employer postings</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer mb-4">
+                <input
+                  type="checkbox"
+                  checked={sourceTuningConfig.lead_sourcing_enrich_company_at_source}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_enrich_company_at_source: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Fill missing industry/size via AI at sourcing (cached)</span>
+              </label>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Excluded Industries
+                  <span className="ml-2 text-xs font-normal text-gray-400">one per line — empty falls back to defaults</span>
+                </label>
+                <textarea
+                  rows={5}
+                  value={sourceTuningConfig.lead_sourcing_excluded_industries.join('\n')}
+                  onChange={(e) => setSourceTuningConfig({
+                    ...sourceTuningConfig,
+                    lead_sourcing_excluded_industries: e.target.value
+                      .split(/[\n,]/)
+                      .map((s) => s.trim().toLowerCase())
+                      .filter(Boolean),
+                  })}
+                  className="input w-full font-mono text-xs"
+                  placeholder={'information technology\nstaffing\ngovernment administration'}
+                />
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-xs text-gray-500">
+                    Case-insensitive substring match on the company&apos;s industry. Targets like Insurance,
+                    Manufacturing, Healthcare are kept.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_excluded_industries: [...DEFAULT_EXCLUDED_INDUSTRIES] })}
+                    className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+                  >
+                    Reset to defaults
+                  </button>
+                </div>
               </div>
             </div>
 
