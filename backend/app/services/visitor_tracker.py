@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.models.visitor import VisitorEvent
-from app.db.query_helpers import tenant_filter
 
 logger = structlog.get_logger()
 

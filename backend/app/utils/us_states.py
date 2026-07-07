@@ -8,7 +8,7 @@ _CITY_STATE_MAP: dict[str, str] = {
     "anchorage": "AK", "fairbanks": "AK", "juneau": "AK",
     # Arizona
     "phoenix": "AZ", "tucson": "AZ", "mesa": "AZ", "scottsdale": "AZ", "chandler": "AZ",
-    "tempe": "AZ", "gilbert": "AZ", "glendale": "AZ", "peoria": "AZ",
+    "tempe": "AZ", "gilbert": "AZ", "glendale": "AZ",
     # Arkansas
     "little rock": "AR", "fayetteville": "AR", "fort smith": "AR",
     # California
@@ -21,13 +21,13 @@ _CITY_STATE_MAP: dict[str, str] = {
     "santa monica": "CA", "beverly hills": "CA", "san mateo": "CA", "torrance": "CA",
     "el segundo": "CA", "culver city": "CA", "walnut creek": "CA", "pleasanton": "CA",
     # Colorado
-    "denver": "CO", "colorado springs": "CO", "aurora": "CO", "boulder": "CO",
+    "denver": "CO", "colorado springs": "CO", "boulder": "CO",
     "fort collins": "CO", "lakewood": "CO", "broomfield": "CO",
     # Connecticut
     "hartford": "CT", "new haven": "CT", "stamford": "CT", "bridgeport": "CT",
     "norwalk": "CT", "danbury": "CT", "greenwich": "CT",
     # Delaware
-    "wilmington": "DE", "dover": "DE", "newark": "DE",
+    "wilmington": "DE", "dover": "DE",
     # Florida
     "miami": "FL", "orlando": "FL", "tampa": "FL", "jacksonville": "FL",
     "st. petersburg": "FL", "fort lauderdale": "FL", "tallahassee": "FL",
@@ -35,7 +35,7 @@ _CITY_STATE_MAP: dict[str, str] = {
     "clearwater": "FL", "naples": "FL", "sarasota": "FL", "pensacola": "FL",
     "fort myers": "FL", "gainesville": "FL", "daytona beach": "FL",
     # Georgia
-    "atlanta": "GA", "savannah": "GA", "augusta": "GA", "columbus": "GA",
+    "atlanta": "GA", "savannah": "GA", "augusta": "GA",
     "athens": "GA", "macon": "GA", "roswell": "GA", "alpharetta": "GA",
     "sandy springs": "GA", "marietta": "GA",
     # Hawaii
@@ -44,7 +44,7 @@ _CITY_STATE_MAP: dict[str, str] = {
     "boise": "ID", "nampa": "ID", "meridian": "ID",
     # Illinois
     "chicago": "IL", "aurora": "IL", "naperville": "IL", "rockford": "IL",
-    "springfield": "IL", "peoria": "IL", "champaign": "IL", "evanston": "IL",
+    "peoria": "IL", "champaign": "IL", "evanston": "IL",
     "schaumburg": "IL", "deerfield": "IL", "lake forest": "IL",
     # Indiana
     "indianapolis": "IN", "fort wayne": "IN", "evansville": "IN", "south bend": "IN",
@@ -52,32 +52,31 @@ _CITY_STATE_MAP: dict[str, str] = {
     # Iowa
     "des moines": "IA", "cedar rapids": "IA", "davenport": "IA", "iowa city": "IA",
     # Kansas
-    "wichita": "KS", "overland park": "KS", "kansas city": "KS", "topeka": "KS",
+    "wichita": "KS", "overland park": "KS", "topeka": "KS",
     "olathe": "KS",
     # Kentucky
-    "louisville": "KY", "lexington": "KY", "bowling green": "KY",
+    "louisville": "KY", "bowling green": "KY",
     # Louisiana
     "new orleans": "LA", "baton rouge": "LA", "shreveport": "LA", "lafayette": "LA",
     # Maine
-    "portland": "ME", "bangor": "ME",
+    "bangor": "ME",
     # Maryland
-    "baltimore": "MD", "columbia": "MD", "silver spring": "MD", "rockville": "MD",
+    "baltimore": "MD", "silver spring": "MD", "rockville": "MD",
     "bethesda": "MD", "annapolis": "MD", "frederick": "MD",
     # Massachusetts
-    "boston": "MA", "cambridge": "MA", "worcester": "MA", "springfield": "MA",
+    "boston": "MA", "cambridge": "MA", "worcester": "MA",
     "lowell": "MA", "quincy": "MA", "newton": "MA", "somerville": "MA",
-    "waltham": "MA", "burlington": "MA", "framingham": "MA", "lexington": "MA",
+    "waltham": "MA", "framingham": "MA", "lexington": "MA",
     # Michigan
     "detroit": "MI", "grand rapids": "MI", "ann arbor": "MI", "lansing": "MI",
     "dearborn": "MI", "troy": "MI", "warren": "MI", "sterling heights": "MI",
     # Minnesota
-    "minneapolis": "MN", "st. paul": "MN", "saint paul": "MN", "rochester": "MN",
+    "minneapolis": "MN", "st. paul": "MN", "saint paul": "MN",
     "duluth": "MN", "bloomington": "MN", "eden prairie": "MN", "plymouth": "MN",
     # Mississippi
     "jackson": "MS", "gulfport": "MS",
     # Missouri
     "kansas city": "MO", "st. louis": "MO", "saint louis": "MO", "springfield": "MO",
-    "columbia": "MO",
     # Montana
     "billings": "MT", "missoula": "MT",
     # Nebraska
@@ -116,7 +115,7 @@ _CITY_STATE_MAP: dict[str, str] = {
     # Rhode Island
     "providence": "RI", "warwick": "RI", "cranston": "RI",
     # South Carolina
-    "charleston": "SC", "columbia": "SC", "greenville": "SC",
+    "columbia": "SC", "greenville": "SC",
     # South Dakota
     "sioux falls": "SD", "rapid city": "SD",
     # Tennessee
@@ -124,7 +123,7 @@ _CITY_STATE_MAP: dict[str, str] = {
     "franklin": "TN",
     # Texas
     "houston": "TX", "dallas": "TX", "austin": "TX", "san antonio": "TX",
-    "fort worth": "TX", "el paso": "TX", "arlington": "TX", "plano": "TX",
+    "fort worth": "TX", "el paso": "TX", "plano": "TX",
     "irving": "TX", "frisco": "TX", "mckinney": "TX", "round rock": "TX",
     "the woodlands": "TX", "sugar land": "TX", "richardson": "TX", "addison": "TX",
     # Utah

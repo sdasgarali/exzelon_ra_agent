@@ -1,5 +1,4 @@
 """APScheduler Integration - background job scheduler for warmup tasks."""
-import json
 from datetime import date
 import structlog
 
@@ -562,7 +561,7 @@ def job_campaign_processor():
             result = process_campaign_queue(db)
             logger.info("Campaign processor complete", result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "campaign_send", f"Campaign processor ran", details=result)
+            log_automation_event(db, "campaign_send", "Campaign processor ran", details=result)
         except Exception as e:
             logger.error("Campaign processor failed", error=str(e))
             try:
@@ -745,7 +744,6 @@ def job_cleanup_stale_tenants():
 
         # Find and deactivate empty tenants (no active users) older than 72 hours
         # Skip Tenant #1 (system tenant)
-        from sqlalchemy import func
         tenants_with_users = db.query(User.tenant_id).filter(User.is_active == True).distinct().subquery()
         empty_tenants = db.query(Tenant).filter(
             Tenant.tenant_id != 1,

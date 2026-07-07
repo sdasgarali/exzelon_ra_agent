@@ -6,7 +6,7 @@ Includes open-rate and click-rate stats for deeper analytics.
 """
 import json
 import math
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import structlog
 from sqlalchemy.orm import Session
 

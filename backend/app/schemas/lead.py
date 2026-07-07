@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Optional, List
 from decimal import Decimal
 from pydantic import BaseModel, field_validator, model_validator
-from app.db.models.lead import LeadStatus, DataType
+from app.db.models.lead import LeadStatus
 
 
 class LeadBase(BaseModel):

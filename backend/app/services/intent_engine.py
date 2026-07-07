@@ -8,13 +8,12 @@ Coordinates all intent operations:
 import json
 import structlog
 from datetime import datetime
-from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
 from app.db.models.lead import LeadDetails
-from app.db.models.line_of_business import LineOfBusiness, LOBStatus
+from app.db.models.line_of_business import LineOfBusiness
 from app.services.intent_signal_monitor import check_intent_signals
 from app.services.intent_data import calculate_intent_score_v2
 

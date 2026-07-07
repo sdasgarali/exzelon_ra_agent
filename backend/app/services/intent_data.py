@@ -1,8 +1,8 @@
 """Intent data and buying signals detection."""
 import json
 import structlog
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from datetime import datetime
+from typing import Dict, List
 from sqlalchemy.orm import Session
 
 from app.db.models.lead import LeadDetails

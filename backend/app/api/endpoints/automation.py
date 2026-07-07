@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, require_module_permission
+from app.api.deps.auth import get_current_active_user, get_current_tenant_id, require_module_permission
 from app.db.query_helpers import tenant_filter
-from app.db.models.user import User, UserRole
+from app.db.models.user import User
 from app.db.models.automation_event import AutomationEvent
 from app.db.models.settings import Settings
 

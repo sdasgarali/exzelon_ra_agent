@@ -9,9 +9,8 @@ need dev resources. If a practice is hiring "billing managers", they might
 benefit from outsourced RCM.
 """
 import structlog
-from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from sqlalchemy.orm import Session
 

@@ -1,6 +1,6 @@
 """Cost tracking model for revenue analytics."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, Text, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Numeric, Date, DateTime, Text, Boolean, ForeignKey
 from app.db.base import Base
 
 

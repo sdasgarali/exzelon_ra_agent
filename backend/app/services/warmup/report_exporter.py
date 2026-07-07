@@ -5,7 +5,6 @@ import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from app.db.models.warmup_daily_log import WarmupDailyLog
 from app.db.models.sender_mailbox import SenderMailbox

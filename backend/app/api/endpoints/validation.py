@@ -132,7 +132,6 @@ async def get_validation_stats(
         func.count(EmailValidationResult.validation_id)
     ).group_by(EmailValidationResult.status).all()
 
-    valid_count = next((c for s, c in by_status if s == ValidationStatus.VALID), 0)
     invalid_count = next((c for s, c in by_status if s == ValidationStatus.INVALID), 0)
 
     bounce_rate = (invalid_count / total * 100) if total > 0 else 0

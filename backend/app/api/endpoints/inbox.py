@@ -1,5 +1,4 @@
 """Unified Inbox (Unibox) API endpoints."""
-import json
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query

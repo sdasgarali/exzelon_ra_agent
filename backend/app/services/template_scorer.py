@@ -4,9 +4,8 @@ Computes 10 quality dimensions for email template content, generates actionable
 fix suggestions, and applies auto-fixable fixes with before/after score tracking.
 No DB tables required — all computations are stateless and on-demand.
 """
-import math
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from app.services.spam_checker import check_spam_score, strip_html, html_safe_replace, SPAM_WORDS
 from app.services.rendering_checker import check_rendering

@@ -1,6 +1,5 @@
 """Inbox Placement Testing - seed email testing."""
 import smtplib
-import imaplib
 import json
 from email.mime.text import MIMEText
 from datetime import datetime

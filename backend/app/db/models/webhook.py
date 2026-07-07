@@ -1,5 +1,4 @@
 """Webhook and WebhookDelivery models for event notifications."""
-from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, Boolean,
     ForeignKey, Index,

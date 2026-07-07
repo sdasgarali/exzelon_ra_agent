@@ -15,7 +15,7 @@ from app.api.deps import get_db, get_current_active_user, require_role, get_curr
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
-from app.db.models.lead import LeadDetails, LeadStatus, DataType, CLOSED_STATUSES
+from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation

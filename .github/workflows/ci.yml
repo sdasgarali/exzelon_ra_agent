@@ -29,7 +29,7 @@ jobs:
       - name: Lint with ruff
         run: |
           pip install ruff
-          ruff check app/ --select E,W,F --ignore E501
+          ruff check app/   # rules configured in backend/ruff.toml
 
       - name: Run tests with coverage
         env:

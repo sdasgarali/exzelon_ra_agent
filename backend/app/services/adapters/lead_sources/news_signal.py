@@ -9,7 +9,6 @@ Zero cost, zero dependencies beyond stdlib.
 import re
 import structlog
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 from urllib.request import urlopen, Request
 from urllib.parse import quote_plus
@@ -229,7 +228,7 @@ class NewsSignalAdapter(LeadSourceAdapter):
     def test_connection(self) -> bool:
         """Test RSS feed accessibility."""
         try:
-            items = self._fetch_rss("test", max_items=1)
+            self._fetch_rss("test", max_items=1)
             return True  # If no exception, feed is accessible
         except Exception:
             return False

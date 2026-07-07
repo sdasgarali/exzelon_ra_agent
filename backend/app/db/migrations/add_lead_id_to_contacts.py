@@ -24,7 +24,7 @@ def migrate():
         # Check if column already exists (works on both SQLite and MySQL)
         inspector = inspect(engine)
         existing_cols = {c["name"] for c in inspector.get_columns("contact_details")}
-        
+
         if "lead_id" in existing_cols:
             print("Column 'lead_id' already exists in contact_details table.")
             return

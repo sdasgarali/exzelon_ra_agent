@@ -1,5 +1,5 @@
 """Saved search / smart list model for lead filtering."""
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
 from app.db.base import Base
 
 

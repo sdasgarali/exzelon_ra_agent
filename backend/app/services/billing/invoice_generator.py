@@ -1,8 +1,8 @@
 import math
-from datetime import date, datetime
+from datetime import date
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+from sqlalchemy import func
 import structlog
 
 logger = structlog.get_logger()

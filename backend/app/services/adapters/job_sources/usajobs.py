@@ -7,7 +7,7 @@ Pricing: FREE — no rate limits, public API
 """
 import time
 import random
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
 from app.services.adapters.base import JobSourceAdapter, RateLimitError
@@ -95,7 +95,6 @@ class USAJobsAdapter(JobSourceAdapter):
         title_batches = [search_titles[i:i+_batch_size] for i in range(0, len(search_titles), _batch_size)]
 
         # Date range for posted_within_days
-        date_from = (date.today() - timedelta(days=posted_within_days)).strftime("%Y-%m-%d")
 
         with httpx.Client(timeout=30) as client:
             for batch in title_batches:

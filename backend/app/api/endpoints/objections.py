@@ -1,7 +1,6 @@
 """Objection handling template CRUD endpoints."""
 import structlog
-from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session

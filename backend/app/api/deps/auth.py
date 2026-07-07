@@ -1,5 +1,4 @@
 """Authentication dependencies for FastAPI."""
-import json
 import hashlib
 from datetime import datetime
 from typing import List, Optional

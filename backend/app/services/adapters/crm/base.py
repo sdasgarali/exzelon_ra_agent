@@ -1,6 +1,6 @@
 """Abstract base class for CRM adapters."""
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 class CRMAdapter(ABC):

@@ -1,5 +1,4 @@
 """Bidirectional CRM sync engine — pull contacts from CRM, push deals to CRM."""
-import json
 from datetime import datetime
 from typing import Dict, Any, Optional
 import structlog

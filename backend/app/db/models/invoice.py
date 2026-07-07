@@ -1,8 +1,7 @@
 """Billing & Invoicing models."""
 from enum import Enum as PyEnum
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, DateTime, Numeric,
-    ForeignKey, Enum, Date,
+    Column, Integer, String, Text, DateTime, ForeignKey, Enum, Date,
 )
 from app.db.base import Base
 

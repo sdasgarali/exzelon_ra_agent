@@ -284,7 +284,6 @@ def _update_client_from_org_data(db, lead, org_data: dict):
     if not org_data or not lead.client_name:
         return
 
-    from app.db.query_helpers import tenant_filter as _tf
     client = db.query(ClientInfo).filter(
         ClientInfo.client_name == lead.client_name,
         ClientInfo.tenant_id == (lead.tenant_id or 1),

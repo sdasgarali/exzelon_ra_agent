@@ -1,5 +1,4 @@
 """Suppression list model for do-not-contact entries."""
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Text, Index, ForeignKey
 from app.db.base import Base
 

@@ -1,13 +1,12 @@
 """Lead scoring engine — calculates 0-100 scores for contacts."""
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
 import structlog
 from sqlalchemy.orm import Session
 
 from app.db.models.contact import ContactDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus
-from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 
 logger = structlog.get_logger()
 

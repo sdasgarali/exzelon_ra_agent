@@ -1,5 +1,5 @@
 """Ideal Customer Profile (ICP) model for AI-driven targeting."""
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, ForeignKey
 from app.db.base import Base
 
 

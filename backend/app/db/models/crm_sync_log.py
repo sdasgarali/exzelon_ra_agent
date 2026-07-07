@@ -1,5 +1,5 @@
 """CRM sync log model for tracking bidirectional sync operations."""
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from app.db.base import Base
 

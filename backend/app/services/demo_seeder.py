@@ -1,9 +1,7 @@
 """Demo data seeder for new starter-plan tenants."""
 import structlog
-from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from app.db.models.tenant import Tenant, TenantPlan
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.contact import ContactDetails
 from app.db.models.client import ClientInfo

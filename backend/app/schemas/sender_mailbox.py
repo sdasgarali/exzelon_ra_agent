@@ -1,7 +1,7 @@
 """Pydantic schemas for sender mailbox management."""
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 from enum import Enum
 
 

@@ -38,7 +38,7 @@ def advisory_lock(lock_name: str, timeout: int = 0):
     acquired = False
     try:
         from sqlalchemy import text
-        result = db.execute(text(f"SELECT GET_LOCK(:name, :timeout)"), {
+        result = db.execute(text("SELECT GET_LOCK(:name, :timeout)"), {
             "name": full_name, "timeout": timeout,
         })
         acquired = result.scalar() == 1
@@ -55,7 +55,7 @@ def advisory_lock(lock_name: str, timeout: int = 0):
         if acquired:
             try:
                 from sqlalchemy import text
-                db.execute(text(f"SELECT RELEASE_LOCK(:name)"), {"name": full_name})
+                db.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": full_name})
             except Exception:
                 pass  # Lock auto-releases on session close anyway
         db.close()

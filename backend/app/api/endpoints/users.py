@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_current_active_user, require_role
+from app.api.deps import get_db, require_role
 from app.core.security import get_password_hash
 from app.db.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
@@ -34,7 +34,6 @@ async def list_users(
             (User.email.ilike(f"%{search}%")) | (User.full_name.ilike(f"%{search}%"))
         )
 
-    total = query.count()
     users = query.order_by(User.user_id).offset(skip).limit(limit).all()
     return [UserResponse.model_validate(u) for u in users]
 

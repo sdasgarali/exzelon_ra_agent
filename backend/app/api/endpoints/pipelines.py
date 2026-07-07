@@ -418,7 +418,7 @@ async def estimate_contact_enrichment(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Estimate API calls for a contact enrichment run (read-only, no side effects)."""
-    from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
+    from app.db.models.lead import LeadDetails, LeadStatus
     from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
     from app.core.config import settings as app_settings

@@ -4,14 +4,13 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 
 from app.api.deps import get_db, get_current_active_user, get_current_tenant_id
 from app.db.models.user import User
-from app.db.models.lead import LeadDetails, LeadStatus
-from app.db.models.client import ClientInfo, ClientCategory
+from app.db.models.lead import LeadDetails
+from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus

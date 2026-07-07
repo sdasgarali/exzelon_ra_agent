@@ -8,8 +8,7 @@ from sqlalchemy import func, desc
 from pydantic import BaseModel
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
-from app.db.query_helpers import tenant_filter
+from app.api.deps.auth import require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.visitor import VisitorEvent
 

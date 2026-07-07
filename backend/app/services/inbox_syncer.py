@@ -1,6 +1,5 @@
 """Inbox message syncer — populates unified inbox from outreach events and replies."""
 import hashlib
-from datetime import datetime
 from typing import Dict, Any
 import structlog
 from sqlalchemy.orm import Session

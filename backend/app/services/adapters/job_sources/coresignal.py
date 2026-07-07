@@ -243,7 +243,6 @@ class CoresignalAdapter(JobSourceAdapter):
         location = raw_data.get("location", "") or ""
         city = raw_data.get("city", "") or ""
         state = raw_data.get("state", "") or raw_data.get("region", "") or ""
-        country = raw_data.get("country", "") or ""
 
         # Parse state from location if not directly provided
         if not state and location:

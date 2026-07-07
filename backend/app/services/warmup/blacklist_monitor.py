@@ -1,7 +1,7 @@
 """Blacklist Monitoring Service - DNS-based DNSBL queries."""
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus

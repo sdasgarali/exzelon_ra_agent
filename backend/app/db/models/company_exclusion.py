@@ -1,7 +1,7 @@
 """Company exclusion model for blocking specific companies from lead sourcing."""
 import re
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, ForeignKey,
+    Column, Integer, String, Boolean, ForeignKey,
     Index, UniqueConstraint,
 )
 from app.db.base import Base

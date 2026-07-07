@@ -1,6 +1,6 @@
 """AI-powered natural language lead search endpoint."""
 import structlog
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -57,7 +57,6 @@ def database_search_contacts(
     """Search B2B contact database via Apollo adapter."""
     job_title = data.get("job_title", "")
     company = data.get("company", "")
-    industry = data.get("industry", "")
     location = data.get("location", "")
     limit = min(data.get("limit", 25), 100)
 

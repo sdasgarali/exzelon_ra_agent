@@ -1,5 +1,4 @@
 """API key model for programmatic access."""
-from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, Boolean,
     ForeignKey, Index,

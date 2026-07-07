@@ -5,7 +5,6 @@ spintax, engagement_tracker, esp_feedback, spam_checker, send_time_optimizer,
 domain_reputation, domain_throttle) into REST endpoints for frontend consumption.
 """
 from typing import Optional, List
-from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field

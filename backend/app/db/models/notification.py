@@ -1,5 +1,4 @@
 """Notification center entries."""
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index
 from app.db.base import Base
 

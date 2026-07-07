@@ -1,19 +1,18 @@
 """Analytics endpoints — team leaderboard, campaign comparison, revenue metrics, engagement heatmap, forecast."""
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, extract
+from sqlalchemy import func, extract
 from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
+from app.api.deps.auth import require_role, get_current_tenant_id
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.campaign import Campaign, CampaignContact, CampaignContactStatus
 from app.db.models.deal import Deal, DealStage
-from app.db.models.contact import ContactDetails
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -487,7 +486,6 @@ def budget_status(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Current month cost utilization per source vs configured budgets."""
-    from app.db.models.cost_tracking import CostEntry
     from app.services.cost_tracker import get_budget_status as _get_budget_status
 
     return _get_budget_status(db, tenant_id=tenant_id)

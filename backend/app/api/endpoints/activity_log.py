@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, UserRole, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, UserRole
 from app.db.models.login_history import LoginHistory
 from app.db.models.audit_log import AuditLog
 from app.db.models.user import User

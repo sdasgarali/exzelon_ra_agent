@@ -6,7 +6,7 @@ Wraps AI adapter calls with:
 """
 import time
 import structlog
-from typing import Optional, Callable, Any, List
+from typing import Optional, Callable, Any
 
 logger = structlog.get_logger()
 
@@ -80,7 +80,6 @@ def call_ai_with_fallback(
     Returns:
         AI adapter result or fallback_result
     """
-    from app.services.adapters.ai_content import get_ai_adapter
     from app.core.settings_resolver import get_tenant_setting
 
     # Get primary provider

@@ -9,14 +9,12 @@ Multi-tier enrichment strategy:
 Only fills missing fields (never overwrites existing data).
 """
 import structlog
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.db.models.client import ClientInfo
 from app.db.models.lead import LeadDetails
-from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 
 logger = structlog.get_logger()

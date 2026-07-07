@@ -1,6 +1,6 @@
 """Automation event model — tracks what the system does behind the scenes."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
 from app.db.base import Base
 
 

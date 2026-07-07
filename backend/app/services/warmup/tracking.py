@@ -1,8 +1,5 @@
 """Open/Click Tracking Service - tracking pixel and link redirect."""
-import uuid
-import json
 from datetime import datetime
-from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.warmup_email import WarmupEmail

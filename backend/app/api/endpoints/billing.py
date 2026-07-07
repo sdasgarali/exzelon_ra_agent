@@ -1,7 +1,7 @@
 """Billing & Invoicing API endpoints."""
 from datetime import date, datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
 from app.core.rate_limiter import limiter
-from app.db.query_helpers import tenant_filter, paginate
+from app.db.query_helpers import paginate
 from app.db.models.user import UserRole
 
 import structlog

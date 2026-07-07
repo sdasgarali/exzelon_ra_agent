@@ -731,7 +731,6 @@ def _auto_enrich_new_leads(db, leads, tenant_id=None) -> int:
     Returns count of leads auto-enriched.
     """
     from app.db.models.contact import ContactDetails
-    from app.db.models.lead_contact import LeadContactAssociation
     from app.services.pipelines.contact_enrichment import _reuse_existing_contacts, _update_lead_from_contacts
     from app.core.settings_resolver import get_tenant_setting
 
