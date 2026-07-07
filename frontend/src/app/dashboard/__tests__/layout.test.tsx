@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import React from 'react'
 
 // Mock the store
@@ -78,12 +78,15 @@ describe('DashboardLayout', () => {
     })
   })
 
+  // The sidebar render is shared by the desktop + mobile-drawer layouts, so
+  // user/avatar/nav elements legitimately appear more than once — assert with
+  // *AllBy* rather than the single-match getByText.
   test('shows user email initial in avatar', async () => {
     await act(async () => {
       render(<DashboardLayout><div>Content</div></DashboardLayout>)
     })
     await waitFor(() => {
-      expect(screen.getByText('A')).toBeInTheDocument()
+      expect(screen.getAllByText('A').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -92,7 +95,7 @@ describe('DashboardLayout', () => {
       render(<DashboardLayout><div>Content</div></DashboardLayout>)
     })
     await waitFor(() => {
-      expect(screen.getByText('Admin User')).toBeInTheDocument()
+      expect(screen.getAllByText('Admin User').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -110,7 +113,7 @@ describe('DashboardLayout', () => {
 
     await waitFor(() => {
       for (const link of navLinks) {
-        expect(screen.getByText(link)).toBeInTheDocument()
+        expect(screen.getAllByText(link).length).toBeGreaterThanOrEqual(1)
       }
     })
   })
@@ -119,8 +122,14 @@ describe('DashboardLayout', () => {
     await act(async () => {
       render(<DashboardLayout><div>Content</div></DashboardLayout>)
     })
+    // Sign out lives inside the profile dropdown — open it via the profile
+    // trigger (the user's name), then assert the item is present.
+    const profileTrigger = screen.getAllByText('Admin User')[0]
+    await act(async () => {
+      fireEvent.click(profileTrigger)
+    })
     await waitFor(() => {
-      expect(screen.getByText('Sign out')).toBeInTheDocument()
+      expect(screen.getAllByText('Sign out').length).toBeGreaterThanOrEqual(1)
     })
   })
 })
