@@ -226,6 +226,17 @@ def auth_headers(admin_token):
 
 
 @pytest.fixture
+def super_admin_headers(super_admin_token):
+    """Authorization headers with a super-admin token.
+
+    Super admins bypass the `role_permissions`-based module/tab gating, so this is
+    used for endpoints (e.g. warmup) that gate on the `role_permissions` setting
+    which isn't seeded in the in-memory test DB.
+    """
+    return {"Authorization": f"Bearer {super_admin_token}"}
+
+
+@pytest.fixture
 def operator_headers(operator_token):
     """Create authorization headers with operator token."""
     return {"Authorization": f"Bearer {operator_token}"}
