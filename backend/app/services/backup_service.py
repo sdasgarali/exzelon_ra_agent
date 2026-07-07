@@ -3,7 +3,6 @@ import os
 import re
 import subprocess
 import gzip
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional

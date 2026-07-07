@@ -74,7 +74,8 @@ async def oauth_initiate(
         )
 
     # Build state: encode mailbox_id or email for the callback
-    import json as _json, base64 as _b64
+    import json as _json
+    import base64 as _b64
     state_data = {"mailbox_id": mailbox_id, "email": target_email, "user_id": current_user.user_id}
     state = _b64.urlsafe_b64encode(_json.dumps(state_data).encode()).decode()
 
@@ -108,7 +109,8 @@ async def oauth_callback(
         )
 
     # Decode state
-    import json as _json, base64 as _b64
+    import json as _json
+    import base64 as _b64
     try:
         state_data = _json.loads(_b64.urlsafe_b64decode(state).decode())
     except Exception:

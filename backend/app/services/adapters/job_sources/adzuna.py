@@ -10,7 +10,7 @@ import random
 from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter, RateLimitError
+from app.services.adapters.base import JobSourceAdapter
 from app.core.config import settings
 
 

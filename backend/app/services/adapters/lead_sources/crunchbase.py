@@ -9,7 +9,6 @@ Requires: CRUNCHBASE_API_KEY
 import structlog
 import requests
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 from app.services.adapters.base import LeadSourceAdapter, RateLimitError
 

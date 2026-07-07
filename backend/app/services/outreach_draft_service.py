@@ -15,9 +15,7 @@ from app.db.models.client import ClientInfo
 from app.db.models.sender_mailbox import SenderMailbox
 from app.services.adapters.ai_content import get_ai_adapter
 from app.services.adapters.ai.prompts import (
-    OUTREACH_SYSTEM_PROMPT,
     build_outreach_user_prompt,
-    parse_ai_email_response,
 )
 from app.core.settings_resolver import get_tenant_setting_bool
 
@@ -68,7 +66,7 @@ def draft_outreach_email(
 
         # 5. Build prompt and call AI
         job_title = context.get("job_title") or "Open Position"
-        user_prompt = build_outreach_user_prompt(
+        build_outreach_user_prompt(
             contact_name=contact.first_name or "there",
             contact_title=contact.title or "",
             company_name=context.get("company_name") or contact.client_name or "your company",

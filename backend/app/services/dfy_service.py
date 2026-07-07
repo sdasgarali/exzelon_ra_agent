@@ -1,6 +1,5 @@
 """Done-For-You (DFY) service -- domain setup automation."""
 import structlog
-from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()
 

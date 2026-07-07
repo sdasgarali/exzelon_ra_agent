@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 
 from app.db.base import get_db
 from app.api.deps.auth import get_current_user, get_current_tenant_id

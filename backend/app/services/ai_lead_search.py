@@ -1,9 +1,9 @@
 """AI-powered natural language search for leads."""
 import re
 import structlog
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import or_, func
 
 from app.db.models.lead import LeadDetails
 

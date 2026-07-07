@@ -1,5 +1,4 @@
 """User model with RBAC and multi-tenancy."""
-from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship

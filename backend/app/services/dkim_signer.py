@@ -13,7 +13,7 @@ Usage:
             private_key=mailbox.dkim_private_key,
         )
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import structlog
 

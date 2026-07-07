@@ -7,10 +7,10 @@ Pricing: Free: 100 searches/month | Paid: from $50/month
 """
 import time
 import random
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
-from app.services.adapters.base import JobSourceAdapter, RateLimitError
+from app.services.adapters.base import JobSourceAdapter
 from app.core.config import settings
 
 

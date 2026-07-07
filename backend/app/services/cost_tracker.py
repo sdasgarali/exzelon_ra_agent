@@ -4,7 +4,7 @@ Provider pricing registry with hardcoded defaults (overridable via settings).
 """
 import json
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional
+from typing import List, Optional
 import structlog
 
 from sqlalchemy.orm import Session

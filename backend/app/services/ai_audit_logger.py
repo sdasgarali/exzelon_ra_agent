@@ -5,8 +5,6 @@ complete audit trail of: what was asked, what the model returned, what
 decision was made, and what action was taken.
 """
 import hashlib
-import json
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 import structlog

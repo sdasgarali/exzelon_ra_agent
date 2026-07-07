@@ -10,7 +10,6 @@ for matching signals.
 """
 import json
 import structlog
-from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
 from sqlalchemy.orm import Session

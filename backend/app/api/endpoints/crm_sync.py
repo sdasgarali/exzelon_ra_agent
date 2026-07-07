@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
+from app.api.deps.auth import require_role, get_current_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.crm_sync_log import CRMSyncLog
 from app.db.query_helpers import tenant_filter

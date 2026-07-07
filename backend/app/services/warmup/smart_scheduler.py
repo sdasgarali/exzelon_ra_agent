@@ -2,7 +2,6 @@
 import random
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-import json
 from sqlalchemy.orm import Session
 
 from app.core.settings_resolver import get_tenant_setting

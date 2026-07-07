@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 import structlog
 
 logger = structlog.get_logger()

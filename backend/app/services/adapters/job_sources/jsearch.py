@@ -8,7 +8,7 @@ IMPACT ON LEAD COUNT:
 """
 import time
 import random
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from typing import List, Dict, Any, Optional
 import httpx
 import structlog

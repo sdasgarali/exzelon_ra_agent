@@ -48,9 +48,9 @@ def get_policies(
                 val = get_tenant_setting(db, f"ai_policy_{key}", tenant_id=tenant_id, default=None)
                 if val is not None:
                     default_type = type(DEFAULT_POLICIES[key])
-                    if default_type == bool:
+                    if default_type is bool:
                         policies[key] = str(val).lower() in ("true", "1", "yes")
-                    elif default_type == int:
+                    elif default_type is int:
                         try:
                             policies[key] = int(val)
                         except (ValueError, TypeError):

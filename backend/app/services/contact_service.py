@@ -1,5 +1,5 @@
 """Contact business logic service."""
-from typing import List, Optional, Set
+from typing import List
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 

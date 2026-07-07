@@ -1,6 +1,5 @@
 """WarmupDailyLog model - daily snapshot per mailbox for time-series analytics."""
-from sqlalchemy import Column, Integer, Float, String, Boolean, Date, DateTime, ForeignKey
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, Float, Boolean, Date, ForeignKey
 
 from app.db.base import Base
 

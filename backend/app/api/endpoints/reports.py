@@ -481,7 +481,6 @@ def contact_engagement(
     q = q.order_by(order_expr.desc() if sort_order.lower() == "desc" else order_expr.asc())
 
     # We need total count from a subquery
-    from sqlalchemy import text
     count_sub = q.subquery()
     total = db.query(func.count()).select_from(count_sub).scalar() or 0
 

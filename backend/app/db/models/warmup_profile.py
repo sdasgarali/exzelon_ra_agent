@@ -1,6 +1,5 @@
 """WarmupProfile model - custom warmup profiles/presets."""
-from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, Boolean, Text
 
 from app.db.base import Base
 

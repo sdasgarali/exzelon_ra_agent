@@ -1,5 +1,4 @@
 """Deal pipeline models — CRM-style deal tracking."""
-from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, Boolean, Numeric,
     ForeignKey, Index, Date,

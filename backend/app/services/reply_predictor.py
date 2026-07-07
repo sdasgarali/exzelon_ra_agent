@@ -8,7 +8,7 @@ logger = structlog.get_logger()
 
 def predict_reply_likelihood(contact_id: int, db: Session) -> dict:
     """Predict reply likelihood for a contact using statistical features."""
-    from app.db.models.outreach import OutreachEvent, OutreachStatus
+    from app.db.models.outreach import OutreachEvent
     from app.db.models.contact import ContactDetails
     from app.db.models.lead import LeadDetails
     from app.db.models.lead_contact import LeadContactAssociation
@@ -72,7 +72,7 @@ def predict_reply_likelihood(contact_id: int, db: Session) -> dict:
             OutreachEvent.contact_id == contact_id
         ).order_by(OutreachEvent.sent_at.desc()).first()
         if last_event and last_event.sent_at:
-            from datetime import datetime, timedelta
+            from datetime import datetime
             days_since = (datetime.utcnow() - last_event.sent_at).days
             recency_factor = max(0, 1.0 - (days_since / 90.0))
     except Exception:

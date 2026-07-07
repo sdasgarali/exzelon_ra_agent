@@ -8,7 +8,7 @@ from app.db.models.email_validation import ValidationStatus
 
 class ClearoutAdapter(EmailValidationAdapter):
     """Adapter for Clearout email validation API.
-    
+
     Free tier: 100 free credits on signup
     Docs: https://docs.clearout.io/api-reference/email-verification
     """

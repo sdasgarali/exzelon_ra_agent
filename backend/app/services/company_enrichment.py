@@ -9,14 +9,12 @@ Multi-tier enrichment strategy:
 Only fills missing fields (never overwrites existing data).
 """
 import structlog
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.db.models.client import ClientInfo
 from app.db.models.lead import LeadDetails
-from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 
 logger = structlog.get_logger()
@@ -94,9 +92,22 @@ def enrich_from_leads(db: Session, client: ClientInfo) -> dict:
     return updated
 
 
-def _get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
-    """Load the configured AI adapter from settings."""
-    provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
+# Providers billed per-token. Used by ``free_only`` callers that must never
+# incur AI spend (e.g. resolving unknowns purely to AVOID a paid contact API).
+PAID_AI_PROVIDERS = {"openai", "anthropic", "gemini"}
+
+
+def _get_ai_adapter(
+    db: Session, tenant_id: Optional[int] = None, force_provider: Optional[str] = None
+):
+    """Load an AI adapter from settings.
+
+    ``force_provider`` overrides the tenant's configured provider — used to pin
+    the free Groq provider when the caller must not incur AI spend.
+    """
+    provider = force_provider or get_tenant_setting(
+        db, "warmup_ai_provider", tenant_id=tenant_id, default="groq"
+    )
     api_key_map = {
         "groq": "groq_api_key",
         "openai": "openai_api_key",
@@ -239,6 +250,7 @@ def resolve_company_metadata_batch(
     tenant_id: Optional[int] = None,
     max_llm_calls: int = 300,
     use_llm: bool = True,
+    free_only: bool = False,
 ) -> dict:
     """Resolve {industry, company_size, employee_count} for many companies.
 
@@ -252,6 +264,8 @@ def resolve_company_metadata_batch(
         companies: iterable of ``(client_name, domain)`` tuples (domain optional).
         max_llm_calls: hard ceiling on AI lookups this run (cost/latency guard).
         use_llm: when False, only the ClientInfo cache is consulted.
+        free_only: pin the free Groq provider; if no Groq key, degrade to
+            cache-only instead of using a paid provider (never incur AI spend).
 
     Returns:
         dict keyed by ``client_name.strip().lower()`` →
@@ -308,7 +322,12 @@ def resolve_company_metadata_batch(
     if not use_llm or max_llm_calls <= 0 or not to_enrich:
         return result
 
-    adapter = _get_ai_adapter(db, tenant_id=tenant_id)
+    # free_only pins Groq (free tier). If no Groq key is configured we fall back
+    # to cache-only rather than silently using a paid provider — the caller uses
+    # this path specifically to avoid AI spend.
+    adapter = _get_ai_adapter(
+        db, tenant_id=tenant_id, force_provider="groq" if free_only else None
+    )
     if not adapter:
         return result
     # Threads must not write to the DB session; disable per-call cost DB writes.

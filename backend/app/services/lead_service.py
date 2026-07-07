@@ -1,15 +1,12 @@
 """Lead business logic service."""
 import csv
 import io
-from datetime import datetime
-from typing import Optional, List
+from typing import List
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.db.models.lead import LeadDetails, LeadStatus
+from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
-from app.db.models.lead_contact import LeadContactAssociation
-from app.db.contact_utils import get_contacts_for_lead, get_contact_ids_for_lead
 from app.db.query_helpers import active_query
 
 

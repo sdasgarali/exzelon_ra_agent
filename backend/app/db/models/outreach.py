@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey, Index, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Text, ForeignKey, Index
 from app.db.base import Base
 
 

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
 from app.db.models.campaign import (
     Campaign, SequenceStep, CampaignContact,
-    CampaignStatus, StepType, CampaignContactStatus,
+    StepType, CampaignContactStatus,
 )
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
@@ -43,7 +43,7 @@ def generate_campaign_drafts(
     Mirrors _execute_email_step() logic but creates OutreachDraft records
     instead of sending.
     """
-    from app.services.pipelines.outreach import render_signature_html, generate_unsub_footer
+    from app.services.pipelines.outreach import render_signature_html
     from app.services.spintax import process_spintax
     from app.services.campaign_engine import _select_mailbox, _select_variant
 

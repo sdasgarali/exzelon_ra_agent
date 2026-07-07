@@ -8,7 +8,7 @@ from app.db.models.email_validation import ValidationStatus
 
 class ReacherAdapter(EmailValidationAdapter):
     """Adapter for Reacher email verification API.
-    
+
     Free tier: 50 verifications/month (cloud). Unlimited if self-hosted.
     Cloud API: https://app.reacher.email
     Self-hosted: https://github.com/reacherhq/check-if-email-exists

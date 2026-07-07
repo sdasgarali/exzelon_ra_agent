@@ -1,11 +1,10 @@
 """Super admin tenant management endpoints."""
 import json as _json_admin
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.api.deps.database import get_db
 from app.db.models.tenant import Tenant, TenantPlan
@@ -16,9 +15,8 @@ from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.campaign import Campaign
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
-from app.api.deps.auth import get_current_active_user, require_role, UserRole
+from app.api.deps.auth import require_role, UserRole
 from app.core.security import create_access_token
-from app.core.config import settings
 from app.core.lob_defaults import LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES
 from app.services.audit_helper import write_audit_log
 from app.services.tenant_service import generate_unique_slug

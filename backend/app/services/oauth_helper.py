@@ -3,7 +3,6 @@
 Implements the OAuth2 Authorization Code flow with XOAUTH2 SASL mechanism.
 Falls back to Basic Auth (password) for non-OAuth mailboxes.
 """
-import json
 import smtplib
 import urllib.parse
 from datetime import datetime, timedelta

@@ -143,7 +143,6 @@ class ProxycurlAdapter(ContactDiscoveryAdapter):
             title = current_exp.get("title", title) or title
 
         # Extract state from location
-        location = raw_data.get("city", "") or ""
         state_str = raw_data.get("state", "") or ""
         state = state_str[:2].upper() if len(state_str) >= 2 else None
 

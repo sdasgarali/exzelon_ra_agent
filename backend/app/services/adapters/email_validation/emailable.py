@@ -8,7 +8,7 @@ from app.db.models.email_validation import ValidationStatus
 
 class EmailableAdapter(EmailValidationAdapter):
     """Adapter for Emailable email verification API.
-    
+
     Free tier: 250 free credits (one-time, never expire)
     Docs: https://emailable.com/docs/api
     """

@@ -11,7 +11,9 @@ const config = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/'],
+  // e2e/ holds Playwright specs (run via `playwright test`, not jest). Excluding
+  // them here keeps `jest`/CI from collecting them as (failing) unit tests.
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/e2e/'],
   collectCoverageFrom: [
     'src/lib/**/*.{ts,tsx}',
     'src/app/**/*.{ts,tsx}',

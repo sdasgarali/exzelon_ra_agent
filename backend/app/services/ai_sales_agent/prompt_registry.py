@@ -6,7 +6,7 @@ Replaces inline prompt strings with a centralized registry. Each prompt has:
 - template: the prompt text with {placeholders}
 - metadata: model, temperature, max_tokens defaults
 """
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import structlog
 

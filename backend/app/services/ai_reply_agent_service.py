@@ -9,7 +9,7 @@ When inbox receives a reply:
 """
 import structlog
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.ai_reply_draft import AIReplyDraft

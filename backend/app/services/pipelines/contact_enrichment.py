@@ -214,6 +214,63 @@ def _resolve_domain(db, lead) -> str | None:
     return None
 
 
+def _resolve_unknowns_for_gate(db, gate, leads, tenant_id: Optional[int] = None) -> int:
+    """Fill missing industry/size for leads via the FREE Groq/cache resolver so
+    the exclusion gate can decide unknown-metadata leads before any paid call.
+
+    Only leads whose attributes are unknown are resolved. Resolved values are
+    persisted onto the lead (and mirror to ClientInfo happens elsewhere). Uses
+    ``free_only=True`` — never triggers a paid LLM to save a cheaper contact API.
+    Best-effort: any failure leaves the lead unknown (allowed through → recall).
+    Returns the number of leads whose attributes were filled.
+    """
+    targets = [l for l in leads if gate.needs_resolution(l)]
+    if not targets:
+        return 0
+
+    companies = [
+        (l.client_name, getattr(l, "employer_website", "") or "")
+        for l in targets if l.client_name
+    ]
+    if not companies:
+        return 0
+
+    try:
+        from app.services.company_enrichment import resolve_company_metadata_batch
+        # Bound the free LLM lookups to the tenant's configured ceiling.
+        max_calls = int(get_tenant_setting(
+            db, "lead_sourcing_enrich_max_companies",
+            tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_MAX_COMPANIES,
+        ))
+        meta = resolve_company_metadata_batch(
+            db, companies, tenant_id=tenant_id, max_llm_calls=max_calls, free_only=True,
+        )
+    except Exception as e:
+        logger.warning("Gate unknown-resolution failed (leads pass through)", error=str(e))
+        return 0
+
+    filled = 0
+    for lead in targets:
+        m = meta.get((lead.client_name or "").strip().lower())
+        if not m:
+            continue
+        changed = False
+        if not lead.industry and m.get("industry"):
+            lead.industry = str(m["industry"])[:255]
+            changed = True
+        if not lead.company_size:
+            size_val = m.get("company_size") or m.get("employee_count")
+            if size_val is not None:
+                lead.company_size = str(size_val)[:100]
+                changed = True
+        if changed:
+            filled += 1
+    if filled:
+        db.commit()
+    logger.info("Gate resolved unknown company metadata (free)", resolved=filled, candidates=len(targets))
+    return filled
+
+
 def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | None = None) -> int:
     """
     Check DB for contacts at the same company NOT already linked to this lead.
@@ -284,7 +341,6 @@ def _update_client_from_org_data(db, lead, org_data: dict):
     if not org_data or not lead.client_name:
         return
 
-    from app.db.query_helpers import tenant_filter as _tf
     client = db.query(ClientInfo).filter(
         ClientInfo.client_name == lead.client_name,
         ClientInfo.tenant_id == (lead.tenant_id or 1),
@@ -402,7 +458,7 @@ def run_contact_enrichment_pipeline(
         run_id: Optional pre-created job run ID
     """
     db = SessionLocal()
-    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0}
+    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0, "excluded": 0}
     lead_results = []
     auto_enriched_companies = set()  # tracks client_name AND domain to avoid re-processing
     adapter_stats: Dict[str, Dict[str, int]] = {}  # per-adapter call/result tracking
@@ -458,6 +514,17 @@ def run_contact_enrichment_pipeline(
         batch_lead_ids = {l.lead_id for l in leads}
         total_leads = len(leads)
 
+        # --- Pre-enrichment exclusion gate (foolproof, choke-point) ---
+        # Re-apply the SAME company/keyword/salary exclusion rules as lead
+        # sourcing, immediately before any paid contact-discovery API call. This
+        # guarantees zero API spend on out-of-scope leads regardless of how they
+        # entered the DB (file import, POST /leads, bulk import all bypass the
+        # sourcing gate). Unknown industry/size is first resolved via the FREE
+        # Groq/cache resolver so recall is preserved (still-unknown → allowed).
+        from app.services.lead_eligibility import LeadEligibilityGate
+        gate = LeadEligibilityGate(db, tenant_id=tenant_id)
+        _resolve_unknowns_for_gate(db, gate, leads, tenant_id=tenant_id)
+
         for idx, lead in enumerate(leads):
             # Cancel check
             if check_cancel(job_run.run_id, db):
@@ -469,6 +536,22 @@ def run_contact_enrichment_pipeline(
                 job_run.progress_pct = int((idx / total_leads) * 100)
                 db.commit()
             try:
+                # Exclusion gate FIRST — before any DB/API work. An out-of-scope
+                # lead is marked terminal (EXCLUDED) so it never re-enters the
+                # queue and never reaches a paid adapter.
+                eligible, reason = gate.check(lead)
+                if not eligible:
+                    lead.lead_status = LeadStatus.EXCLUDED
+                    lead.skip_reason = f"excluded: {reason}"
+                    counters["excluded"] += 1
+                    lead_results.append({
+                        "lead_id": lead.lead_id, "client_name": lead.client_name,
+                        "status": "excluded", "contacts_found": 0, "contacts_reused": 0,
+                        "adapter_used": None, "reason": f"Out of scope ({reason})",
+                    })
+                    logger.info("Lead excluded by gate — no API call", lead_id=lead.lead_id, reason=reason)
+                    continue
+
                 existing_count = db.query(ContactDetails).filter(
                     ContactDetails.lead_id == lead.lead_id
                 ).count()

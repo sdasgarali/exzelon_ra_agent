@@ -1,6 +1,5 @@
 """AI Warmup Content Generator - uses existing AI adapters for varied warmup email content."""
 import random
-import json
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from app.core.settings_resolver import get_tenant_setting
@@ -121,10 +120,10 @@ def generate_warmup_reply(original_subject: str, original_body: str, sender_name
 
     # Fallback to templates
     replies = [
-        f"Thanks for reaching out! Let me get back to you soon." + chr(10) + "Best," + chr(10) + f"{sender_name}",
-        f"Appreciate the update! I will review shortly." + chr(10) + "Cheers," + chr(10) + f"{sender_name}",
-        f"Great to hear from you! Let us connect on this." + chr(10) + "Regards," + chr(10) + f"{sender_name}",
-        f"Got it, thanks for the heads up!" + chr(10) + "Talk soon," + chr(10) + f"{sender_name}",
+        "Thanks for reaching out! Let me get back to you soon." + chr(10) + "Best," + chr(10) + f"{sender_name}",
+        "Appreciate the update! I will review shortly." + chr(10) + "Cheers," + chr(10) + f"{sender_name}",
+        "Great to hear from you! Let us connect on this." + chr(10) + "Regards," + chr(10) + f"{sender_name}",
+        "Got it, thanks for the heads up!" + chr(10) + "Talk soon," + chr(10) + f"{sender_name}",
         f"Thanks {sender_name.split()[0] if ' ' in sender_name else sender_name}! Will take a look." + chr(10) + "Best," + chr(10) + f"{sender_name}",
     ]
     body = random.choice(replies)

@@ -1,5 +1,4 @@
 """CRM Deal Pipeline API endpoints."""
-import json
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query

@@ -4,7 +4,7 @@ Two main entry points:
 1. orchestrate_send() — called before sending an email
 2. orchestrate_reply() — called when a reply is received
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import structlog
 from sqlalchemy.orm import Session

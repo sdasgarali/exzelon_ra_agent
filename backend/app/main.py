@@ -1,7 +1,7 @@
 """Main FastAPI application."""
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -382,7 +382,7 @@ def _seed_default_lobs():
     """
     import json as _json_lob
     from app.db.base import SessionLocal
-    from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
+    from app.db.models.line_of_business import LineOfBusiness, LOBType
     from app.db.models.tenant import Tenant
     from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 
@@ -1868,7 +1868,7 @@ async def lifespan(app: FastAPI):
                 "END WHERE timezone IS NULL AND location_state IS NOT NULL"
             ))
             conn.commit()
-            logger.info(f"Migration: backfilled timezone for client_info rows")
+            logger.info("Migration: backfilled timezone for client_info rows")
             # Also backfill contact_details timezone from location_state
             conn.execute(sa_text_tz(
                 "UPDATE contact_details SET timezone = CASE location_state "
@@ -1901,7 +1901,7 @@ async def lifespan(app: FastAPI):
                 "END WHERE timezone IS NULL AND location_state IS NOT NULL"
             ))
             conn.commit()
-            logger.info(f"Migration: backfilled timezone for contact_details rows")
+            logger.info("Migration: backfilled timezone for contact_details rows")
     except Exception as e:
         logger.warning(f"Migration check for timezone columns: {e}")
 

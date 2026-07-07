@@ -7,7 +7,7 @@ Pricing: From $40/mo for 4,000 searches (vs SerpAPI $50/mo for 5,000)
 """
 import time
 import random
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
 from app.services.adapters.base import JobSourceAdapter, RateLimitError

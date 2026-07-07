@@ -4,11 +4,10 @@ Records: which emails got replies, which intents were correctly classified,
 which campaigns have best engagement. Surfaces aggregate stats per tenant
 for strategy optimization.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import structlog
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 logger = structlog.get_logger()
 

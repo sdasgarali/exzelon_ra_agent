@@ -80,6 +80,52 @@ def exceeds_size_ceiling(value, ceiling: int) -> bool:
     return count > ceiling
 
 
+# --- Salary -----------------------------------------------------------------
+
+
+def salary_below_threshold(salary_min, salary_max, threshold) -> bool:
+    """True only when a KNOWN salary is confidently below ``threshold``.
+
+    Recall-preserving: we drop a lead solely on salary when the *best-case*
+    known figure (the max of whatever is present) is still under the floor.
+    Unknown/blank salary, a zero threshold, or a plausibly-hourly figure never
+    triggers a drop — those pass through to be resolved downstream.
+
+    Examples (threshold 40000):
+        (None, None)      -> False   (unknown — keep)
+        (25000, 32000)    -> True    (best case 32k < 40k)
+        (25000, 55000)    -> False   (range spans the floor — keep)
+        (None, 38000)     -> True    (only known figure is below)
+        (30, 45)          -> False   (looks hourly, not annual — keep)
+    """
+    try:
+        thr = int(threshold or 0)
+    except (TypeError, ValueError):
+        thr = 0
+    if thr <= 0:
+        return False
+
+    figures = []
+    for v in (salary_min, salary_max):
+        if v is None:
+            continue
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            figures.append(n)
+    if not figures:
+        return False
+
+    best = max(figures)
+    # Guard against hourly/monthly rates being compared to an annual floor:
+    # anything below 1000 is almost certainly not an annual salary.
+    if best < 1000:
+        return False
+    return best < thr
+
+
 # --- Industry ----------------------------------------------------------------
 
 # Substring keywords (lowercased) that mark an industry as out-of-scope.

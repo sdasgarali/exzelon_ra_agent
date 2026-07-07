@@ -1,5 +1,5 @@
 """Domain Reputation Tracker - DNS+blacklist proxy score + ISP-specific warmup profiles."""
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 import structlog
 from sqlalchemy.orm import Session

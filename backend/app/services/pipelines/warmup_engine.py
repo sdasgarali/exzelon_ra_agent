@@ -1,7 +1,7 @@
 """Warmup Engine - Automated mailbox warmup management."""
 import json
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
+from typing import Optional, Dict, Any, Tuple
 import structlog
 
 from app.db.base import SessionLocal

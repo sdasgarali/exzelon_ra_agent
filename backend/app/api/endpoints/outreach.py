@@ -12,7 +12,7 @@ from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.inbox_message import InboxMessage
-from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse, OutreachThreadResponse
+from app.schemas.outreach import OutreachEventCreate, OutreachEventResponse
 from app.db.query_helpers import tenant_filter
 
 router = APIRouter(prefix="/outreach", tags=["Outreach"])

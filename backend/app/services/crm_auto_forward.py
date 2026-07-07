@@ -1,6 +1,5 @@
 """Auto-forward interested inbox replies to CRM as contacts/notes."""
 import structlog
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session

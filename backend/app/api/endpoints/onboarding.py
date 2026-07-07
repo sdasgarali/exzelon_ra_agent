@@ -1,7 +1,7 @@
 """Onboarding status endpoints — Getting Started workflow tracking."""
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 

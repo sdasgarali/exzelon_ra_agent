@@ -30,6 +30,8 @@ jest.mock('next/navigation', () => ({
     prefetch: jest.fn(),
     refresh: jest.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/login',
 }))
 
 describe('LoginPage', () => {
@@ -46,7 +48,7 @@ describe('LoginPage', () => {
 
   test('renders app title', () => {
     render(<LoginPage />)
-    expect(screen.getByText('NeuraLeads')).toBeInTheDocument()
+    expect(screen.getByText('NeuraLeads AI Agent')).toBeInTheDocument()
   })
 
   test('has required attribute on email field', () => {
@@ -63,20 +65,16 @@ describe('LoginPage', () => {
 
   test('shows sign up link', () => {
     render(<LoginPage />)
-    expect(screen.getByText("Don't have an account? Sign up")).toBeInTheDocument()
-  })
-
-  test('toggles to registration form when clicking sign up link', async () => {
-    render(<LoginPage />)
-    const signUpLink = screen.getByText("Don't have an account? Sign up")
-    await userEvent.click(signUpLink)
-    expect(screen.getByText('Create Account')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('John Doe')).toBeInTheDocument()
+    // Signup is now a link to /signup (the old inline registration toggle was removed).
+    const signUpLink = screen.getByText("Don't have an account? Get Started Free")
+    expect(signUpLink).toBeInTheDocument()
+    expect(signUpLink.closest('a')).toHaveAttribute('href', '/signup')
   })
 
   test('successful login redirects to dashboard', async () => {
     mockLogin.mockResolvedValueOnce({
       access_token: 'test-token',
+      refresh_token: 'refresh-token',
       user: { user_id: 1, email: 'test@test.com', role: 'admin' },
     })
 
@@ -87,7 +85,7 @@ describe('LoginPage', () => {
 
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('test@test.com', 'password123')
-      expect(mockSetAuth).toHaveBeenCalledWith('test-token', expect.any(Object))
+      expect(mockSetAuth).toHaveBeenCalledWith('test-token', expect.any(Object), 'refresh-token', expect.any(Boolean))
       expect(mockPush).toHaveBeenCalledWith('/dashboard')
     })
   })

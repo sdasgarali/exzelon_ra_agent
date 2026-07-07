@@ -8,12 +8,14 @@ LEAD_STATUS_TRANSITIONS: dict[LeadStatus, set[LeadStatus]] = {
         LeadStatus.OPEN,
         LeadStatus.ENRICHED,
         LeadStatus.SKIPPED,
+        LeadStatus.EXCLUDED,
         LeadStatus.CLOSED_TEST,
     },
     LeadStatus.OPEN: {
         LeadStatus.HUNTING,
         LeadStatus.ENRICHED,
         LeadStatus.SKIPPED,
+        LeadStatus.EXCLUDED,
         LeadStatus.CLOSED_HIRED,
         LeadStatus.CLOSED_NOT_HIRED,
         LeadStatus.CLOSED_TEST,
@@ -50,7 +52,13 @@ LEAD_STATUS_TRANSITIONS: dict[LeadStatus, set[LeadStatus]] = {
     LeadStatus.SKIPPED: {
         LeadStatus.OPEN,
         LeadStatus.NEW,
+        LeadStatus.EXCLUDED,
         LeadStatus.CLOSED_TEST,
+    },
+    # Terminal — an operator may manually reopen a wrongly-excluded lead.
+    LeadStatus.EXCLUDED: {
+        LeadStatus.OPEN,
+        LeadStatus.NEW,
     },
     # Closed statuses can transition to each other or reopen
     LeadStatus.CLOSED_HIRED: {

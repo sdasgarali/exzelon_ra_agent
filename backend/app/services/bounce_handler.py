@@ -7,7 +7,6 @@ Parses SMTP error codes from send failures and takes appropriate action:
 Wired into send_outreach_email() in outreach.py.
 """
 import re
-from datetime import datetime
 from typing import Optional, Tuple
 
 import structlog

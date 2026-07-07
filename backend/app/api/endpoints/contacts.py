@@ -1,5 +1,5 @@
 """Contact management endpoints."""
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -250,7 +250,6 @@ async def bulk_delete_contacts(
     if not contacts:
         raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
 
-    emails = [c.email for c in contacts if c.email]
     found_ids = [c.contact_id for c in contacts]
 
     try:

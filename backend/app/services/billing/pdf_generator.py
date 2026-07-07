@@ -26,7 +26,7 @@ def generate_invoice_pdf(invoice, line_items, tenant) -> str:
     from reportlab.lib.colors import HexColor
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
     from app.core.config import settings
 
     # Create output directory

@@ -10,17 +10,17 @@ import io
 
 from app.api.deps import get_db, get_current_tenant_id
 from app.api.deps.auth import require_module_tab_permission
-from app.db.models.user import User, UserRole
+from app.db.models.user import User
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
 from app.db.models.warmup_email import WarmupEmail
 from app.db.models.warmup_daily_log import WarmupDailyLog
-from app.db.models.warmup_alert import WarmupAlert, AlertType, AlertSeverity
+from app.db.models.warmup_alert import WarmupAlert
 from app.db.models.warmup_profile import WarmupProfile
 from app.db.models.dns_check_result import DNSCheckResult
 from app.db.models.blacklist_check_result import BlacklistCheckResult
 
 from app.schemas.warmup import (
-    WarmupConfig, WarmupConfigUpdate, WarmupStatusResponse,
+    WarmupConfigUpdate, WarmupStatusResponse,
     MailboxWarmupStatus, WarmupAssessmentResult,
     WarmupScheduleResponse, HealthScoresResponse, MailboxHealthScore,
     WarmupEmailListResponse, WarmupEmailSchema, WarmupEmailDetailSchema,

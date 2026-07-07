@@ -4,7 +4,7 @@ import structlog
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 

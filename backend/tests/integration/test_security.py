@@ -41,7 +41,7 @@ class TestRBACBoundaries:
 
     def test_expired_token_gets_401(self, client, db_session):
         """Expired JWT should return 401."""
-        import jwt
+        from jose import jwt  # app uses python-jose; PyJWT is not a dependency
         from datetime import datetime, timedelta
         from app.core.config import settings
         expired_payload = {

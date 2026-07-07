@@ -6,9 +6,26 @@ from app.services.company_filters import (
     exceeds_size_ceiling,
     industry_is_excluded,
     is_placeholder_company,
+    salary_below_threshold,
 )
 
 pytestmark = pytest.mark.unit
+
+
+class TestSalaryBelowThreshold:
+    @pytest.mark.parametrize("smin,smax,thr,expected", [
+        (None, None, 40000, False),      # unknown → keep
+        (25000, 32000, 40000, True),     # best case below floor → drop
+        (25000, 55000, 40000, False),    # range spans floor → keep
+        (None, 38000, 40000, True),      # only known figure below → drop
+        (45000, None, 40000, False),     # known above → keep
+        (30, 45, 40000, False),          # hourly-looking → keep (guard)
+        (32000, 32000, 0, False),        # threshold disabled → keep
+        (32000, 32000, None, False),     # no threshold → keep
+        ("30000", "35000", 40000, True), # string figures parsed
+    ])
+    def test_salary(self, smin, smax, thr, expected):
+        assert salary_below_threshold(smin, smax, thr) is expected
 
 
 class TestParseEmployeeCount:

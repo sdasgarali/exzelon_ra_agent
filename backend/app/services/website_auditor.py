@@ -6,7 +6,7 @@ Used to identify prospects with poor web presence for digital marketing outreach
 import json
 import structlog
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -218,7 +218,7 @@ def _calculate_overall_score(report: Dict[str, Any]) -> int:
 def _generate_recommendations(report: Dict[str, Any]) -> None:
     """Generate actionable recommendations based on issues found."""
     issues = report.get("issues", [])
-    perf = report.get("performance") or {}
+    report.get("performance") or {}
     overall = report.get("overall_score", 0)
 
     if overall < 50:

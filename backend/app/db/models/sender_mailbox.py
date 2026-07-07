@@ -1,5 +1,5 @@
 """Sender mailbox model for managing email sending accounts."""
-from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Enum, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 import enum
 

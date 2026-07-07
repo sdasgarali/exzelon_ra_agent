@@ -1,6 +1,5 @@
 """WarmupAlert model - in-app notification system."""
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Enum
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, Enum
 import enum
 
 from app.db.base import Base

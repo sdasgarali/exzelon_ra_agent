@@ -1,6 +1,6 @@
 """Waterfall contact enrichment — chains multiple providers in priority order."""
 import structlog
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
 logger = structlog.get_logger()

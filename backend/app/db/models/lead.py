@@ -24,13 +24,20 @@ class LeadStatus(str, PyEnum):
     VALIDATED = "validated"
     SENT = "sent"
     SKIPPED = "skipped"
+    # Terminal: dropped by the exclusion gate (out-of-scope industry / size /
+    # placeholder / excluded company / below salary floor). Never re-enters any
+    # enrichment or outreach queue — this is what guarantees zero API spend on
+    # unwanted leads regardless of how they entered the DB.
+    EXCLUDED = "excluded"
 
 
-# All statuses that represent a closed lead
+# All statuses that represent a closed/terminal lead — excluded from the
+# contact-enrichment selection queries (``~lead_status.in_(CLOSED_STATUSES)``).
 CLOSED_STATUSES = [
     LeadStatus.CLOSED_HIRED,
     LeadStatus.CLOSED_NOT_HIRED,
     LeadStatus.CLOSED_TEST,
+    LeadStatus.EXCLUDED,
 ]
 
 

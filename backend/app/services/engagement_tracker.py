@@ -12,11 +12,10 @@ This module provides a multi-signal scoring approach that degrades gracefully
 when pixel tracking is unreliable.
 """
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 import structlog
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 

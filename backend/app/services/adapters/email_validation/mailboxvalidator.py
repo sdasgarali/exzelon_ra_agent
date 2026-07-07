@@ -8,7 +8,7 @@ from app.db.models.email_validation import ValidationStatus
 
 class MailboxValidatorAdapter(EmailValidationAdapter):
     """Adapter for MailboxValidator email validation API.
-    
+
     Free tier: 300 free API queries every 30 days (auto-renews)
     Docs: https://www.mailboxvalidator.com/api-single-validation
     """

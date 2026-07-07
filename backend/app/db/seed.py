@@ -1,6 +1,6 @@
 """Database seed data for testing."""
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from app.db.base import SessionLocal, engine, Base
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus

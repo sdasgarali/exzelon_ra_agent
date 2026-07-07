@@ -1,6 +1,5 @@
 """Auto-Recovery Service - gradual resume after pause."""
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 
@@ -35,7 +34,7 @@ def start_recovery(mailbox_id: int, db: Session) -> Dict[str, Any]:
         alert_type=AlertType.AUTO_RECOVERED,
         severity=AlertSeverity.INFO,
         title=f"Recovery started for {mailbox.email}",
-        message=f"Auto-recovery initiated. Mailbox will gradually ramp up sending volume.",
+        message="Auto-recovery initiated. Mailbox will gradually ramp up sending volume.",
     )
     db.add(alert)
     db.commit()
@@ -68,7 +67,7 @@ def complete_recovery(mailbox: SenderMailbox, db: Session) -> Dict[str, Any]:
         alert_type=AlertType.AUTO_RECOVERED,
         severity=AlertSeverity.INFO,
         title=f"Recovery complete for {mailbox.email}",
-        message=f"Mailbox has been restored to WARMING_UP status.",
+        message="Mailbox has been restored to WARMING_UP status.",
     )
     db.add(alert)
     db.commit()

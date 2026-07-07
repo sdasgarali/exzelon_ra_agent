@@ -11,7 +11,7 @@ from app.api.deps.auth import get_current_active_user, require_role, get_current
 from app.core.rate_limiter import limiter
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
-from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
+from app.db.models.outreach_draft import OutreachDraft, DraftStatus
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.sender_mailbox import SenderMailbox

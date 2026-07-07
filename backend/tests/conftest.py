@@ -16,6 +16,14 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 from app.main import app
 from app.db.base import Base
 from app.api.deps.database import get_db
+
+# Disable API rate limiting during tests. The shared in-memory slowapi limiter
+# otherwise accumulates hits across tests (all TestClient requests share one key)
+# and returns 429 for endpoints like /auth/login (flaky, ordering/CI-dependent).
+# `enabled = False` alone proved unreliable across slowapi/runtime combos, so an
+# autouse fixture also clears the storage before every test — belt and suspenders.
+from app.core.rate_limiter import limiter as _rate_limiter
+_rate_limiter.enabled = False
 from app.core.security import get_password_hash, create_access_token
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant, TenantPlan
@@ -55,6 +63,18 @@ def db_session():
     finally:
         db.close()
         Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Clear rate-limiter state before every test so no test inherits another's
+    accumulated hits (which caused flaky 429s on /auth/login in CI)."""
+    _rate_limiter.enabled = False
+    try:
+        _rate_limiter._storage.reset()
+    except Exception:
+        pass
+    yield
 
 
 @pytest.fixture(scope="function")
@@ -223,6 +243,17 @@ def sa_headers(super_admin_token):
 def auth_headers(admin_token):
     """Create authorization headers with admin token."""
     return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture
+def super_admin_headers(super_admin_token):
+    """Authorization headers with a super-admin token.
+
+    Super admins bypass the `role_permissions`-based module/tab gating, so this is
+    used for endpoints (e.g. warmup) that gate on the `role_permissions` setting
+    which isn't seeded in the in-memory test DB.
+    """
+    return {"Authorization": f"Bearer {super_admin_token}"}
 
 
 @pytest.fixture

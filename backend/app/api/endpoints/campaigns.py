@@ -489,7 +489,6 @@ def create_campaign_from_leads(
     using active templates, and assigns all active mailboxes.
     """
     from app.db.models.lead import LeadDetails
-    from app.db.models.contact import ContactDetails
     from app.db.models.lead_contact import LeadContactAssociation
     from app.db.models.sender_mailbox import SenderMailbox
     from app.db.models.email_template import EmailTemplate
@@ -1785,7 +1784,6 @@ def campaign_daily_analytics(
 
     from app.db.models.outreach import OutreachEvent, OutreachStatus
     from datetime import datetime as dt, timedelta
-    from sqlalchemy import func, cast, Date
 
     start = dt.utcnow() - timedelta(days=days)
     daily_data = []
@@ -2393,7 +2391,6 @@ def ai_enhance_campaign(
 ):
     """Use LLM to improve campaign name and description based on lead data."""
     from app.db.models.lead import LeadDetails
-    from app.db.models.lead_contact import LeadContactAssociation
 
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
     if not campaign:
@@ -2530,11 +2527,11 @@ def ai_suggest_subjects(
     title_snippet = titles[0] if titles else "your team"
     return {
         "subjects": [
-            f"Quick question about {{{{company}}}}",
+            "Quick question about {{company}}",
             f"{{{{first_name}}}}, re: {title_snippet}",
-            f"Idea for {{{{company}}}}'s hiring",
+            "Idea for {{company}}'s hiring",
             f"{{{{first_name}}}} - saw your {title_snippet} opening",
-            f"Can we help with {{{{company}}}}'s growth?",
+            "Can we help with {{company}}'s growth?",
         ],
         "source": "template",
     }

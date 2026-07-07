@@ -14,7 +14,7 @@ import structlog
 from sqlalchemy import func as sa_func
 
 from app.db.base import SessionLocal
-from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES, is_closed_status
+from app.db.models.lead import LeadDetails, is_closed_status
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
@@ -295,7 +295,7 @@ def render_signature_html(sig_json: str) -> str:
 
 def get_active_template(db, category: str = "outreach", tenant_id: Optional[int] = None):
     """Get the currently active email template for a given category, if any."""
-    from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
+    from app.db.models.email_template import EmailTemplate, TemplateStatus
     query = db.query(EmailTemplate).filter(
         EmailTemplate.status == TemplateStatus.ACTIVE,
         EmailTemplate.category == category,
@@ -954,9 +954,6 @@ def run_outreach_for_lead(
     try:
         logger.info("Starting outreach for lead", lead_id=lead_id, dry_run=dry_run)
         clear_research_cache()
-
-        # Resolve business rules from DB settings (once, not per-contact)
-        biz_rules = resolve_business_rules(db, tenant_id=tenant_id)
 
         lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
         if not lead:

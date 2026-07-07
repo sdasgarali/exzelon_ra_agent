@@ -8,7 +8,7 @@ from app.db.models.email_validation import ValidationStatus
 
 class HunterAdapter(EmailValidationAdapter):
     """Adapter for Hunter.io email verification API.
-    
+
     Free tier: 25 verifications/month
     Docs: https://hunter.io/api/email-verifier
     """

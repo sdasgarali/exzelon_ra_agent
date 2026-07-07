@@ -1,5 +1,4 @@
 """OutreachDraft model — stores email drafts for preview & approve workflow."""
-from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import (
     Column, Integer, String, DateTime, Enum, Text, Boolean,

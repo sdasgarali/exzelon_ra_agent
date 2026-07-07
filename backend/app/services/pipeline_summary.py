@@ -347,7 +347,6 @@ def build_quality_funnel(pipeline_name: str, counters: Dict[str, Any], status: s
     """
     if status == "failed":
         errors = 1 if counters.get("errors", 0) == 0 else counters["errors"]
-        error_msg = "Pipeline failed"
         return {
             "total_discovered": 0,
             "new_added": 0,

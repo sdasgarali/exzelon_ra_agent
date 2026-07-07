@@ -150,7 +150,12 @@ export function CommandPalette() {
     if (query.length >= 2) {
       searchTimeout.current = setTimeout(() => searchApi(query), 300)
     } else {
-      setSearchResults([])
+      // Clear via functional updater so an already-empty list keeps the SAME
+      // reference — React bails out of the re-render. A bare `setSearchResults([])`
+      // creates a new array every render; combined with an unstable `searchApi`
+      // dep that re-runs this effect, it forms an infinite render loop
+      // ("Maximum update depth exceeded") that hangs tests and churns renders.
+      setSearchResults(prev => (prev.length === 0 ? prev : []))
     }
     return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current) }
   }, [query, searchApi])

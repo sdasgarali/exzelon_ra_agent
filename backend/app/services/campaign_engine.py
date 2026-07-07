@@ -21,7 +21,6 @@ from app.db.models.lead import LeadDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
-from app.core.config import settings
 
 logger = structlog.get_logger()
 
@@ -518,7 +517,6 @@ def _execute_email_step(
         )
 
     # Smart throttling: check hourly rate limit (daily_limit / 8 hours)
-    max_hourly = max(mailbox.daily_send_limit // 8, 2)
     # Apply daily jitter: use 85-95% of actual limit
     effective_daily = int(min(mailbox.daily_send_limit, effective_limit) * random.uniform(0.85, 0.95))
     if mailbox.emails_sent_today >= effective_daily:

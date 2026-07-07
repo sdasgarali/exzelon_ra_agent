@@ -1,5 +1,5 @@
 """Custom tracking domain model for email tracking."""
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from app.db.base import Base
 
 
