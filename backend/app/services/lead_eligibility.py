@@ -34,6 +34,7 @@ from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 from app.services.company_filters import (
     exceeds_size_ceiling,
+    below_size_floor,
     industry_is_excluded,
     is_placeholder_company,
     salary_below_threshold,
@@ -65,6 +66,12 @@ class LeadEligibilityGate:
             get_tenant_setting(
                 db, "lead_sourcing_max_employee_count",
                 tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_EMPLOYEE_COUNT,
+            )
+        )
+        self.min_employee_count = int(
+            get_tenant_setting(
+                db, "lead_sourcing_min_employee_count",
+                tenant_id=tenant_id, default=settings.LEAD_SOURCING_MIN_EMPLOYEE_COUNT,
             )
         )
         self.drop_confidential = bool(
@@ -209,6 +216,10 @@ class LeadEligibilityGate:
             size_signal = _field(lead, "company_size")
         if exceeds_size_ceiling(size_signal, self.max_employee_count):
             return False, "size_ceiling"
+
+        # 7) Size floor (unknown → not excluded).
+        if below_size_floor(size_signal, self.min_employee_count):
+            return False, "size_floor"
 
         return True, None
 

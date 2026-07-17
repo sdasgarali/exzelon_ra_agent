@@ -190,6 +190,12 @@ class Settings(BaseSettings):
     # TheirStack) after fetch/enrichment. Companies with >this many employees are
     # dropped at sourcing. Override per-tenant via `lead_sourcing_max_employee_count`.
     LEAD_SOURCING_MAX_EMPLOYEE_COUNT: int = 500
+    # Pipeline-wide company-size FLOOR applied to ALL sources after
+    # fetch/enrichment. Companies with fewer than this many employees are dropped
+    # at sourcing. Recall-preserving: unknown size is never dropped. Default 1 =
+    # effectively a no-op (keeps every company); raise to enforce a minimum ICP
+    # size. Override per-tenant via `lead_sourcing_min_employee_count`.
+    LEAD_SOURCING_MIN_EMPLOYEE_COUNT: int = 1
     # Drop postings with a placeholder/confidential/blank employer name.
     LEAD_SOURCING_DROP_CONFIDENTIAL: bool = True
     # Fill missing industry/size at sourcing via the configured AI adapter (Groq),
@@ -233,6 +239,10 @@ class Settings(BaseSettings):
         "talent acquisition agency", "temp agency",
         "employment agency", "executive search firm",
         "security agency",
+        # Insurance excluded per ICP decision 2026-07-17. Name-based catch (e.g.
+        # "Auto-Owners Insurance", "Selective Insurance") complements the
+        # industry-keyword gate for carriers whose industry isn't resolved.
+        "insurance",
     ]
 
     # Title-only exclusion keywords (matched only against job title)

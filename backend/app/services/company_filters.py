@@ -80,6 +80,28 @@ def exceeds_size_ceiling(value, ceiling: int) -> bool:
     return count > ceiling
 
 
+def below_size_floor(value, floor: int) -> bool:
+    """True when a parsed employee count is strictly below ``floor``.
+
+    Symmetric to :func:`exceeds_size_ceiling`: a minimum-size gate that drops
+    companies smaller than the ICP band. Recall-preserving in the same way —
+    unknown/unparseable sizes return False (never drop on unknown size), and a
+    non-positive floor disables the gate (``floor=1`` keeps every company with
+    at least one employee, i.e. effectively a no-op that leaves the mechanism in
+    place to tighten later).
+
+    Note ``parse_employee_count`` returns the LOWER bound of a band, so a band
+    like "51-200" parses to 51 and is compared against the floor — a company is
+    only dropped when even the smallest end of its size band is under the floor.
+    """
+    if not floor or floor <= 0:
+        return False
+    count = parse_employee_count(value)
+    if count is None:
+        return False
+    return count < floor
+
+
 # --- Salary -----------------------------------------------------------------
 
 
@@ -130,10 +152,11 @@ def salary_below_threshold(salary_min, salary_max, threshold) -> bool:
 
 # Substring keywords (lowercased) that mark an industry as out-of-scope.
 # Deliberately precise to avoid dropping target industries (Healthcare,
-# Manufacturing, Insurance, Financial Services, Construction, etc.). Notably we
-# do NOT include a bare "technology" (would catch "Biotechnology") or bare
-# "internet".
+# Manufacturing, Financial Services, Construction, etc.). Notably we do NOT
+# include a bare "technology" (would catch "Biotechnology") or bare "internet".
 DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS = [
+    # Insurance (excluded per ICP decision 2026-07-17 — was previously a target)
+    "insurance",
     # IT / Software
     "information technology",
     "it services",
