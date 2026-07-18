@@ -297,6 +297,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
   location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
   lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_min_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
+  lead_sourcing_max_posting_age_days: 'source_tuning', lead_sourcing_drop_expired_postings: 'source_tuning',
   lead_sourcing_excluded_industries: 'source_tuning', lead_sourcing_enrich_company_at_source: 'source_tuning',
   lead_sourcing_enrich_max_companies: 'source_tuning',
 }
@@ -508,6 +509,8 @@ export default function SettingsPage() {
     lead_sourcing_target_per_run: number;
     lead_sourcing_max_employee_count: number;
     lead_sourcing_min_employee_count: number;
+    lead_sourcing_max_posting_age_days: number;
+    lead_sourcing_drop_expired_postings: boolean;
     lead_sourcing_drop_confidential: boolean;
     lead_sourcing_excluded_industries: string[];
     lead_sourcing_enrich_company_at_source: boolean;
@@ -532,6 +535,8 @@ export default function SettingsPage() {
     lead_sourcing_target_per_run: 500,
     lead_sourcing_max_employee_count: 500,
     lead_sourcing_min_employee_count: 1,
+    lead_sourcing_max_posting_age_days: 14,
+    lead_sourcing_drop_expired_postings: true,
     lead_sourcing_drop_confidential: true,
     lead_sourcing_excluded_industries: [...DEFAULT_EXCLUDED_INDUSTRIES],
     lead_sourcing_enrich_company_at_source: true,
@@ -784,6 +789,8 @@ export default function SettingsPage() {
         lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
         lead_sourcing_max_employee_count: settingsMap.lead_sourcing_max_employee_count ?? 500,
         lead_sourcing_min_employee_count: settingsMap.lead_sourcing_min_employee_count ?? 1,
+        lead_sourcing_max_posting_age_days: settingsMap.lead_sourcing_max_posting_age_days ?? 14,
+        lead_sourcing_drop_expired_postings: settingsMap.lead_sourcing_drop_expired_postings !== false,
         lead_sourcing_drop_confidential: settingsMap.lead_sourcing_drop_confidential !== false,
         lead_sourcing_excluded_industries: (Array.isArray(settingsMap.lead_sourcing_excluded_industries) && settingsMap.lead_sourcing_excluded_industries.length > 0)
           ? settingsMap.lead_sourcing_excluded_industries
@@ -977,6 +984,8 @@ export default function SettingsPage() {
           saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
           saveSetting('lead_sourcing_max_employee_count', sourceTuningConfig.lead_sourcing_max_employee_count, 'integer'),
           saveSetting('lead_sourcing_min_employee_count', sourceTuningConfig.lead_sourcing_min_employee_count, 'integer'),
+          saveSetting('lead_sourcing_max_posting_age_days', sourceTuningConfig.lead_sourcing_max_posting_age_days, 'integer'),
+          saveSetting('lead_sourcing_drop_expired_postings', sourceTuningConfig.lead_sourcing_drop_expired_postings, 'boolean'),
           saveSetting('lead_sourcing_drop_confidential', sourceTuningConfig.lead_sourcing_drop_confidential, 'boolean'),
           saveSetting('lead_sourcing_excluded_industries', sourceTuningConfig.lead_sourcing_excluded_industries, 'list'),
           saveSetting('lead_sourcing_enrich_company_at_source', sourceTuningConfig.lead_sourcing_enrich_company_at_source, 'boolean'),
@@ -4318,7 +4327,33 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-gray-500 mt-1">Caps AI company lookups per run for cost/latency (default 300).</p>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Posting Age (days)
+                    <span className="ml-2 text-xs font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">0 = no age limit</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={sourceTuningConfig.lead_sourcing_max_posting_age_days}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_posting_age_days: parseInt(e.target.value) || 0 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Postings older than this are dropped after dedup (default 14). Enforces recency that job-board date filters only hint at.</p>
+                </div>
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={sourceTuningConfig.lead_sourcing_drop_expired_postings}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_drop_expired_postings: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Drop expired postings (source-provided expiration date in the past)</span>
+              </label>
 
               <label className="flex items-center gap-2 cursor-pointer mb-2">
                 <input

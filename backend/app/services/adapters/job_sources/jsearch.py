@@ -248,6 +248,14 @@ class JSearchAdapter(JobSourceAdapter):
         except (ValueError, TypeError, AttributeError):
             posting_date = date.today()
 
+        # Parse offer-expiration date if JSearch reports one (used by the freshness
+        # gate to drop already-closed postings). None when absent/unparseable.
+        exp_str = raw_data.get("job_offer_expiration_datetime_utc", "")
+        try:
+            expiration_date = datetime.fromisoformat(exp_str.replace("Z", "+00:00")).date() if exp_str else None
+        except (ValueError, TypeError, AttributeError):
+            expiration_date = None
+
         # Extract state from location
         state = raw_data.get("job_state", "")
         if not state:
@@ -283,6 +291,7 @@ class JSearchAdapter(JobSourceAdapter):
             "job_title": raw_data.get("job_title", "Unknown Position"),
             "state": self._normalize_state(state),
             "posting_date": posting_date,
+            "expiration_date": expiration_date,
             "job_link": raw_data.get("job_apply_link", "") or raw_data.get("job_google_link", ""),
             "salary_min": float(salary_min) if salary_min else None,
             "salary_max": float(salary_max) if salary_max else None,
