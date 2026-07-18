@@ -860,6 +860,10 @@ def run_lead_sourcing_pipeline(
         enrich_max_companies = int(get_tenant_setting(db, "lead_sourcing_enrich_max_companies", tenant_id=tenant_id, default=settings.LEAD_SOURCING_ENRICH_MAX_COMPANIES))
         min_salary_threshold = int(get_tenant_setting(db, "min_salary_threshold", tenant_id=tenant_id, default=settings.MIN_SALARY_THRESHOLD))
 
+        # Freshness gate — drop stale (too old) / expired postings after dedup.
+        max_posting_age_days = int(get_tenant_setting(db, "lead_sourcing_max_posting_age_days", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_POSTING_AGE_DAYS))
+        drop_expired_postings = bool(get_tenant_setting(db, "lead_sourcing_drop_expired_postings", tenant_id=tenant_id, default=settings.LEAD_SOURCING_DROP_EXPIRED_POSTINGS))
+
         # Location diversification (P2-F)
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
         target_states = get_tenant_setting(db, "target_states", tenant_id=tenant_id, default=["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"])
@@ -1115,6 +1119,16 @@ def run_lead_sourcing_pipeline(
 
         logger.info(f"After deduplication: {len(unique_jobs)} unique jobs (skipped {skipped_count} duplicates)")
 
+        # --- Freshness gate ---
+        # Drop stale (older than the age cap) and source-flagged expired postings
+        # before any enrichment spend. Recall-preserving: unknown dates never drop.
+        unique_jobs = _apply_freshness_gate(
+            unique_jobs,
+            counters,
+            max_posting_age_days=max_posting_age_days,
+            drop_expired=drop_expired_postings,
+        )
+
         # --- Company exclusion filter ---
         # Load active excluded company names for this tenant (normalized)
         from app.db.models.company_exclusion import CompanyExclusion, normalize_company_for_exclusion
@@ -1347,6 +1361,49 @@ def _extract_domain(url: str) -> str:
         return host
     except Exception:
         return ""
+
+
+def _apply_freshness_gate(
+    jobs: List[Dict[str, Any]],
+    counters: Dict[str, Any],
+    max_posting_age_days: int = 14,
+    drop_expired: bool = True,
+) -> List[Dict[str, Any]]:
+    """Drop stale / expired postings using dates already captured at fetch time.
+
+    Two independent, recall-preserving checks (unknown dates never drop):
+      * ``excluded_stale``   — ``posting_date`` older than ``max_posting_age_days``
+        (0 disables). This is the hard recency enforcement; ``posted_within_days``
+        is only a coarse upstream hint, so old postings otherwise leak through.
+      * ``excluded_expired`` — source-provided ``expiration_date`` in the past
+        (only some sources, e.g. JSearch, report one). Skipped when ``drop_expired``
+        is False.
+
+    Mutates ``counters`` with per-reason drop counts and returns survivors.
+    """
+    from app.services.posting_freshness import posting_too_old, posting_expired
+
+    counters.setdefault("excluded_stale", 0)
+    counters.setdefault("excluded_expired", 0)
+
+    if not jobs or (not max_posting_age_days and not drop_expired):
+        return jobs
+
+    kept: List[Dict[str, Any]] = []
+    for job in jobs:
+        if max_posting_age_days and posting_too_old(job.get("posting_date"), max_posting_age_days):
+            counters["excluded_stale"] += 1
+            continue
+        if drop_expired and posting_expired(job.get("expiration_date")):
+            counters["excluded_expired"] += 1
+            continue
+        kept.append(job)
+
+    logger.info(
+        "Freshness gate: dropped %s stale (>%sd) + %s expired postings",
+        counters["excluded_stale"], max_posting_age_days, counters["excluded_expired"],
+    )
+    return kept
 
 
 def _apply_company_gate(

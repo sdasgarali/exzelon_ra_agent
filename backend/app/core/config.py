@@ -196,6 +196,15 @@ class Settings(BaseSettings):
     # effectively a no-op (keeps every company); raise to enforce a minimum ICP
     # size. Override per-tenant via `lead_sourcing_min_employee_count`.
     LEAD_SOURCING_MIN_EMPLOYEE_COUNT: int = 1
+    # Freshness gate — drops stale/expired postings after fetch+dedup, before any
+    # enrichment spend. Recall-preserving: an unknown posting/expiration date is
+    # never dropped. `posted_within_days` is only a coarse API hint (week/month
+    # buckets), so this hard age cap is what actually enforces recency.
+    # 0 = disabled. Override per-tenant via `lead_sourcing_max_posting_age_days`.
+    LEAD_SOURCING_MAX_POSTING_AGE_DAYS: int = 14
+    # Drop postings whose source-provided offer-expiration date is in the past
+    # (only JSearch reports one today). Override via `lead_sourcing_drop_expired_postings`.
+    LEAD_SOURCING_DROP_EXPIRED_POSTINGS: bool = True
     # Drop postings with a placeholder/confidential/blank employer name.
     LEAD_SOURCING_DROP_CONFIDENTIAL: bool = True
     # Fill missing industry/size at sourcing via the configured AI adapter (Groq),
