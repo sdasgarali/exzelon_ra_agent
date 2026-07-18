@@ -298,6 +298,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
   lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_min_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
   lead_sourcing_max_posting_age_days: 'source_tuning', lead_sourcing_drop_expired_postings: 'source_tuning',
+  lead_sourcing_scrape_applicants: 'source_tuning', lead_sourcing_max_applicants: 'source_tuning', applicant_scrape_max_lookups: 'source_tuning',
   lead_sourcing_excluded_industries: 'source_tuning', lead_sourcing_enrich_company_at_source: 'source_tuning',
   lead_sourcing_enrich_max_companies: 'source_tuning',
 }
@@ -511,6 +512,9 @@ export default function SettingsPage() {
     lead_sourcing_min_employee_count: number;
     lead_sourcing_max_posting_age_days: number;
     lead_sourcing_drop_expired_postings: boolean;
+    lead_sourcing_scrape_applicants: boolean;
+    lead_sourcing_max_applicants: number;
+    applicant_scrape_max_lookups: number;
     lead_sourcing_drop_confidential: boolean;
     lead_sourcing_excluded_industries: string[];
     lead_sourcing_enrich_company_at_source: boolean;
@@ -537,6 +541,9 @@ export default function SettingsPage() {
     lead_sourcing_min_employee_count: 1,
     lead_sourcing_max_posting_age_days: 14,
     lead_sourcing_drop_expired_postings: true,
+    lead_sourcing_scrape_applicants: false,
+    lead_sourcing_max_applicants: 100,
+    applicant_scrape_max_lookups: 50,
     lead_sourcing_drop_confidential: true,
     lead_sourcing_excluded_industries: [...DEFAULT_EXCLUDED_INDUSTRIES],
     lead_sourcing_enrich_company_at_source: true,
@@ -791,6 +798,9 @@ export default function SettingsPage() {
         lead_sourcing_min_employee_count: settingsMap.lead_sourcing_min_employee_count ?? 1,
         lead_sourcing_max_posting_age_days: settingsMap.lead_sourcing_max_posting_age_days ?? 14,
         lead_sourcing_drop_expired_postings: settingsMap.lead_sourcing_drop_expired_postings !== false,
+        lead_sourcing_scrape_applicants: settingsMap.lead_sourcing_scrape_applicants === true,
+        lead_sourcing_max_applicants: settingsMap.lead_sourcing_max_applicants ?? 100,
+        applicant_scrape_max_lookups: settingsMap.applicant_scrape_max_lookups ?? 50,
         lead_sourcing_drop_confidential: settingsMap.lead_sourcing_drop_confidential !== false,
         lead_sourcing_excluded_industries: (Array.isArray(settingsMap.lead_sourcing_excluded_industries) && settingsMap.lead_sourcing_excluded_industries.length > 0)
           ? settingsMap.lead_sourcing_excluded_industries
@@ -986,6 +996,9 @@ export default function SettingsPage() {
           saveSetting('lead_sourcing_min_employee_count', sourceTuningConfig.lead_sourcing_min_employee_count, 'integer'),
           saveSetting('lead_sourcing_max_posting_age_days', sourceTuningConfig.lead_sourcing_max_posting_age_days, 'integer'),
           saveSetting('lead_sourcing_drop_expired_postings', sourceTuningConfig.lead_sourcing_drop_expired_postings, 'boolean'),
+          saveSetting('lead_sourcing_scrape_applicants', sourceTuningConfig.lead_sourcing_scrape_applicants, 'boolean'),
+          saveSetting('lead_sourcing_max_applicants', sourceTuningConfig.lead_sourcing_max_applicants, 'integer'),
+          saveSetting('applicant_scrape_max_lookups', sourceTuningConfig.applicant_scrape_max_lookups, 'integer'),
           saveSetting('lead_sourcing_drop_confidential', sourceTuningConfig.lead_sourcing_drop_confidential, 'boolean'),
           saveSetting('lead_sourcing_excluded_industries', sourceTuningConfig.lead_sourcing_excluded_industries, 'list'),
           saveSetting('lead_sourcing_enrich_company_at_source', sourceTuningConfig.lead_sourcing_enrich_company_at_source, 'boolean'),
@@ -4373,6 +4386,49 @@ export default function SettingsPage() {
                 />
                 <span className="text-sm font-medium">Fill missing industry/size via AI at sourcing (cached)</span>
               </label>
+
+              {/* High-Applicant Gate (scrape-based, paid) */}
+              <div className="mt-4 mb-4 border-t pt-4">
+                <label className="flex items-center gap-2 cursor-pointer mb-1">
+                  <input
+                    type="checkbox"
+                    checked={sourceTuningConfig.lead_sourcing_scrape_applicants}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_scrape_applicants: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm font-medium">Drop over-competed jobs (scrape LinkedIn/Indeed applicant counts)</span>
+                  <span className="ml-1 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Paid · Firecrawl</span>
+                </label>
+                <p className="text-xs text-gray-500 mb-3">Requires a Firecrawl API key (<code>FIRECRAWL_API_KEY</code> in .env). Scrapes only linkedin.com/indeed.com URLs, bounded per run. Unknown counts are kept.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Max Applicants</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000}
+                      value={sourceTuningConfig.lead_sourcing_max_applicants}
+                      onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_applicants: parseInt(e.target.value) || 0 })}
+                      className="input w-full"
+                      disabled={!sourceTuningConfig.lead_sourcing_scrape_applicants}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Jobs with more applicants than this are dropped (default 100; 0 = no drop).</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Max Applicant Lookups / Run</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={2000}
+                      value={sourceTuningConfig.applicant_scrape_max_lookups}
+                      onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, applicant_scrape_max_lookups: parseInt(e.target.value) || 0 })}
+                      className="input w-full"
+                      disabled={!sourceTuningConfig.lead_sourcing_scrape_applicants}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Caps scrapes per run for cost/latency (default 50).</p>
+                  </div>
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
