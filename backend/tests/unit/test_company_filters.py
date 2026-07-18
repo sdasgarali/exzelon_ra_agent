@@ -4,6 +4,7 @@ import pytest
 from app.services.company_filters import (
     parse_employee_count,
     exceeds_size_ceiling,
+    below_size_floor,
     industry_is_excluded,
     is_placeholder_company,
     salary_below_threshold,
@@ -72,6 +73,33 @@ class TestExceedsSizeCeiling:
         assert exceeds_size_ceiling(99999, 0) is False
 
 
+class TestBelowSizeFloor:
+    def test_under_floor_dropped(self):
+        assert below_size_floor("2-10 employees", 50) is True
+        assert below_size_floor("11-50 employees", 100) is True
+        assert below_size_floor(10, 50) is True
+
+    def test_at_or_above_floor_kept(self):
+        assert below_size_floor("51-200", 50) is False   # lower bound 51 >= 50
+        assert below_size_floor(50, 50) is False          # equal → keep
+        assert below_size_floor("201-500", 50) is False
+
+    def test_unknown_size_never_dropped(self):
+        assert below_size_floor(None, 50) is False
+        assert below_size_floor("", 50) is False
+        assert below_size_floor("unknown", 50) is False
+
+    def test_floor_of_one_is_noop(self):
+        # Default floor=1 keeps every company with a parseable size.
+        assert below_size_floor("2-10 employees", 1) is False
+        assert below_size_floor(1, 1) is False
+        assert below_size_floor(500, 1) is False
+
+    def test_disabled_floor(self):
+        assert below_size_floor(1, 0) is False
+        assert below_size_floor(1, -5) is False
+
+
 class TestIndustryIsExcluded:
     @pytest.mark.parametrize("industry", [
         "Computer Software",
@@ -82,12 +110,15 @@ class TestIndustryIsExcluded:
         "Staffing & Recruiting",
         "Government Administration",
         "Public Administration",
+        # Insurance excluded per ICP decision 2026-07-17.
+        "Insurance",
+        "Insurance Carriers",
+        "Insurance Agencies and Brokerages",
     ])
     def test_excluded(self, industry):
         assert industry_is_excluded(industry) is True
 
     @pytest.mark.parametrize("industry", [
-        "Insurance",
         "Financial Services",
         "Healthcare",
         "Manufacturing",

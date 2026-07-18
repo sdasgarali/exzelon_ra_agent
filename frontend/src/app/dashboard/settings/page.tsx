@@ -178,7 +178,7 @@ const TARGET_INDUSTRIES = [
   'Healthcare', 'Manufacturing', 'Logistics', 'Retail', 'BFSI',
   'Education', 'Engineering', 'Automotive', 'Construction', 'Energy',
   'Oil & Gas', 'Food & Beverage', 'Hospitality', 'Real Estate',
-  'Legal', 'Insurance', 'Financial Services', 'Industrial',
+  'Legal', 'Financial Services', 'Industrial',
   'Light Industrial', 'Heavy Industrial', 'Skilled Trades', 'Agriculture'
 ]
 
@@ -296,7 +296,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
   pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
   location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
-  lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
+  lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_min_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
   lead_sourcing_excluded_industries: 'source_tuning', lead_sourcing_enrich_company_at_source: 'source_tuning',
   lead_sourcing_enrich_max_companies: 'source_tuning',
 }
@@ -305,6 +305,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
 // backend company_filters.DEFAULT_EXCLUDED_INDUSTRY_KEYWORDS — shown pre-filled
 // so users can edit; clearing the box makes the backend fall back to this list.
 const DEFAULT_EXCLUDED_INDUSTRIES = [
+  'insurance',
   'information technology', 'it services', 'computer software', 'software development',
   'software', 'saas', 'information services', 'computer hardware', 'computer networking',
   'semiconductor', 'technology, information and internet',
@@ -506,6 +507,7 @@ export default function SettingsPage() {
     location_diversification: boolean;
     lead_sourcing_target_per_run: number;
     lead_sourcing_max_employee_count: number;
+    lead_sourcing_min_employee_count: number;
     lead_sourcing_drop_confidential: boolean;
     lead_sourcing_excluded_industries: string[];
     lead_sourcing_enrich_company_at_source: boolean;
@@ -529,6 +531,7 @@ export default function SettingsPage() {
     location_diversification: false,
     lead_sourcing_target_per_run: 500,
     lead_sourcing_max_employee_count: 500,
+    lead_sourcing_min_employee_count: 1,
     lead_sourcing_drop_confidential: true,
     lead_sourcing_excluded_industries: [...DEFAULT_EXCLUDED_INDUSTRIES],
     lead_sourcing_enrich_company_at_source: true,
@@ -780,6 +783,7 @@ export default function SettingsPage() {
         location_diversification: settingsMap.location_diversification === true,
         lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
         lead_sourcing_max_employee_count: settingsMap.lead_sourcing_max_employee_count ?? 500,
+        lead_sourcing_min_employee_count: settingsMap.lead_sourcing_min_employee_count ?? 1,
         lead_sourcing_drop_confidential: settingsMap.lead_sourcing_drop_confidential !== false,
         lead_sourcing_excluded_industries: (Array.isArray(settingsMap.lead_sourcing_excluded_industries) && settingsMap.lead_sourcing_excluded_industries.length > 0)
           ? settingsMap.lead_sourcing_excluded_industries
@@ -972,6 +976,7 @@ export default function SettingsPage() {
           saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
           saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
           saveSetting('lead_sourcing_max_employee_count', sourceTuningConfig.lead_sourcing_max_employee_count, 'integer'),
+          saveSetting('lead_sourcing_min_employee_count', sourceTuningConfig.lead_sourcing_min_employee_count, 'integer'),
           saveSetting('lead_sourcing_drop_confidential', sourceTuningConfig.lead_sourcing_drop_confidential, 'boolean'),
           saveSetting('lead_sourcing_excluded_industries', sourceTuningConfig.lead_sourcing_excluded_industries, 'list'),
           saveSetting('lead_sourcing_enrich_company_at_source', sourceTuningConfig.lead_sourcing_enrich_company_at_source, 'boolean'),
@@ -4280,6 +4285,22 @@ export default function SettingsPage() {
                     className="input w-full"
                   />
                   <p className="text-xs text-gray-500 mt-1">Companies larger than this are dropped (default 500).</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Min Company Size (employees)
+                    <span className="ml-2 text-xs font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">1 = no minimum</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000000}
+                    value={sourceTuningConfig.lead_sourcing_min_employee_count}
+                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_min_employee_count: parseInt(e.target.value) || 0 })}
+                    className="input w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Companies smaller than this are dropped (default 1 = keep all sizes).</p>
                 </div>
 
                 <div>

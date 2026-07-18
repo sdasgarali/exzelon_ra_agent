@@ -79,6 +79,33 @@ class TestGateRules:
         assert eligible is True
         assert reason is None
 
+    def test_insurance_industry_excluded(self, db_session, test_tenant):
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(_lead(industry="Insurance"))
+        assert eligible is False
+        assert reason == "industry_excluded"
+
+    def test_insurance_company_name_excluded(self, db_session, test_tenant):
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(_lead(client_name="Auto-Owners Insurance Company"))
+        assert eligible is False
+        assert reason == "keyword_excluded"
+
+    def test_default_floor_keeps_small_company(self, db_session, test_tenant):
+        """Default floor is 1 → tiny companies are still kept."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(_lead(company_size="2-10 employees"))
+        assert eligible is True
+        assert reason is None
+
+    def test_size_floor_drops_below_minimum(self, db_session, test_tenant):
+        """Raising the floor drops companies under the minimum ICP size."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        gate.min_employee_count = 50
+        eligible, reason = gate.check(_lead(company_size="2-10 employees"))
+        assert eligible is False
+        assert reason == "size_floor"
+
     def test_needs_resolution_flags_unknowns(self, db_session, test_tenant):
         gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
         assert gate.needs_resolution(_lead(industry=None)) is True

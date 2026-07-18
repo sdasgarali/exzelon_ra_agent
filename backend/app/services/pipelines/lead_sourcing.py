@@ -850,6 +850,7 @@ def run_lead_sourcing_pipeline(
         # Company size/industry gate (drops big / IT / staffing / government /
         # confidential companies that keyword filters can't catch by name alone).
         max_employee_count = int(get_tenant_setting(db, "lead_sourcing_max_employee_count", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_EMPLOYEE_COUNT))
+        min_employee_count = int(get_tenant_setting(db, "lead_sourcing_min_employee_count", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MIN_EMPLOYEE_COUNT))
         drop_confidential = bool(get_tenant_setting(db, "lead_sourcing_drop_confidential", tenant_id=tenant_id, default=settings.LEAD_SOURCING_DROP_CONFIDENTIAL))
         excluded_industries = get_tenant_setting(db, "lead_sourcing_excluded_industries", tenant_id=tenant_id, default=settings.EXCLUDED_INDUSTRY_KEYWORDS)
         if not isinstance(excluded_industries, list) or not excluded_industries:
@@ -1153,6 +1154,7 @@ def run_lead_sourcing_pipeline(
             counters,
             tenant_id=tenant_id,
             max_employee_count=max_employee_count,
+            min_employee_count=min_employee_count,
             drop_confidential=drop_confidential,
             excluded_industries=excluded_industries,
             enrich=enrich_company_at_source,
@@ -1353,6 +1355,7 @@ def _apply_company_gate(
     counters: Dict[str, Any],
     tenant_id: Optional[int] = None,
     max_employee_count: int = 500,
+    min_employee_count: int = 1,
     drop_confidential: bool = True,
     excluded_industries: Optional[List[str]] = None,
     enrich: bool = True,
@@ -1370,11 +1373,13 @@ def _apply_company_gate(
         is_placeholder_company,
         industry_is_excluded,
         exceeds_size_ceiling,
+        below_size_floor,
         salary_below_threshold,
     )
 
     counters.setdefault("excluded_confidential", 0)
     counters.setdefault("excluded_too_large", 0)
+    counters.setdefault("excluded_too_small", 0)
     counters.setdefault("excluded_industry", 0)
     counters.setdefault("excluded_salary", 0)
     counters.setdefault("enriched_companies", 0)
@@ -1443,15 +1448,19 @@ def _apply_company_gate(
         if exceeds_size_ceiling(size_signal, max_employee_count):
             counters["excluded_too_large"] += 1
             continue
+        if below_size_floor(size_signal, min_employee_count):
+            counters["excluded_too_small"] += 1
+            continue
         if industry_is_excluded(job.get("industry"), excluded_industries):
             counters["excluded_industry"] += 1
             continue
         final.append(job)
 
     logger.info(
-        "Company gate: dropped %s confidential, %s too-large, %s industry-excluded (enriched %s companies)",
+        "Company gate: dropped %s confidential, %s too-large, %s too-small, %s industry-excluded (enriched %s companies)",
         counters["excluded_confidential"], counters["excluded_too_large"],
-        counters["excluded_industry"], counters["enriched_companies"],
+        counters["excluded_too_small"], counters["excluded_industry"],
+        counters["enriched_companies"],
     )
     return final
 
