@@ -205,6 +205,16 @@ class Settings(BaseSettings):
     # Drop postings whose source-provided offer-expiration date is in the past
     # (only JSearch reports one today). Override via `lead_sourcing_drop_expired_postings`.
     LEAD_SOURCING_DROP_EXPIRED_POSTINGS: bool = True
+    # High-applicant gate — scrapes LinkedIn/Indeed job pages (via Firecrawl) for
+    # the applicant/clicked-apply count and drops over-competed postings. No job
+    # board returns this count, so it must be scraped: paid + slow, hence OFF by
+    # default and gated on FIRECRAWL_API_KEY. Recall-preserving (unknown → keep),
+    # bounded per run, and only linkedin.com/indeed.com URLs are scraped.
+    FIRECRAWL_API_KEY: str = ""
+    FIRECRAWL_SCRAPE_TIMEOUT: int = 20
+    LEAD_SOURCING_SCRAPE_APPLICANTS: bool = False
+    LEAD_SOURCING_MAX_APPLICANTS: int = 100  # drop when count > this; 0 disables
+    APPLICANT_SCRAPE_MAX_LOOKUPS: int = 50   # per-run scrape cap (cost guard)
     # Drop postings with a placeholder/confidential/blank employer name.
     LEAD_SOURCING_DROP_CONFIDENTIAL: bool = True
     # Fill missing industry/size at sourcing via the configured AI adapter (Groq),

@@ -864,6 +864,13 @@ def run_lead_sourcing_pipeline(
         max_posting_age_days = int(get_tenant_setting(db, "lead_sourcing_max_posting_age_days", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_POSTING_AGE_DAYS))
         drop_expired_postings = bool(get_tenant_setting(db, "lead_sourcing_drop_expired_postings", tenant_id=tenant_id, default=settings.LEAD_SOURCING_DROP_EXPIRED_POSTINGS))
 
+        # High-applicant gate — scrape LinkedIn/Indeed applicant counts (paid, off by default).
+        scrape_applicants = bool(get_tenant_setting(db, "lead_sourcing_scrape_applicants", tenant_id=tenant_id, default=settings.LEAD_SOURCING_SCRAPE_APPLICANTS))
+        max_applicants = int(get_tenant_setting(db, "lead_sourcing_max_applicants", tenant_id=tenant_id, default=settings.LEAD_SOURCING_MAX_APPLICANTS))
+        applicant_scrape_max_lookups = int(get_tenant_setting(db, "applicant_scrape_max_lookups", tenant_id=tenant_id, default=settings.APPLICANT_SCRAPE_MAX_LOOKUPS))
+        firecrawl_api_key = get_tenant_setting(db, "firecrawl_api_key", tenant_id=tenant_id) or settings.FIRECRAWL_API_KEY
+        firecrawl_scrape_timeout = int(get_tenant_setting(db, "firecrawl_scrape_timeout", tenant_id=tenant_id, default=settings.FIRECRAWL_SCRAPE_TIMEOUT))
+
         # Location diversification (P2-F)
         location_diversification = get_tenant_setting(db, "location_diversification", tenant_id=tenant_id, default=False)
         target_states = get_tenant_setting(db, "target_states", tenant_id=tenant_id, default=["CA", "TX", "FL", "NY", "IL", "PA", "OH", "GA", "NC", "MI"])
@@ -1176,6 +1183,23 @@ def run_lead_sourcing_pipeline(
             min_salary_threshold=min_salary_threshold,
         )
 
+        # --- High-applicant gate ---
+        # Runs LAST (only over survivors) since it's the most expensive: scrapes
+        # LinkedIn/Indeed pages for applicant counts and drops over-competed jobs.
+        # No-op unless enabled AND a Firecrawl key is present. Recall-preserving.
+        if scrape_applicants and firecrawl_api_key:
+            unique_jobs = _apply_applicant_gate(
+                db,
+                unique_jobs,
+                counters,
+                api_key=firecrawl_api_key,
+                max_applicants=max_applicants,
+                max_lookups=applicant_scrape_max_lookups,
+                timeout=firecrawl_scrape_timeout,
+                tenant_id=tenant_id,
+                run_id=job_run.run_id,
+            )
+
         # Process unique jobs
         newly_inserted_leads = []
         total_unique = len(unique_jobs)
@@ -1402,6 +1426,53 @@ def _apply_freshness_gate(
     logger.info(
         "Freshness gate: dropped %s stale (>%sd) + %s expired postings",
         counters["excluded_stale"], max_posting_age_days, counters["excluded_expired"],
+    )
+    return kept
+
+
+def _apply_applicant_gate(
+    db,
+    jobs: List[Dict[str, Any]],
+    counters: Dict[str, Any],
+    api_key: str,
+    max_applicants: int = 100,
+    max_lookups: int = 50,
+    timeout: int = 20,
+    tenant_id: Optional[int] = None,
+    run_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Drop over-competed postings by scraping LinkedIn/Indeed applicant counts.
+
+    Bounded + recall-preserving: only ``max_lookups`` scrapes per run, only
+    linkedin/indeed URLs, and any job whose count can't be resolved (or is at/
+    below ``max_applicants``) is kept. Sets the ``excluded_high_applicants``
+    counter. A zero/blank ``max_applicants`` disables the drop (scrape skipped).
+    """
+    counters.setdefault("excluded_high_applicants", 0)
+    if not jobs or not api_key or not max_applicants or max_applicants <= 0:
+        return jobs
+
+    from app.services.applicant_enrichment import resolve_applicant_counts
+    from app.services.applicant_parser import applicant_count_exceeds
+
+    counts = resolve_applicant_counts(
+        db, jobs, api_key, max_lookups=max_lookups, timeout=timeout,
+        tenant_id=tenant_id, run_id=run_id,
+    )
+    if not counts:
+        return jobs
+
+    kept = []
+    for job in jobs:
+        count = counts.get(id(job))
+        if applicant_count_exceeds(count, max_applicants):
+            counters["excluded_high_applicants"] += 1
+            continue
+        kept.append(job)
+
+    logger.info(
+        "Applicant gate: dropped %s over-competed postings (>%s applicants)",
+        counters["excluded_high_applicants"], max_applicants,
     )
     return kept
 
