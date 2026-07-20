@@ -49,15 +49,10 @@ export const useLobStore = create<LOBState>()(
       lobs: [],
       activeLobId: null,
       lobTypes: [],
-      setLobs: (lobs: LOB[]) => {
-        set({ lobs })
-        // Auto-select default LOB if no active selection
-        const current = get().activeLobId
-        if (current === null && lobs.length > 0) {
-          const defaultLob = lobs.find(l => l.is_default) || lobs[0]
-          set({ activeLobId: defaultLob.lob_id })
-        }
-      },
+      // Pure setter. Active-LOB selection (default pick, or reset to "All Lines
+      // of Business" when viewing All Tenants) is decided by the LobSelector,
+      // which has the tenant/impersonation context this store does not.
+      setLobs: (lobs: LOB[]) => set({ lobs }),
       setActiveLob: (lobId: number | null) => set({ activeLobId: lobId }),
       setLobTypes: (types: LOBTypeInfo[]) => set({ lobTypes: types }),
       getActiveLob: () => {
