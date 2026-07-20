@@ -7,6 +7,7 @@ Supports 3 entry points for draft generation:
 """
 import json
 import random
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
@@ -27,6 +28,24 @@ from app.db.models.email_template import EmailTemplate
 from app.services.spam_checker import check_spam_score
 
 logger = structlog.get_logger()
+
+# Block-level HTML tags that indicate a body is already HTML.
+_HTML_BLOCK_RE = re.compile(r"<(p|br|div|table|ul|ol|h[1-6])\b", re.IGNORECASE)
+
+
+def _message_to_html(body: str) -> str:
+    """Ensure a message body is HTML so line breaks render.
+
+    Campaign/AI bodies are authored as plain text with newlines; stored in
+    body_html they would collapse in any HTML view (preview and the sent
+    email). Convert newlines to <br> unless the body already contains block
+    HTML. Run BEFORE the signature (which is HTML) is appended.
+    """
+    if not body:
+        return body
+    if _HTML_BLOCK_RE.search(body):
+        return body
+    return body.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
 
 
 # ─── Draft Generation ────────────────────────────────────────────────
@@ -110,6 +129,10 @@ def generate_campaign_drafts(
         subject = process_spintax(subject, seed=cc.contact_id)
         body_html = process_spintax(body_html, seed=cc.contact_id)
         body_text = process_spintax(body_text, seed=cc.contact_id)
+
+        # Convert a plain-text message to HTML so line breaks render (do this
+        # before appending the HTML signature).
+        body_html = _message_to_html(body_html)
 
         # Render signature
         signature_html = ""
@@ -201,6 +224,8 @@ def generate_single_campaign_draft(
     subject = process_spintax(subject, seed=cc.contact_id)
     body_html = process_spintax(body_html, seed=cc.contact_id)
     body_text = process_spintax(body_text, seed=cc.contact_id)
+
+    body_html = _message_to_html(body_html)
 
     signature_html = ""
     if mailbox.email_signature_json:

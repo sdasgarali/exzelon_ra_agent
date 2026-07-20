@@ -69,8 +69,12 @@ def humanize_email(
 
     modifications: List[str] = []
 
-    # Work on plain text first, then mirror changes back to HTML
-    working_text = body_text or _strip_html(body_html)
+    # Preserve the rendered email signature — the humanizer must never rewrite
+    # or drop it. Split it off, humanize only the message, re-attach at the end.
+    message_html, signature_html = _split_signature(body_html)
+
+    # Work on the message plain text first, then mirror changes back to HTML.
+    working_text = _strip_html(message_html)
 
     # Step 0: Strip AI red-flag openers
     cleaned, stripped = _strip_ai_openers(working_text)
@@ -96,8 +100,8 @@ def humanize_email(
     if working_text != before:
         modifications.append(f"injected_imperfections:{intensity}")
 
-    # Step 4: Vary paragraph structure in HTML
-    result_html = body_html
+    # Step 4: Vary paragraph structure in HTML (message only)
+    result_html = message_html
     before_html = result_html
     result_html = _vary_paragraph_structure(result_html)
     if result_html != before_html:
@@ -105,7 +109,12 @@ def humanize_email(
 
     # Rebuild HTML body from modified text if we changed the text
     if modifications:
-        result_html = _rebuild_html_from_text(working_text, body_html)
+        result_html = _rebuild_html_from_text(working_text, message_html)
+
+    # Re-attach the untouched signature block.
+    result_html = result_html + signature_html
+    sig_text = _strip_html(signature_html)
+    result_text = working_text + (("\n\n" + sig_text) if sig_text else "")
 
     # Apply opener stripping to subject too
     for pattern in _AI_OPENERS:
@@ -121,9 +130,27 @@ def humanize_email(
     return {
         "subject": subject.strip(),
         "body_html": result_html,
-        "body_text": working_text,
+        "body_text": result_text,
         "modifications": modifications,
     }
+
+
+def _split_signature(html: str) -> tuple:
+    """Split an email body into (message_html, signature_html).
+
+    The signature is the block produced by render_signature_html, identifiable
+    by its distinctive top-border style. Returns ("", "") boundaries so callers
+    can humanize the message without touching the signature.
+    """
+    if not html:
+        return html, ""
+    pos = html.find("border-top:1px solid #cccccc")
+    if pos == -1:
+        return html, ""
+    div_start = html.rfind("<div", 0, pos)
+    if div_start == -1:
+        return html, ""
+    return html[:div_start], html[div_start:]
 
 
 # ---------------------------------------------------------------------------
