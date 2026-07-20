@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc
+from sqlalchemy import func, asc, desc, or_
 from pydantic import BaseModel
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
@@ -14,7 +14,10 @@ from app.db.models.user import User, UserRole
 from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
-from app.db.query_helpers import active_query, tenant_filter
+from app.db.query_helpers import (
+    active_query, tenant_filter,
+    SIZE_OPERATORS, effective_size_expr, size_operator_clause,
+)
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 from app.services.company_enrichment import enrich_client, bulk_enrich_clients
 from app.services.timezone_resolver import resolve_contact_timezone
@@ -82,7 +85,10 @@ async def list_clients(
     status: Optional[ClientStatus] = None,
     category: Optional[ClientCategory] = None,
     industry: Optional[str] = None,
-    company_size: Optional[str] = None,
+    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
+    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
+    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
+    company_size_include_unknown: bool = Query(False, description="Include companies with unknown size when a size filter is active"),
     location_state: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("client_name", description="Column to sort by"),
@@ -103,8 +109,13 @@ async def list_clients(
         query = query.filter(ClientInfo.client_category == category)
     if industry:
         query = query.filter(ClientInfo.industry == industry)
-    if company_size:
-        query = query.filter(ClientInfo.company_size == company_size)
+    if company_size_op in SIZE_OPERATORS and company_size_value is not None:
+        size_expr = effective_size_expr(ClientInfo.company_size, ClientInfo.employee_count)
+        clause = size_operator_clause(size_expr, company_size_op, company_size_value, company_size_value2)
+        if clause is not None:
+            if company_size_include_unknown:
+                clause = or_(clause, size_expr.is_(None))
+            query = query.filter(clause)
     if location_state:
         query = query.filter(ClientInfo.location_state == location_state)
     if search:

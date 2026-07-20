@@ -7,6 +7,7 @@ import { leadsApi, pipelinesApi, lobApi, api, getApiError } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { useLobStore } from '@/lib/lob-store'
 import { ContactsWizard } from '@/components/contacts-wizard'
+import { SizeFilter, SizeFilterValue, EMPTY_SIZE_FILTER, sizeFilterParams, sizeFilterActive } from '@/components/size-filter'
 
 interface Lead {
   lead_id: number
@@ -113,7 +114,7 @@ export default function LeadsPage() {
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
   const [filterIndustry, setFilterIndustry] = useState<string[]>([])
-  const [filterCompanySize, setFilterCompanySize] = useState<string[]>([])
+  const [sizeFilter, setSizeFilter] = useState<SizeFilterValue>(EMPTY_SIZE_FILTER)
   const [filterDataType, setFilterDataType] = useState('')
   const [filterEmploymentType, setFilterEmploymentType] = useState('')
   const [filterExcludeKeywords, setFilterExcludeKeywords] = useState<string[]>([])
@@ -250,11 +251,11 @@ export default function LeadsPage() {
   // Clear selections when filters change (not on page/sort changes)
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, pageSize, showArchived])
+  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, pageSize, showArchived])
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, filterCompanySize, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived, activeLobId])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived, activeLobId])
 
   const fetchLeads = async () => {
     try {
@@ -274,7 +275,7 @@ export default function LeadsPage() {
       if (filterFromDate) params.from_date = filterFromDate
       if (filterToDate) params.to_date = filterToDate
       if (filterIndustry.length) params.industry = filterIndustry
-      if (filterCompanySize.length) params.company_size = filterCompanySize
+      Object.assign(params, sizeFilterParams(sizeFilter))
       if (filterDataType) params.data_type = filterDataType
       if (filterEmploymentType) params.employment_type = filterEmploymentType
       if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
@@ -336,7 +337,7 @@ export default function LeadsPage() {
     setFilterFromDate('')
     setFilterToDate('')
     setFilterIndustry([])
-    setFilterCompanySize([])
+    setSizeFilter(EMPTY_SIZE_FILTER)
     setFilterDataType('')
     setFilterEmploymentType('')
     setFilterExcludeKeywords([])
@@ -868,7 +869,7 @@ export default function LeadsPage() {
   }
 
   const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, filterEmploymentType, search].filter(Boolean).length
-    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterCompanySize.length > 0 ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
+    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (sizeFilterActive(sizeFilter) ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
 
   // Helper: get column label with LOB overrides
   const colLabel = (field: string, defaultLabel: string): string => {
@@ -1259,15 +1260,9 @@ export default function LeadsPage() {
                 onChange={setFilterIndustry}
               />
             </div>
-            <div>
-              <label className="label text-sm">Company Size</label>
-              <MultiSelectDropdown
-                label="Sizes"
-                options={['unknown', ...leadFilterOptions.company_sizes]}
-                selected={filterCompanySize}
-                onChange={setFilterCompanySize}
-                labelMap={{ unknown: 'Unknown / Not Set' }}
-              />
+            <div className="col-span-2">
+              <label className="label text-sm">Company Size (employees)</label>
+              <SizeFilter value={sizeFilter} onChange={(v) => { setSizeFilter(v); setPage(1); }} />
             </div>
             <div>
               <label className="label text-sm">Data Type</label>

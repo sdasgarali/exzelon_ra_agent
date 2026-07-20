@@ -9,11 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc, or_
+from sqlalchemy import func, asc, desc, or_, and_
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.api.deps.plan_limits import check_plan_limit
-from app.db.query_helpers import tenant_filter
+from app.db.query_helpers import (
+    tenant_filter, SIZE_OPERATORS, effective_size_expr, size_operator_clause,
+)
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
@@ -81,7 +83,10 @@ async def list_leads(
     client_name: Optional[str] = None,
     job_title: Optional[str] = None,
     industry: Optional[List[str]] = Query(None),
-    company_size: Optional[List[str]] = Query(None),
+    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
+    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
+    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
+    company_size_include_unknown: bool = Query(False, description="Include leads with unknown size when a size filter is active"),
     data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
     employment_type: Optional[str] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
     exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
@@ -144,27 +149,37 @@ async def list_leads(
             (LeadDetails.industry.in_(industry)) |
             (LeadDetails.client_name.in_(matching_names) if matching_names else False)
         )
-    if company_size:
-        include_unknown = "unknown" in company_size
-        known_sizes = [s for s in company_size if s != "unknown"]
+    if company_size_op in SIZE_OPERATORS and company_size_value is not None:
+        # Effective numeric size: a lead's own parsed company_size wins; when it
+        # is unknown, fall back to its client's authoritative size (employee_count
+        # or parsed band) — mirroring the display COALESCE precedence.
+        lead_expr = effective_size_expr(LeadDetails.company_size)
+        client_expr = effective_size_expr(ClientInfo.company_size, ClientInfo.employee_count)
+
+        lead_clause = size_operator_clause(lead_expr, company_size_op, company_size_value, company_size_value2)
+        client_clause = size_operator_clause(client_expr, company_size_op, company_size_value, company_size_value2)
 
         conditions = []
-        if known_sizes:
-            client_q = db.query(ClientInfo.client_name).filter(ClientInfo.company_size.in_(known_sizes))
-            matching_names = [r[0] for r in client_q.all()]
-            conditions.append(LeadDetails.company_size.in_(known_sizes))
-            if matching_names:
-                conditions.append(LeadDetails.client_name.in_(matching_names))
+        if lead_clause is not None:
+            conditions.append(lead_clause)
+            if client_clause is not None:
+                cq = tenant_filter(
+                    db.query(ClientInfo.client_name).filter(client_clause), ClientInfo, tenant_id
+                )
+                client_match_names = [r[0] for r in cq.all()]
+                if client_match_names:
+                    # Defer to the client's size only when the lead's own is unknown.
+                    conditions.append(and_(lead_expr.is_(None), LeadDetails.client_name.in_(client_match_names)))
 
-        if include_unknown:
-            # Leads with no company_size AND whose client also has no size
-            clients_with_size = db.query(ClientInfo.client_name).filter(
-                ClientInfo.company_size.isnot(None), ClientInfo.company_size != ""
+        if company_size_include_unknown:
+            # Lead size unknown AND its client has no known size either.
+            known_client_q = tenant_filter(
+                db.query(ClientInfo.client_name).filter(client_expr.isnot(None)), ClientInfo, tenant_id
             )
-            clients_with_size_names = [r[0] for r in clients_with_size.all()]
-            unknown_cond = (LeadDetails.company_size.is_(None)) | (LeadDetails.company_size == "")
-            if clients_with_size_names:
-                unknown_cond = unknown_cond & (~LeadDetails.client_name.in_(clients_with_size_names))
+            known_client_names = [r[0] for r in known_client_q.all()]
+            unknown_cond = lead_expr.is_(None)
+            if known_client_names:
+                unknown_cond = and_(unknown_cond, ~LeadDetails.client_name.in_(known_client_names))
             conditions.append(unknown_cond)
 
         if conditions:
