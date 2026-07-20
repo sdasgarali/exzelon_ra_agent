@@ -39,6 +39,7 @@ export function LobSelector({ collapsed = false }: LobSelectorProps) {
   // Subscribe to impersonation so the selector re-evaluates when a super_admin
   // switches tenant (or back to "All Tenants").
   const impersonation = useAuthStore((s) => s.impersonation)
+  const isSuperAdmin = useAuthStore((s) => s.user?.role === 'super_admin')
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -88,6 +89,10 @@ export function LobSelector({ collapsed = false }: LobSelectorProps) {
   }
 
   const activeLob = lobs.find(l => l.lob_id === activeLobId) || null
+
+  // In "All Tenants" mode (super_admin, not impersonating) the list aggregates
+  // every tenant's LOBs — a cross-tenant selection is meaningless, so hide it.
+  if (isSuperAdmin && !impersonation) return null
 
   if (loading || lobs.length === 0) return null
 
