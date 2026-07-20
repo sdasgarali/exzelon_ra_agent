@@ -26,6 +26,9 @@ jest.mock('@/lib/api', () => ({
     list: jest.fn().mockResolvedValue({ items: [] }),
     impersonate: jest.fn().mockResolvedValue({}),
   },
+  authApi: {
+    me: jest.fn().mockResolvedValue({ user_id: 1, tenant: null }),
+  },
 }))
 
 jest.mock('@/components/error-boundary', () => ({

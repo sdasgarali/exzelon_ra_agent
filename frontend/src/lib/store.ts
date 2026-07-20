@@ -36,6 +36,7 @@ interface AuthState {
   impersonation: Impersonation | null
   rememberMe: boolean
   setAuth: (token: string, user: User, refreshToken?: string, rememberMe?: boolean) => void
+  setUser: (user: User) => void
   setTokens: (token: string, refreshToken: string) => void
   logout: () => void
   isAuthenticated: () => boolean
@@ -98,6 +99,7 @@ export const useAuthStore = create<AuthState>()(
         impersonation: null,
         rememberMe: rememberMe ?? get().rememberMe,
       }),
+      setUser: (user: User) => set({ user }),
       setTokens: (token: string, refreshToken: string) => set({
         token,
         refreshToken,

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
-import { warmupApi, tenantsApi } from '@/lib/api'
+import { warmupApi, tenantsApi, authApi } from '@/lib/api'
 import type { TenantSummary } from '@/types/api'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { OfflineBanner } from '@/components/offline-banner'
@@ -111,7 +111,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, logout, isAuthenticated, impersonation, startImpersonation, stopImpersonation } = useAuthStore()
+  const { user, setUser, logout, isAuthenticated, impersonation, startImpersonation, stopImpersonation } = useAuthStore()
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const { startTour } = useTour()
@@ -147,6 +147,16 @@ export default function DashboardLayout({
       router.push('/login')
     }
   }, [router, isAuthenticated, mounted])
+
+  // Refresh the cached user + tenant (name, logo, website, address) on load so
+  // admin-side tenant profile changes propagate without needing to re-login.
+  // Skip while impersonating to avoid overwriting the real user's identity.
+  useEffect(() => {
+    if (mounted && isAuthenticated() && !impersonation) {
+      authApi.me().then(fresh => { if (fresh?.user_id) setUser(fresh) }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, impersonation])
 
   useEffect(() => {
     if (mounted && isAuthenticated()) {
