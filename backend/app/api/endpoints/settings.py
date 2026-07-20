@@ -67,6 +67,8 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'jooble_api_key': 'job_source_apis',
     'jobdatafeeds_api_key': 'job_source_apis',
     'coresignal_api_key': 'job_source_apis',
+    'fantastic_jobs_api_key': 'job_source_apis',
+    'fantastic_jobs_host': 'job_source_apis',
     # AI/LLM
     'ai_provider': 'ai_llm',
     'groq_api_key': 'ai_llm',
@@ -210,6 +212,8 @@ DEFAULT_SETTINGS = {
     "jooble_api_key": {"value": "", "type": "string", "description": "Jooble API Key — Free 71-country job aggregator"},
     "jobdatafeeds_api_key": {"value": "", "type": "string", "description": "JobDataFeeds/Techmap API Key — Bulk jobs ($200-400/mo)"},
     "coresignal_api_key": {"value": "", "type": "string", "description": "Coresignal API Key — Jobs + recruiter contacts ($800-1,500/mo)"},
+    "fantastic_jobs_api_key": {"value": "", "type": "string", "description": "Fantastic.jobs direct API key (Bearer) — LinkedIn feed w/ company firmographics. Trial + plans from $95/mo at fantastic.jobs/api"},
+    "fantastic_jobs_host": {"value": "data.fantastic.jobs", "type": "string", "description": "Fantastic.jobs API host (direct API: data.fantastic.jobs; RapidAPI ATS feed: active-jobs-db.p.rapidapi.com)"},
 
     # New Contact Discovery API Keys
     "hunter_contact_api_key": {"value": "", "type": "string", "description": "Hunter.io API key for contact finder (Free: 25 req/mo | Paid: from $49/mo)"},
@@ -951,7 +955,7 @@ async def update_setting(
         )
         if not isinstance(raw, dict):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="job_source_tuning must be a JSON object")
-        valid_adapters = {"jsearch", "serpapi", "searchapi", "adzuna", "theirstack", "usajobs", "jooble", "jobdatafeeds", "coresignal"}
+        valid_adapters = {"jsearch", "serpapi", "searchapi", "adzuna", "theirstack", "usajobs", "jooble", "jobdatafeeds", "coresignal", "fantastic_jobs"}
         for adapter_name, params in raw.items():
             if adapter_name not in valid_adapters:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown adapter: {adapter_name}")
@@ -1092,6 +1096,7 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
     'jooble': 'job_source_apis',
     'jobdatafeeds': 'job_source_apis',
     'coresignal': 'job_source_apis',
+    'fantastic_jobs': 'job_source_apis',
     'seamless': 'contacts',
     'hunter_contact': 'contacts',
     'snovio': 'contacts',
@@ -1360,6 +1365,18 @@ async def test_provider_connection(
                 return {"status": "error", "message": "Coresignal API key not configured. Get one at https://coresignal.com/", "provider": provider}
             from app.services.adapters.job_sources.coresignal import CoresignalAdapter
             adapter = CoresignalAdapter(api_key=api_key)
+            try:
+                result = adapter.test_connection()
+            except Exception as e:
+                return {"status": "failed", "message": f"Connection error: {e}", "provider": provider}
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed - check your API key", "provider": provider}
+
+        elif provider == "fantastic_jobs":
+            api_key = _gs("fantastic_jobs_api_key")
+            if not api_key:
+                return {"status": "error", "message": "Fantastic.jobs API key not configured. Get one at https://fantastic.jobs/api", "provider": provider}
+            from app.services.adapters.job_sources.fantastic_jobs import FantasticJobsAdapter
+            adapter = FantasticJobsAdapter(api_key=api_key, host=_gs("fantastic_jobs_host") or None)
             try:
                 result = adapter.test_connection()
             except Exception as e:
