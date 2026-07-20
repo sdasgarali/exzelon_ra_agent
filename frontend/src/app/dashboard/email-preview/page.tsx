@@ -910,16 +910,17 @@ export default function EmailPreviewPage() {
                     className="w-full h-full min-h-[300px] text-sm border border-gray-300 dark:border-gray-600 rounded p-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono resize-none"
                   />
                 ) : (
-                  <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-                    <div
-                      className="prose prose-sm dark:prose-invert max-w-none"
-                      dangerouslySetInnerHTML={{
-                        __html: showOriginal
-                          ? (selectedDraft.original_body_html || selectedDraft.body_html)
-                          : selectedDraft.body_html
-                      }}
-                    />
-                  </div>
+                  // Render the email as HTML in a sandboxed iframe (isolated,
+                  // no scripts). Convert any leftover plain-text newlines to
+                  // <br> so bodies stored as text still display correctly.
+                  <iframe
+                    title="Email preview"
+                    sandbox=""
+                    srcDoc={((showOriginal
+                      ? (selectedDraft.original_body_html || selectedDraft.body_html)
+                      : selectedDraft.body_html) || '').replace(/\r\n|\r|\n/g, '<br>')}
+                    className="w-full h-full min-h-[360px] rounded-lg border border-gray-200 dark:border-gray-700 bg-white"
+                  />
                 )}
               </div>
 
