@@ -175,12 +175,13 @@ export default function MailboxesPage() {
     role_id: number
     role_name: string
     description: string | null
+    purpose: string | null
     is_system: boolean
     mailbox_count: number
   }
   const [outreachRoles, setOutreachRoles] = useState<OutreachRole[]>([])
   const [showRolesModal, setShowRolesModal] = useState(false)
-  const [roleFormData, setRoleFormData] = useState({ role_name: '', description: '' })
+  const [roleFormData, setRoleFormData] = useState({ role_name: '', description: '', purpose: '' })
   const [editingRole, setEditingRole] = useState<OutreachRole | null>(null)
   const [roleSaving, setRoleSaving] = useState(false)
 
@@ -922,7 +923,7 @@ export default function MailboxesPage() {
         <div className="flex space-x-3">
           {isSuperAdmin && (
             <button
-              onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }}
+              onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
             >
               Manage Roles
@@ -1379,7 +1380,7 @@ export default function MailboxesPage() {
                         <option value="">— Select Role —</option>
                         {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
                       </select>
-                      <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                      <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
                     </div>
                   </div>
                   <div className="sm:col-span-2">
@@ -2386,7 +2387,7 @@ export default function MailboxesPage() {
                             <option value="">— Select Role —</option>
                             {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
                           </select>
-                          <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                          <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
                         </div>
                       </div>
                     </div>
@@ -2510,12 +2511,13 @@ export default function MailboxesPage() {
                       {role.role_name}
                       {role.is_system && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">System</span>}
                     </div>
-                    {role.description && <div className="text-xs text-gray-500">{role.description}</div>}
-                    <div className="text-xs text-gray-400">{role.mailbox_count} mailbox{role.mailbox_count !== 1 ? 'es' : ''}</div>
+                    {role.description && <div className="text-xs text-gray-500"><span className="font-medium">Description:</span> {role.description}</div>}
+                    {role.purpose && <div className="text-xs text-gray-500"><span className="font-medium">Purpose:</span> {role.purpose}</div>}
+                    <div className="text-xs text-gray-400 mt-0.5">{role.mailbox_count} mailbox{role.mailbox_count !== 1 ? 'es' : ''}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => { setEditingRole(role); setRoleFormData({ role_name: role.role_name, description: role.description || '' }) }}
+                      onClick={() => { setEditingRole(role); setRoleFormData({ role_name: role.role_name, description: role.description || '', purpose: role.purpose || '' }) }}
                       className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
                     >
                       Edit
@@ -2547,7 +2549,7 @@ export default function MailboxesPage() {
               <h3 className="text-sm font-semibold text-gray-700 mb-3">{editingRole ? 'Edit Role' : 'Add New Role'}</h3>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Role Name</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role / Title <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     value={roleFormData.role_name}
@@ -2563,13 +2565,23 @@ export default function MailboxesPage() {
                     value={roleFormData.description}
                     onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg text-sm"
-                    placeholder="Optional description..."
+                    placeholder="Shown as the Title / Role in the email signature"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Purpose</label>
+                  <textarea
+                    value={roleFormData.purpose}
+                    onChange={(e) => setRoleFormData({ ...roleFormData, purpose: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    rows={2}
+                    placeholder="What this role is used for (e.g. sources candidates for open roles)"
                   />
                 </div>
                 <div className="flex justify-end gap-2">
                   {editingRole && (
                     <button
-                      onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }) }}
+                      onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }) }}
                       className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border rounded-lg"
                     >
                       Cancel
@@ -2588,7 +2600,7 @@ export default function MailboxesPage() {
                           toast('success', 'Role created')
                         }
                         setEditingRole(null)
-                        setRoleFormData({ role_name: '', description: '' })
+                        setRoleFormData({ role_name: '', description: '', purpose: '' })
                         fetchData()
                       } catch (err: any) {
                         toast('error', err.response?.data?.detail || 'Failed to save role')
