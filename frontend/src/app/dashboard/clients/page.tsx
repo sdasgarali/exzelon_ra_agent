@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { clientsApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { SizeFilter, SizeFilterValue, EMPTY_SIZE_FILTER, sizeFilterParams, sizeFilterActive } from '@/components/size-filter'
 
 interface Client {
   client_id: number
@@ -84,7 +85,7 @@ export default function ClientsPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterIndustry, setFilterIndustry] = useState('')
-  const [filterSize, setFilterSize] = useState('')
+  const [sizeFilter, setSizeFilter] = useState<SizeFilterValue>(EMPTY_SIZE_FILTER)
   const [filterState, setFilterState] = useState('')
   const [filterEnrichment, setFilterEnrichment] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -120,7 +121,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterSize, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, sizeFilter, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
 
   const fetchClients = async () => {
     try {
@@ -136,7 +137,7 @@ export default function ClientsPage() {
       if (filterStatus) params.status = filterStatus
       if (filterCategory) params.category = filterCategory
       if (filterIndustry) params.industry = filterIndustry
-      if (filterSize) params.company_size = filterSize
+      Object.assign(params, sizeFilterParams(sizeFilter))
       if (filterState) params.location_state = filterState
       if (filterEnrichment) params.enrichment = filterEnrichment
       if (showArchived) params.show_archived = true
@@ -309,7 +310,7 @@ export default function ClientsPage() {
     setFilterStatus('')
     setFilterCategory('')
     setFilterIndustry('')
-    setFilterSize('')
+    setSizeFilter(EMPTY_SIZE_FILTER)
     setFilterState('')
     setFilterEnrichment('')
     setShowArchived(false)
@@ -351,7 +352,7 @@ export default function ClientsPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
-  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterSize, filterState, filterEnrichment, search].filter(Boolean).length + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterState, filterEnrichment, search].filter(Boolean).length + (sizeFilterActive(sizeFilter) ? 1 : 0) + (showArchived ? 1 : 0)
 
   const PaginationBar = ({ className = '' }: { className?: string }) => (
     <div className={`bg-gray-50 px-6 py-3 flex items-center justify-between ${className}`}>
@@ -526,18 +527,7 @@ export default function ClientsPage() {
             </select>
           )}
 
-          {filterOptions.company_sizes.length > 0 && (
-            <select
-              value={filterSize}
-              onChange={(e) => { setFilterSize(e.target.value); setPage(1); }}
-              className="input w-36"
-            >
-              <option value="">All Sizes</option>
-              {filterOptions.company_sizes.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          )}
+          <SizeFilter value={sizeFilter} onChange={(v) => { setSizeFilter(v); setPage(1); }} />
 
           {filterOptions.location_states.length > 0 && (
             <select
