@@ -259,6 +259,14 @@ def render_signature_html(sig_json: str) -> str:
         return ''
 
     parts = []
+    if sig.get('logo_url'):
+        logo = sig['logo_url']
+        if not logo.startswith('http'):
+            logo = 'https://' + logo
+        parts.append(
+            f'<img src="{logo}" alt="{sig.get("company", "")}" '
+            'style="max-height:48px;max-width:200px;margin-bottom:8px;border:0;display:block;" />'
+        )
     if sig.get('sender_name'):
         parts.append(f'<strong style="font-size:14px;color:#333333;">{sig["sender_name"]}</strong>')
     if sig.get('title'):

@@ -519,6 +519,10 @@ async def create_mailbox(
     mailbox = SenderMailbox(
         email=mailbox_in.email,
         display_name=mailbox_in.display_name,
+        sender_first_name=mailbox_in.sender_first_name,
+        sender_last_name=mailbox_in.sender_last_name,
+        phone=mailbox_in.phone,
+        linkedin_url=mailbox_in.linkedin_url,
         password=encrypt_field(mailbox_in.password) if mailbox_in.password else None,
         auth_method=mailbox_in.auth_method,
         oauth_tenant_id=mailbox_in.oauth_tenant_id,
@@ -531,6 +535,7 @@ async def create_mailbox(
         is_active=mailbox_in.is_active,
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
+        email_signature_json=mailbox_in.email_signature_json,
         tenant_id=tenant_id or 1,
         outreach_role_id=role_id,
     )
