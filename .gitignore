@@ -102,3 +102,6 @@ backend/data/invoices/
 *.tmp
 *.temp
 *.docx
+
+# Firecrawl research artifacts
+.firecrawl/
