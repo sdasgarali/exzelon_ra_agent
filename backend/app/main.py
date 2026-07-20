@@ -320,6 +320,20 @@ def _seed_outreach_roles():
     from app.db.models.outreach_role import OutreachRole
     from app.db.models.tenant import Tenant
     from app.db.models.sender_mailbox import SenderMailbox
+
+    # Migration: add purpose to outreach_roles (must run before any ORM insert
+    # of OutreachRole, since the model now maps the column).
+    try:
+        from sqlalchemy import text as _sa_text_rp, inspect as _sa_inspect_rp
+        with engine.connect() as _conn_rp:
+            _cols_rp = [c["name"] for c in _sa_inspect_rp(engine).get_columns("outreach_roles")]
+            if "purpose" not in _cols_rp:
+                _conn_rp.execute(_sa_text_rp("ALTER TABLE outreach_roles ADD COLUMN purpose TEXT NULL"))
+                _conn_rp.commit()
+                logger.info("Migration: added purpose column to outreach_roles")
+    except Exception as e:
+        logger.warning(f"Migration check for outreach_roles.purpose: {e}")
+
     db = SessionLocal()
     try:
         tenants = db.query(Tenant.tenant_id).all()

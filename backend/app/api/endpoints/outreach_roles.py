@@ -22,17 +22,20 @@ router = APIRouter(prefix="/outreach-roles", tags=["Outreach Roles"])
 class OutreachRoleCreate(BaseModel):
     role_name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
+    purpose: Optional[str] = None
 
 
 class OutreachRoleUpdate(BaseModel):
     role_name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
+    purpose: Optional[str] = None
 
 
 class OutreachRoleResponse(BaseModel):
     role_id: int
     role_name: str
     description: Optional[str] = None
+    purpose: Optional[str] = None
     is_system: bool = False
     mailbox_count: int = 0
 
@@ -69,6 +72,7 @@ async def list_outreach_roles(
             role_id=r.role_id,
             role_name=r.role_name,
             description=r.description,
+            purpose=r.purpose,
             is_system=r.is_system,
             mailbox_count=count_map.get(r.role_id, 0),
         )
@@ -104,6 +108,7 @@ async def create_outreach_role(
         tenant_id=tid,
         role_name=body.role_name,
         description=body.description,
+        purpose=body.purpose,
         is_system=False,
     )
     db.add(role)
@@ -114,6 +119,7 @@ async def create_outreach_role(
         role_id=role.role_id,
         role_name=role.role_name,
         description=role.description,
+        purpose=role.purpose,
         is_system=role.is_system,
         mailbox_count=0,
     )
@@ -157,6 +163,9 @@ async def update_outreach_role(
     if body.description is not None:
         role.description = body.description
 
+    if body.purpose is not None:
+        role.purpose = body.purpose
+
     db.commit()
     db.refresh(role)
 
@@ -171,6 +180,7 @@ async def update_outreach_role(
         role_id=role.role_id,
         role_name=role.role_name,
         description=role.description,
+        purpose=role.purpose,
         is_system=role.is_system,
         mailbox_count=count or 0,
     )

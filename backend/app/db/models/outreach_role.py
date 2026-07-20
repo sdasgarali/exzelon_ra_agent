@@ -11,8 +11,9 @@ class OutreachRole(Base):
 
     role_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
-    role_name = Column(String(100), nullable=False)
+    role_name = Column(String(100), nullable=False)  # a.k.a. Role / Title
     description = Column(Text, nullable=True)
+    purpose = Column(Text, nullable=True)  # what this role is used for in outreach
     is_system = Column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
