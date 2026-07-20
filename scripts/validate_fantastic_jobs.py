@@ -74,21 +74,23 @@ def _auth_headers(api: str, host: str, key: str) -> dict:
     return {"x-rapidapi-key": key, "x-rapidapi-host": host}
 
 
-def fetch_page(client, url, host, key, api, location, title_or, time_frame, offset, max_emp):
+def fetch_page(client, url, host, key, api, location, title_or, time_frame, offset, max_emp, feed="jb"):
     params = {
         "limit": 100,
         "offset": offset,
         "time_frame": time_frame,               # 24h | 7d
         "location": location,                   # supports OR, e.g. "United States"
-        "description_format": "text",
     }
     if title_or:
         params["title"] = title_or              # OR of quoted titles
     if api == "direct":
-        # v1 params — company data + server-side size push (LinkedIn active-jb feed)
-        params["include_basic_organization_details"] = "true"
+        # Server-side size push. Org fields (headcount/industry/agency) are
+        # ALWAYS returned on active-jb; the include_basic_organization_details
+        # flag is active-ats ONLY (sending it on active-jb → HTTP 400).
         params["organization_headcount_gte"] = 1
         params["organization_headcount_lt"] = max_emp + 1
+        if feed == "ats":
+            params["include_basic_organization_details"] = "true"
     r = client.get(url, params=params, headers=_auth_headers(api, host, key), timeout=60)
     if r.status_code != 200:
         print(f"\nHTTP {r.status_code} from {r.request.url}\n{r.text[:400]}", file=sys.stderr)
@@ -154,7 +156,7 @@ def main():
     with httpx.Client() as client:
         for p in range(args.pages):
             batch = fetch_page(client, url, args.host, args.key, args.api, args.location,
-                               title_adv, time_frame, p * 100, args.max_emp)
+                               title_adv, time_frame, p * 100, args.max_emp, args.feed)
             if batch is None:
                 break
             if not batch:

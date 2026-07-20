@@ -109,11 +109,14 @@ class FantasticJobsAdapter(JobSourceAdapter):
                     "offset": page * 100,
                     "time_frame": time_frame,
                     "location": location,
-                    "description_format": "text",
-                    "include_basic_organization_details": "true",
-                    # server-side ICP push
+                    # server-side ICP push. On active-jb the LinkedIn org fields
+                    # (headcount/industry/agency) are ALWAYS returned — the
+                    # include_basic_organization_details flag is active-ats ONLY
+                    # and returns HTTP 400 here, so we must NOT send it.
                     "organization_headcount_gte": 1,
                     "organization_headcount_lt": (max_employee_count or 200) + 1,
+                    # drop postings that duplicate an ATS-feed listing
+                    "exclude_ats_duplicate": "true",
                 }
                 if title_or:
                     params["title"] = title_or

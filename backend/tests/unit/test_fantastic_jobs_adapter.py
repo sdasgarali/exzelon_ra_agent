@@ -63,3 +63,34 @@ def test_normalize_maps_company_fields():
 def test_registered_in_source_tiers():
     assert SOURCE_TIERS.get("fantastic_jobs") == 1        # always-run tier
     assert "fantastic_jobs" in SOURCE_COST_RANK            # has a run-order rank
+
+
+def test_fetch_jobs_omits_ats_only_param(monkeypatch):
+    """active-jb rejects include_basic_organization_details (active-ats only)
+    with HTTP 400 — regression: it must NEVER appear in the query, and the
+    server-side size bounds must be present. Org fields are always-on on JB."""
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+        def json(self):  # one page then stop (len < 100)
+            return [{"id": 1, "organization": "Acme", "org_linkedin_headcount": 50}]
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None, timeout=None):
+            captured.update(params or {})
+            return _Resp()
+
+    monkeypatch.setattr(
+        "app.services.adapters.job_sources.fantastic_jobs.httpx.Client", _Client
+    )
+    a = FantasticJobsAdapter(api_key="k")
+    jobs = a.fetch_jobs(location="United States", posted_within_days=1, limit=100,
+                        tuning={"max_pages": 1, "max_employee_count": 200})
+    assert jobs and jobs[0]["client_name"] == "Acme"
+    assert "include_basic_organization_details" not in captured
+    assert captured["organization_headcount_lt"] == 201
+    assert captured["time_frame"] == "24h"
