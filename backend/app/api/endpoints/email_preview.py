@@ -627,10 +627,10 @@ def apply_spam_fixes(
 def bulk_delete_drafts(
     data: BulkDeleteDraftsRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Permanently delete multiple drafts. Super Admin only."""
+    """Permanently delete multiple drafts. Admin and Super Admin."""
     if not data.draft_ids:
         raise HTTPException(400, "No draft IDs provided")
 
@@ -650,10 +650,10 @@ def bulk_delete_drafts(
 def delete_all_drafts(
     status: Optional[str] = Query(None, description="Only delete drafts with this status"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
+    user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Delete ALL drafts for the current tenant. Super Admin only. Optionally filter by status."""
+    """Delete ALL drafts for the current tenant. Admin and Super Admin. Optionally filter by status."""
     query = db.query(OutreachDraft)
     if tenant_id is not None:
         query = query.filter(OutreachDraft.tenant_id == tenant_id)

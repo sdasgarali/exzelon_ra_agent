@@ -118,7 +118,8 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
 export default function EmailPreviewPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
+  // Admins (and super admins) may select and delete preview drafts.
+  const isAdmin = useAuthStore((s) => s.isAdmin())
 
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loading, setLoading] = useState(true)
@@ -672,7 +673,7 @@ export default function EmailPreviewPage() {
                 {sendingBatch ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 Send Selected ({selectedIds.size})
               </button>
-              {isSuperAdmin && (
+              {isAdmin && (
                 <button
                   onClick={handleBulkDelete}
                   disabled={bulkDeleting}
@@ -706,7 +707,7 @@ export default function EmailPreviewPage() {
               Send All ({approvedCount})
             </button>
           )}
-          {isSuperAdmin && total > 0 && (
+          {isAdmin && total > 0 && (
             <button
               onClick={handleDeleteAll}
               disabled={deletingAll}
@@ -739,7 +740,7 @@ export default function EmailPreviewPage() {
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400"
               />
             </div>
-            {isSuperAdmin && filteredDrafts.length > 0 && (
+            {isAdmin && filteredDrafts.length > 0 && (
               <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 px-1">
                 <input
                   type="checkbox"
@@ -776,7 +777,7 @@ export default function EmailPreviewPage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2 min-w-0">
-                      {isSuperAdmin && (
+                      {isAdmin && (
                         <input
                           type="checkbox"
                           checked={selectedIds.has(draft.draft_id)}
