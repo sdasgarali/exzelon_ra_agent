@@ -111,6 +111,49 @@ class TestLeadsSizeClientFallback:
         assert _names(r.json()) == {"BigCo"}
 
 
+class TestLeadsSalaryFilter:
+    """Range-aware salary filtering on the leads endpoint."""
+
+    @pytest.fixture(autouse=True)
+    def seed(self, db_session, test_tenant):
+        t = test_tenant.tenant_id
+        _mk_lead(db_session, t, "MidHigh", None, salary_min=50000, salary_max=70000)
+        _mk_lead(db_session, t, "LowOnly", None, salary_min=30000)            # point 30k
+        _mk_lead(db_session, t, "HighOnly", None, salary_max=120000)          # point 120k
+        _mk_lead(db_session, t, "Upper", None, salary_min=90000, salary_max=110000)
+        _mk_lead(db_session, t, "NoSalary", None)                             # unknown
+        _mk_lead(db_session, t, "ZeroSalary", None, salary_min=0, salary_max=0)  # unknown
+        db_session.commit()
+
+    def test_greater_than_tests_upper_bound(self, client, auth_headers):
+        r = client.get("/api/v1/leads?salary_op=gt&salary_value=100000", headers=auth_headers)
+        assert r.status_code == 200
+        assert _names(r.json()) == {"HighOnly", "Upper"}
+
+    def test_less_than_tests_lower_bound(self, client, auth_headers):
+        r = client.get("/api/v1/leads?salary_op=lt&salary_value=40000", headers=auth_headers)
+        assert _names(r.json()) == {"LowOnly"}
+
+    def test_equals_is_inside_range(self, client, auth_headers):
+        r = client.get("/api/v1/leads?salary_op=eq&salary_value=60000", headers=auth_headers)
+        assert _names(r.json()) == {"MidHigh"}
+
+    def test_between_overlaps(self, client, auth_headers):
+        r = client.get("/api/v1/leads?salary_op=between&salary_value=65000&salary_value2=95000", headers=auth_headers)
+        assert _names(r.json()) == {"MidHigh", "Upper"}
+
+    def test_not_equal_outside_range_excludes_unknown(self, client, auth_headers):
+        r = client.get("/api/v1/leads?salary_op=ne&salary_value=60000", headers=auth_headers)
+        assert _names(r.json()) == {"LowOnly", "HighOnly", "Upper"}
+
+    def test_include_unknown(self, client, auth_headers):
+        r = client.get(
+            "/api/v1/leads?salary_op=gt&salary_value=100000&salary_include_unknown=true",
+            headers=auth_headers,
+        )
+        assert _names(r.json()) == {"HighOnly", "Upper", "NoSalary", "ZeroSalary"}
+
+
 class TestClientsSizeFilter:
     @pytest.fixture(autouse=True)
     def seed(self, db_session, test_tenant):

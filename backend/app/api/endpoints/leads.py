@@ -15,6 +15,7 @@ from app.api.deps import get_db, get_current_active_user, require_role, get_curr
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import (
     tenant_filter, SIZE_OPERATORS, effective_size_expr, size_operator_clause,
+    effective_salary_bounds, salary_operator_clause,
 )
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
@@ -87,6 +88,10 @@ async def list_leads(
     company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
     company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
     company_size_include_unknown: bool = Query(False, description="Include leads with unknown size when a size filter is active"),
+    salary_op: Optional[str] = Query(None, description="Numeric salary operator: eq, ne, lt, lte, gt, gte, between (range-aware)"),
+    salary_value: Optional[int] = Query(None, ge=0, description="Salary comparison value"),
+    salary_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' salary operator"),
+    salary_include_unknown: bool = Query(False, description="Include leads with unknown salary when a salary filter is active"),
     data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
     employment_type: Optional[str] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
     exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
@@ -184,6 +189,14 @@ async def list_leads(
 
         if conditions:
             query = query.filter(or_(*conditions))
+    if salary_op in SIZE_OPERATORS and salary_value is not None:
+        # Range-aware: compare against the lead's salary_min/salary_max band.
+        sal_lo, sal_hi = effective_salary_bounds(LeadDetails.salary_min, LeadDetails.salary_max)
+        clause = salary_operator_clause(sal_lo, sal_hi, salary_op, salary_value, salary_value2)
+        if clause is not None:
+            if salary_include_unknown:
+                clause = or_(clause, sal_lo.is_(None))
+            query = query.filter(clause)
     if data_type:
         query = query.filter(LeadDetails.data_type == data_type)
     if employment_type:
