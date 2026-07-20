@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useLobStore, type LOB } from '@/lib/lob-store'
+import { useAuthStore } from '@/lib/store'
 import { lobApi } from '@/lib/api'
 import {
   Briefcase,
@@ -35,13 +36,17 @@ interface LobSelectorProps {
 
 export function LobSelector({ collapsed = false }: LobSelectorProps) {
   const { lobs, activeLobId, setLobs, setActiveLob } = useLobStore()
+  // Subscribe to impersonation so the selector re-evaluates when a super_admin
+  // switches tenant (or back to "All Tenants").
+  const impersonation = useAuthStore((s) => s.impersonation)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadLobs()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [impersonation])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -58,6 +63,23 @@ export function LobSelector({ collapsed = false }: LobSelectorProps) {
     try {
       const data = await lobApi.list()
       setLobs(data)
+
+      // Decide the active LOB now that tenant context is known.
+      const superAdmin = useAuthStore.getState().isSuperAdmin()
+      const impersonating = !!useAuthStore.getState().impersonation
+      if (superAdmin && !impersonating) {
+        // "All Tenants" view → default to "All Lines of Business" (no LOB filter).
+        setActiveLob(null)
+      } else {
+        // Keep the current selection if it still belongs to this tenant's LOBs;
+        // otherwise fall back to the default LOB.
+        const current = useLobStore.getState().activeLobId
+        const stillValid = current !== null && data.some((l: LOB) => l.lob_id === current)
+        if (!stillValid && data.length > 0) {
+          const defaultLob = data.find((l: LOB) => l.is_default) || data[0]
+          setActiveLob(defaultLob.lob_id)
+        }
+      }
     } catch {
       // LOB endpoint may not exist on older backends — graceful fallback
     } finally {
@@ -80,7 +102,7 @@ export function LobSelector({ collapsed = false }: LobSelectorProps) {
         <button
           onClick={() => setOpen(!open)}
           className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title={activeLob?.name || 'Select LOB'}
+          title={activeLob?.name || 'All Lines of Business'}
         >
           <div
             className="w-3 h-3 rounded-full"
@@ -103,7 +125,7 @@ export function LobSelector({ collapsed = false }: LobSelectorProps) {
         />
         <Icon className="w-4 h-4 flex-shrink-0 text-gray-500 dark:text-gray-400" />
         <span className="truncate flex-1 text-left font-medium text-gray-700 dark:text-gray-200">
-          {activeLob?.name || 'Select LOB'}
+          {activeLob?.name || 'All Lines of Business'}
         </span>
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
