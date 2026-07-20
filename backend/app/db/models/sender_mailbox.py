@@ -40,6 +40,7 @@ class SenderMailbox(Base):
     display_name = Column(String(255), nullable=True)
     sender_first_name = Column(String(100), nullable=True)
     sender_last_name = Column(String(100), nullable=True)
+    phone = Column(String(32), nullable=True)  # Sender phone, US format e.g. "(555) 123-4567"
     linkedin_url = Column(String(500), nullable=True)
 
     # Authentication

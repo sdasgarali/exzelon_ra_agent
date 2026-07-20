@@ -1,8 +1,30 @@
 """Pydantic schemas for sender mailbox management."""
+import re
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from enum import Enum
+
+
+def normalize_us_phone(value: Optional[str]) -> Optional[str]:
+    """Normalize a US phone number to "(NNN) NNN-NNNN".
+
+    Accepts common inputs (digits, dashes, dots, spaces, parens, optional +1
+    country code). Blank/None is allowed (returns None) — the UI enforces that
+    the field is provided; the API stays lenient so imports/bulk-add don't break.
+    Raises ValueError for a non-blank value that isn't a valid US number.
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10:
+        raise ValueError("Phone must be a valid US number, e.g. (555) 123-4567")
+    return f"({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
 
 
 class WarmupStatusEnum(str, Enum):
@@ -29,8 +51,11 @@ class SenderMailboxBase(BaseModel):
     display_name: Optional[str] = None
     sender_first_name: Optional[str] = None
     sender_last_name: Optional[str] = None
+    phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     provider: EmailProviderEnum = EmailProviderEnum.MICROSOFT_365
+
+    _normalize_phone = field_validator("phone")(lambda cls, v: normalize_us_phone(v))
     smtp_host: Optional[str] = None
     smtp_port: int = 587
     imap_host: Optional[str] = None
@@ -56,8 +81,11 @@ class SenderMailboxUpdate(BaseModel):
     display_name: Optional[str] = None
     sender_first_name: Optional[str] = None
     sender_last_name: Optional[str] = None
+    phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     password: Optional[str] = None
+
+    _normalize_phone = field_validator("phone")(lambda cls, v: normalize_us_phone(v))
     auth_method: Optional[str] = None
     oauth_tenant_id: Optional[str] = None
     provider: Optional[EmailProviderEnum] = None

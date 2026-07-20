@@ -874,6 +874,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for smtp_relay_config_json: {e}")
 
+    # Migration: add phone to sender_mailboxes (sender profile phone)
+    try:
+        from sqlalchemy import text as sa_text_phone, inspect as sa_inspect_phone
+        with engine.connect() as conn:
+            inspector_phone = sa_inspect_phone(engine)
+            mb_cols_phone = [c["name"] for c in inspector_phone.get_columns("sender_mailboxes")]
+            if "phone" not in mb_cols_phone:
+                conn.execute(sa_text_phone("ALTER TABLE sender_mailboxes ADD COLUMN phone VARCHAR(32) NULL"))
+                conn.commit()
+                logger.info("Migration: added phone column to sender_mailboxes")
+    except Exception as e:
+        logger.warning(f"Migration check for sender_mailboxes.phone: {e}")
+
     # NOTE: Password encryption migration moved below Phase 4 multi-tenancy
     # (ORM queries require tenant_id column to exist first)
 

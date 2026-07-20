@@ -6,6 +6,7 @@ import { mailboxesApi, deliverabilityApi, outreachRolesApi } from '@/lib/api'
 import type { MailboxHealthDetail } from '@/types/api'
 import { useAuthStore } from '@/lib/store'
 import { useToast } from '@/components/toast'
+import DOMPurify from 'dompurify'
 
 interface Mailbox {
   mailbox_id: number
@@ -13,6 +14,7 @@ interface Mailbox {
   display_name: string | null
   sender_first_name: string | null
   sender_last_name: string | null
+  phone: string | null
   linkedin_url: string | null
   provider: string
   smtp_host: string | null
@@ -186,7 +188,11 @@ export default function MailboxesPage() {
     company: '',
     website: '',
     address: '',
+    logo_url: '',
   })
+  // Email Signature section: view-only by default; pencil unlocks inline edit.
+  const [sigEditMode, setSigEditMode] = useState(false)
+  const [sigSaving, setSigSaving] = useState(false)
 
   // Auto-populate signature fields from tenant data and mailbox info
   const autoPopulateSigData = (
@@ -203,6 +209,8 @@ export default function MailboxesPage() {
       company: existingSig.company || tenant?.name || '',
       website: existingSig.website || tenant?.website || '',
       address: existingSig.address || tenant?.company_address || '',
+      // Always source the logo from the tenant so the signature shows the brand logo.
+      logo_url: tenant?.logo_url || existingSig.logo_url || '',
     }
   }
 
@@ -211,6 +219,7 @@ export default function MailboxesPage() {
     display_name: '',
     sender_first_name: '',
     sender_last_name: '',
+    phone: '',
     linkedin_url: '',
     password: '',
     provider: 'microsoft_365',
@@ -466,10 +475,11 @@ export default function MailboxesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const profileError = validateSenderProfile()
+    if (profileError) { toast('error', profileError); return }
     try {
-      // Serialize signature data
-      const hasSig = Object.values(sigData).some(v => v.trim() !== '')
-      const sigJson = hasSig ? JSON.stringify(sigData) : ''
+      // Serialize signature data (Title/Role, phone and logo are derived)
+      const sigJson = serializeSig()
 
       if (editingMailbox) {
         const updateData = {
@@ -509,6 +519,7 @@ export default function MailboxesPage() {
       display_name: mailbox.display_name || '',
       sender_first_name: mailbox.sender_first_name || '',
       sender_last_name: mailbox.sender_last_name || '',
+      phone: mailbox.phone || '',
       linkedin_url: mailbox.linkedin_url || '',
       password: '',
       provider: mailbox.provider,
@@ -527,7 +538,7 @@ export default function MailboxesPage() {
     })
     // Populate signature fields from saved JSON, backfill empty fields from tenant
     const displayName = mailbox.display_name || [mailbox.sender_first_name, mailbox.sender_last_name].filter(Boolean).join(' ')
-    let parsedSig = { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' }
+    let parsedSig = { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '', logo_url: '' }
     if (mailbox.email_signature_json) {
       try {
         const sig = JSON.parse(mailbox.email_signature_json)
@@ -539,9 +550,11 @@ export default function MailboxesPage() {
           company: sig.company || '',
           website: sig.website || '',
           address: sig.address || '',
+          logo_url: sig.logo_url || '',
         }
       } catch { /* keep defaults */ }
     }
+    setSigEditMode(false)
     setSigData(autoPopulateSigData(parsedSig, mailbox.email, displayName))
     setShowAddModal(true)
   }
@@ -651,6 +664,7 @@ export default function MailboxesPage() {
       display_name: '',
       sender_first_name: '',
       sender_last_name: '',
+      phone: '',
       linkedin_url: '',
       password: '',
       provider: 'microsoft_365',
@@ -668,9 +682,10 @@ export default function MailboxesPage() {
       outreach_role_id: null,
     })
     setSigData(autoPopulateSigData(
-      { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '' },
+      { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '', logo_url: '' },
       '', ''
     ))
+    setSigEditMode(false)
     setWizardStep('select_provider')
     setCreatedMailboxId(null)
     setWizardSubmitting(false)
@@ -683,8 +698,7 @@ export default function MailboxesPage() {
     setWizardSubmitting(true)
     setWizardTestResult(null)
     try {
-      const hasSig = Object.values(sigData).some(v => v.trim() !== '')
-      const sigJson = hasSig ? JSON.stringify(sigData) : ''
+      const sigJson = serializeSig()
       const createData: Record<string, any> = {
         ...formData,
         email_signature_json: sigJson,
@@ -715,14 +729,108 @@ export default function MailboxesPage() {
     }
   }
 
+  // ── Sender Profile / Signature helpers ────────────────────────────────
+  const roleDesc = (roleId: number | null): string => {
+    if (!roleId) return ''
+    const r = outreachRoles.find(x => x.role_id === roleId)
+    return (r?.description || r?.role_name || '').trim()
+  }
+
+  // US phone: keep digits only, format progressively as (555) 123-4567
+  const formatUsPhone = (input: string): string => {
+    let d = input.replace(/\D/g, '')
+    if (d.length === 11 && d.startsWith('1')) d = d.slice(1)
+    d = d.slice(0, 10)
+    if (d.length === 0) return ''
+    if (d.length < 4) return `(${d}`
+    if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`
+  }
+  const isValidUsPhone = (input: string): boolean => {
+    const d = input.replace(/\D/g, '')
+    return d.length === 10 || (d.length === 11 && d.startsWith('1'))
+  }
+
+  // Effective signature = editable fields + derived Title (Role description),
+  // phone (Sender Profile), and tenant logo.
+  const effectiveSig = () => ({
+    ...sigData,
+    title: roleDesc(formData.outreach_role_id),
+    phone: formData.phone || sigData.phone || '',
+    logo_url: sigData.logo_url || useAuthStore.getState().user?.tenant?.logo_url || '',
+  })
+
+  const serializeSig = (): string => {
+    const s = effectiveSig()
+    return Object.values(s).some(v => (v || '').toString().trim() !== '') ? JSON.stringify(s) : ''
+  }
+
+  // Build a sanitized HTML signature block (mirrors backend render_signature_html).
+  const buildSignatureHtml = (): string => {
+    const s = effectiveSig()
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const parts: string[] = []
+    if (s.logo_url) {
+      const logo = s.logo_url.startsWith('http') ? s.logo_url : `https://${s.logo_url}`
+      parts.push(`<img src="${esc(logo)}" alt="${esc(s.company || '')}" style="max-height:48px;max-width:200px;margin-bottom:8px;border:0;display:block;" />`)
+    }
+    if (s.sender_name) parts.push(`<strong style="font-size:14px;color:#333;">${esc(s.sender_name)}</strong>`)
+    if (s.title) parts.push(`<span style="font-size:13px;color:#555;">${esc(s.title)}</span>`)
+    if (s.company) parts.push(`<span style="font-size:13px;color:#555;">${esc(s.company)}</span>`)
+    const contact: string[] = []
+    if (s.phone) contact.push(esc(s.phone))
+    if (s.email) contact.push(`<a href="mailto:${esc(s.email)}" style="color:#0066cc;text-decoration:none;">${esc(s.email)}</a>`)
+    if (contact.length) parts.push(`<span style="font-size:12px;color:#666;">${contact.join(' | ')}</span>`)
+    if (s.website) {
+      const url = s.website.startsWith('http') ? s.website : `https://${s.website}`
+      parts.push(`<a href="${esc(url)}" style="font-size:12px;color:#0066cc;text-decoration:none;">${esc(s.website)}</a>`)
+    }
+    if (s.address) parts.push(`<span style="font-size:12px;color:#666;">${esc(s.address)}</span>`)
+    if (!parts.length) return ''
+    const html = `<div style="padding-top:12px;border-top:1px solid #ccc;font-family:Arial,sans-serif;">${parts.join('<br>')}</div>`
+    return typeof window !== 'undefined' ? DOMPurify.sanitize(html) : html
+  }
+
+  // Validate the mandatory Sender Profile fields; returns an error message or null.
+  const validateSenderProfile = (): string | null => {
+    if (!formData.sender_first_name.trim() || !formData.sender_last_name.trim()) return 'First and last name are required.'
+    if (!formData.phone.trim() || !isValidUsPhone(formData.phone)) return 'A valid US phone number is required, e.g. (555) 123-4567.'
+    if (!formData.outreach_role_id) return 'Role is required.'
+    return null
+  }
+
+  // Inline save of just the Email Signature (+ phone) for the mailbox being edited.
+  const handleSaveSignature = async () => {
+    const targetId = editingMailbox?.mailbox_id ?? createdMailboxId
+    if (!targetId) { setSigEditMode(false); return }
+    setSigSaving(true)
+    try {
+      await mailboxesApi.update(targetId, {
+        email_signature_json: serializeSig(),
+        phone: formData.phone || undefined,
+      })
+      toast('success', 'Signature saved')
+      setSigEditMode(false)
+      fetchData()
+    } catch (err: any) {
+      toast('error', err?.response?.data?.detail || 'Failed to save signature')
+    } finally {
+      setSigSaving(false)
+    }
+  }
+
   // Wizard: save settings on final step
   const handleWizardSaveSettings = async () => {
     if (!createdMailboxId) return
+    const profileError = validateSenderProfile()
+    if (profileError) { toast('error', profileError); return }
     setWizardSubmitting(true)
     try {
-      const hasSig = Object.values(sigData).some(v => v.trim() !== '')
-      const sigJson = hasSig ? JSON.stringify(sigData) : ''
+      const sigJson = serializeSig()
       await mailboxesApi.update(createdMailboxId, {
+        sender_first_name: formData.sender_first_name,
+        sender_last_name: formData.sender_last_name,
+        phone: formData.phone || undefined,
         daily_send_limit: formData.daily_send_limit,
         is_active: formData.is_active,
         notes: formData.notes,
@@ -1227,185 +1335,209 @@ export default function MailboxesPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Edit Mailbox</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Identity */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
                 <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="sender@example.com" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input type="text" value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input type="text" value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile URL</label>
-                <input type="url" value={formData.linkedin_url} onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="https://linkedin.com/in/username" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-                <select value={formData.provider} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
-                  <option value="microsoft_365">Microsoft 365</option>
-                  <option value="gmail">Gmail</option>
-                  <option value="smtp">Custom SMTP</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Authentication Method</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="auth_method" value="password" checked={formData.auth_method === 'password'} onChange={() => setFormData({ ...formData, auth_method: 'password' })} className="text-blue-600" />
-                    <span className="text-sm">Password / App Password</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="auth_method" value="oauth2" checked={formData.auth_method === 'oauth2'} onChange={() => setFormData({ ...formData, auth_method: 'oauth2' })} className="text-blue-600" />
-                    <span className="text-sm">Microsoft OAuth2</span>
-                  </label>
-                </div>
-              </div>
-              {formData.auth_method === 'password' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password (leave blank to keep current)</label>
-                  <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="********" />
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <p className="text-xs text-green-800"><strong>OAuth2 is recommended.</strong> Password changes won&apos;t break your connection. Tokens refresh automatically.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {editingMailbox.oauth_connected ? (
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">OAuth Connected</span>
-                        <button type="button" onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)} disabled={oauthConnecting} className="text-sm text-blue-600 hover:text-blue-800 underline">
-                          {oauthConnecting ? 'Redirecting...' : 'Re-authorize'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)} disabled={oauthConnecting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
-                        <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
-                          <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
-                        </svg>
-                        {oauthConnecting ? 'Redirecting...' : 'Connect with Microsoft 365'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {(formData.provider === 'smtp' || formData.provider === 'other') && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
-                    <input type="text" value={formData.smtp_host} onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="smtp.example.com" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-                    <input type="number" value={formData.smtp_port} onChange={(e) => setFormData({ ...formData, smtp_port: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Host</label>
-                    <input type="text" value={formData.imap_host} onChange={(e) => setFormData({ ...formData, imap_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="imap.example.com" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Port</label>
-                    <input type="number" value={formData.imap_port} onChange={(e) => setFormData({ ...formData, imap_port: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
-                  <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600" title={WARMUP_STATUS_LABELS[formData.warmup_status]?.tooltip || ''}>
-                    <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[formData.warmup_status]?.color || 'bg-gray-100'}`}>
-                      {WARMUP_STATUS_LABELS[formData.warmup_status]?.label || formData.warmup_status}
-                    </span>
-                    <span className="text-xs text-gray-400 ml-2">Managed by warmup engine</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
-                  <input type="number" min="1" max="100" value={formData.daily_send_limit} onChange={(e) => setFormData({ ...formData, daily_send_limit: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Role</label>
-                <select
-                  value={formData.outreach_role_id ?? ''}
-                  onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                >
-                  <option value="">— No Role —</option>
-                  {outreachRoles.map((r) => (
-                    <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center">
-                <input type="checkbox" id="is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
-                <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">Active</label>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
-              </div>
-              <div className="border-t pt-4 mt-4">
-                <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
+
+              {/* Section 1: Sender Profile */}
+              <div className="border rounded-lg p-4">
+                <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
-                    <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                    <input type="text" required value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number</label>
-                    <input type="text" value={sigData.phone} onChange={(e) => setSigData({ ...sigData, phone: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="+1-555-1234" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                    <input type="text" required value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name <span className="text-gray-400 font-normal">(auto from display name)</span></label>
-                    <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                    <input type="tel" required inputMode="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: formatUsPhone(e.target.value) })} className={`w-full px-3 py-2 border rounded-lg ${formData.phone && !isValidUsPhone(formData.phone) ? 'border-red-400' : ''}`} placeholder="(555) 123-4567" />
+                    {formData.phone && !isValidUsPhone(formData.phone) && <p className="text-xs text-red-600 mt-1">Enter a valid US phone number.</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email <span className="text-gray-400 font-normal">(auto from mailbox)</span></label>
-                    <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                    <div className="flex gap-2">
+                      <select required value={formData.outreach_role_id ?? ''} onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-2 border rounded-lg">
+                        <option value="">— Select Role —</option>
+                        {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
+                      </select>
+                      <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                    <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                    <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                    <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile URL</label>
+                    <input type="url" value={formData.linkedin_url} onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="https://linkedin.com/in/username" />
                   </div>
                 </div>
-                {Object.values(sigData).some(v => v.trim() !== '') && (
-                  <div className="mt-3">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview</label>
-                    <div className="border rounded-lg p-3 bg-gray-50">
-                      <div style={{ borderTop: '1px solid #cccccc', paddingTop: '10px', fontFamily: 'Arial, sans-serif' }}>
-                        {sigData.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigData.sender_name}</div>}
-                        {sigData.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.title}</div>}
-                        {sigData.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.company}</div>}
-                        {(sigData.phone || sigData.email) && (
-                          <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email].filter(Boolean).join(' | ')}</div>
-                        )}
-                        {sigData.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigData.website}</span></div>}
-                        {sigData.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigData.address}</div>}
-                      </div>
+                <div className="flex items-center mt-3">
+                  <input type="checkbox" id="is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                  <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">Active</label>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
+                </div>
+              </div>
+
+              {/* Section 2: Email Signature */}
+              <div className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-md font-semibold text-gray-800">Email Signature</h3>
+                  {!sigEditMode ? (
+                    <button type="button" onClick={() => setSigEditMode(true)} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1" title="Edit signature">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={handleSaveSignature} disabled={sigSaving} className="text-sm px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{sigSaving ? 'Saving…' : 'Save'}</button>
+                      <button type="button" onClick={() => { setSigEditMode(false); if (editingMailbox) handleEdit(editingMailbox) }} className="text-sm px-3 py-1 border rounded-lg hover:bg-gray-50">Cancel</button>
+                    </div>
+                  )}
+                </div>
+
+                {sigEditMode && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role <span className="text-gray-400 font-normal">(from Role)</span></label>
+                      <input type="text" readOnly value={roleDesc(formData.outreach_role_id)} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50 text-gray-600" placeholder="Select a Role above" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Phone <span className="text-gray-400 font-normal">(from Sender Profile)</span></label>
+                      <input type="text" readOnly value={formData.phone} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50 text-gray-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name</label>
+                      <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email</label>
+                      <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                      <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                      <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                      <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Logo URL <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                      <input type="text" value={sigData.logo_url} onChange={(e) => setSigData({ ...sigData, logo_url: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com/logo.png" />
                     </div>
                   </div>
                 )}
+
+                <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview (HTML)</label>
+                <iframe title="Signature preview" sandbox="" srcDoc={buildSignatureHtml() || '<span style="color:#9ca3af;font-size:12px;font-family:Arial,sans-serif;">No signature content yet</span>'} className="w-full border rounded-lg bg-white" style={{ height: '150px' }} />
               </div>
-              <div className="flex justify-end space-x-3 pt-4">
-                <button type="button" onClick={() => { setShowAddModal(false); setEditingMailbox(null) }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
+
+              {/* Section 3: Outreach Profile */}
+              <div className="border rounded-lg p-4">
+                <h3 className="text-md font-semibold text-gray-800 mb-3">Outreach Profile</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                    <select value={formData.provider} onChange={(e) => setFormData({ ...formData, provider: e.target.value })} className="w-full px-3 py-2 border rounded-lg">
+                      <option value="microsoft_365">Microsoft 365</option>
+                      <option value="gmail">Gmail</option>
+                      <option value="smtp">Custom SMTP</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Authentication Method</label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="auth_method" value="password" checked={formData.auth_method === 'password'} onChange={() => setFormData({ ...formData, auth_method: 'password' })} className="text-blue-600" />
+                        <span className="text-sm">Password / App Password</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="auth_method" value="oauth2" checked={formData.auth_method === 'oauth2'} onChange={() => setFormData({ ...formData, auth_method: 'oauth2' })} className="text-blue-600" />
+                        <span className="text-sm">Microsoft OAuth2</span>
+                      </label>
+                    </div>
+                  </div>
+                  {formData.auth_method === 'password' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password (leave blank to keep current)</label>
+                      <input type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="********" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <p className="text-xs text-green-800"><strong>OAuth2 is recommended.</strong> Password changes won&apos;t break your connection. Tokens refresh automatically.</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {editingMailbox.oauth_connected ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">OAuth Connected</span>
+                            <button type="button" onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)} disabled={oauthConnecting} className="text-sm text-blue-600 hover:text-blue-800 underline">
+                              {oauthConnecting ? 'Redirecting...' : 'Re-authorize'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => handleOAuthConnect(editingMailbox.mailbox_id)} disabled={oauthConnecting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+                            <svg className="w-5 h-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                              <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                            </svg>
+                            {oauthConnecting ? 'Redirecting...' : 'Connect with Microsoft 365'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {(formData.provider === 'smtp' || formData.provider === 'other') && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+                        <input type="text" value={formData.smtp_host} onChange={(e) => setFormData({ ...formData, smtp_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="smtp.example.com" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
+                        <input type="number" value={formData.smtp_port} onChange={(e) => setFormData({ ...formData, smtp_port: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Host</label>
+                        <input type="text" value={formData.imap_host} onChange={(e) => setFormData({ ...formData, imap_host: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="imap.example.com" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">IMAP Port</label>
+                        <input type="number" value={formData.imap_port} onChange={(e) => setFormData({ ...formData, imap_port: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
+                      <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600" title={WARMUP_STATUS_LABELS[formData.warmup_status]?.tooltip || ''}>
+                        <span className={`text-xs px-2 py-1 rounded-full ${WARMUP_STATUS_LABELS[formData.warmup_status]?.color || 'bg-gray-100'}`}>
+                          {WARMUP_STATUS_LABELS[formData.warmup_status]?.label || formData.warmup_status}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-2">Managed by warmup engine</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
+                      <input type="number" min="1" max="100" value={formData.daily_send_limit} onChange={(e) => setFormData({ ...formData, daily_send_limit: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button type="button" onClick={() => { setShowAddModal(false); setEditingMailbox(null); setSigEditMode(false) }} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Update Mailbox</button>
               </div>
             </form>
@@ -2217,94 +2349,116 @@ export default function MailboxesPage() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
-                      <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">Inactive</span>
-                        <span className="text-xs text-gray-400 ml-2">Auto-starts after connection</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
-                      <input type="number" min="1" max="100" value={formData.daily_send_limit} onChange={(e) => setFormData({ ...formData, daily_send_limit: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Role</label>
-                    <select
-                      value={formData.outreach_role_id ?? ''}
-                      onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                    >
-                      <option value="">— No Role —</option>
-                      {outreachRoles.map((r) => (
-                        <option key={r.role_id} value={r.role_id}>{r.role_name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex items-center">
-                    <input type="checkbox" id="wizard_is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
-                    <label htmlFor="wizard_is_active" className="ml-2 text-sm text-gray-700">Active</label>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                    <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
-                  </div>
-
-                  {/* Sender Profile & Email Signature */}
+                  {/* Section 1: Sender Profile */}
                   <div className="border rounded-lg p-4">
-                    <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile & Email Signature</h3>
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">Sender Profile</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role</label>
-                        <input type="text" value={sigData.title} onChange={(e) => setSigData({ ...sigData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Account Manager" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                        <input type="text" required value={formData.sender_first_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_first_name: v, display_name: [v, f.sender_last_name].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Brian" />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Phone Number</label>
-                        <input type="text" value={sigData.phone} onChange={(e) => setSigData({ ...sigData, phone: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="+1-555-1234" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                        <input type="text" required value={formData.sender_last_name} onChange={(e) => { const v = e.target.value; setFormData(f => ({ ...f, sender_last_name: v, display_name: [f.sender_first_name, v].filter(Boolean).join(' ') })) }} className="w-full px-3 py-2 border rounded-lg" placeholder="Smith" />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name <span className="text-gray-400 font-normal">(auto from display name)</span></label>
-                        <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                        <input type="tel" required inputMode="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: formatUsPhone(e.target.value) })} className={`w-full px-3 py-2 border rounded-lg ${formData.phone && !isValidUsPhone(formData.phone) ? 'border-red-400' : ''}`} placeholder="(555) 123-4567" />
+                        {formData.phone && !isValidUsPhone(formData.phone) && <p className="text-xs text-red-600 mt-1">Enter a valid US phone number.</p>}
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email <span className="text-gray-400 font-normal">(auto from mailbox)</span></label>
-                        <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                        <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                        <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(auto from tenant)</span></label>
-                        <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+                        <div className="flex gap-2">
+                          <select required value={formData.outreach_role_id ?? ''} onChange={(e) => setFormData({ ...formData, outreach_role_id: e.target.value ? parseInt(e.target.value) : null })} className="w-full px-3 py-2 border rounded-lg">
+                            <option value="">— Select Role —</option>
+                            {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
+                          </select>
+                          <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                        </div>
                       </div>
                     </div>
-                    {Object.values(sigData).some(v => v.trim() !== '') && (
-                      <div className="mt-3">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview</label>
-                        <div className="border rounded-lg p-3 bg-gray-50">
-                          <div style={{ borderTop: '1px solid #cccccc', paddingTop: '10px', fontFamily: 'Arial, sans-serif' }}>
-                            {sigData.sender_name && <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333333' }}>{sigData.sender_name}</div>}
-                            {sigData.title && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.title}</div>}
-                            {sigData.company && <div style={{ fontSize: '13px', color: '#555555' }}>{sigData.company}</div>}
-                            {(sigData.phone || sigData.email) && (
-                              <div style={{ fontSize: '12px', color: '#666666' }}>{[sigData.phone, sigData.email].filter(Boolean).join(' | ')}</div>
-                            )}
-                            {sigData.website && <div style={{ fontSize: '12px' }}><span style={{ color: '#0066cc' }}>{sigData.website}</span></div>}
-                            {sigData.address && <div style={{ fontSize: '12px', color: '#666666' }}>{sigData.address}</div>}
-                          </div>
+                    <div className="flex items-center mt-3">
+                      <input type="checkbox" id="wizard_is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
+                      <label htmlFor="wizard_is_active" className="ml-2 text-sm text-gray-700">Active</label>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Optional notes..." />
+                    </div>
+                  </div>
+
+                  {/* Section 2: Email Signature */}
+                  <div className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-md font-semibold text-gray-800">Email Signature</h3>
+                      {!sigEditMode ? (
+                        <button type="button" onClick={() => setSigEditMode(true)} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1" title="Edit signature">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          Edit
+                        </button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={handleSaveSignature} disabled={sigSaving} className="text-sm px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{sigSaving ? 'Saving…' : 'Save'}</button>
+                          <button type="button" onClick={() => setSigEditMode(false)} className="text-sm px-3 py-1 border rounded-lg hover:bg-gray-50">Done</button>
+                        </div>
+                      )}
+                    </div>
+                    {sigEditMode && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Title / Role <span className="text-gray-400 font-normal">(from Role)</span></label>
+                          <input type="text" readOnly value={roleDesc(formData.outreach_role_id)} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50 text-gray-600" placeholder="Select a Role above" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Phone <span className="text-gray-400 font-normal">(from Sender Profile)</span></label>
+                          <input type="text" readOnly value={formData.phone} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50 text-gray-600" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Sender Name</label>
+                          <input type="text" value={sigData.sender_name} onChange={(e) => setSigData({ ...sigData, sender_name: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="John Doe" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Signature Email</label>
+                          <input type="email" value={sigData.email} onChange={(e) => setSigData({ ...sigData, email: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="john@company.com" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Company Name <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                          <input type="text" value={sigData.company} onChange={(e) => setSigData({ ...sigData, company: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="Your Company Inc." />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Website URL <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                          <input type="text" value={sigData.website} onChange={(e) => setSigData({ ...sigData, website: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                          <input type="text" value={sigData.address} onChange={(e) => setSigData({ ...sigData, address: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="123 Business Ave, Suite 100, City, State 12345" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Logo URL <span className="text-gray-400 font-normal">(from tenant)</span></label>
+                          <input type="text" value={sigData.logo_url} onChange={(e) => setSigData({ ...sigData, logo_url: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-sm" placeholder="https://yourcompany.com/logo.png" />
                         </div>
                       </div>
                     )}
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Signature Preview (HTML)</label>
+                    <iframe title="Signature preview" sandbox="" srcDoc={buildSignatureHtml() || '<span style="color:#9ca3af;font-size:12px;font-family:Arial,sans-serif;">No signature content yet</span>'} className="w-full border rounded-lg bg-white" style={{ height: '150px' }} />
+                  </div>
+
+                  {/* Section 3: Outreach Profile */}
+                  <div className="border rounded-lg p-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">Outreach Profile</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Warmup Status</label>
+                        <div className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-600">
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">Inactive</span>
+                          <span className="text-xs text-gray-400 ml-2">Auto-starts after connection</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Daily Send Limit</label>
+                        <input type="number" min="1" max="100" value={formData.daily_send_limit} onChange={(e) => setFormData({ ...formData, daily_send_limit: parseInt(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex justify-end space-x-3 pt-2">
