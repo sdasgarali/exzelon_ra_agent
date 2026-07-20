@@ -8,6 +8,19 @@ import { useAuthStore } from '@/lib/store'
 import { useToast } from '@/components/toast'
 import DOMPurify from 'dompurify'
 
+// Derive a display logo from a website domain (Google favicon service) when the
+// tenant has no explicit logo uploaded. Returns '' if no usable domain.
+function websiteLogo(website?: string | null): string {
+  if (!website) return ''
+  try {
+    const url = website.startsWith('http') ? website : `https://${website}`
+    const host = new URL(url).hostname.replace(/^www\./, '')
+    return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=128` : ''
+  } catch {
+    return ''
+  }
+}
+
 interface Mailbox {
   mailbox_id: number
   email: string
@@ -209,8 +222,8 @@ export default function MailboxesPage() {
       company: existingSig.company || tenant?.name || '',
       website: existingSig.website || tenant?.website || '',
       address: existingSig.address || tenant?.company_address || '',
-      // Always source the logo from the tenant so the signature shows the brand logo.
-      logo_url: tenant?.logo_url || existingSig.logo_url || '',
+      // Always source a logo: saved value → tenant logo → derived from website.
+      logo_url: existingSig.logo_url || tenant?.logo_url || websiteLogo(tenant?.website),
     }
   }
 
@@ -757,7 +770,7 @@ export default function MailboxesPage() {
     ...sigData,
     title: roleDesc(formData.outreach_role_id),
     phone: formData.phone || sigData.phone || '',
-    logo_url: sigData.logo_url || useAuthStore.getState().user?.tenant?.logo_url || '',
+    logo_url: sigData.logo_url || useAuthStore.getState().user?.tenant?.logo_url || websiteLogo(useAuthStore.getState().user?.tenant?.website),
   })
 
   const serializeSig = (): string => {
