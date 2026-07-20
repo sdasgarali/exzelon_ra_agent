@@ -81,17 +81,25 @@ class FantasticJobsAdapter(JobSourceAdapter):
         industries: Optional[List[str]] = None,
         exclude_keywords: Optional[List[str]] = None,
         job_titles: Optional[List[str]] = None,
-        max_pages: int = 10,
-        max_employee_count: int = 200,
-        exclude_industries: Optional[List[str]] = None,
+        limit: int = 1000,
+        tuning: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> List[Dict[str, Any]]:
+        """Fetch LinkedIn job-board postings. Matches the pipeline's adapter
+        contract (accepts ``limit`` and ``tuning``). ``tuning`` may carry
+        ``max_pages`` and ``max_employee_count`` (job_source_tuning.fantastic_jobs.*)."""
         if not self.is_configured():
             return []
 
+        _t = tuning or {}
+        max_pages = int(_t.get("max_pages") or max(1, min(20, -(-limit // 100))))  # ceil(limit/100), capped
+        max_employee_count = int(_t.get("max_employee_count") or 200)
         time_frame = "24h" if posted_within_days <= 1 else "7d"
         url = f"https://{self.host}/v1/active-jb"
         titles = job_titles or getattr(settings, "TARGET_JOB_TITLES", None) or []
         title_or = " OR ".join(f'"{t}"' for t in titles) if titles else None
+        # Optional server-side industry exclusion (set by pipeline via instance attr).
+        exclude_industries = getattr(self, "_exclude_industries", None)
 
         results: List[Dict[str, Any]] = []
         with httpx.Client() as client:

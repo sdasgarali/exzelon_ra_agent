@@ -138,6 +138,8 @@ SOURCE_OVERLAP_GROUPS: Dict[str, List[str]] = {
 # fill a gap toward the per-run target). Unlisted sources default to tier 1.
 SOURCE_TIERS: Dict[str, int] = {
     "usajobs": 1, "jooble": 1, "jsearch": 1, "adzuna": 1, "theirstack": 1, "mock": 1,
+    # Fantastic.jobs = flat-rate LinkedIn feed w/ firmographics → tier 1 (always run).
+    "fantastic_jobs": 1,
     "searchapi": 2, "serpapi": 2, "jobdatafeeds": 2, "coresignal": 2,
 }
 
@@ -145,7 +147,7 @@ SOURCE_TIERS: Dict[str, int] = {
 # and stops as soon as the per-run target is met.
 SOURCE_COST_RANK: Dict[str, int] = {
     "usajobs": 0, "jooble": 0, "mock": 0,
-    "adzuna": 1, "jsearch": 2, "theirstack": 3,
+    "adzuna": 1, "jsearch": 2, "fantastic_jobs": 3, "theirstack": 4,
     "searchapi": 5, "serpapi": 6, "jobdatafeeds": 8, "coresignal": 9,
 }
 
@@ -272,6 +274,15 @@ def get_all_job_source_adapters(db, tenant_id: Optional[int] = None) -> List[Tup
         if cs_key:
             adapters.append(("coresignal", CoresignalAdapter(api_key=cs_key)))
             logger.info("Coresignal adapter configured")
+
+    # Fantastic.jobs adapter (LinkedIn feed + company firmographics inline)
+    if "fantastic_jobs" in enabled_sources:
+        from app.services.adapters.job_sources.fantastic_jobs import FantasticJobsAdapter
+        fj_key = get_tenant_setting(db, "fantastic_jobs_api_key", tenant_id=tenant_id)
+        if fj_key:
+            fj_host = get_tenant_setting(db, "fantastic_jobs_host", tenant_id=tenant_id) or None
+            adapters.append(("fantastic_jobs", FantasticJobsAdapter(api_key=fj_key, host=fj_host)))
+            logger.info("Fantastic.jobs adapter configured")
 
     # Mock adapter (for development/testing)
     if "mock" in enabled_sources:
