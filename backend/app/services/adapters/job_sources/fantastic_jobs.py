@@ -35,14 +35,20 @@ _US_STATES = {
 
 
 class FantasticJobsAdapter(JobSourceAdapter):
-    """Adapter for the Fantastic.jobs / Active Jobs DB LinkedIn feed."""
+    """Adapter for the Fantastic.jobs direct API LinkedIn job-board feed
+    (data.fantastic.jobs/v1/active-jb, Bearer auth). The RapidAPI "Active Jobs
+    DB" listing exposes only the career-site (ATS) feed, not active-jb, so the
+    LinkedIn feed requires the direct API."""
 
-    DEFAULT_HOST = "active-jobs-db.p.rapidapi.com"
+    DEFAULT_HOST = "data.fantastic.jobs"
 
     def __init__(self, api_key: str = None, host: str = None):
         self.api_key = api_key or getattr(settings, "FANTASTIC_JOBS_API_KEY", None)
         self.host = host or getattr(settings, "FANTASTIC_JOBS_HOST", None) or self.DEFAULT_HOST
         self._api_calls = 0
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
 
     @property
     def api_calls_made(self) -> int:
@@ -58,9 +64,9 @@ class FantasticJobsAdapter(JobSourceAdapter):
         try:
             with httpx.Client() as client:
                 resp = client.get(
-                    f"https://{self.host}/active-jb-7d",
-                    params={"limit": 1, "location_filter": "United States"},
-                    headers={"x-rapidapi-key": self.api_key, "x-rapidapi-host": self.host},
+                    f"https://{self.host}/v1/active-jb",
+                    params={"limit": 1, "time_frame": "7d", "location": "United States"},
+                    headers=self._headers(),
                     timeout=30,
                 )
                 return resp.status_code == 200
@@ -82,32 +88,31 @@ class FantasticJobsAdapter(JobSourceAdapter):
         if not self.is_configured():
             return []
 
-        window = "24h" if posted_within_days <= 1 else "7d"
-        url = f"https://{self.host}/active-jb-{window}"
+        time_frame = "24h" if posted_within_days <= 1 else "7d"
+        url = f"https://{self.host}/v1/active-jb"
         titles = job_titles or getattr(settings, "TARGET_JOB_TITLES", None) or []
-        title_filter = " OR ".join(f'"{t}"' for t in titles) if titles else None
+        title_or = " OR ".join(f'"{t}"' for t in titles) if titles else None
 
-        headers = {"x-rapidapi-key": self.api_key, "x-rapidapi-host": self.host}
         results: List[Dict[str, Any]] = []
         with httpx.Client() as client:
             for page in range(max_pages):
                 params = {
                     "limit": 100,
                     "offset": page * 100,
-                    "location_filter": location,
-                    "description_type": "text",
-                    "include_ai": "true",
+                    "time_frame": time_frame,
+                    "location": location,
+                    "description_format": "text",
                     "include_basic_organization_details": "true",
-                    # server-side ICP push (ignored by variants lacking these params)
+                    # server-side ICP push
                     "organization_headcount_gte": 1,
                     "organization_headcount_lt": (max_employee_count or 200) + 1,
                 }
-                if title_filter:
-                    params["title_filter"] = title_filter
+                if title_or:
+                    params["title"] = title_or
                 if exclude_industries:
                     params["exclude_organization_industry"] = ",".join(exclude_industries)
                 try:
-                    resp = client.get(url, params=params, headers=headers, timeout=60)
+                    resp = client.get(url, params=params, headers=self._headers(), timeout=60)
                     self._api_calls += 1
                     if resp.status_code != 200:
                         break

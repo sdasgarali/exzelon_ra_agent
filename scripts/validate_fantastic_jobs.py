@@ -59,29 +59,37 @@ EXCLUDE_INDUSTRIES = {i.lower() for i in [
 ]}
 
 
-def build_url(host: str, window: str) -> str:
-    # RapidAPI "Active Jobs DB" feed paths embed the window: active-jb-7d / -24h.
-    win = "24h" if window in ("24h", "1d", "day") else "7d"
-    return f"https://{host}/active-jb-{win}"
+def build_url(host: str, feed: str, api: str) -> str:
+    # Feeds: active-jb (job board: LinkedIn/Wellfound/YC) or active-ats (career
+    # sites). Window is a query param. Two products:
+    #   direct   -> data.fantastic.jobs/v1/active-{f}   (has active-jb; Bearer auth)
+    #   rapidapi -> active-jobs-db.p.rapidapi.com/active-{f}  (ATS feed only)
+    f = "ats" if feed == "ats" else "jb"
+    return f"https://{host}/v1/active-{f}" if api == "direct" else f"https://{host}/active-{f}"
 
 
-def fetch_page(client, url, host, key, location, title_filter, offset, max_emp):
+def _auth_headers(api: str, host: str, key: str) -> dict:
+    if api == "direct":
+        return {"Authorization": f"Bearer {key}"}
+    return {"x-rapidapi-key": key, "x-rapidapi-host": host}
+
+
+def fetch_page(client, url, host, key, api, location, title_or, time_frame, offset, max_emp):
     params = {
         "limit": 100,
         "offset": offset,
-        "location_filter": location,
-        "title_filter": title_filter,           # Boolean OR of target titles
-        "description_type": "text",
-        # ask for AI + org enrichment (param names differ across variants; extra
-        # params are ignored where unsupported — the org fields are what we need)
-        "include_ai": "true",
-        "include_basic_organization_details": "true",
-        # server-side size filter (direct v1 API; ignored by variants that lack it)
-        "organization_headcount_gte": 1,
-        "organization_headcount_lt": max_emp + 1,
+        "time_frame": time_frame,               # 24h | 7d
+        "location": location,                   # supports OR, e.g. "United States"
+        "description_format": "text",
     }
-    headers = {"x-rapidapi-key": key, "x-rapidapi-host": host}
-    r = client.get(url, params=params, headers=headers, timeout=60)
+    if title_or:
+        params["title"] = title_or              # OR of quoted titles
+    if api == "direct":
+        # v1 params — company data + server-side size push (LinkedIn active-jb feed)
+        params["include_basic_organization_details"] = "true"
+        params["organization_headcount_gte"] = 1
+        params["organization_headcount_lt"] = max_emp + 1
+    r = client.get(url, params=params, headers=_auth_headers(api, host, key), timeout=60)
     if r.status_code != 200:
         print(f"\nHTTP {r.status_code} from {r.request.url}\n{r.text[:400]}", file=sys.stderr)
         if r.status_code in (401, 403):
@@ -116,23 +124,28 @@ def icp_pass(job, max_emp):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pages", type=int, default=5)
-    ap.add_argument("--window", default="7d")
-    ap.add_argument("--host", default="active-jobs-db.p.rapidapi.com")
+    ap.add_argument("--window", default="7d", help="time_frame: 24h or 7d")
+    ap.add_argument("--feed", default="jb", choices=["jb", "ats"], help="jb=LinkedIn feed (direct API), ats=career sites")
+    ap.add_argument("--api", default="direct", choices=["direct", "rapidapi"],
+                    help="direct=data.fantastic.jobs (has LinkedIn active-jb, Bearer); rapidapi=Active Jobs DB (ATS only)")
+    ap.add_argument("--host", default=None, help="override host (defaults per --api)")
     ap.add_argument("--location", default="United States")
     ap.add_argument("--max-emp", type=int, default=200)
     ap.add_argument("--key", default=os.environ.get("FANTASTIC_JOBS_API_KEY"))
     args = ap.parse_args()
 
     if not args.key:
-        print("Set FANTASTIC_JOBS_API_KEY (RapidAPI key) or pass --key.", file=sys.stderr)
+        print("Set FANTASTIC_JOBS_API_KEY or pass --key.", file=sys.stderr)
         sys.exit(2)
+    args.host = args.host or ("data.fantastic.jobs" if args.api == "direct" else "active-jobs-db.p.rapidapi.com")
 
-    url = build_url(args.host, args.window)
-    title_filter = " OR ".join(f'"{t}"' for t in TARGET_TITLES)
-    window_days = 1 if args.window in ("24h", "1d", "day") else 7
+    url = build_url(args.host, args.feed, args.api)
+    time_frame = "24h" if args.window in ("24h", "1d", "day") else "7d"
+    title_adv = " OR ".join(f'"{t}"' for t in TARGET_TITLES)
+    window_days = 1 if time_frame == "24h" else 7
 
-    print(f"Endpoint : {url}")
-    print(f"Window   : {args.window}  |  Location: {args.location}  |  Size ≤ {args.max_emp}")
+    print(f"Endpoint : {url}  (api={args.api}, time_frame={time_frame})")
+    print(f"Feed     : {args.feed}  |  Location: {args.location}  |  Size ≤ {args.max_emp}")
     print(f"Titles   : {len(TARGET_TITLES)} target titles (Boolean OR)\n")
 
     total = 0
@@ -140,8 +153,8 @@ def main():
     valid = []
     with httpx.Client() as client:
         for p in range(args.pages):
-            batch = fetch_page(client, url, args.host, args.key, args.location,
-                               title_filter, p * 100, args.max_emp)
+            batch = fetch_page(client, url, args.host, args.key, args.api, args.location,
+                               title_adv, time_frame, p * 100, args.max_emp)
             if batch is None:
                 break
             if not batch:
