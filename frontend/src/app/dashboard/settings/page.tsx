@@ -46,6 +46,7 @@ interface JobSourceConfig {
   jooble_api_key: string
   jobdatafeeds_api_key: string
   coresignal_api_key: string
+  fantastic_jobs_api_key: string
 }
 
 interface AIConfig {
@@ -374,6 +375,7 @@ export default function SettingsPage() {
     jooble_api_key: '',
     jobdatafeeds_api_key: '',
     coresignal_api_key: '',
+    fantastic_jobs_api_key: '',
   })
 
   // State for job title category UI
@@ -675,6 +677,7 @@ export default function SettingsPage() {
         jooble_api_key: settingsMap.jooble_api_key || '',
         jobdatafeeds_api_key: settingsMap.jobdatafeeds_api_key || '',
         coresignal_api_key: settingsMap.coresignal_api_key || '',
+        fantastic_jobs_api_key: settingsMap.fantastic_jobs_api_key || '',
       }))
 
       setAIConfig(prev => ({
@@ -897,6 +900,7 @@ export default function SettingsPage() {
           saveSetting('jooble_api_key', jobSourceConfig.jooble_api_key),
           saveSetting('jobdatafeeds_api_key', jobSourceConfig.jobdatafeeds_api_key),
           saveSetting('coresignal_api_key', jobSourceConfig.coresignal_api_key),
+          saveSetting('fantastic_jobs_api_key', jobSourceConfig.fantastic_jobs_api_key),
         ])
       } else if (configType === 'ai') {
         await Promise.all([
@@ -2415,6 +2419,12 @@ export default function SettingsPage() {
                         {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('fantastic_jobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'fantastic_jobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'fantastic_jobs') }) } }} className="w-4 h-4" />
+                        <span className="text-sm font-medium">Fantastic.jobs (LinkedIn + Firmographics)</span>
+                        <span className="text-xs text-gray-500">from $95/mo</span>
+                        {jobSourceConfig.fantastic_jobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('mock')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Mock (Test Data)</span>
                         {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
@@ -2532,6 +2542,19 @@ export default function SettingsPage() {
                       </div>
                       <p className="text-xs text-gray-500 mt-1">Sign up at <a href="https://coresignal.com/" target="_blank" className="text-blue-600 underline">coresignal.com</a> — 399M+ jobs with recruiter contacts ($800-1,500/mo)</p>
                       {testResults.coresignal && <p className={`text-sm mt-1 ${testResults.coresignal.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.coresignal.message}</p>}
+                    </div>
+                  )}
+
+                  {/* Fantastic.jobs Key */}
+                  {jobSourceConfig.lead_sources.includes('fantastic_jobs') && (
+                    <div>
+                      <label className="label">Fantastic.jobs API Key</label>
+                      <div className="flex gap-2">
+                        <input type="password" value={jobSourceConfig.fantastic_jobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, fantastic_jobs_api_key: e.target.value })} placeholder="Enter Fantastic.jobs (Bearer) API key" className="input flex-1" />
+                        <button onClick={() => testConnection('fantastic_jobs')} disabled={testing === 'fantastic_jobs' || !jobSourceConfig.fantastic_jobs_api_key} className="btn-secondary text-sm">{testing === 'fantastic_jobs' ? 'Testing...' : 'Test'}</button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">Direct API key from <a href="https://fantastic.jobs/api" target="_blank" className="text-blue-600 underline">fantastic.jobs/api</a> — LinkedIn feed with company firmographics (7-day trial; plans from $95/mo)</p>
+                      {testResults.fantastic_jobs && <p className={`text-sm mt-1 ${testResults.fantastic_jobs.success ? 'text-green-600' : 'text-red-600'}`}>{testResults.fantastic_jobs.message}</p>}
                     </div>
                   )}
                 </div>

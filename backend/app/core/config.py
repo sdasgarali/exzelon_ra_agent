@@ -170,6 +170,12 @@ class Settings(BaseSettings):
     JOOBLE_API_KEY: str = ""
     JOBDATAFEEDS_API_KEY: str = ""
     CORESIGNAL_API_KEY: str = ""
+    # Fantastic.jobs / Active Jobs DB (RapidAPI) — LinkedIn feed with firmographics.
+    # Recommended primary LinkedIn source (see Job_Sourcing_Architecture doc).
+    FANTASTIC_JOBS_API_KEY: str = ""
+    # Direct API host (LinkedIn active-jb feed, Bearer auth). The RapidAPI
+    # "Active Jobs DB" listing exposes only the ATS feed, so use the direct API.
+    FANTASTIC_JOBS_HOST: str = "data.fantastic.jobs"
 
     # LOB-specific Lead Source API Keys
     GOOGLE_PLACES_API_KEY: str = ""
