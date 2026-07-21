@@ -94,7 +94,17 @@ class FantasticJobsAdapter(JobSourceAdapter):
         _t = tuning or {}
         max_pages = int(_t.get("max_pages") or max(1, min(20, -(-limit // 100))))  # ceil(limit/100), capped
         max_employee_count = int(_t.get("max_employee_count") or 200)
-        time_frame = "24h" if posted_within_days <= 1 else "7d"
+        # time_frame — honor an explicit hour window when set (pipeline sets
+        # _posted_within_hours; kwargs override for direct calls), else fall back
+        # to the day window. Fantastic.jobs supports 1h / 24h / 7d buckets.
+        hours = int(kwargs.get("posted_within_hours") or getattr(self, "_posted_within_hours", 0) or 0)
+        eff_hours = hours if hours > 0 else posted_within_days * 24
+        if eff_hours <= 1:
+            time_frame = "1h"
+        elif eff_hours <= 24:
+            time_frame = "24h"
+        else:
+            time_frame = "7d"
         url = f"https://{self.host}/v1/active-jb"
         titles = job_titles or getattr(settings, "TARGET_JOB_TITLES", None) or []
         title_or = " OR ".join(f'"{t}"' for t in titles) if titles else None

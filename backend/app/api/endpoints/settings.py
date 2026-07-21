@@ -180,6 +180,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'pipeline_adapter_limit': 'source_tuning',
     'pipeline_max_workers': 'source_tuning',
     'posted_within_days': 'source_tuning',
+    'posted_within_hours': 'source_tuning',
 }
 
 # Default settings for seed data
@@ -650,6 +651,7 @@ DEFAULT_SETTINGS = {
     "pipeline_adapter_limit": {"value": 1000, "type": "integer", "description": "Max results per adapter in lead sourcing pipeline"},
     "pipeline_max_workers": {"value": 6, "type": "integer", "description": "Thread pool size for parallel adapter execution"},
     "posted_within_days": {"value": 7, "type": "integer", "description": "Only fetch jobs posted within this many days (1-90). Lower = fewer duplicates."},
+    "posted_within_hours": {"value": 0, "type": "integer", "description": "Fetch window in hours (0 = use posted_within_days). 1-2160. When set, takes precedence; hour-aware sources (Fantastic.jobs) honor it exactly, day-based sources use ceil(hours/24) days."},
     "lead_sourcing_max_employee_count": {"value": 500, "type": "integer", "description": "Drop companies larger than this many employees at sourcing (0 = no size limit)"},
     "lead_sourcing_drop_confidential": {"value": True, "type": "boolean", "description": "Drop confidential/blank employer postings at sourcing"},
     "lead_sourcing_excluded_industries": {"value": [], "type": "list", "description": "Industries hard-dropped at sourcing (substring match); empty = built-in IT/staffing/government defaults"},
@@ -927,6 +929,17 @@ async def update_setting(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be an integer")
         if val < 1 or val > 90:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_days must be between 1 and 90")
+
+    if key == "posted_within_hours":
+        raw = setting_in.value if setting_in.value is not None else (
+            json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+        )
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_hours must be an integer")
+        if val < 0 or val > 2160:  # 0 = use days; 2160h = 90 days
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="posted_within_hours must be between 0 and 2160 (0 = use days)")
 
     if key == "lead_sourcing_max_employee_count":
         raw = setting_in.value if setting_in.value is not None else (

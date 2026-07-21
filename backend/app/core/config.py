@@ -208,6 +208,11 @@ class Settings(BaseSettings):
     # buckets), so this hard age cap is what actually enforces recency.
     # 0 = disabled. Override per-tenant via `lead_sourcing_max_posting_age_days`.
     LEAD_SOURCING_MAX_POSTING_AGE_DAYS: int = 14
+    # Fetch window in HOURS. 0 = use `posted_within_days` (days mode). When > 0 it
+    # takes precedence: hour-aware sources (Fantastic.jobs → 1h/24h/7d) honor it
+    # exactly; day-based sources use ceil(hours/24) days. Override per-tenant via
+    # `posted_within_hours`.
+    POSTED_WITHIN_HOURS: int = 0
     # Drop postings whose source-provided offer-expiration date is in the past
     # (only JSearch reports one today). Override via `lead_sourcing_drop_expired_postings`.
     LEAD_SOURCING_DROP_EXPIRED_POSTINGS: bool = True

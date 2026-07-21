@@ -462,6 +462,7 @@ def fetch_from_source(
     tuning: Optional[Dict[str, Any]] = None,
     adapter_limit: int = 1000,
     posted_within_days: int = 7,
+    posted_within_hours: int = 0,
     push_negatives: bool = True,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
@@ -482,6 +483,9 @@ def fetch_from_source(
     adapter._exclude_title = exclude_title_keywords
     adapter._match_mode = match_mode
     adapter._push_negatives = push_negatives
+    # Hour-aware fetch window (0 = use posted_within_days). Only hour-aware
+    # sources (Fantastic.jobs) read this; day-based adapters ignore it.
+    adapter._posted_within_hours = posted_within_hours
 
     diagnostics: Dict[str, Any] = {
         "status": "success",
@@ -902,6 +906,13 @@ def run_lead_sourcing_pipeline(
         pipeline_adapter_limit = int(get_tenant_setting(db, "pipeline_adapter_limit", tenant_id=tenant_id, default=1000))
         pipeline_max_workers = int(get_tenant_setting(db, "pipeline_max_workers", tenant_id=tenant_id, default=6))
         posted_within_days = int(get_tenant_setting(db, "posted_within_days", tenant_id=tenant_id, default=7))
+        # Fetch window in hours (0 = use days). When set it takes precedence:
+        # hour-aware sources (Fantastic.jobs) honor it exactly; day-based sources
+        # use ceil(hours/24) days.
+        posted_within_hours = int(get_tenant_setting(db, "posted_within_hours", tenant_id=tenant_id, default=settings.POSTED_WITHIN_HOURS))
+        if posted_within_hours > 0:
+            posted_within_days = max(1, -(-posted_within_hours // 24))  # ceil(hours/24)
+            logger.info(f"Fetch window: {posted_within_hours}h (day-based sources use {posted_within_days}d)")
 
         # "__ANY__" sentinel means skip filtering for that dimension
         if isinstance(target_job_titles, list) and target_job_titles == ["__ANY__"]:
@@ -954,6 +965,7 @@ def run_lead_sourcing_pipeline(
                         tuning=adapter_tuning,
                         adapter_limit=pipeline_adapter_limit,
                         posted_within_days=posted_within_days,
+                        posted_within_hours=posted_within_hours,
                         push_negatives=push_exclusions_to_query,
                     ))
                 for future in concurrent.futures.as_completed(futures):
