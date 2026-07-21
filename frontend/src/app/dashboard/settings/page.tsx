@@ -33,6 +33,7 @@ interface JobSourceConfig {
   exclude_staffing_keywords: string[]
   exclude_company_keywords: string[]
   exclude_title_keywords: string[]
+  exclude_job_types: string[]
   exclude_match_mode: 'word_boundary' | 'substring'
   lead_sourcing_frequency: '2x' | '4x' | '6x'
   location_diversification: boolean
@@ -215,6 +216,13 @@ const DEFAULT_TITLE_EXCLUSIONS = [
   'intern', 'entry level',
 ]
 
+// Canonical employment types (matches backend normalize_employment_type output).
+const JOB_TYPE_OPTIONS = [
+  'Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Volunteer',
+]
+// Nothing excluded by default (non-disruptive).
+const DEFAULT_JOB_TYPE_EXCLUSIONS: string[] = []
+
 const DEFAULT_AI_PERSONALIZATION_PROMPT = `You are an expert cold email personalizer for a staffing/recruitment agency.
 
 Rewrite the given email to be uniquely personalized for this specific contact.
@@ -362,6 +370,7 @@ export default function SettingsPage() {
     exclude_staffing_keywords: DEFAULT_STAFFING_EXCLUSIONS,
     exclude_company_keywords: DEFAULT_COMPANY_EXCLUSIONS,
     exclude_title_keywords: DEFAULT_TITLE_EXCLUSIONS,
+    exclude_job_types: DEFAULT_JOB_TYPE_EXCLUSIONS,
     exclude_match_mode: 'word_boundary',
     lead_sourcing_frequency: '2x',
     location_diversification: false,
@@ -408,6 +417,7 @@ export default function SettingsPage() {
   const [newStaffingKeyword, setNewStaffingKeyword] = useState('')
   const [newCompanyKeyword, setNewCompanyKeyword] = useState('')
   const [newTitleKeyword, setNewTitleKeyword] = useState('')
+  const [newJobType, setNewJobType] = useState('')
 
   // AI configuration
   const [aiConfig, setAIConfig] = useState<AIConfig>({
@@ -664,6 +674,7 @@ export default function SettingsPage() {
         exclude_staffing_keywords: settingsMap.exclude_staffing_keywords || DEFAULT_STAFFING_EXCLUSIONS,
         exclude_company_keywords: settingsMap.exclude_company_keywords || DEFAULT_COMPANY_EXCLUSIONS,
         exclude_title_keywords: settingsMap.exclude_title_keywords || DEFAULT_TITLE_EXCLUSIONS,
+        exclude_job_types: settingsMap.exclude_job_types || DEFAULT_JOB_TYPE_EXCLUSIONS,
         exclude_match_mode: settingsMap.exclude_match_mode || 'word_boundary',
         lead_sourcing_frequency: settingsMap.lead_sourcing_frequency || '2x',
         location_diversification: settingsMap.location_diversification === true,
@@ -879,6 +890,7 @@ export default function SettingsPage() {
           saveSetting('exclude_staffing_keywords', jobSourceConfig.exclude_staffing_keywords, 'list'),
           saveSetting('exclude_company_keywords', jobSourceConfig.exclude_company_keywords, 'list'),
           saveSetting('exclude_title_keywords', jobSourceConfig.exclude_title_keywords, 'list'),
+          saveSetting('exclude_job_types', jobSourceConfig.exclude_job_types, 'list'),
           saveSetting('exclude_match_mode', jobSourceConfig.exclude_match_mode),
           saveSetting('job_title_categories', jobSourceConfig.job_title_categories, 'object'),
         ])
@@ -2210,6 +2222,124 @@ export default function SettingsPage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">Matched only against job title. Use for intern, entry-level roles, etc.</p>
+              </div>
+
+              {/* Job Type Exclusions */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label mb-0">
+                    <span>Job Type Exclusions</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({jobSourceConfig.exclude_job_types.length} active)
+                    </span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (jobSourceConfig.exclude_job_types.length === 0) {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_job_types: [...JOB_TYPE_OPTIONS] })
+                        } else {
+                          setJobSourceConfig({ ...jobSourceConfig, exclude_job_types: [] })
+                        }
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      {jobSourceConfig.exclude_job_types.length === 0 ? 'Check All' : 'Uncheck All'}
+                    </button>
+                    <button
+                      onClick={() => setJobSourceConfig({ ...jobSourceConfig, exclude_job_types: [...DEFAULT_JOB_TYPE_EXCLUSIONS] })}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Reset Defaults
+                    </button>
+                  </div>
+                </div>
+                <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set([...jobSourceConfig.exclude_job_types, ...JOB_TYPE_OPTIONS])).sort().map((jobType) => {
+                      const isActive = jobSourceConfig.exclude_job_types.includes(jobType)
+                      const isDefault = JOB_TYPE_OPTIONS.includes(jobType)
+                      return (
+                        <div
+                          key={jobType}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                              : 'bg-gray-100 text-gray-400 border border-gray-200 line-through'
+                          }`}
+                          onClick={() => {
+                            if (isActive) {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_job_types: jobSourceConfig.exclude_job_types.filter(k => k !== jobType)
+                              })
+                            } else {
+                              setJobSourceConfig({
+                                ...jobSourceConfig,
+                                exclude_job_types: [...jobSourceConfig.exclude_job_types, jobType]
+                              })
+                            }
+                          }}
+                        >
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <span>{jobType}</span>
+                          {!isDefault && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setJobSourceConfig({
+                                  ...jobSourceConfig,
+                                  exclude_job_types: jobSourceConfig.exclude_job_types.filter(k => k !== jobType)
+                                })
+                              }}
+                              className="ml-1 text-red-500 hover:text-red-700 font-bold"
+                              title="Remove custom job type"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newJobType}
+                    onChange={(e) => setNewJobType(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newJobType.trim()) {
+                        const jt = newJobType.trim()
+                        if (!jobSourceConfig.exclude_job_types.some(k => k.toLowerCase() === jt.toLowerCase())) {
+                          setJobSourceConfig({
+                            ...jobSourceConfig,
+                            exclude_job_types: [...jobSourceConfig.exclude_job_types, jt]
+                          })
+                        }
+                        setNewJobType('')
+                      }
+                    }}
+                    placeholder="Add custom job type..."
+                    className="input text-xs flex-1"
+                  />
+                  <button
+                    onClick={() => {
+                      const jt = newJobType.trim()
+                      if (jt && !jobSourceConfig.exclude_job_types.some(k => k.toLowerCase() === jt.toLowerCase())) {
+                        setJobSourceConfig({
+                          ...jobSourceConfig,
+                          exclude_job_types: [...jobSourceConfig.exclude_job_types, jt]
+                        })
+                      }
+                      setNewJobType('')
+                    }}
+                    className="btn-secondary text-xs px-3"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Active types are dropped by employment type (e.g. Part-time, Internship, Contract). Leads with an unknown/blank job type are never dropped.</p>
               </div>
 
               {/* Keyword Matching Mode */}

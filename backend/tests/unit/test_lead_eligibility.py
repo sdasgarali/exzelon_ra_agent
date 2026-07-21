@@ -79,6 +79,31 @@ class TestGateRules:
         assert eligible is True
         assert reason is None
 
+    def test_job_type_excluded_fires(self, db_session, test_tenant):
+        """Configured job type is dropped; matching is format/case-agnostic
+        (raw 'PARTTIME' normalizes to the configured 'Part-time')."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        gate.exclude_job_types = {"Part-time"}
+        eligible, reason = gate.check(_lead(employment_type="PARTTIME"))
+        assert eligible is False
+        assert reason == "job_type_excluded"
+
+    def test_job_type_unknown_not_dropped(self, db_session, test_tenant):
+        """Blank/unknown employment type is never dropped (recall preserved)."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        gate.exclude_job_types = {"Part-time"}
+        eligible, reason = gate.check(_lead(employment_type=""))
+        assert eligible is True
+        assert reason is None
+
+    def test_job_type_not_configured_passes(self, db_session, test_tenant):
+        """No exclusions configured → every employment type passes the gate."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        assert gate.exclude_job_types == set()
+        eligible, reason = gate.check(_lead(employment_type="Part-time"))
+        assert eligible is True
+        assert reason is None
+
     def test_insurance_industry_excluded(self, db_session, test_tenant):
         gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
         eligible, reason = gate.check(_lead(industry="Insurance"))

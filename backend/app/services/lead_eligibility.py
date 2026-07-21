@@ -115,6 +115,17 @@ class LeadEligibilityGate:
             db, "exclude_match_mode", tenant_id=tenant_id, default="word_boundary"
         )
 
+        # --- Job type / employment-type exclusions ---
+        # Normalize the configured types to the canonical labels the adapters
+        # store (Full-time, Part-time, ...) so matching is format/case-agnostic.
+        from app.services.adapters.base import normalize_employment_type
+        raw_job_types = get_tenant_setting(
+            db, "exclude_job_types", tenant_id=tenant_id, default=settings.EXCLUDE_JOB_TYPES
+        )
+        self.exclude_job_types = {
+            normalize_employment_type(str(t)) for t in (raw_job_types or []) if str(t).strip()
+        }
+
         # --- Manual company exclusion list (tenant + LOB scoped) ---
         # Loaded once, bucketed by lob_id so a batch spanning multiple LOBs (the
         # enrichment auto-path selects all NEW leads regardless of LOB) matches
@@ -205,6 +216,13 @@ class LeadEligibilityGate:
             _field(lead, "salary_min"), _field(lead, "salary_max"), self.min_salary_threshold
         ):
             return False, "salary_below_threshold"
+
+        # 4b) Job type / employment type (unknown/blank → not excluded).
+        if self.exclude_job_types:
+            from app.services.adapters.base import normalize_employment_type
+            emp_type = normalize_employment_type(_field(lead, "employment_type") or "")
+            if emp_type and emp_type in self.exclude_job_types:
+                return False, "job_type_excluded"
 
         # 5) Industry (unknown → not excluded).
         if industry_is_excluded(_field(lead, "industry"), self.excluded_industries):
