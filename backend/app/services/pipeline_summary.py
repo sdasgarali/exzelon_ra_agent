@@ -524,7 +524,9 @@ def _build_source_breakdown(pipeline_name: str, counters: Dict[str, Any]) -> Lis
                     "status_detail": None,
                     "total_retrieved": detail.get("fetched", 0),
                     "new_records": detail.get("new", 0),
-                    "existing_in_db": detail.get("existing_in_db", 0),
+                    # "excluded" = dropped by ICP gates (industry/size/staffing/...);
+                    # fall back to the old "existing_in_db" key for pre-migration runs.
+                    "excluded": detail.get("excluded", detail.get("existing_in_db", 0)),
                     "skipped": detail.get("skipped_dedup", 0),
                     "errors": 0,
                     "is_sub_source": False,
@@ -544,7 +546,7 @@ def _build_source_breakdown(pipeline_name: str, counters: Dict[str, Any]) -> Lis
                         "status_detail": None,
                         "total_retrieved": sub_detail.get("fetched", 0),
                         "new_records": sub_detail.get("new", 0),
-                        "existing_in_db": sub_detail.get("existing_in_db", 0),
+                        "excluded": sub_detail.get("excluded", sub_detail.get("existing_in_db", 0)),
                         "skipped": sub_detail.get("skipped_dedup", 0),
                         "errors": 0,
                         "is_sub_source": True,
@@ -561,7 +563,7 @@ def _build_source_breakdown(pipeline_name: str, counters: Dict[str, Any]) -> Lis
                     "status_detail": None,
                     "total_retrieved": count,
                     "new_records": 0,
-                    "existing_in_db": 0,
+                    "excluded": 0,
                     "skipped": 0,
                     "errors": 0,
                     "is_sub_source": False,
