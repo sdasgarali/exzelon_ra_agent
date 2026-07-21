@@ -544,7 +544,7 @@ export default function SettingsPage() {
       jooble: { batch_size: 4, max_pages: 5 },
       jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
       coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
-      fantastic_jobs: { max_pages: 10, max_employee_count: 200 },
+      fantastic_jobs: { max_pages: 10, max_employee_count: 0 },
     },
     pipeline_adapter_limit: 1000,
     pipeline_max_workers: 6,
@@ -797,7 +797,7 @@ export default function SettingsPage() {
         jooble: { batch_size: 4, max_pages: 5 },
         jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
         coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
-        fantastic_jobs: { max_pages: 10, max_employee_count: 200 },
+        fantastic_jobs: { max_pages: 10, max_employee_count: 0 },
       }
       const loadedTuning = settingsMap.job_source_tuning
       // Merge loaded tuning on top of defaults so any new adapter keys are present
@@ -4799,7 +4799,7 @@ export default function SettingsPage() {
                   key: 'fantastic_jobs', label: 'Fantastic.jobs', desc: 'LinkedIn feed + inline company firmographics',
                   fields: [
                     { k: 'max_pages', label: 'Max Pages', def: 10, rec: 10, min: 1, max: 20, impact: '100 jobs (=credits) per page. 10 ≈ 1,000 jobs/run.' },
-                    { k: 'max_employee_count', label: 'Max Employees', def: 200, rec: 200, min: 1, max: 100000, impact: 'Server-side company-size ceiling. Set to match your ICP size gate.' },
+                    { k: 'max_employee_count', label: 'Max Employees (0 = Auto)', def: 0, rec: 0, min: 0, max: 100000, impact: '0 = auto-follow the ICP size gate (lead_sourcing_max_employee_count). Set a number to override just this source.' },
                   ],
                 },
               ] as const).map((adapter) => {
