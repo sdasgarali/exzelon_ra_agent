@@ -983,9 +983,15 @@ async def update_setting(
             if not isinstance(params, dict):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Params for {adapter_name} must be an object")
             for pk, pv in params.items():
+                # List-valued params (e.g. theirstack.industry_id_not — LinkedIn
+                # industry codes to exclude) must be lists of integers.
+                if isinstance(pv, list):
+                    if not all(isinstance(x, int) and not isinstance(x, bool) for x in pv):
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{adapter_name}.{pk} must be a list of integers")
+                    continue
                 # max_employee_count may be 0 = "auto" (follow the ICP size gate).
                 min_ok = 0 if pk == "max_employee_count" else 1
-                if not isinstance(pv, (int, float)) or pv < min_ok:
+                if isinstance(pv, bool) or not isinstance(pv, (int, float)) or pv < min_ok:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{adapter_name}.{pk} must be >= {min_ok}")
 
     # Determine the value to store

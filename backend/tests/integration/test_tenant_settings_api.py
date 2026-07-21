@@ -152,6 +152,27 @@ class TestUpdateSetting:
         gs = db_session.query(Settings).filter(Settings.key == "daily_send_limit").first()
         assert json.loads(gs.value_json) == 100
 
+    def test_job_source_tuning_accepts_list_param(self, client, auth_headers, seed_global_settings):
+        """theirstack.industry_id_not is a list of ints — must be accepted (was
+        wrongly rejected as non-numeric → 400 on every Source Tuning save)."""
+        resp = client.put(
+            "/api/v1/settings/job_source_tuning",
+            headers=auth_headers,
+            json={"value": {
+                "theirstack": {"max_pages": 10, "industry_id_not": [3, 4, 36, 3252]},
+                "fantastic_jobs": {"max_pages": 10, "max_employee_count": 0},
+            }},
+        )
+        assert resp.status_code == 200
+
+    def test_job_source_tuning_rejects_non_int_list(self, client, auth_headers, seed_global_settings):
+        resp = client.put(
+            "/api/v1/settings/job_source_tuning",
+            headers=auth_headers,
+            json={"value": {"theirstack": {"industry_id_not": [3, "x"]}}},
+        )
+        assert resp.status_code == 400
+
 
 class TestTenantIsolation:
     """Verify tenant A's overrides don't affect tenant B."""
