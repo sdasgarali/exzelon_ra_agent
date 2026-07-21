@@ -39,6 +39,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'exclude_staffing_keywords': 'job_filters',
     'exclude_company_keywords': 'job_filters',
     'exclude_title_keywords': 'job_filters',
+    'exclude_job_types': 'job_filters',
     'exclude_match_mode': 'job_filters',
     'job_title_categories': 'job_filters',
     # Job Source APIs (provider selection, API keys, enabled sources)
@@ -477,6 +478,13 @@ DEFAULT_SETTINGS = {
         "value": ["intern", "entry level"],
         "type": "list",
         "description": "Exclusion keywords matched against job title only"
+    },
+
+    # Job type / employment-type exclusions
+    "exclude_job_types": {
+        "value": [],
+        "type": "list",
+        "description": "Employment types to exclude (Full-time, Part-time, Contract, Temporary, Internship, Volunteer). Matched against the lead's normalized employment_type; unknown is never dropped."
     },
 
     # Exclusion match mode

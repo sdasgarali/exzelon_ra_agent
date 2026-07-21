@@ -275,6 +275,12 @@ class Settings(BaseSettings):
         "intern", "entry level",
     ]
 
+    # Job type / employment-type exclusions (matched against a lead's
+    # normalized employment_type — Full-time, Part-time, Contract, Temporary,
+    # Internship, Volunteer). Empty by default (drop nothing). Unknown/blank
+    # employment_type is never dropped (recall-preserving).
+    EXCLUDE_JOB_TYPES: list[str] = []
+
     # Available Job Titles
     AVAILABLE_JOB_TITLES: list[str] = [
         "HR Manager", "HR Director", "Recruiter", "Talent Acquisition",
