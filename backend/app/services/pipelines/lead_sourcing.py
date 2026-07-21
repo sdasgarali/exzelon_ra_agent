@@ -656,9 +656,14 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db, tenant_id: Optional[int] = 
         company_name = job.get("client_name") or ""
 
         # DB Layer 1: Check external_job_id
+        # Archived leads are excluded from all dedup layers so the pipeline can
+        # re-source and re-evaluate previously-archived postings as fresh leads.
         ext_id = job.get("external_job_id") or ""
         if ext_id:
-            q = db.query(LeadDetails).filter(LeadDetails.external_job_id == ext_id)
+            q = db.query(LeadDetails).filter(
+                LeadDetails.external_job_id == ext_id,
+                LeadDetails.is_archived == False,  # noqa: E712
+            )
             if tenant_id is not None:
                 q = q.filter(LeadDetails.tenant_id == tenant_id)
             existing = q.first()
@@ -668,7 +673,10 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db, tenant_id: Optional[int] = 
         # DB Layer 2: Check job_link (only for real posting URLs)
         job_link = job.get("job_link") or ""
         if job_link and "/company/" not in job_link and "#job-" not in job_link:
-            q = db.query(LeadDetails).filter(LeadDetails.job_link == job_link)
+            q = db.query(LeadDetails).filter(
+                LeadDetails.job_link == job_link,
+                LeadDetails.is_archived == False,  # noqa: E712
+            )
             if tenant_id is not None:
                 q = q.filter(LeadDetails.tenant_id == tenant_id)
             existing = q.first()
@@ -682,7 +690,8 @@ def deduplicate_jobs(jobs: List[Dict[str, Any]], db, tenant_id: Optional[int] = 
         dedup_cutoff = datetime.utcnow() - timedelta(days=30)
         q = db.query(LeadDetails).filter(
             LeadDetails.state == (job.get("state") or ""),
-            LeadDetails.created_at >= dedup_cutoff
+            LeadDetails.created_at >= dedup_cutoff,
+            LeadDetails.is_archived == False,  # noqa: E712
         )
         if tenant_id is not None:
             q = q.filter(LeadDetails.tenant_id == tenant_id)
