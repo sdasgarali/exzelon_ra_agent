@@ -35,7 +35,7 @@ interface SourceBreakdown {
   status_detail: string | null
   total_retrieved: number
   new_records: number
-  existing_in_db: number
+  excluded: number
   skipped: number
   errors: number
   is_sub_source?: boolean
@@ -351,8 +351,8 @@ export function PipelineReportModal({
                           <th className="text-center px-3 py-2 text-gray-600 font-medium">Status</th>
                           <th className="text-right px-3 py-2 text-gray-600 font-medium">Retrieved</th>
                           <th className="text-right px-3 py-2 text-gray-600 font-medium">New</th>
-                          <th className="text-right px-3 py-2 text-gray-600 font-medium">Existing</th>
-                          <th className="text-right px-3 py-2 text-gray-600 font-medium">Skipped</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium" title="Duplicate postings removed by deduplication (in-batch + existing non-archived leads)">Duplicate</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-medium" title="Dropped by the ICP gates — out-of-scope industry, company size, staffing, stale posting, etc.">Excluded</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -393,10 +393,10 @@ export function PipelineReportModal({
                                 {sb.new_records}
                               </td>
                               <td className={`px-3 py-2 text-right text-gray-500 ${isSubSource ? 'text-xs' : ''}`}>
-                                {sb.existing_in_db}
-                              </td>
-                              <td className={`px-3 py-2 text-right text-gray-500 ${isSubSource ? 'text-xs' : ''}`}>
                                 {sb.skipped}
+                              </td>
+                              <td className={`px-3 py-2 text-right text-amber-600 ${isSubSource ? 'text-xs' : ''}`}>
+                                {sb.excluded}
                               </td>
                             </tr>
                           )
@@ -415,10 +415,10 @@ export function PipelineReportModal({
                                 {topLevel.reduce((s, b) => s + b.new_records, 0)}
                               </td>
                               <td className="px-3 py-2 text-right text-gray-500">
-                                {topLevel.reduce((s, b) => s + b.existing_in_db, 0)}
-                              </td>
-                              <td className="px-3 py-2 text-right text-gray-500">
                                 {topLevel.reduce((s, b) => s + b.skipped, 0)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-amber-600">
+                                {topLevel.reduce((s, b) => s + b.excluded, 0)}
                               </td>
                             </tr>
                           ) : null

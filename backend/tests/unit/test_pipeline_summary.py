@@ -231,7 +231,9 @@ class TestBuildSourceBreakdown:
     def test_lead_sourcing_new_format(self):
         counters = {
             "per_source_detail": {
-                "jsearch": {"fetched": 45, "new": 30, "existing_in_db": 10, "skipped_dedup": 5},
+                # new key: excluded (gate drops)
+                "jsearch": {"fetched": 45, "new": 30, "excluded": 10, "skipped_dedup": 5},
+                # legacy key: existing_in_db → mapped to excluded via fallback
                 "apollo": {"fetched": 20, "new": 15, "existing_in_db": 3, "skipped_dedup": 2},
             }
         }
@@ -241,8 +243,11 @@ class TestBuildSourceBreakdown:
         assert jsearch["source_label"] == "JSearch (RapidAPI)"
         assert jsearch["total_retrieved"] == 45
         assert jsearch["new_records"] == 30
-        assert jsearch["existing_in_db"] == 10
+        assert jsearch["excluded"] == 10
         assert jsearch["skipped"] == 5
+        # legacy existing_in_db must still surface under the new excluded key
+        apollo = next(r for r in result if r["source_name"] == "apollo")
+        assert apollo["excluded"] == 3
 
     def test_lead_sourcing_legacy_format(self):
         counters = {

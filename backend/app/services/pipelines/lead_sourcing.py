@@ -977,7 +977,7 @@ def run_lead_sourcing_pipeline(
                     source_name, jobs, error, diag = future.result()
                     counters["sources_used"].append(source_name)
                     counters["jobs_per_source"][source_name] = len(jobs)
-                    per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                    per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "excluded": 0, "skipped_dedup": 0}
                     api_diagnostics_list.append({
                         "adapter": source_name,
                         "status": diag["status"],
@@ -995,7 +995,7 @@ def run_lead_sourcing_pipeline(
                             sub_src = job.get("source", "unknown")
                             job["_sub_source"] = sub_src
                             if sub_src not in per_sub_source_detail:
-                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "excluded": 0, "skipped_dedup": 0}
                             per_sub_source_detail[sub_src]["fetched"] += 1
                         collected.extend(jobs)
             all_jobs.extend(collected)
@@ -1104,7 +1104,7 @@ def run_lead_sourcing_pipeline(
                     source_name, leads, error, diag = future.result()
                     counters["sources_used"].append(source_name)
                     counters["jobs_per_source"][source_name] = len(leads)
-                    per_source_detail[source_name] = {"fetched": len(leads), "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                    per_source_detail[source_name] = {"fetched": len(leads), "new": 0, "excluded": 0, "skipped_dedup": 0}
                     api_diagnostics_list.append({
                         "adapter": source_name,
                         "status": diag["status"],
@@ -1122,7 +1122,7 @@ def run_lead_sourcing_pipeline(
                             lead["_sub_source"] = lead.get("source", source_name)
                             sub_src = lead["_sub_source"]
                             if sub_src not in per_sub_source_detail:
-                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "existing_in_db": 0, "skipped_dedup": 0}
+                                per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "excluded": 0, "skipped_dedup": 0}
                             per_sub_source_detail[sub_src]["fetched"] += 1
                         all_jobs.extend(leads)
 
@@ -1337,11 +1337,13 @@ def run_lead_sourcing_pipeline(
             job_run.status = JobStatus.COMPLETED
         job_run.progress_pct = 100
         job_run.ended_at = datetime.utcnow()
-        # Compute existing_in_db for each source (fetched - new - skipped_dedup)
+        # Per-source "excluded" (dropped by the ICP gates — wrong industry, size,
+        # staffing, stale, etc.) = fetched - new(inserted) - duplicates(skipped_dedup).
+        # NOT the same as duplicates: these are out-of-scope leads, not existing rows.
         for src, detail in per_source_detail.items():
-            detail["existing_in_db"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
+            detail["excluded"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
         for sub_src, detail in per_sub_source_detail.items():
-            detail["existing_in_db"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
+            detail["excluded"] = max(0, detail["fetched"] - detail["new"] - detail["skipped_dedup"])
 
         job_run.counters_json = json.dumps({
             "inserted": counters["inserted"],
