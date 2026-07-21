@@ -65,6 +65,38 @@ def test_registered_in_source_tiers():
     assert "fantastic_jobs" in SOURCE_COST_RANK            # has a run-order rank
 
 
+@pytest.mark.parametrize("hours,days,expected", [
+    (1, 7, "1h"),      # explicit 1-hour window
+    (24, 7, "24h"),    # explicit 24-hour window
+    (48, 7, "7d"),     # >24h hours → 7d bucket
+    (0, 1, "24h"),     # no hours, 1 day → 24h
+    (0, 7, "7d"),      # no hours, 7 days → 7d
+])
+def test_time_frame_maps_from_hours_or_days(monkeypatch, hours, days, expected):
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+        def json(self):
+            return []  # empty → single page, no results needed
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None, timeout=None):
+            captured.update(params or {})
+            return _Resp()
+
+    monkeypatch.setattr(
+        "app.services.adapters.job_sources.fantastic_jobs.httpx.Client", _Client
+    )
+    a = FantasticJobsAdapter(api_key="k")
+    a._posted_within_hours = hours
+    a.fetch_jobs(posted_within_days=days, limit=100, tuning={"max_pages": 1})
+    assert captured["time_frame"] == expected
+
+
 def test_fetch_jobs_omits_ats_only_param(monkeypatch):
     """active-jb rejects include_basic_organization_details (active-ats only)
     with HTTP 400 — regression: it must NEVER appear in the query, and the

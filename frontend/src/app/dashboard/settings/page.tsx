@@ -518,6 +518,7 @@ export default function SettingsPage() {
     pipeline_adapter_limit: number;
     pipeline_max_workers: number;
     posted_within_days: number;
+    posted_within_hours: number;
     location_diversification: boolean;
     lead_sourcing_target_per_run: number;
     lead_sourcing_max_employee_count: number;
@@ -547,6 +548,7 @@ export default function SettingsPage() {
     pipeline_adapter_limit: 1000,
     pipeline_max_workers: 6,
     posted_within_days: 7,
+    posted_within_hours: 0,
     location_diversification: false,
     lead_sourcing_target_per_run: 500,
     lead_sourcing_max_employee_count: 500,
@@ -806,6 +808,7 @@ export default function SettingsPage() {
         pipeline_adapter_limit: settingsMap.pipeline_adapter_limit ?? 1000,
         pipeline_max_workers: settingsMap.pipeline_max_workers ?? 6,
         posted_within_days: settingsMap.posted_within_days ?? 7,
+        posted_within_hours: settingsMap.posted_within_hours ?? 0,
         location_diversification: settingsMap.location_diversification === true,
         lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
         lead_sourcing_max_employee_count: settingsMap.lead_sourcing_max_employee_count ?? 500,
@@ -1006,6 +1009,7 @@ export default function SettingsPage() {
           saveSetting('pipeline_adapter_limit', sourceTuningConfig.pipeline_adapter_limit, 'integer'),
           saveSetting('pipeline_max_workers', sourceTuningConfig.pipeline_max_workers, 'integer'),
           saveSetting('posted_within_days', sourceTuningConfig.posted_within_days, 'integer'),
+          saveSetting('posted_within_hours', sourceTuningConfig.posted_within_hours, 'integer'),
           saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
           saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
           saveSetting('lead_sourcing_max_employee_count', sourceTuningConfig.lead_sourcing_max_employee_count, 'integer'),
@@ -4353,19 +4357,55 @@ export default function SettingsPage() {
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Posted Within Days
-                    <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 7</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={90}
-                    value={sourceTuningConfig.posted_within_days}
-                    onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, posted_within_days: parseInt(e.target.value) || 7 })}
-                    className="input w-full"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Only fetch jobs posted within this many days. Lower = fewer duplicates per run. Was hardcoded at 30.</p>
+                  {(() => {
+                    const unit = sourceTuningConfig.posted_within_hours > 0 ? 'hours' : 'days'
+                    const value = unit === 'hours' ? sourceTuningConfig.posted_within_hours : sourceTuningConfig.posted_within_days
+                    const max = unit === 'hours' ? 2160 : 90
+                    return (
+                      <>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Posting Recency (fetch window)
+                          <span className="ml-2 text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended: 7 days</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={max}
+                            value={value}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value) || 1
+                              if (unit === 'hours') {
+                                setSourceTuningConfig({ ...sourceTuningConfig, posted_within_hours: Math.min(v, 2160) })
+                              } else {
+                                setSourceTuningConfig({ ...sourceTuningConfig, posted_within_days: Math.min(v, 90) })
+                              }
+                            }}
+                            className="input w-full"
+                          />
+                          <select
+                            value={unit}
+                            onChange={(e) => {
+                              if (e.target.value === 'hours') {
+                                // switch to hours: seed from current days (cap 2160)
+                                setSourceTuningConfig({ ...sourceTuningConfig, posted_within_hours: Math.min((sourceTuningConfig.posted_within_days || 1) * 24, 2160) })
+                              } else {
+                                // switch to days: 0 hours means "use days"
+                                setSourceTuningConfig({ ...sourceTuningConfig, posted_within_hours: 0 })
+                              }
+                            }}
+                            className="input w-32"
+                          >
+                            <option value="days">Days</option>
+                            <option value="hours">Hours</option>
+                          </select>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Only fetch jobs posted within this window. Hours give finer targeting (e.g. last 24h) — honored exactly by hour-aware sources like Fantastic.jobs (1h / 24h / 7d); day-based sources use the equivalent in days. Lower = fresher &amp; fewer duplicates.
+                        </p>
+                      </>
+                    )
+                  })()}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
