@@ -544,6 +544,7 @@ export default function SettingsPage() {
       jooble: { batch_size: 4, max_pages: 5 },
       jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
       coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
+      fantastic_jobs: { max_pages: 10, max_employee_count: 200 },
     },
     pipeline_adapter_limit: 1000,
     pipeline_max_workers: 6,
@@ -796,6 +797,7 @@ export default function SettingsPage() {
         jooble: { batch_size: 4, max_pages: 5 },
         jobdatafeeds: { batch_size: 4, max_pages: 50, results_per_page: 100 },
         coresignal: { batch_size: 5, max_pages: 5, results_per_page: 100 },
+        fantastic_jobs: { max_pages: 10, max_employee_count: 200 },
       }
       const loadedTuning = settingsMap.job_source_tuning
       // Merge loaded tuning on top of defaults so any new adapter keys are present
@@ -4791,6 +4793,13 @@ export default function SettingsPage() {
                     { k: 'batch_size', label: 'Batch Size', def: 5, rec: 10, min: 1, max: 50, impact: 'Titles per query.' },
                     { k: 'max_pages', label: 'Max Pages', def: 5, rec: 10, min: 1, max: 50, impact: '2 credits/record — watch cost.' },
                     { k: 'results_per_page', label: 'Results/Page', def: 100, rec: 100, min: 10, max: 500, impact: 'Results per page from API.' },
+                  ],
+                },
+                {
+                  key: 'fantastic_jobs', label: 'Fantastic.jobs', desc: 'LinkedIn feed + inline company firmographics',
+                  fields: [
+                    { k: 'max_pages', label: 'Max Pages', def: 10, rec: 10, min: 1, max: 20, impact: '100 jobs (=credits) per page. 10 ≈ 1,000 jobs/run.' },
+                    { k: 'max_employee_count', label: 'Max Employees', def: 200, rec: 200, min: 1, max: 100000, impact: 'Server-side company-size ceiling. Set to match your ICP size gate.' },
                   ],
                 },
               ] as const).map((adapter) => {
