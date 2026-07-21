@@ -463,6 +463,7 @@ def fetch_from_source(
     adapter_limit: int = 1000,
     posted_within_days: int = 7,
     posted_within_hours: int = 0,
+    max_employee_count_gate: int = 0,
     push_negatives: bool = True,
 ) -> Tuple[str, List[Dict[str, Any]], Optional[str], Dict[str, Any]]:
     """Fetch jobs from a single source (for parallel execution).
@@ -486,6 +487,9 @@ def fetch_from_source(
     # Hour-aware fetch window (0 = use posted_within_days). Only hour-aware
     # sources (Fantastic.jobs) read this; day-based adapters ignore it.
     adapter._posted_within_hours = posted_within_hours
+    # Tenant ICP size gate — hour-aware sources (Fantastic.jobs) auto-follow this
+    # for their server-side size ceiling when no per-adapter tuning override is set.
+    adapter._max_employee_count_gate = max_employee_count_gate
 
     diagnostics: Dict[str, Any] = {
         "status": "success",
@@ -966,6 +970,7 @@ def run_lead_sourcing_pipeline(
                         adapter_limit=pipeline_adapter_limit,
                         posted_within_days=posted_within_days,
                         posted_within_hours=posted_within_hours,
+                        max_employee_count_gate=max_employee_count,
                         push_negatives=push_exclusions_to_query,
                     ))
                 for future in concurrent.futures.as_completed(futures):

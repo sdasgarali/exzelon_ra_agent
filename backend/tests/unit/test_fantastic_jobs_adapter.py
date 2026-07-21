@@ -97,6 +97,46 @@ def test_time_frame_maps_from_hours_or_days(monkeypatch, hours, days, expected):
     assert captured["time_frame"] == expected
 
 
+def _capture_client(monkeypatch, captured):
+    class _Resp:
+        status_code = 200
+        def json(self):
+            return []
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None, timeout=None):
+            captured.update(params or {})
+            return _Resp()
+
+    monkeypatch.setattr(
+        "app.services.adapters.job_sources.fantastic_jobs.httpx.Client", _Client
+    )
+
+
+def test_size_ceiling_auto_follows_gate_when_tuning_unset(monkeypatch):
+    """No max_employee_count in tuning → server-side ceiling follows the ICP
+    gate value the pipeline sets (_max_employee_count_gate)."""
+    captured = {}
+    _capture_client(monkeypatch, captured)
+    a = FantasticJobsAdapter(api_key="k")
+    a._max_employee_count_gate = 350
+    a.fetch_jobs(posted_within_days=1, limit=100, tuning={"max_pages": 1})
+    assert captured["organization_headcount_lt"] == 351  # gate 350 + 1
+
+
+def test_size_ceiling_tuning_override_wins_over_gate(monkeypatch):
+    """An explicit per-adapter tuning value overrides the gate."""
+    captured = {}
+    _capture_client(monkeypatch, captured)
+    a = FantasticJobsAdapter(api_key="k")
+    a._max_employee_count_gate = 350
+    a.fetch_jobs(posted_within_days=1, limit=100, tuning={"max_pages": 1, "max_employee_count": 150})
+    assert captured["organization_headcount_lt"] == 151  # override 150 + 1
+
+
 def test_fetch_jobs_omits_ats_only_param(monkeypatch):
     """active-jb rejects include_basic_organization_details (active-ats only)
     with HTTP 400 — regression: it must NEVER appear in the query, and the

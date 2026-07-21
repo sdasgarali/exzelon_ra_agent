@@ -93,7 +93,12 @@ class FantasticJobsAdapter(JobSourceAdapter):
 
         _t = tuning or {}
         max_pages = int(_t.get("max_pages") or max(1, min(20, -(-limit // 100))))  # ceil(limit/100), capped
-        max_employee_count = int(_t.get("max_employee_count") or 200)
+        # Company-size ceiling: an explicit per-adapter tuning value wins; when it
+        # is unset (or 0 = "auto"), auto-follow the tenant ICP size gate
+        # (lead_sourcing_max_employee_count, passed by the pipeline); final
+        # fallback 200 for direct/standalone use.
+        tuning_cap = _t.get("max_employee_count")
+        max_employee_count = int(tuning_cap) if tuning_cap else int(getattr(self, "_max_employee_count_gate", 0) or 200)
         # time_frame — honor an explicit hour window when set (pipeline sets
         # _posted_within_hours; kwargs override for direct calls), else fall back
         # to the day window. Fantastic.jobs supports 1h / 24h / 7d buckets.
