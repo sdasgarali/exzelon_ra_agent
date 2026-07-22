@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { attributionApi } from '@/lib/api'
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
+  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
 } from 'recharts'
 import {
   RefreshCw, DollarSign, Award, FileCheck, Handshake, TrendingUp, Info, Download,
@@ -15,11 +15,13 @@ interface RecentRow {
   external_ref: string | null; amount: number | null
   occurred_at: string | null; created_at: string | null
 }
+interface TimePoint { date: string; revenue: number; outcomes: number }
 interface Summary {
   totals: { offers_accepted: number; placements: number; invoices_paid: number; revenue_paid: number }
   by_source: BySource[]
   by_event: Record<string, number>
   recent: RecentRow[]
+  timeseries: TimePoint[]
 }
 
 const BAR_COLORS = ['#2563eb', '#7c3aed', '#0d9488', '#d97706', '#db2777', '#059669', '#dc2626']
@@ -190,6 +192,24 @@ export default function AttributionPage() {
           {preset === 'all'
             ? 'No attribution yet. Outcomes (offers, placements, paid invoices) from Resource Pool will appear here, mapped back to the campaign and source that produced them.'
             : 'No attribution in the selected date range.'}
+        </div>
+      )}
+
+      {/* Revenue over time */}
+      {!empty && (data?.timeseries?.length ?? 0) > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 min-w-0">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Revenue over time</h2>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data!.timeseries} margin={{ top: 5, right: 12, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : String(v))} />
+                <Tooltip formatter={(v: number, n) => (n === 'revenue' ? fmtMoney(v) : v)} />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#059669" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 

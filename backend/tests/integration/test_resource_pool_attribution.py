@@ -110,6 +110,28 @@ def test_attribution_summary_date_filter(client, db_session, test_tenant, auth_h
     assert r2.json()["totals"]["revenue_paid"] == 3000.0
 
 
+def test_attribution_summary_timeseries(client, db_session, test_tenant, auth_headers):
+    from datetime import datetime
+    db_session.add_all([
+        ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="invoice.paid",
+                                rp_entity_id="d1a", source="s", amount=1000, occurred_at=datetime(2026, 7, 10)),
+        ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="invoice.paid",
+                                rp_entity_id="d1b", source="s", amount=500, occurred_at=datetime(2026, 7, 10)),
+        ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="placement.created",
+                                rp_entity_id="d2", source="s", amount=95, occurred_at=datetime(2026, 7, 11)),
+    ])
+    db_session.commit()
+    resp = client.get("/api/v1/integrations/resource-pool/attribution", headers=auth_headers)
+    assert resp.status_code == 200
+    ts = {p["date"]: p for p in resp.json()["timeseries"]}
+    # 2026-07-10: two paid invoices → $1500 revenue, 2 outcomes
+    assert ts["2026-07-10"]["revenue"] == 1500.0
+    assert ts["2026-07-10"]["outcomes"] == 2
+    # 2026-07-11: a placement (not invoice.paid) → $0 revenue, 1 outcome
+    assert ts["2026-07-11"]["revenue"] == 0.0
+    assert ts["2026-07-11"]["outcomes"] == 1
+
+
 def test_attribution_export_csv(client, db_session, test_tenant, auth_headers):
     db_session.add(ResourcePoolAttribution(
         tenant_id=test_tenant.tenant_id, event_type="placement.created",

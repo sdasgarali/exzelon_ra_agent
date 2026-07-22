@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
 from app.core.settings_resolver import get_tenant_setting
@@ -511,6 +511,18 @@ def resource_pool_attribution_summary(
         }
         for r in base.order_by(A.attribution_id.desc()).limit(25).all()
     ]
+    # Daily time series: revenue (paid invoices) + outcome count per day.
+    _day = func.date(func.coalesce(A.occurred_at, A.created_at))
+    timeseries = [
+        {"date": str(d), "revenue": float(rev or 0), "outcomes": int(oc or 0)}
+        for d, rev, oc in (
+            base.with_entities(
+                _day.label("d"),
+                func.coalesce(func.sum(case((A.event_type == "invoice.paid", A.amount), else_=0)), 0),
+                func.count(A.attribution_id),
+            ).group_by(_day).order_by(_day).all()
+        )
+    ]
     return {
         "totals": {
             "offers_accepted": offers_accepted,
@@ -521,6 +533,7 @@ def resource_pool_attribution_summary(
         "by_source": by_source,
         "by_event": {k: int(v) for k, v in by_event.items()},
         "recent": recent,
+        "timeseries": timeseries,
     }
 
 
