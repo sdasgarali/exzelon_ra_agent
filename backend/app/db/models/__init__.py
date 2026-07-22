@@ -50,6 +50,7 @@ from app.db.models.outreach_role import OutreachRole
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.db.models.company_exclusion import CompanyExclusion
+from app.db.models.resource_pool_attribution import ResourcePoolAttribution
 
 __all__ = [
     "User",

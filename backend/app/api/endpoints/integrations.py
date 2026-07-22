@@ -1,16 +1,19 @@
 """Integration endpoints for Zapier/Make and API key management."""
 import json
 import hashlib
+import hmac
 import logging
 import secrets
 from datetime import datetime
 from typing import Optional, List
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.core.settings_resolver import get_tenant_setting
 from app.db.models.user import User, UserRole
 from app.db.models.api_key import ApiKey
 from app.db.models.webhook import Webhook
@@ -343,3 +346,142 @@ def push_lead_to_resource_pool(
             detail="Resource Pool integration not configured (set resourcepool_api_url + resourcepool_api_key).",
         )
     return {"ok": True, "lead_id": lead_id, "resource_pool": rp}
+
+
+# ─── Resource Pool outcome webhooks → attribution (Phase 2) ───────
+
+_RP_ATTR_EVENTS = {"offer.accepted", "placement.created", "invoice.paid"}
+
+
+def _lead_id_from_external_ref(external_ref: Optional[str]) -> Optional[int]:
+    """'ra-lead-42' -> 42."""
+    if external_ref and external_ref.startswith("ra-lead-"):
+        try:
+            return int(external_ref[len("ra-lead-"):])
+        except ValueError:
+            return None
+    return None
+
+
+@router.post("/resource-pool/webhook")
+async def resource_pool_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive Resource Pool outcome webhooks (offer.accepted / placement.created /
+    invoice.paid), verify the HMAC signature, and record an attribution row mapped
+    back to the originating lead + source + campaign. Idempotent per RP entity.
+    """
+    raw = await request.body()
+    provided_sig = request.headers.get("X-Exzelon-Signature", "")
+
+    secret = (get_tenant_setting(db, "resourcepool_webhook_secret", tenant_id=1, default="") or "").strip()
+    if not secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Webhook secret not configured (resourcepool_webhook_secret).")
+    expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    if not (provided_sig and hmac.compare_digest(expected, provided_sig)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+    try:
+        envelope = json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed JSON")
+
+    event = envelope.get("event") or request.headers.get("X-Exzelon-Event", "")
+    data = envelope.get("data") or {}
+    if event not in _RP_ATTR_EVENTS:
+        return {"ok": True, "ignored": event}  # ack unknown/unsubscribed events
+
+    from app.db.models.resource_pool_attribution import ResourcePoolAttribution
+    from app.db.models.lead import LeadDetails
+    from app.db.models.outreach import OutreachEvent
+
+    external_ref = data.get("externalRef")
+    lead_id = _lead_id_from_external_ref(external_ref)
+
+    # Resolve lead → tenant + source; and a best-effort originating campaign.
+    tenant_id, source, campaign_id = 1, None, None
+    if lead_id is not None:
+        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+        if lead:
+            tenant_id = lead.tenant_id or 1
+            source = lead.source
+            oe = (db.query(OutreachEvent)
+                  .filter(OutreachEvent.lead_id == lead_id, OutreachEvent.campaign_id.isnot(None))
+                  .order_by(OutreachEvent.event_id.desc()).first())
+            if oe:
+                campaign_id = oe.campaign_id
+
+    rp_entity_id = str(data.get("placementId") or data.get("offerId") or data.get("invoiceId") or "") or None
+    amount = data.get("offerAmount")
+    if amount is None:
+        amount = data.get("amount")
+    if amount is None:
+        amount = data.get("billRate")
+
+    occurred_at = None
+    ca = envelope.get("createdAt")
+    if ca:
+        try:
+            occurred_at = datetime.fromisoformat(str(ca).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            occurred_at = None
+
+    # Idempotent upsert on (tenant_id, event_type, rp_entity_id).
+    row = None
+    if rp_entity_id:
+        row = (db.query(ResourcePoolAttribution)
+               .filter(ResourcePoolAttribution.tenant_id == tenant_id,
+                       ResourcePoolAttribution.event_type == event,
+                       ResourcePoolAttribution.rp_entity_id == rp_entity_id).first())
+    if row is None:
+        row = ResourcePoolAttribution(tenant_id=tenant_id, event_type=event, rp_entity_id=rp_entity_id)
+        db.add(row)
+    row.external_ref = external_ref
+    row.lead_id = lead_id
+    row.campaign_id = campaign_id
+    row.source = source
+    row.amount = amount
+    row.currency = data.get("currency") or "USD"
+    row.occurred_at = occurred_at
+    row.raw_json = json.dumps(data)[:8000]
+    db.commit()
+
+    return {"ok": True, "event": event, "lead_id": lead_id, "attribution_id": row.attribution_id}
+
+
+@router.get("/resource-pool/attribution")
+def resource_pool_attribution_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Campaign→placement→revenue attribution summary from Resource Pool outcomes."""
+    from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
+
+    base = db.query(A)
+    if tenant_id is not None:
+        base = base.filter(A.tenant_id == tenant_id)
+
+    by_event = dict(
+        base.with_entities(A.event_type, func.count(A.attribution_id)).group_by(A.event_type).all()
+    )
+    by_source = [
+        {"source": s or "unknown", "events": int(n or 0), "amount": float(amt or 0)}
+        for s, n, amt in base.with_entities(A.source, func.count(A.attribution_id), func.sum(A.amount))
+        .group_by(A.source).order_by(func.sum(A.amount).desc().nullslast()).all()
+    ]
+    placements = int(by_event.get("placement.created", 0))
+    offers_accepted = int(by_event.get("offer.accepted", 0))
+    revenue_paid = float(
+        base.filter(A.event_type == "invoice.paid")
+        .with_entities(func.coalesce(func.sum(A.amount), 0)).scalar() or 0
+    )
+    return {
+        "totals": {
+            "offers_accepted": offers_accepted,
+            "placements": placements,
+            "invoices_paid": int(by_event.get("invoice.paid", 0)),
+            "revenue_paid": revenue_paid,
+        },
+        "by_source": by_source,
+        "by_event": {k: int(v) for k, v in by_event.items()},
+    }
