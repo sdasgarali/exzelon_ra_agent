@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
 } from 'recharts'
 import {
-  RefreshCw, DollarSign, Award, FileCheck, Handshake, TrendingUp, Info,
+  RefreshCw, DollarSign, Award, FileCheck, Handshake, TrendingUp, Info, Download,
 } from 'lucide-react'
 
 interface BySource { source: string; events: number; amount: number }
@@ -73,6 +73,8 @@ export default function AttributionPage() {
     return { start: fmt(start), end: fmt(today) }
   }, [preset, customStart, customEnd])
 
+  const [exporting, setExporting] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -86,6 +88,26 @@ export default function AttributionPage() {
   }, [rangeParams])
 
   useEffect(() => { load() }, [load])
+
+  const handleExport = useCallback(async () => {
+    setExporting(true)
+    try {
+      const rp = rangeParams()
+      const blob = await attributionApi.exportCsv(rp)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `attribution_${rp.start || 'all'}_${rp.end || 'all'}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError('Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }, [rangeParams])
 
   const t = data?.totals
   const empty = !loading && !error && (data?.recent?.length ?? 0) === 0
@@ -132,6 +154,13 @@ export default function AttributionPage() {
               />
             </>
           )}
+          <button
+            onClick={handleExport}
+            disabled={exporting || empty}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className={`w-4 h-4 ${exporting ? 'animate-pulse' : ''}`} /> Export CSV
+          </button>
           <button
             onClick={load}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"

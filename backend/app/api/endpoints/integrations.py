@@ -448,6 +448,26 @@ async def resource_pool_webhook(request: Request, db: Session = Depends(get_db))
     return {"ok": True, "event": event, "lead_id": lead_id, "attribution_id": row.attribution_id}
 
 
+def _attribution_query(db: Session, tenant_id: Optional[int], start: Optional[str], end: Optional[str]):
+    """Tenant- and date-range-filtered ResourcePoolAttribution query (end inclusive)."""
+    from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
+    q = db.query(A)
+    if tenant_id is not None:
+        q = q.filter(A.tenant_id == tenant_id)
+    when = func.coalesce(A.occurred_at, A.created_at)
+    if start:
+        try:
+            q = q.filter(when >= datetime.fromisoformat(start))
+        except ValueError:
+            pass
+    if end:
+        try:
+            q = q.filter(when < datetime.fromisoformat(end) + timedelta(days=1))
+        except ValueError:
+            pass
+    return q
+
+
 @router.get("/resource-pool/attribution")
 def resource_pool_attribution_summary(
     start: Optional[str] = Query(None, description="Inclusive start date (YYYY-MM-DD)"),
@@ -463,22 +483,7 @@ def resource_pool_attribution_summary(
     """
     from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
 
-    base = db.query(A)
-    if tenant_id is not None:
-        base = base.filter(A.tenant_id == tenant_id)
-
-    # Date-range filter on the outcome date (occurred_at → created_at fallback).
-    _when = func.coalesce(A.occurred_at, A.created_at)
-    if start:
-        try:
-            base = base.filter(_when >= datetime.fromisoformat(start))
-        except ValueError:
-            pass
-    if end:
-        try:
-            base = base.filter(_when < datetime.fromisoformat(end) + timedelta(days=1))
-        except ValueError:
-            pass
+    base = _attribution_query(db, tenant_id, start, end)
 
     by_event = dict(
         base.with_entities(A.event_type, func.count(A.attribution_id)).group_by(A.event_type).all()
@@ -551,3 +556,42 @@ def resource_pool_match_summary(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
                             detail=f"Could not reach Resource Pool: {e}")
     return {"ok": True, "lead_id": lead_id, **summary}
+
+
+@router.get("/resource-pool/attribution/export")
+def resource_pool_attribution_export(
+    start: Optional[str] = Query(None, description="Inclusive start date (YYYY-MM-DD)"),
+    end: Optional[str] = Query(None, description="Inclusive end date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """CSV export of the (date-range-filtered) attribution rows."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
+
+    q = _attribution_query(db, tenant_id, start, end).order_by(A.attribution_id.desc())
+    cols = ["attribution_id", "event_type", "source", "lead_id", "external_ref",
+            "campaign_id", "amount", "currency", "occurred_at", "created_at", "rp_entity_id"]
+
+    def _iter():
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(cols)
+        yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+        for r in q.yield_per(500):
+            w.writerow([
+                r.attribution_id, r.event_type, r.source or "", r.lead_id or "",
+                r.external_ref or "", r.campaign_id or "",
+                float(r.amount) if r.amount is not None else "", r.currency or "",
+                r.occurred_at.isoformat() if r.occurred_at else "",
+                r.created_at.isoformat() if getattr(r, "created_at", None) else "",
+                r.rp_entity_id or "",
+            ])
+            yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+
+    fname = f"attribution_{start or 'all'}_{end or 'all'}.csv"
+    return StreamingResponse(_iter(), media_type="text/csv",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
