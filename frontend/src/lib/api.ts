@@ -1880,3 +1880,11 @@ export const companyExclusionsApi = {
     return response.data
   },
 }
+
+// Resource Pool attribution (campaign -> placement -> revenue)
+export const attributionApi = {
+  summary: async () => {
+    const response = await api.get('/integrations/resource-pool/attribution')
+    return response.data
+  },
+}
