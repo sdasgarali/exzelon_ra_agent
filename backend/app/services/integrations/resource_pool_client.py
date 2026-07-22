@@ -7,7 +7,8 @@ into the Resource Pool ATS via its REST API (`POST /api/v1/leads`, Bearer key,
 """
 import json
 import logging
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
@@ -15,6 +16,11 @@ from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting, get_tenant_setting_bool
 
 logger = logging.getLogger(__name__)
+
+# Short in-process cache of the per-lead candidate pitch so a campaign blast
+# (many contacts sharing one lead) makes at most one RP call per lead per window.
+_PITCH_CACHE: Dict[Tuple[Optional[int], int], Tuple[float, Optional[str]]] = {}
+_PITCH_TTL_SECONDS = 900
 
 # Opportunity stages accepted by Resource Pool.
 _VALID_STAGES = {"LEAD", "QUALIFIED", "PROPOSAL", "WON", "LOST"}
@@ -190,6 +196,46 @@ def push_lead_by_id(db, lead_id: int, tenant_id: Optional[int] = None, stage: st
     lead.metadata_json = json.dumps(meta)
     db.commit()
     return rp
+
+
+def build_candidate_pitch(db, lead_id: Optional[int], tenant_id: Optional[int] = None,
+                          threshold: int = 80) -> Optional[str]:
+    """One-line "ready candidates" hook for outreach copy, e.g.
+    "We already have 5 pre-screened candidates who are a strong (>=80%) fit for
+    your Distribution Center Area Manager role."
+
+    Returns None (no hook) when disabled, unconfigured, the lead isn't in RP yet,
+    or there are zero >=threshold matches. Best-effort + cached; never raises.
+    """
+    if not lead_id:
+        return None
+    if not get_tenant_setting_bool(db, "resourcepool_pitch_in_email", tenant_id=tenant_id, default=True):
+        return None
+
+    key = (tenant_id, lead_id)
+    now = time.time()
+    hit = _PITCH_CACHE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+
+    pitch: Optional[str] = None
+    try:
+        client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
+        if client is not None:
+            client.timeout = 8  # keep the send loop snappy
+            summary = client.get_match_summary(f"ra-lead-{lead_id}", threshold=threshold)
+            n = int(summary.get("matchCount") or 0)
+            if n > 0:
+                role = (summary.get("jobTitle") or "this").strip() or "this"
+                s = "s" if n != 1 else ""
+                pitch = (f"We already have {n} pre-screened candidate{s} who are a strong "
+                         f"(≥{threshold}%) fit for your {role} role.")
+    except Exception as e:  # noqa: BLE001 — best-effort, never break send/personalization
+        logger.debug("Candidate pitch unavailable for lead %s: %s", lead_id, e)
+        pitch = None
+
+    _PITCH_CACHE[key] = (now + _PITCH_TTL_SECONDS, pitch)
+    return pitch
 
 
 def auto_push_lead_on_interested_reply(db, contact, tenant_id: Optional[int] = None) -> Optional[Dict[str, Any]]:

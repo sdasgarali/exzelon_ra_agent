@@ -564,8 +564,19 @@ def _execute_email_step(
     # Build LOB-specific merge fields from lead metadata
     _lob_fields = _build_lob_merge_fields(contact_lead)
 
+    # Resource Pool "ready candidates" hook for {{candidate_pitch}} templates
+    # (best-effort; empty string when unconfigured / no >=80% matches).
+    try:
+        from app.services.integrations.resource_pool_client import build_candidate_pitch
+        _candidate_pitch = build_candidate_pitch(
+            db, getattr(contact_lead, "lead_id", None), getattr(campaign, "tenant_id", None)
+        ) or ""
+    except Exception:
+        _candidate_pitch = ""
+
     template_context = {
         "contact_first_name": contact.first_name or "",
+        "candidate_pitch": _candidate_pitch,
         "contact_last_name": contact.last_name or "",
         "company_name": _company,
         "contact_title": contact.title or "",

@@ -101,11 +101,27 @@ def personalize_email_for_contact(
         if not profile["company"]:
             profile["company"] = getattr(lead, "client_name", "") or ""
 
+    # "Ready candidates" hook from Resource Pool (best-effort; None when
+    # unconfigured / no >=80% matches). Gives the AI a concrete, true value prop.
+    candidate_pitch = None
+    if lead:
+        try:
+            from app.services.integrations.resource_pool_client import build_candidate_pitch
+            candidate_pitch = build_candidate_pitch(db, getattr(lead, "lead_id", None), tenant_id)
+        except Exception:  # never break personalization
+            candidate_pitch = None
+
     user_prompt = (
         f"ORIGINAL SUBJECT: {subject}\n\n"
         f"ORIGINAL BODY:\n{body_text}\n\n"
         f"CONTACT PROFILE:\n{json.dumps(profile, indent=2)}"
     )
+    if candidate_pitch:
+        user_prompt += (
+            "\n\nREADY CANDIDATES (a TRUE fact — weave in naturally as a value "
+            "prop if it strengthens the email; keep it to one sentence, do not "
+            f"exaggerate or invent numbers):\n{candidate_pitch}"
+        )
 
     try:
         # Call adapter — handle Gemini's different signature
