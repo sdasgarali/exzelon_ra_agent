@@ -128,7 +128,7 @@ def _log_event(db, tenant_id, description: str, status: str = "success") -> None
     from app.db.models.automation_event import AutomationEvent
     try:
         db.add(AutomationEvent(tenant_id=tenant_id or 1, event_type="resource_pool_push",
-                               description=description, status=status))
+                               source="api", title=description[:255], status=status))
         db.commit()
     except Exception:  # logging must never break the caller
         db.rollback()
