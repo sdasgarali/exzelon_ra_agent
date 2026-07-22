@@ -73,6 +73,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'resourcepool_api_url': 'job_source_apis',
     'resourcepool_api_key': 'job_source_apis',
     'resourcepool_auto_push_on_reply': 'job_source_apis',
+    'resourcepool_webhook_secret': 'job_source_apis',
     # AI/LLM
     'ai_provider': 'ai_llm',
     'groq_api_key': 'ai_llm',
@@ -222,6 +223,7 @@ DEFAULT_SETTINGS = {
     "resourcepool_api_url": {"value": "", "type": "string", "description": "Resource Pool ATS base URL (e.g. https://resourcepool.partnerwithus.tech) for pushing qualified leads (Job+Company+Contact+Opportunity)."},
     "resourcepool_api_key": {"value": "", "type": "string", "description": "Resource Pool API key with the leads:write scope (Bearer). Used by the RA→RP lead hand-off connector."},
     "resourcepool_auto_push_on_reply": {"value": True, "type": "boolean", "description": "Automatically push a lead to Resource Pool (Opportunity=QUALIFIED) when a client reply is classified 'interested'. Requires resourcepool_api_url/key."},
+    "resourcepool_webhook_secret": {"value": "", "type": "string", "description": "Shared HMAC secret (whsec_...) for verifying Resource Pool outcome webhooks (offer.accepted/placement.created/invoice.paid) at /integrations/resource-pool/webhook."},
 
     # New Contact Discovery API Keys
     "hunter_contact_api_key": {"value": "", "type": "string", "description": "Hunter.io API key for contact finder (Free: 25 req/mo | Paid: from $49/mo)"},
