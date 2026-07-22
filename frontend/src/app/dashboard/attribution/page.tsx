@@ -51,18 +51,39 @@ export default function AttributionPage() {
   const [data, setData] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [preset, setPreset] = useState<'all' | '7d' | '30d' | '90d' | 'ytd' | 'custom'>('all')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+
+  const rangeParams = useCallback((): { start?: string; end?: string } => {
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    const today = new Date()
+    if (preset === 'custom') {
+      const p: { start?: string; end?: string } = {}
+      if (customStart) p.start = customStart
+      if (customEnd) p.end = customEnd
+      return p
+    }
+    if (preset === 'all') return {}
+    const start = new Date(today)
+    if (preset === '7d') start.setDate(today.getDate() - 6)
+    else if (preset === '30d') start.setDate(today.getDate() - 29)
+    else if (preset === '90d') start.setDate(today.getDate() - 89)
+    else if (preset === 'ytd') { start.setMonth(0); start.setDate(1) }
+    return { start: fmt(start), end: fmt(today) }
+  }, [preset, customStart, customEnd])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      setData(await attributionApi.summary())
+      setData(await attributionApi.summary(rangeParams()))
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load attribution data')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [rangeParams])
 
   useEffect(() => { load() }, [load])
 
@@ -82,12 +103,42 @@ export default function AttributionPage() {
             Campaign → placement → revenue, sourced from Resource Pool outcomes.
           </p>
         </div>
-        <button
-          onClick={load}
-          className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 self-start"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as typeof preset)}
+            aria-label="Date range"
+            className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2"
+          >
+            <option value="all">All time</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+            <option value="90d">Last 90 days</option>
+            <option value="ytd">Year to date</option>
+            <option value="custom">Custom…</option>
+          </select>
+          {preset === 'custom' && (
+            <>
+              <input
+                type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
+                aria-label="Start date"
+                className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-2 py-2"
+              />
+              <span className="text-gray-400 text-sm">–</span>
+              <input
+                type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
+                aria-label="End date"
+                className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-2 py-2"
+              />
+            </>
+          )}
+          <button
+            onClick={load}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -107,8 +158,9 @@ export default function AttributionPage() {
       {empty && (
         <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center text-sm text-gray-500 dark:text-gray-400">
           <Info className="w-6 h-6 mx-auto mb-2 text-gray-400" />
-          No attribution yet. Outcomes (offers, placements, paid invoices) from Resource Pool will appear here,
-          mapped back to the campaign and source that produced them.
+          {preset === 'all'
+            ? 'No attribution yet. Outcomes (offers, placements, paid invoices) from Resource Pool will appear here, mapped back to the campaign and source that produced them.'
+            : 'No attribution in the selected date range.'}
         </div>
       )}
 

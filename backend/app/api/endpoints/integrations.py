@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -450,16 +450,35 @@ async def resource_pool_webhook(request: Request, db: Session = Depends(get_db))
 
 @router.get("/resource-pool/attribution")
 def resource_pool_attribution_summary(
+    start: Optional[str] = Query(None, description="Inclusive start date (YYYY-MM-DD)"),
+    end: Optional[str] = Query(None, description="Inclusive end date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Campaign→placement→revenue attribution summary from Resource Pool outcomes."""
+    """Campaign→placement→revenue attribution summary from Resource Pool outcomes.
+
+    Optional ``start``/``end`` (YYYY-MM-DD) filter every aggregation by the outcome
+    date (occurred_at, falling back to created_at); ``end`` is inclusive.
+    """
     from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
 
     base = db.query(A)
     if tenant_id is not None:
         base = base.filter(A.tenant_id == tenant_id)
+
+    # Date-range filter on the outcome date (occurred_at → created_at fallback).
+    _when = func.coalesce(A.occurred_at, A.created_at)
+    if start:
+        try:
+            base = base.filter(_when >= datetime.fromisoformat(start))
+        except ValueError:
+            pass
+    if end:
+        try:
+            base = base.filter(_when < datetime.fromisoformat(end) + timedelta(days=1))
+        except ValueError:
+            pass
 
     by_event = dict(
         base.with_entities(A.event_type, func.count(A.attribution_id)).group_by(A.event_type).all()
