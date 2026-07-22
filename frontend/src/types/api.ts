@@ -452,6 +452,7 @@ export interface TenantSummary {
   tenant_id: number;
   name: string;
   slug: string;
+  domain: string | null;
   plan: string;
   is_active: boolean;
   website: string | null;
@@ -478,7 +479,6 @@ export interface TenantUser {
 }
 
 export interface TenantDetail extends TenantSummary {
-  domain: string | null;
   logo_url: string | null;
   max_users: number;
   max_mailboxes: number;

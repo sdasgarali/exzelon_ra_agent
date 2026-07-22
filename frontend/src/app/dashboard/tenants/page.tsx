@@ -75,6 +75,7 @@ export default function TenantManagementPage() {
   const [editTenant, setEditTenant] = useState<TenantDetail | null>(null)
   const [editForm, setEditForm] = useState({
     name: '',
+    domain: '',
     plan: 'starter',
     is_active: true,
     max_users: 5,
@@ -102,6 +103,7 @@ export default function TenantManagementPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm, setCreateForm] = useState({
     name: '',
+    domain: '',
     plan: 'starter',
     website: '',
     industry: '',
@@ -188,6 +190,7 @@ export default function TenantManagementPage() {
       setEditTenant(data)
       setEditForm({
         name: data.name,
+        domain: data.domain || '',
         plan: data.plan,
         is_active: data.is_active,
         max_users: data.max_users,
@@ -273,7 +276,7 @@ export default function TenantManagementPage() {
       setSuccess(`Tenant "${createForm.name}" created successfully`)
       setCreateOpen(false)
       setCreateForm({
-        name: '', plan: 'starter', website: '', industry: '',
+        name: '', domain: '', plan: 'starter', website: '', industry: '',
         company_address: '', phone: '', contact_email: '',
         max_users: 3, max_mailboxes: 0, max_contacts: 0, max_campaigns: 0, max_leads: 0,
       })
@@ -351,6 +354,7 @@ export default function TenantManagementPage() {
             <thead className="bg-gray-50 dark:bg-gray-900/50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tenant</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Registered Domain</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Plan</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Industry</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Website</th>
@@ -367,13 +371,13 @@ export default function TenantManagementPage() {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={13} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     Loading tenants...
                   </td>
                 </tr>
               ) : tenants.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={13} className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                     No tenants found
                   </td>
                 </tr>
@@ -383,6 +387,9 @@ export default function TenantManagementPage() {
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{t.name}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">{t.slug}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-700 dark:text-gray-300">
+                      {t.domain || <span className="text-gray-400 font-sans">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${PLAN_COLORS[t.plan] || PLAN_COLORS.starter}`}>
@@ -609,6 +616,18 @@ export default function TenantManagementPage() {
               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Registered domain</label>
+            <input
+              type="text"
+              value={editForm.domain}
+              onChange={(e) => setEditForm({ ...editForm, domain: e.target.value })}
+              placeholder="acme.com"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter the SAME registered domain here and in Resource Pool to uniquely link this tenant across both systems.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -842,6 +861,18 @@ export default function TenantManagementPage() {
               placeholder="Company Name"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Registered domain</label>
+            <input
+              type="text"
+              value={createForm.domain}
+              onChange={(e) => setCreateForm({ ...createForm, domain: e.target.value })}
+              placeholder="acme.com"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter the SAME registered domain here and in Resource Pool to uniquely link this tenant across both systems.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
