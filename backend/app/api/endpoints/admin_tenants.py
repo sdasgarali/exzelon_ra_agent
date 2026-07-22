@@ -28,10 +28,31 @@ router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
 super_admin_dep = require_role([UserRole.SUPER_ADMIN])
 
 
+def _normalize_domain(d: Optional[str]) -> Optional[str]:
+    """Normalize a registered domain so the SAME value links a tenant across systems
+    (RA Agent ↔ Resource Pool). Strips scheme/www/path, lowercases."""
+    if not d:
+        return None
+    import re
+    clean = d.strip().lower()
+    clean = re.sub(r"^https?://", "", clean)
+    clean = re.sub(r"^www\.", "", clean)
+    clean = clean.split("/")[0].strip()
+    return clean or None
+
+
+def _domain_taken(db: Session, domain: str, exclude_tenant_id: Optional[int] = None) -> bool:
+    q = db.query(Tenant).filter(Tenant.domain == domain)
+    if exclude_tenant_id is not None:
+        q = q.filter(Tenant.tenant_id != exclude_tenant_id)
+    return db.query(q.exists()).scalar()
+
+
 class TenantSummary(BaseModel):
     tenant_id: int
     name: str
     slug: str
+    domain: Optional[str] = None  # registered domain — cross-system link key (Resource Pool)
     plan: str
     is_active: bool
     website: Optional[str] = None
@@ -64,6 +85,7 @@ class TenantDetail(TenantSummary):
 class TenantCreate(BaseModel):
     name: str
     plan: str = "starter"
+    domain: Optional[str] = None  # registered domain — unique link key across systems
     website: Optional[str] = None
     industry: Optional[str] = None
     company_address: Optional[str] = None
@@ -79,6 +101,7 @@ class TenantCreate(BaseModel):
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
     plan: Optional[str] = None
+    domain: Optional[str] = None  # registered domain — unique link key across systems
     is_active: Optional[bool] = None
     max_users: Optional[int] = None
     max_mailboxes: Optional[int] = None
@@ -115,6 +138,7 @@ async def list_tenants(
             tenant_id=t.tenant_id,
             name=t.name,
             slug=t.slug,
+            domain=t.domain,
             plan=t.plan.value if hasattr(t.plan, 'value') else str(t.plan),
             is_active=t.is_active,
             website=t.website,
@@ -150,10 +174,15 @@ async def create_tenant(
 
     slug = generate_unique_slug(data.name, db)
 
+    domain = _normalize_domain(data.domain)
+    if domain and _domain_taken(db, domain):
+        raise HTTPException(status_code=409, detail="That registered domain is already linked to another tenant.")
+
     tenant = Tenant(
         name=data.name.strip(),
         slug=slug,
         plan=plan,
+        domain=domain,
         website=data.website or None,
         industry=data.industry or None,
         company_address=data.company_address or None,
@@ -259,6 +288,11 @@ async def update_tenant(
             raise HTTPException(status_code=400, detail=f"Invalid plan: {data.plan}")
     if data.is_active is not None:
         tenant.is_active = data.is_active
+    if data.domain is not None:
+        norm = _normalize_domain(data.domain)
+        if norm and _domain_taken(db, norm, exclude_tenant_id=tenant.tenant_id):
+            raise HTTPException(status_code=409, detail="That registered domain is already linked to another tenant.")
+        tenant.domain = norm
     if data.max_users is not None:
         tenant.max_users = data.max_users
     if data.max_mailboxes is not None:
