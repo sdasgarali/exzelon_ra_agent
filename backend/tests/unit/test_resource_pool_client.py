@@ -49,6 +49,31 @@ def test_invalid_stage_defaults_to_lead():
     assert build_lead_payload(_lead(), stage="BOGUS")["opportunity"]["stage"] == "LEAD"
 
 
+def test_get_match_summary_calls_by_code_endpoint(monkeypatch):
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"matchCount": 3, "threshold": 80, "topMatches": []}
+
+    class _Client:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None):
+            captured.update(url=url, params=params, headers=headers)
+            return _Resp()
+
+    monkeypatch.setattr("app.services.integrations.resource_pool_client.httpx.Client", _Client)
+    c = ResourcePoolClient(base_url="https://rp.example.com", api_key="exz_k")
+    out = c.get_match_summary("ra-lead-815", threshold=80)
+    assert out["matchCount"] == 3
+    assert captured["url"] == "https://rp.example.com/api/v1/jobs/by-code/ra-lead-815/match-summary"
+    assert captured["params"] == {"threshold": 80}
+    assert captured["headers"]["Authorization"] == "Bearer exz_k"
+
+
 def test_auto_push_noop_when_disabled(monkeypatch):
     """When resourcepool_auto_push_on_reply is off, the auto-push is a no-op and
     never touches the network."""

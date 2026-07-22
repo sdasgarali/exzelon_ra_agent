@@ -485,3 +485,37 @@ def resource_pool_attribution_summary(
         "by_source": by_source,
         "by_event": {k: int(v) for k, v in by_event.items()},
     }
+
+
+# ─── Candidate match summary feed (Phase 3) ───────────────────────
+
+@router.get("/resource-pool/match-summary/{lead_id}")
+def resource_pool_match_summary(
+    lead_id: int,
+    threshold: int = Query(80, ge=0, le=100, description="Minimum fit %"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Candidate match summary for a lead's job (count of candidates ≥ threshold% fit
+    + top anonymized matches), fetched from Resource Pool — powers the outreach pitch.
+    """
+    from app.services.integrations.resource_pool_client import ResourcePoolClient
+    client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Resource Pool integration not configured (set resourcepool_api_url + resourcepool_api_key).")
+    external_ref = f"ra-lead-{lead_id}"
+    try:
+        summary = client.get_match_summary(external_ref, threshold=threshold)
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code if e.response is not None else 502
+        if code == 404:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail=f"Lead {lead_id} not found in Resource Pool (push it first).")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Resource Pool match-summary failed (HTTP {code}).")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Could not reach Resource Pool: {e}")
+    return {"ok": True, "lead_id": lead_id, **summary}
