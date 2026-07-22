@@ -5,13 +5,14 @@ into the Resource Pool ATS via its REST API (`POST /api/v1/leads`, Bearer key,
 `leads:write` scope). The push is idempotent: Resource Pool keys the Job on
 ``externalRef = "ra-lead-<lead_id>"`` so re-pushing updates rather than duplicates.
 """
+import json
 import logging
 from typing import Any, Dict, Optional
 
 import httpx
 
 from app.core.config import settings
-from app.core.settings_resolver import get_tenant_setting
+from app.core.settings_resolver import get_tenant_setting, get_tenant_setting_bool
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +107,108 @@ def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD") ->
         }
 
     return payload
+
+
+# ── Shared push helpers (used by the endpoint AND the on-reply auto-push) ──
+
+def _pick_contact(db, lead_id: int, tenant_id: Optional[int]):
+    """Best client-side contact for the lead: a Valid-email POC first, else any."""
+    from app.db.models.contact import ContactDetails
+    q = db.query(ContactDetails).filter(ContactDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        q = q.filter(ContactDetails.tenant_id == tenant_id)
+    contacts = q.all()
+    if not contacts:
+        return None
+    valid = [c for c in contacts if (c.validation_status or "").lower() == "valid" and c.email]
+    return (valid or contacts)[0]
+
+
+def _log_event(db, tenant_id, description: str, status: str = "success") -> None:
+    from app.db.models.automation_event import AutomationEvent
+    try:
+        db.add(AutomationEvent(tenant_id=tenant_id or 1, event_type="resource_pool_push",
+                               description=description, status=status))
+        db.commit()
+    except Exception:  # logging must never break the caller
+        db.rollback()
+
+
+def push_lead_by_id(db, lead_id: int, tenant_id: Optional[int] = None, stage: str = "LEAD") -> Optional[Dict[str, Any]]:
+    """Load a lead (+ its company/contact), push it to Resource Pool and record the
+    RP ids back on the lead's ``metadata_json`` (cross-system id map).
+
+    Returns the RP response dict, or ``None`` when the integration is not configured.
+    Raises ``LookupError`` if the lead does not exist; httpx errors propagate.
+    """
+    from app.db.models.lead import LeadDetails
+    from app.db.models.client import ClientInfo
+
+    client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
+    if client is None:
+        return None
+
+    lq = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        lq = lq.filter(LeadDetails.tenant_id == tenant_id)
+    lead = lq.first()
+    if not lead:
+        raise LookupError(f"lead {lead_id} not found")
+
+    company = None
+    if lead.client_name:
+        cq = db.query(ClientInfo).filter(ClientInfo.client_name == lead.client_name)
+        if tenant_id is not None:
+            cq = cq.filter(ClientInfo.tenant_id == tenant_id)
+        company = cq.first()
+
+    contact = _pick_contact(db, lead_id, tenant_id)
+    payload = build_lead_payload(lead, company=company, contact=contact, stage=stage)
+    rp = client.push_lead(payload)
+
+    try:
+        meta = json.loads(lead.metadata_json) if lead.metadata_json else {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except (ValueError, TypeError):
+        meta = {}
+    meta["resource_pool"] = {
+        "external_ref": payload["externalRef"],
+        "job_id": rp.get("jobId"), "company_id": rp.get("companyId"),
+        "contact_id": rp.get("contactId"), "opportunity_id": rp.get("opportunityId"),
+        "stage": payload["opportunity"]["stage"],
+    }
+    lead.metadata_json = json.dumps(meta)
+    db.commit()
+    return rp
+
+
+def auto_push_lead_on_interested_reply(db, contact, tenant_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Best-effort hand-off to Resource Pool when a client reply is 'interested'.
+
+    No-op (returns None) when: disabled via ``resourcepool_auto_push_on_reply``,
+    the integration is unconfigured, the contact has no linked lead, or the push
+    fails. NEVER raises — inbound reply processing must not break.
+    """
+    if contact is None:
+        return None
+    tid = tenant_id if tenant_id is not None else getattr(contact, "tenant_id", None)
+    if not get_tenant_setting_bool(db, "resourcepool_auto_push_on_reply", tenant_id=tid, default=True):
+        return None
+    lead_id = getattr(contact, "lead_id", None)
+    if not lead_id:
+        return None
+    try:
+        rp = push_lead_by_id(db, lead_id, tenant_id=tid, stage="QUALIFIED")
+        if rp:
+            _log_event(db, tid, f"Handed lead {lead_id} to Resource Pool on interested reply "
+                                f"(opportunity {rp.get('opportunityId')}, job {rp.get('jobId')})")
+        return rp
+    except Exception as e:  # noqa: BLE001 — best-effort, never break inbox sync
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        _log_event(db, tid, f"Resource Pool auto-push failed for lead {lead_id}: {str(e)[:200]}", status="error")
+        logger.warning("Resource Pool auto-push failed for lead %s: %s", lead_id, e)
+        return None
