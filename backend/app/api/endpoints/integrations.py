@@ -1,10 +1,12 @@
 """Integration endpoints for Zapier/Make and API key management."""
 import json
 import hashlib
+import logging
 import secrets
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,13 @@ from app.api.deps import get_db, get_current_active_user, require_role, get_curr
 from app.db.models.user import User, UserRole
 from app.db.models.api_key import ApiKey
 from app.db.models.webhook import Webhook
+from app.db.models.lead import LeadDetails
+from app.db.models.client import ClientInfo
+from app.db.models.contact import ContactDetails
 from app.db.query_helpers import tenant_filter
+from app.services.integrations.resource_pool_client import ResourcePoolClient, build_lead_payload
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -302,3 +310,86 @@ def zapier_create_deal(
     db.commit()
     db.refresh(deal)
     return {"deal_id": deal.deal_id, "title": deal.title, "status": "created"}
+
+
+# ─── Resource Pool ATS hand-off (Phase 1) ─────────────────────────
+
+def _pick_contact(db: Session, lead_id: int, tenant_id: Optional[int]) -> Optional[ContactDetails]:
+    """Best client-side contact for the lead: a Valid-email POC first, else any."""
+    q = db.query(ContactDetails).filter(ContactDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        q = q.filter(ContactDetails.tenant_id == tenant_id)
+    contacts = q.all()
+    if not contacts:
+        return None
+    valid = [c for c in contacts if (c.validation_status or "").lower() == "valid" and c.email]
+    return (valid or contacts)[0]
+
+
+@router.post("/resource-pool/push-lead/{lead_id}")
+def push_lead_to_resource_pool(
+    lead_id: int,
+    stage: str = Query("LEAD", description="Opportunity stage: LEAD or QUALIFIED"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Push a qualified lead (Job + Company + Contact + Opportunity) to Resource Pool.
+
+    Idempotent: Resource Pool upserts on ``externalRef = ra-lead-<lead_id>``.
+    """
+    client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resource Pool integration not configured (set resourcepool_api_url + resourcepool_api_key).",
+        )
+
+    lq = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+    if tenant_id is not None:
+        lq = lq.filter(LeadDetails.tenant_id == tenant_id)
+    lead = lq.first()
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+
+    company = None
+    if lead.client_name:
+        cq = db.query(ClientInfo).filter(ClientInfo.client_name == lead.client_name)
+        if tenant_id is not None:
+            cq = cq.filter(ClientInfo.tenant_id == tenant_id)
+        company = cq.first()
+
+    contact = _pick_contact(db, lead_id, tenant_id)
+    payload = build_lead_payload(lead, company=company, contact=contact, stage=stage)
+
+    try:
+        rp = client.push_lead(payload)
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code if e.response is not None else "??"
+        body = e.response.text[:500] if e.response is not None else ""
+        logger.warning("Resource Pool push failed (HTTP %s) for lead %s", code, lead_id)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Resource Pool rejected the lead (HTTP {code}): {body}")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Could not reach Resource Pool: {e}")
+
+    # Persist the RP ids back onto the lead for the cross-system id map.
+    try:
+        meta = json.loads(lead.metadata_json) if lead.metadata_json else {}
+        if not isinstance(meta, dict):
+            meta = {}
+    except (ValueError, TypeError):
+        meta = {}
+    meta["resource_pool"] = {
+        "external_ref": payload["externalRef"],
+        "job_id": rp.get("jobId"),
+        "company_id": rp.get("companyId"),
+        "contact_id": rp.get("contactId"),
+        "opportunity_id": rp.get("opportunityId"),
+        "stage": payload["opportunity"]["stage"],
+    }
+    lead.metadata_json = json.dumps(meta)
+    db.commit()
+
+    return {"ok": True, "lead_id": lead_id, "resource_pool": rp}
