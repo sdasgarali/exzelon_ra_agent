@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.integrations.resource_pool_client import (
-    ResourcePoolClient, build_lead_payload,
+    ResourcePoolClient, build_lead_payload, _tenant_domain,
 )
 
 pytestmark = pytest.mark.unit
@@ -47,6 +47,50 @@ def test_build_lead_payload_prefers_company_and_contact():
 
 def test_invalid_stage_defaults_to_lead():
     assert build_lead_payload(_lead(), stage="BOGUS")["opportunity"]["stage"] == "LEAD"
+
+
+def test_build_lead_payload_omits_tenant_domain_when_absent():
+    # No domain → no routing hint sent (RP falls back to the primary tenant).
+    assert "tenantDomain" not in build_lead_payload(_lead())
+    assert "tenantDomain" not in build_lead_payload(_lead(), tenant_domain="   ")
+
+
+def test_build_lead_payload_includes_tenant_domain_when_present():
+    p = build_lead_payload(_lead(), tenant_domain="acme.com")
+    assert p["tenantDomain"] == "acme.com"
+
+
+class _FakeQuery:
+    def __init__(self, result):
+        self._result = result
+
+    def filter(self, *a, **k):
+        return self
+
+    def first(self):
+        return self._result
+
+
+class _FakeDB:
+    def __init__(self, result):
+        self._result = result
+
+    def query(self, *a, **k):
+        return _FakeQuery(self._result)
+
+
+def test_tenant_domain_none_without_tenant_id():
+    # Global runs (tenant_id=None) send no routing hint.
+    assert _tenant_domain(_FakeDB(SimpleNamespace(domain="acme.com")), None) is None
+
+
+def test_tenant_domain_reads_registered_domain():
+    db = _FakeDB(SimpleNamespace(domain="  ACME.com  "))
+    assert _tenant_domain(db, 1) == "ACME.com"  # _clean trims; RP normalizes casing
+
+
+def test_tenant_domain_none_when_tenant_missing():
+    assert _tenant_domain(_FakeDB(None), 99) is None
 
 
 def _patch_pitch(monkeypatch, enabled, summary):
