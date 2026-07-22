@@ -88,6 +88,28 @@ def test_webhook_ignores_unsubscribed_event(client, db_session):
     assert resp.json().get("ignored") == "candidate.updated"
 
 
+def test_attribution_summary_date_filter(client, db_session, test_tenant, auth_headers):
+    from datetime import datetime
+    db_session.add_all([
+        ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="invoice.paid",
+                                rp_entity_id="in_old", source="src", amount=1000,
+                                occurred_at=datetime(2026, 1, 15)),
+        ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="invoice.paid",
+                                rp_entity_id="in_new", source="src", amount=2000,
+                                occurred_at=datetime(2026, 7, 15)),
+    ])
+    db_session.commit()
+    # July window → only the $2000 row
+    r1 = client.get("/api/v1/integrations/resource-pool/attribution?start=2026-07-01&end=2026-07-31",
+                    headers=auth_headers)
+    assert r1.status_code == 200
+    assert r1.json()["totals"]["revenue_paid"] == 2000.0
+    # full-year window → both
+    r2 = client.get("/api/v1/integrations/resource-pool/attribution?start=2026-01-01&end=2026-12-31",
+                    headers=auth_headers)
+    assert r2.json()["totals"]["revenue_paid"] == 3000.0
+
+
 def test_attribution_summary(client, db_session, test_tenant, auth_headers):
     db_session.add_all([
         ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="placement.created",
