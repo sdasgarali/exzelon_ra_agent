@@ -70,6 +70,8 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'coresignal_api_key': 'job_source_apis',
     'fantastic_jobs_api_key': 'job_source_apis',
     'fantastic_jobs_host': 'job_source_apis',
+    'resourcepool_api_url': 'job_source_apis',
+    'resourcepool_api_key': 'job_source_apis',
     # AI/LLM
     'ai_provider': 'ai_llm',
     'groq_api_key': 'ai_llm',
@@ -216,6 +218,8 @@ DEFAULT_SETTINGS = {
     "coresignal_api_key": {"value": "", "type": "string", "description": "Coresignal API Key — Jobs + recruiter contacts ($800-1,500/mo)"},
     "fantastic_jobs_api_key": {"value": "", "type": "string", "description": "Fantastic.jobs direct API key (Bearer) — LinkedIn feed w/ company firmographics. Trial + plans from $95/mo at fantastic.jobs/api"},
     "fantastic_jobs_host": {"value": "data.fantastic.jobs", "type": "string", "description": "Fantastic.jobs API host (direct API: data.fantastic.jobs; RapidAPI ATS feed: active-jobs-db.p.rapidapi.com)"},
+    "resourcepool_api_url": {"value": "", "type": "string", "description": "Resource Pool ATS base URL (e.g. https://resourcepool.partnerwithus.tech) for pushing qualified leads (Job+Company+Contact+Opportunity)."},
+    "resourcepool_api_key": {"value": "", "type": "string", "description": "Resource Pool API key with the leads:write scope (Bearer). Used by the RA→RP lead hand-off connector."},
 
     # New Contact Discovery API Keys
     "hunter_contact_api_key": {"value": "", "type": "string", "description": "Hunter.io API key for contact finder (Free: 25 req/mo | Paid: from $49/mo)"},

@@ -177,6 +177,13 @@ class Settings(BaseSettings):
     # "Active Jobs DB" listing exposes only the ATS feed, so use the direct API.
     FANTASTIC_JOBS_HOST: str = "data.fantastic.jobs"
 
+    # --- Resource Pool ATS integration (Phase 1: push qualified leads) ---
+    # Base URL of the Resource Pool app (e.g. https://resourcepool.partnerwithus.tech)
+    # and an API key with the `leads:write` scope. Override per-tenant via the
+    # `resourcepool_api_url` / `resourcepool_api_key` settings.
+    RESOURCE_POOL_API_URL: str = ""
+    RESOURCE_POOL_API_KEY: str = ""
+
     # LOB-specific Lead Source API Keys
     GOOGLE_PLACES_API_KEY: str = ""
     CRUNCHBASE_API_KEY: str = ""
