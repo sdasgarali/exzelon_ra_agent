@@ -74,13 +74,16 @@ def _clean(v: Optional[str]) -> Optional[str]:
     return v or None
 
 
-def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD") -> Dict[str, Any]:
+def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD",
+                       tenant_domain: Optional[str] = None) -> Dict[str, Any]:
     """Map a LeadDetails (+ optional ClientInfo, ContactDetails) to the RP intake payload.
 
     - ``company`` is the matching ClientInfo (firmographics), if available.
     - ``contact`` is the chosen ContactDetails (client-side POC), if available.
     - ``stage`` is the Opportunity stage (LEAD when just handed off, QUALIFIED on
       a positive client reply).
+    - ``tenant_domain`` is this RA tenant's registered domain — sent so Resource
+      Pool routes the Job to the matching RP tenant (1:1 by domain).
     """
     stage = stage if stage in _VALID_STAGES else "LEAD"
     client_name = _clean(getattr(lead, "client_name", None)) or "Unknown Company"
@@ -111,6 +114,10 @@ def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD") ->
         "opportunity": {"stage": stage, "value": None},
     }
 
+    td = _clean(tenant_domain)
+    if td:
+        payload["tenantDomain"] = td
+
     if contact is not None:
         name = " ".join([p for p in [_clean(getattr(contact, "first_name", None)),
                                      _clean(getattr(contact, "last_name", None))] if p]).strip()
@@ -137,6 +144,19 @@ def _pick_contact(db, lead_id: int, tenant_id: Optional[int]):
         return None
     valid = [c for c in contacts if (c.validation_status or "").lower() == "valid" and c.email]
     return (valid or contacts)[0]
+
+
+def _tenant_domain(db, tenant_id: Optional[int]) -> Optional[str]:
+    """This RA tenant's registered domain — the cross-system link key sent to RP
+    so it routes the Job to the matching tenant. None when no tenant/domain."""
+    if not tenant_id:
+        return None
+    try:
+        from app.db.models.tenant import Tenant
+        t = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        return _clean(getattr(t, "domain", None)) if t else None
+    except Exception:  # never let tenant lookup break the push
+        return None
 
 
 def _log_event(db, tenant_id, description: str, status: str = "success") -> None:
@@ -178,7 +198,9 @@ def push_lead_by_id(db, lead_id: int, tenant_id: Optional[int] = None, stage: st
         company = cq.first()
 
     contact = _pick_contact(db, lead_id, tenant_id)
-    payload = build_lead_payload(lead, company=company, contact=contact, stage=stage)
+    tenant_domain = _tenant_domain(db, tenant_id)
+    payload = build_lead_payload(lead, company=company, contact=contact, stage=stage,
+                                 tenant_domain=tenant_domain)
     rp = client.push_lead(payload)
 
     try:
@@ -192,6 +214,11 @@ def push_lead_by_id(db, lead_id: int, tenant_id: Optional[int] = None, stage: st
         "job_id": rp.get("jobId"), "company_id": rp.get("companyId"),
         "contact_id": rp.get("contactId"), "opportunity_id": rp.get("opportunityId"),
         "stage": payload["opportunity"]["stage"],
+        # Which RP tenant the lead was routed to (resolved from the registered domain).
+        "tenant_domain": tenant_domain,
+        "rp_tenant_id": rp.get("tenantId"),
+        "rp_tenant_slug": rp.get("tenantSlug"),
+        "rp_tenant_resolved": bool(rp.get("tenantResolved")),
     }
     lead.metadata_json = json.dumps(meta)
     db.commit()
