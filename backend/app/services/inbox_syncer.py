@@ -214,6 +214,15 @@ def sync_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
                         db=db,
                         campaign_id=event.campaign_id,
                     )
+                    # Hand the lead off to Resource Pool ATS (best-effort, gated
+                    # on resourcepool_auto_push_on_reply + integration configured).
+                    from app.services.integrations.resource_pool_client import (
+                        auto_push_lead_on_interested_reply,
+                    )
+                    auto_push_lead_on_interested_reply(
+                        db=db, contact=contact,
+                        tenant_id=getattr(event, "tenant_id", None),
+                    )
                 # Auto-advance deals on reply received
                 from app.db.models.deal import Deal
                 contact_deals = db.query(Deal).filter(

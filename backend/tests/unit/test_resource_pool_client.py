@@ -49,6 +49,50 @@ def test_invalid_stage_defaults_to_lead():
     assert build_lead_payload(_lead(), stage="BOGUS")["opportunity"]["stage"] == "LEAD"
 
 
+def test_auto_push_noop_when_disabled(monkeypatch):
+    """When resourcepool_auto_push_on_reply is off, the auto-push is a no-op and
+    never touches the network."""
+    import app.services.integrations.resource_pool_client as mod
+    monkeypatch.setattr(mod, "get_tenant_setting_bool", lambda *a, **k: False)
+    called = {"n": 0}
+    monkeypatch.setattr(mod, "push_lead_by_id", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+    contact = SimpleNamespace(tenant_id=1, lead_id=42)
+    assert mod.auto_push_lead_on_interested_reply(db=None, contact=contact) is None
+    assert called["n"] == 0
+
+
+def test_auto_push_noop_when_no_lead(monkeypatch):
+    import app.services.integrations.resource_pool_client as mod
+    monkeypatch.setattr(mod, "get_tenant_setting_bool", lambda *a, **k: True)
+    contact = SimpleNamespace(tenant_id=1, lead_id=None)  # no linked lead
+    assert mod.auto_push_lead_on_interested_reply(db=None, contact=contact) is None
+
+
+def test_auto_push_calls_push_when_enabled(monkeypatch):
+    import app.services.integrations.resource_pool_client as mod
+    monkeypatch.setattr(mod, "get_tenant_setting_bool", lambda *a, **k: True)
+    seen = {}
+    monkeypatch.setattr(mod, "push_lead_by_id",
+                        lambda db, lead_id, tenant_id=None, stage="LEAD": seen.update(lead_id=lead_id, stage=stage) or {"opportunityId": "o9", "jobId": "j9"})
+    monkeypatch.setattr(mod, "_log_event", lambda *a, **k: None)
+    contact = SimpleNamespace(tenant_id=1, lead_id=815)
+    out = mod.auto_push_lead_on_interested_reply(db=None, contact=contact)
+    assert out["opportunityId"] == "o9"
+    assert seen == {"lead_id": 815, "stage": "QUALIFIED"}  # positive reply → QUALIFIED
+
+
+def test_auto_push_swallows_errors(monkeypatch):
+    """A push failure must never propagate out of inbox processing."""
+    import app.services.integrations.resource_pool_client as mod
+    monkeypatch.setattr(mod, "get_tenant_setting_bool", lambda *a, **k: True)
+    def _boom(*a, **k):
+        raise RuntimeError("rp down")
+    monkeypatch.setattr(mod, "push_lead_by_id", _boom)
+    monkeypatch.setattr(mod, "_log_event", lambda *a, **k: None)
+    contact = SimpleNamespace(tenant_id=1, lead_id=815)
+    assert mod.auto_push_lead_on_interested_reply(db=None, contact=contact) is None  # no raise
+
+
 def test_push_lead_sends_bearer_and_returns_json(monkeypatch):
     captured = {}
 
