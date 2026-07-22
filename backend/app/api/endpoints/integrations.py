@@ -475,6 +475,18 @@ def resource_pool_attribution_summary(
         base.filter(A.event_type == "invoice.paid")
         .with_entities(func.coalesce(func.sum(A.amount), 0)).scalar() or 0
     )
+    recent = [
+        {
+            "event_type": r.event_type,
+            "source": r.source,
+            "lead_id": r.lead_id,
+            "external_ref": r.external_ref,
+            "amount": float(r.amount) if r.amount is not None else None,
+            "occurred_at": r.occurred_at.isoformat() if r.occurred_at else None,
+            "created_at": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
+        }
+        for r in base.order_by(A.attribution_id.desc()).limit(25).all()
+    ]
     return {
         "totals": {
             "offers_accepted": offers_accepted,
@@ -484,6 +496,7 @@ def resource_pool_attribution_summary(
         },
         "by_source": by_source,
         "by_event": {k: int(v) for k, v in by_event.items()},
+        "recent": recent,
     }
 
 

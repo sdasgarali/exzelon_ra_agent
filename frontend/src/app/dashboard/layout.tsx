@@ -56,6 +56,7 @@ import {
   FileBarChart,
   Layers,
   Ban,
+  CircleDollarSign,
 } from 'lucide-react'
 
 const navigation = [
@@ -89,6 +90,7 @@ const navigation = [
   // Reporting & Monitoring
   { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
   { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
 
