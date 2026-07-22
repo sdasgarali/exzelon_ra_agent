@@ -1887,4 +1887,10 @@ export const attributionApi = {
     const response = await api.get('/integrations/resource-pool/attribution', { params })
     return response.data
   },
+  exportCsv: async (params?: { start?: string; end?: string }): Promise<Blob> => {
+    const response = await api.get('/integrations/resource-pool/attribution/export', {
+      params, responseType: 'blob',
+    })
+    return response.data
+  },
 }

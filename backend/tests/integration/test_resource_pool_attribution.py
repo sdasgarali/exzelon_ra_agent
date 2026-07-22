@@ -110,6 +110,20 @@ def test_attribution_summary_date_filter(client, db_session, test_tenant, auth_h
     assert r2.json()["totals"]["revenue_paid"] == 3000.0
 
 
+def test_attribution_export_csv(client, db_session, test_tenant, auth_headers):
+    db_session.add(ResourcePoolAttribution(
+        tenant_id=test_tenant.tenant_id, event_type="placement.created",
+        rp_entity_id="exp1", source="fantastic_jobs", amount=95))
+    db_session.commit()
+    resp = client.get("/api/v1/integrations/resource-pool/attribution/export", headers=auth_headers)
+    assert resp.status_code == 200
+    assert "text/csv" in resp.headers["content-type"]
+    assert "attachment" in resp.headers.get("content-disposition", "")
+    body = resp.text
+    assert "event_type" in body and "rp_entity_id" in body  # header row
+    assert "placement.created" in body and "exp1" in body    # the data row
+
+
 def test_attribution_summary(client, db_session, test_tenant, auth_headers):
     db_session.add_all([
         ResourcePoolAttribution(tenant_id=test_tenant.tenant_id, event_type="placement.created",
