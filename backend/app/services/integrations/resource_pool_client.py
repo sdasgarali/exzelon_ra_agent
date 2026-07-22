@@ -51,6 +51,15 @@ class ResourcePoolClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_match_summary(self, external_ref: str, threshold: int = 80) -> Dict[str, Any]:
+        """GET the candidate match summary for a job (by its jobCode / externalRef).
+        Raises httpx.HTTPStatusError on non-2xx (e.g. 404 when the job isn't in RP yet)."""
+        url = f"{self.base_url}/api/v1/jobs/by-code/{external_ref}/match-summary"
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.get(url, params={"threshold": threshold}, headers=self._headers())
+        resp.raise_for_status()
+        return resp.json()
+
 
 def _clean(v: Optional[str]) -> Optional[str]:
     if v is None:
