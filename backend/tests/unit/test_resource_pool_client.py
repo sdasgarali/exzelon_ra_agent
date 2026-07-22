@@ -49,6 +49,44 @@ def test_invalid_stage_defaults_to_lead():
     assert build_lead_payload(_lead(), stage="BOGUS")["opportunity"]["stage"] == "LEAD"
 
 
+def _patch_pitch(monkeypatch, enabled, summary):
+    import app.services.integrations.resource_pool_client as mod
+    monkeypatch.setattr(mod, "get_tenant_setting_bool", lambda *a, **k: enabled)
+
+    class _C:
+        timeout = 30
+        def get_match_summary(self, ext, threshold=80):
+            return summary
+
+    monkeypatch.setattr(mod.ResourcePoolClient, "from_settings",
+                        classmethod(lambda cls, db, tenant_id=None: _C()))
+    return mod
+
+
+def test_candidate_pitch_none_when_disabled(monkeypatch):
+    mod = _patch_pitch(monkeypatch, False, {"matchCount": 5})
+    assert mod.build_candidate_pitch(db=None, lead_id=9001, tenant_id=1) is None
+
+
+def test_candidate_pitch_none_when_zero_matches(monkeypatch):
+    mod = _patch_pitch(monkeypatch, True, {"matchCount": 0})
+    assert mod.build_candidate_pitch(db=None, lead_id=9002, tenant_id=1) is None
+
+
+def test_candidate_pitch_none_without_lead(monkeypatch):
+    mod = _patch_pitch(monkeypatch, True, {"matchCount": 5})
+    assert mod.build_candidate_pitch(db=None, lead_id=None, tenant_id=1) is None
+
+
+def test_candidate_pitch_formats_with_role_and_count(monkeypatch):
+    mod = _patch_pitch(monkeypatch, True, {"matchCount": 5, "jobTitle": "Operations Manager"})
+    p = mod.build_candidate_pitch(db=None, lead_id=9003, tenant_id=1)
+    assert p is not None
+    assert "5 pre-screened candidates" in p
+    assert "Operations Manager" in p
+    assert "80%" in p
+
+
 def test_get_match_summary_calls_by_code_endpoint(monkeypatch):
     captured = {}
 
