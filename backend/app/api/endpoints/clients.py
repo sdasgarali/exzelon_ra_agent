@@ -3,7 +3,7 @@ import csv
 import io
 from typing import List, Optional, Literal
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc, or_
@@ -22,6 +22,7 @@ from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 from app.services.company_enrichment import enrich_client, bulk_enrich_clients
 from app.services.timezone_resolver import resolve_contact_timezone
 from app.core.settings_resolver import get_tenant_setting
+from app.utils.text_filter import text_filter_from_params
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -84,7 +85,7 @@ async def list_clients(
     limit: int = Query(100, ge=1, le=500),
     status: Optional[ClientStatus] = None,
     category: Optional[ClientCategory] = None,
-    industry: Optional[str] = None,
+    industry: Optional[List[str]] = Query(None, description="Filter by one or more industries"),
     company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
     company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
     company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
@@ -95,6 +96,7 @@ async def list_clients(
     sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
     enrichment: Optional[str] = Query(None, description="Filter: 'never', 'enriched', 'multiple'"),
     show_archived: bool = Query(False, description="Include archived clients"),
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -108,7 +110,7 @@ async def list_clients(
     if category:
         query = query.filter(ClientInfo.client_category == category)
     if industry:
-        query = query.filter(ClientInfo.industry == industry)
+        query = query.filter(ClientInfo.industry.in_(industry))
     if company_size_op in SIZE_OPERATORS and company_size_value is not None:
         size_expr = effective_size_expr(ClientInfo.company_size, ClientInfo.employee_count)
         clause = size_operator_clause(size_expr, company_size_op, company_size_value, company_size_value2)
@@ -138,6 +140,17 @@ async def list_clients(
             query = query.filter(ClientInfo.enrich_attempts >= 1)
         elif enrichment == "multiple":
             query = query.filter(ClientInfo.enrich_attempts >= 2)
+
+    # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
+    # Server-side predicates so filters work even when the typed text isn't a known
+    # checklist value.
+    qp = request.query_params
+    industry_tc = text_filter_from_params(qp, "industry", ClientInfo.industry)
+    if industry_tc is not None:
+        query = query.filter(industry_tc)
+    company_tc = text_filter_from_params(qp, "company", ClientInfo.client_name)
+    if company_tc is not None:
+        query = query.filter(company_tc)
 
     total = query.count()
 

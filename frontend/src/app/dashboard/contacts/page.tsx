@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { contactsApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { ExcelTextFilter, TextCondition, textConditionParams, textConditionActive } from '@/components/excel-text-filter'
 
 interface Contact {
   contact_id: number
@@ -66,6 +67,8 @@ export default function ContactsPage() {
   const [filterSource, setFilterSource] = useState('')
   const [filterOutreachStatus, setFilterOutreachStatus] = useState('')
   const [filterDataType, setFilterDataType] = useState('')
+  const [filterCompanyText, setFilterCompanyText] = useState<TextCondition | null>(null)
+  const [filterTitleText, setFilterTitleText] = useState<TextCondition | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState('')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -96,7 +99,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts()
-  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, filterDataType, showArchived, sortBy, sortOrder])
+  }, [page, pageSize, debouncedSearch, filterPriority, filterValidation, filterSource, filterOutreachStatus, filterDataType, filterCompanyText, filterTitleText, showArchived, sortBy, sortOrder])
 
   const fetchContacts = async () => {
     try {
@@ -109,6 +112,8 @@ export default function ContactsPage() {
       if (filterSource) params.source = filterSource
       if (filterOutreachStatus) params.outreach_status = filterOutreachStatus
       if (filterDataType) params.data_type = filterDataType
+      Object.assign(params, textConditionParams('company', filterCompanyText))
+      Object.assign(params, textConditionParams('title', filterTitleText))
       if (showArchived) params.show_archived = true
       if (sortBy) { params.sort_by = sortBy; params.sort_order = sortOrder }
       const response = await contactsApi.list(params)
@@ -652,6 +657,26 @@ export default function ContactsPage() {
             <option value="enriched">Enriched</option>
             <option value="test">Test</option>
           </select>
+          <div className="w-full sm:w-52">
+            <ExcelTextFilter
+              label="Company Name"
+              selected={[]}
+              onChange={() => {}}
+              textCondition={filterCompanyText}
+              onTextConditionChange={setFilterCompanyText}
+              onAfterChange={() => setPage(1)}
+            />
+          </div>
+          <div className="w-full sm:w-52">
+            <ExcelTextFilter
+              label="Job Title"
+              selected={[]}
+              onChange={() => {}}
+              textCondition={filterTitleText}
+              onTextConditionChange={setFilterTitleText}
+              onAfterChange={() => setPage(1)}
+            />
+          </div>
           <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="input w-36">
             <option value="10">10 per page</option>
             <option value="25">25 per page</option>

@@ -1,6 +1,6 @@
 """Contact management endpoints."""
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -14,6 +14,7 @@ from app.db.query_helpers import active_query, tenant_filter
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.schemas.pipeline import BulkContactIdsRequest
 from app.services.timezone_resolver import resolve_contact_timezone
+from app.utils.text_filter import text_filter_from_params
 
 import structlog
 _logger = structlog.get_logger()
@@ -54,6 +55,7 @@ async def list_contacts(
     show_archived: bool = Query(False, description="Include archived contacts"),
     sort_by: Optional[str] = Query(None, description="Column to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -95,6 +97,17 @@ async def list_contacts(
             (ContactDetails.last_name.ilike(f"%{search}%")) |
             (ContactDetails.email.ilike(f"%{search}%"))
         )
+
+    # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
+    # Server-side predicates so they work even when the typed text isn't a known
+    # checklist value.
+    qp = request.query_params
+    company_tc = text_filter_from_params(qp, "company", ContactDetails.client_name)
+    if company_tc is not None:
+        query = query.filter(company_tc)
+    title_tc = text_filter_from_params(qp, "title", ContactDetails.title)
+    if title_tc is not None:
+        query = query.filter(title_tc)
 
     total = query.count()
     offset = (page - 1) * page_size

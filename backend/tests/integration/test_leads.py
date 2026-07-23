@@ -195,6 +195,32 @@ class TestLeadsEndpoints:
         data = response.json()
         assert len(data["items"]) >= 1
 
+    def test_excel_text_filter_company_contains(self, client, auth_headers, db_session, test_tenant):
+        """Excel-style Text Filter: Company Name 'contains' works even for text not in any checklist."""
+        for name in ["Northwind Traders", "Contoso Ltd", "Northern Lights Co"]:
+            db_session.add(LeadDetails(tenant_id=test_tenant.tenant_id, client_name=name,
+                                       job_title="Ops Manager", lead_status=LeadStatus.NEW))
+        db_session.commit()
+        resp = client.get("/api/v1/leads?company_op=contains&company_val=north", headers=auth_headers)
+        assert resp.status_code == 200
+        names = {i["client_name"] for i in resp.json()["items"]}
+        assert "Northwind Traders" in names and "Northern Lights Co" in names
+        assert "Contoso Ltd" not in names
+
+    def test_excel_text_filter_title_custom_or(self, client, auth_headers, db_session, test_tenant):
+        """Custom Filter with OR across two conditions on Job Title."""
+        for t in ["Warehouse Manager", "Plant Director", "Software Engineer"]:
+            db_session.add(LeadDetails(tenant_id=test_tenant.tenant_id, client_name=f"Co {t}",
+                                       job_title=t, lead_status=LeadStatus.NEW))
+        db_session.commit()
+        resp = client.get(
+            "/api/v1/leads?title_op=contains&title_val=manager&title_op2=ends&title_val2=Director&title_conj=or",
+            headers=auth_headers)
+        assert resp.status_code == 200
+        titles = {i["job_title"] for i in resp.json()["items"]}
+        assert titles >= {"Warehouse Manager", "Plant Director"}
+        assert "Software Engineer" not in titles
+
     def test_leads_stats(self, client, auth_headers, sample_lead):
         """Test getting lead statistics."""
         response = client.get("/api/v1/leads/stats", headers=auth_headers)

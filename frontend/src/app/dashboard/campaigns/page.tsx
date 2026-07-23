@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { ContactsWizard } from '@/components/contacts-wizard'
+import { ExcelTextFilter, TextCondition, textConditionParams, textConditionActive } from '@/components/excel-text-filter'
 
 const SequenceBuilder = dynamic(() => import('@/components/sequence-builder'), { ssr: false })
 
@@ -238,6 +239,11 @@ export default function CampaignsPage() {
   const [alFilterCompanySize, setAlFilterCompanySize] = useState<string[]>([])
   const [alFilterExcludeKeywords, setAlFilterExcludeKeywords] = useState<string[]>([])
   const [alFilterTitle, setAlFilterTitle] = useState<string[]>([])
+  // Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom)
+  const [alFilterTitleText, setAlFilterTitleText] = useState<TextCondition | null>(null)
+  const [alFilterCompanyText, setAlFilterCompanyText] = useState<TextCondition | null>(null)
+  const [alFilterEmploymentText, setAlFilterEmploymentText] = useState<TextCondition | null>(null)
+  const [alFilterIndustryText, setAlFilterIndustryText] = useState<TextCondition | null>(null)
   const [alShowMoreFilters, setAlShowMoreFilters] = useState(false)
   const [alFilterOptions, setAlFilterOptions] = useState<{ industries: string[]; company_sizes: string[]; exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }; job_titles: string[]; job_title_categories?: Record<string, string[]> }>({ industries: [], company_sizes: [], exclusion_keywords: { it_keywords: [], staffing_keywords: [] }, job_titles: [] })
   const [alSortBy, setAlSortBy] = useState<AvailableLeadsSortField>('posting_date')
@@ -506,10 +512,14 @@ export default function CampaignsPage() {
     if (alFilterCompanySize.length > 0) params.company_size = alFilterCompanySize
     if (alFilterExcludeKeywords.length > 0) params.exclude_keywords = alFilterExcludeKeywords
     if (alFilterTitle.length > 0) params.title = alFilterTitle
+    Object.assign(params, textConditionParams('title', alFilterTitleText))
+    Object.assign(params, textConditionParams('company', alFilterCompanyText))
+    Object.assign(params, textConditionParams('employment_type', alFilterEmploymentText))
+    Object.assign(params, textConditionParams('industry', alFilterIndustryText))
     if (alSortBy !== 'posting_date') params.sort_by = alSortBy
     if (alSortOrder !== 'desc') params.sort_order = alSortOrder
     return params
-  }, [availableLeadsDays, availableLeadsSearch, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle, alSortBy, alSortOrder])
+  }, [availableLeadsDays, availableLeadsSearch, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle, alFilterTitleText, alFilterCompanyText, alFilterEmploymentText, alFilterIndustryText, alSortBy, alSortOrder])
 
   const fetchAvailableLeads = useCallback(async () => {
     setAvailableLeadsLoading(true)
@@ -538,7 +548,7 @@ export default function CampaignsPage() {
     } finally {
       setAvailableLeadsLoading(false)
     }
-  }, [availableLeadsPage, availableLeadsPageSize, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle])
+  }, [availableLeadsPage, availableLeadsPageSize, availableLeadsSearch, availableLeadsDays, autoSelectLeadIds, buildAlFilterParams, alFilterStatus, alFilterSource, alFilterEmploymentType, alFilterState, alFilterIndustry, alFilterCompanySize, alFilterExcludeKeywords, alFilterTitle, alFilterTitleText, alFilterCompanyText, alFilterEmploymentText, alFilterIndustryText])
 
   useEffect(() => {
     if (showCreateModal && createStep === 'select_leads') fetchAvailableLeads()
@@ -2399,16 +2409,16 @@ export default function CampaignsPage() {
                     <button
                       type="button"
                       onClick={() => setAlShowMoreFilters(!alShowMoreFilters)}
-                      className={`px-2 py-1.5 border rounded-lg text-sm flex items-center gap-1 ${alShowMoreFilters || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0 ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600'}`}
+                      className={`px-2 py-1.5 border rounded-lg text-sm flex items-center gap-1 ${alShowMoreFilters || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0 || textConditionActive(alFilterTitleText) || textConditionActive(alFilterCompanyText) || textConditionActive(alFilterEmploymentText) || textConditionActive(alFilterIndustryText) ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 dark:bg-gray-700 dark:border-gray-600'}`}
                     >
                       <Filter className="w-3.5 h-3.5" />
-                      More{(alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length + alFilterExcludeKeywords.length + alFilterTitle.length) > 0 && ` (${alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length + alFilterExcludeKeywords.length + alFilterTitle.length})`}
+                      {(() => { const n = alFilterState.length + alFilterIndustry.length + alFilterCompanySize.length + alFilterExcludeKeywords.length + alFilterTitle.length + [alFilterTitleText, alFilterCompanyText, alFilterEmploymentText, alFilterIndustryText].filter(textConditionActive).length; return <>More{n > 0 && ` (${n})`}</> })()}
                       {alShowMoreFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
-                    {(alFilterStatus || alFilterSource || alFilterEmploymentType || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0) && (
+                    {(alFilterStatus || alFilterSource || alFilterEmploymentType || alFilterState.length > 0 || alFilterIndustry.length > 0 || alFilterCompanySize.length > 0 || alFilterExcludeKeywords.length > 0 || alFilterTitle.length > 0 || textConditionActive(alFilterTitleText) || textConditionActive(alFilterCompanyText) || textConditionActive(alFilterEmploymentText) || textConditionActive(alFilterIndustryText)) && (
                       <button
                         type="button"
-                        onClick={() => { setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType(''); setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([]); setAlFilterExcludeKeywords([]); setAlFilterTitle([]); setAvailableLeadsPage(1) }}
+                        onClick={() => { setAlFilterStatus(''); setAlFilterSource(''); setAlFilterEmploymentType(''); setAlFilterState([]); setAlFilterIndustry([]); setAlFilterCompanySize([]); setAlFilterExcludeKeywords([]); setAlFilterTitle([]); setAlFilterTitleText(null); setAlFilterCompanyText(null); setAlFilterEmploymentText(null); setAlFilterIndustryText(null); setAvailableLeadsPage(1) }}
                         className="text-xs text-red-600 hover:text-red-700 hover:underline"
                       >
                         Clear filters
@@ -2515,7 +2525,6 @@ export default function CampaignsPage() {
                         return (
                           <>
                             <WizardMultiSelect label="States" options={WIZARD_US_STATES} selected={alFilterState} onChange={setAlFilterState} />
-                            <WizardMultiSelect label="Industries" options={alFilterOptions.industries} selected={alFilterIndustry} onChange={setAlFilterIndustry} />
                             <WizardMultiSelect label="Company Size" options={alFilterOptions.company_sizes} selected={alFilterCompanySize} onChange={setAlFilterCompanySize} />
                             <WizardSearchableMultiSelect
                               label="Exclusions"
@@ -2527,7 +2536,7 @@ export default function CampaignsPage() {
                               selected={alFilterExcludeKeywords}
                               onChange={setAlFilterExcludeKeywords}
                             />
-                            <WizardSearchableMultiSelect
+                            <ExcelTextFilter
                               label="Titles"
                               grouped={!!alFilterOptions.job_title_categories && Object.keys(alFilterOptions.job_title_categories).length > 0}
                               options={alFilterOptions.job_title_categories && Object.keys(alFilterOptions.job_title_categories).length > 0
@@ -2535,6 +2544,35 @@ export default function CampaignsPage() {
                                 : alFilterOptions.job_titles}
                               selected={alFilterTitle}
                               onChange={setAlFilterTitle}
+                              textCondition={alFilterTitleText}
+                              onTextConditionChange={setAlFilterTitleText}
+                              onAfterChange={() => setAvailableLeadsPage(1)}
+                            />
+                            <ExcelTextFilter
+                              label="Company"
+                              selected={[]}
+                              onChange={() => {}}
+                              textCondition={alFilterCompanyText}
+                              onTextConditionChange={setAlFilterCompanyText}
+                              onAfterChange={() => setAvailableLeadsPage(1)}
+                            />
+                            <ExcelTextFilter
+                              label="Position Types"
+                              options={EMPLOYMENT_TYPE_OPTIONS}
+                              selected={alFilterEmploymentType ? [alFilterEmploymentType] : []}
+                              onChange={(vals) => { setAlFilterEmploymentType(vals.length > 0 ? vals[vals.length - 1] : '') }}
+                              textCondition={alFilterEmploymentText}
+                              onTextConditionChange={setAlFilterEmploymentText}
+                              onAfterChange={() => setAvailableLeadsPage(1)}
+                            />
+                            <ExcelTextFilter
+                              label="Industry"
+                              options={alFilterOptions.industries}
+                              selected={alFilterIndustry}
+                              onChange={setAlFilterIndustry}
+                              textCondition={alFilterIndustryText}
+                              onTextConditionChange={setAlFilterIndustryText}
+                              onAfterChange={() => setAvailableLeadsPage(1)}
                             />
                           </>
                         )
