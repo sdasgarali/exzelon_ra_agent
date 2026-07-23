@@ -65,6 +65,23 @@ def test_webhook_records_and_maps_attribution(client, db_session, test_tenant):
     assert float(r.amount) == 85.0
 
 
+def test_webhook_maps_tenant_scoped_external_ref(client, db_session, test_tenant):
+    # New tenant-scoped jobCode form 'ra-t<tenant>-lead-<id>' parses + maps correctly.
+    set_tenant_setting(db_session, "resourcepool_webhook_secret", SECRET, tenant_id=None)
+    db_session.commit()
+    lead = _mk_lead(db_session, test_tenant.tenant_id)
+    ext = f"ra-t{test_tenant.tenant_id}-lead-{lead.lead_id}"
+    data = {"externalRef": ext, "placementId": "plc_ts", "billRate": 90}
+    body = _envelope("placement.created", data)
+    resp = client.post(WEBHOOK, content=body, headers={"X-Exzelon-Signature": _sign(body)})
+    assert resp.status_code == 200
+    r = db_session.query(ResourcePoolAttribution).filter(
+        ResourcePoolAttribution.rp_entity_id == "plc_ts").one()
+    assert r.lead_id == lead.lead_id
+    assert r.tenant_id == test_tenant.tenant_id
+    assert float(r.amount) == 90.0
+
+
 def test_webhook_is_idempotent(client, db_session, test_tenant):
     set_tenant_setting(db_session, "resourcepool_webhook_secret", SECRET, tenant_id=None)
     db_session.commit()
