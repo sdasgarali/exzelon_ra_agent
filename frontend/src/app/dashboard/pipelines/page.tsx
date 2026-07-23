@@ -6,6 +6,7 @@ import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } fr
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
+import { useAuthStore } from '@/lib/store'
 import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
 
 // LOB-type-specific lead sourcing descriptions
@@ -83,6 +84,15 @@ interface SelectorContact {
 export default function PipelinesPage() {
   const router = useRouter()
   const { activeLobId, getActiveLob } = useLobStore()
+  // A super-admin who isn't impersonating a tenant has no tenant context, so the
+  // backend blocks pipeline runs (400 "Select a tenant first"). Disable the run
+  // buttons + explain, instead of letting them click into an error.
+  const currentUser = useAuthStore((s) => s.user)
+  const impersonation = useAuthStore((s) => s.impersonation)
+  const needsTenantSelection = currentUser?.role === 'super_admin' && !impersonation
+  const runDisabledTitle = needsTenantSelection
+    ? 'Select a tenant first — impersonate a tenant (Tenants page) to run pipelines.'
+    : undefined
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [stats, setStats] = useState<PipelineStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -688,6 +698,20 @@ export default function PipelinesPage() {
         </div>
       )}
 
+      {needsTenantSelection && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <span className="text-sm">
+            You&rsquo;re signed in as a super-admin with <strong>no tenant selected</strong>. Pipelines run under a specific tenant (using that tenant&rsquo;s API keys &amp; settings), so select a tenant to run them.
+          </span>
+          <button
+            onClick={() => router.push('/dashboard/tenants')}
+            className="shrink-0 text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-lg px-3 py-1.5"
+          >
+            Select a tenant
+          </button>
+        </div>
+      )}
+
       {/* Complete Workflow Visualization */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
         <h3 className="font-semibold text-blue-800 mb-4">Complete Data Pipeline Workflow</h3>
@@ -739,8 +763,9 @@ export default function PipelinesPage() {
           )}
           <button
             onClick={() => setShowLeadSourcingConfirm(true)}
-            disabled={leadSourcingRunning}
-            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${leadSourcingRunning ? 'bg-indigo-400 animate-pulse cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+            disabled={leadSourcingRunning || needsTenantSelection}
+            title={runDisabledTitle}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${leadSourcingRunning ? 'bg-indigo-400 animate-pulse cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
           >
             <Search className="w-4 h-4" />
             {leadSourcingRunning ? 'Running...' : 'Run Pipeline'}
@@ -753,8 +778,9 @@ export default function PipelinesPage() {
           <p className="text-sm text-gray-500 mb-4">Find decision-maker contacts for sourced leads</p>
           <button
             onClick={() => openLeadSelector('contact-enrichment')}
-            disabled={contactEnrichmentRunning}
-            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${contactEnrichmentRunning ? 'bg-purple-400 animate-pulse cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}`}
+            disabled={contactEnrichmentRunning || needsTenantSelection}
+            title={runDisabledTitle}
+            className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${contactEnrichmentRunning ? 'bg-purple-400 animate-pulse cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}`}
           >
             <UserPlus className="w-4 h-4" />
             {contactEnrichmentRunning ? 'Running...' : 'Run Pipeline'}
@@ -772,11 +798,11 @@ export default function PipelinesPage() {
             )}
           </div>
           <p className="text-sm text-gray-500 mb-4">Validate email addresses using ZeroBounce/MillionVerifier</p>
-          <div title={!featureStatus.email_validation_enabled ? 'Please contact Super Admin for Access' : undefined}>
+          <div title={!featureStatus.email_validation_enabled ? 'Please contact Super Admin for Access' : runDisabledTitle}>
             <button
               onClick={() => openContactSelector()}
-              disabled={emailValidationRunning || !featureStatus.email_validation_enabled}
-              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
+              disabled={emailValidationRunning || !featureStatus.email_validation_enabled || needsTenantSelection}
+              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
                 !featureStatus.email_validation_enabled
                   ? 'bg-gray-400 cursor-not-allowed'
                   : emailValidationRunning
@@ -812,11 +838,11 @@ export default function PipelinesPage() {
               Preview before send
             </label>
           )}
-          <div title={!featureStatus.outreach_enabled ? 'Please contact Super Admin for Access' : undefined}>
+          <div title={!featureStatus.outreach_enabled ? 'Please contact Super Admin for Access' : runDisabledTitle}>
             <button
               onClick={() => openLeadSelector('outreach')}
-              disabled={outreachRunning || !featureStatus.outreach_enabled}
-              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 ${
+              disabled={outreachRunning || !featureStatus.outreach_enabled || needsTenantSelection}
+              className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
                 !featureStatus.outreach_enabled
                   ? 'bg-gray-400 cursor-not-allowed'
                   : outreachRunning
