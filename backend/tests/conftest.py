@@ -3,7 +3,7 @@ import os
 import pytest
 from datetime import date, datetime
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event as _sa_event
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 
@@ -41,6 +41,19 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
+
+
+# MySQL has a native REGEXP operator (used by the "Whole Word" text filter);
+# SQLite does not, so register a Python shim on every test connection.
+@_sa_event.listens_for(engine, "connect")
+def _register_sqlite_regexp(dbapi_conn, _rec):  # pragma: no cover - test infra
+    import re as _re
+    dbapi_conn.create_function(
+        "regexp", 2,
+        lambda pattern, value: value is not None and _re.search(pattern, value) is not None,
+    )
+
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

@@ -207,6 +207,18 @@ class TestLeadsEndpoints:
         assert "Northwind Traders" in names and "Northern Lights Co" in names
         assert "Contoso Ltd" not in names
 
+    def test_excel_text_filter_whole_word(self, client, auth_headers, db_session, test_tenant):
+        """Whole-word op matches 'IT' as a token, not the 'it' inside other words."""
+        for ind in ["IT Services", "Global IT", "Litigation", "Digital Media"]:
+            db_session.add(LeadDetails(tenant_id=test_tenant.tenant_id, client_name=f"Co {ind}",
+                                       job_title="Manager", industry=ind, lead_status=LeadStatus.NEW))
+        db_session.commit()
+        resp = client.get("/api/v1/leads?industry_op=word&industry_val=IT", headers=auth_headers)
+        assert resp.status_code == 200
+        inds = {i.get("industry") for i in resp.json()["items"]}
+        assert "IT Services" in inds and "Global IT" in inds
+        assert "Litigation" not in inds and "Digital Media" not in inds
+
     def test_excel_text_filter_title_custom_or(self, client, auth_headers, db_session, test_tenant):
         """Custom Filter with OR across two conditions on Job Title."""
         for t in ["Warehouse Manager", "Plant Director", "Software Engineer"]:

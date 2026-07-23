@@ -10,12 +10,14 @@ filter works even when the typed text is not one of the known checklist values.
 All matching is case-insensitive (``ilike``) and LIKE metacharacters in the user's
 input are escaped so ``%`` / ``_`` are treated literally.
 """
+import re
 from typing import Optional
 
 from sqlalchemy import and_, or_, func
 
 # Operator tokens shared with the frontend.
-TEXT_FILTER_OPS = {"equals", "not_equals", "begins", "ends", "contains", "not_contains"}
+TEXT_FILTER_OPS = {"equals", "not_equals", "begins", "not_begins", "ends", "not_ends",
+                   "contains", "not_contains", "word"}
 
 
 def _escape_like(value: str) -> str:
@@ -43,12 +45,23 @@ def _one_condition(column, op: Optional[str], value: Optional[str]):
         return or_(column.is_(None), func.lower(column) != v.lower())
     if op == "begins":
         return column.ilike(f"{like}%", **esc)
+    if op == "not_begins":
+        return or_(column.is_(None), ~column.ilike(f"{like}%", **esc))
     if op == "ends":
         return column.ilike(f"%{like}", **esc)
+    if op == "not_ends":
+        return or_(column.is_(None), ~column.ilike(f"%{like}", **esc))
     if op == "contains":
         return column.ilike(f"%{like}%", **esc)
     if op == "not_contains":
         return or_(column.is_(None), ~column.ilike(f"%{like}%", **esc))
+    if op == "word":
+        # Whole-word (token) match: value must appear bounded by word boundaries,
+        # so "IT" matches "IT", "IT Services", "Global IT" — but NOT "Litigation".
+        # Case-insensitive via (?i); regex metacharacters in the value are escaped.
+        # Uses REGEXP (native on MySQL; a Python shim is registered for SQLite tests).
+        pattern = r"(?i)\b" + re.escape(v) + r"\b"
+        return column.op("REGEXP")(pattern)
     return None
 
 
