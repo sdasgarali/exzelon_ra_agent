@@ -595,7 +595,9 @@ def resource_pool_attribution_export(
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(cols)
-        yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
         for r in q.yield_per(500):
             w.writerow([
                 r.attribution_id, r.event_type, r.source or "", r.lead_id or "",
@@ -605,7 +607,9 @@ def resource_pool_attribution_export(
                 r.created_at.isoformat() if getattr(r, "created_at", None) else "",
                 r.rp_entity_id or "",
             ])
-            yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
 
     fname = f"attribution_{start or 'all'}_{end or 'all'}.csv"
     return StreamingResponse(_iter(), media_type="text/csv",
