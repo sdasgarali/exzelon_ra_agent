@@ -1,6 +1,8 @@
 """Unit tests for the Excel-style text-filter → SQL predicate helper."""
+import re
+
 import pytest
-from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy import Column, Integer, String, create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.utils.text_filter import text_filter_condition
@@ -19,6 +21,15 @@ class Row(Base):
 @pytest.fixture()
 def session():
     engine = create_engine("sqlite://")
+
+    # SQLite has no native REGEXP (MySQL does) — register a shim for the word op.
+    @event.listens_for(engine, "connect")
+    def _regexp(dbapi_conn, _rec):
+        dbapi_conn.create_function(
+            "regexp", 2,
+            lambda pattern, value: value is not None and re.search(pattern, value) is not None,
+        )
+
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
     s.add_all([
@@ -62,6 +73,15 @@ def test_begins_and_ends(session):
         "Auto Insurance", "Dental Insurance", "Health Insurance"]
 
 
+def test_not_begins_and_not_ends_are_null_safe(session):
+    # not_begins "Dental" → everything except the one starting with "Dental" (incl. NULL)
+    assert _names(session, text_filter_condition(Row.name, "not_begins", "Dental")) == [
+        "Auto Insurance", "ComEd (Electricity)", "Health Insurance", "∅"]
+    # not_ends "Insurance" → only the non-Insurance rows (incl. NULL)
+    assert _names(session, text_filter_condition(Row.name, "not_ends", "Insurance")) == [
+        "ComEd (Electricity)", "∅"]
+
+
 def test_not_contains_is_null_safe(session):
     assert _names(session, text_filter_condition(Row.name, "not_contains", "Insurance")) == [
         "ComEd (Electricity)", "∅"]
@@ -72,6 +92,33 @@ def test_like_metacharacters_are_literal(session):
     session.commit()
     # '%' must match literally, not as a wildcard
     assert _names(session, text_filter_condition(Row.name, "contains", "50%")) == ["50% off"]
+
+
+def test_word_matches_standalone_token_not_substring(session):
+    session.add_all([
+        Row(id=10, name="IT"),
+        Row(id=11, name="IT Services"),
+        Row(id=12, name="Global IT Support"),
+        Row(id=13, name="Litigation"),      # contains "it" but not as a word
+        Row(id=14, name="Digital Security"),  # substring "it" inside words
+    ])
+    session.commit()
+    # Whole-word "IT" matches the standalone tokens only, not Litigation / Digital.
+    assert _names(session, text_filter_condition(Row.name, "word", "IT")) == [
+        "Global IT Support", "IT", "IT Services"]
+
+
+def test_word_is_case_insensitive(session):
+    session.add(Row(id=20, name="Enterprise it services"))
+    session.commit()
+    assert "Enterprise it services" in _names(session, text_filter_condition(Row.name, "word", "IT"))
+
+
+def test_word_escapes_regex_metacharacters(session):
+    session.add_all([Row(id=30, name="R&D Lead"), Row(id=31, name="RxD")])
+    session.commit()
+    # "R&D" must be treated literally, not as a regex.
+    assert _names(session, text_filter_condition(Row.name, "word", "R&D")) == ["R&D Lead"]
 
 
 def test_custom_filter_and_or(session):

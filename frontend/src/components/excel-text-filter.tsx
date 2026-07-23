@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 // ── Text-filter operator model (mirrors the backend app/utils/text_filter.py) ──
-export type TextOp = 'equals' | 'not_equals' | 'begins' | 'ends' | 'contains' | 'not_contains'
+export type TextOp = 'equals' | 'not_equals' | 'begins' | 'not_begins' | 'ends' | 'not_ends' | 'contains' | 'not_contains' | 'word'
 
 export interface TextCondition {
   op: TextOp
@@ -17,9 +17,12 @@ const OP_LABELS: { op: TextOp; label: string }[] = [
   { op: 'equals', label: 'Equals…' },
   { op: 'not_equals', label: 'Does Not Equal…' },
   { op: 'begins', label: 'Begins With…' },
+  { op: 'not_begins', label: 'Does Not Begin With…' },
   { op: 'ends', label: 'Ends With…' },
+  { op: 'not_ends', label: 'Does Not End With…' },
   { op: 'contains', label: 'Contains…' },
   { op: 'not_contains', label: 'Does Not Contain…' },
+  { op: 'word', label: 'Whole Word…' },
 ]
 const OP_LABEL: Record<TextOp, string> = Object.fromEntries(OP_LABELS.map(o => [o.op, o.label.replace('…', '')])) as Record<TextOp, string>
 
