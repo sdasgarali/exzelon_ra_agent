@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, get_current_tenant_id, require_tenant_id
 from app.db.models.user import User
 from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.contact import ContactDetails
@@ -63,7 +63,7 @@ async def validate_bulk(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id)
+    tenant_id: int = Depends(require_tenant_id)
 ):
     """Run bulk email validation (async)."""
     from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -87,7 +87,7 @@ async def validate_pending_contacts(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id)
+    tenant_id: int = Depends(require_tenant_id)
 ):
     """Validate all contacts without validation status."""
     # Get unvalidated contact emails
