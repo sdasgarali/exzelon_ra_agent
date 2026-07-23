@@ -9,9 +9,36 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.db.models.lead import LeadDetails, LeadStatus
+from app.db.models.job_run import JobRun
 from app.services.pipelines import contact_enrichment
 
 pytestmark = pytest.mark.integration
+
+
+def test_none_tenant_resolves_to_primary_for_settings_and_run(db_session, monkeypatch):
+    """A super-admin run with no tenant selected (tenant_id=None) must resolve the
+    Apollo/contact API keys + settings under the PRIMARY tenant (1) — not the global
+    (super-admin) settings — so tenant-specific settings take precedence. Regression
+    for: enrichment read the global key while labelling the run as tenant 1."""
+    captured = {}
+    mock_adapter = MagicMock()
+    mock_adapter.search_contacts = MagicMock(return_value=[])
+
+    def _adapters(db=None, tenant_id=None):
+        captured["adapters_tenant"] = tenant_id  # before the fix this was None (global)
+        return [("mockpaid", mock_adapter)]
+
+    monkeypatch.setattr(contact_enrichment, "get_contact_discovery_adapters", _adapters)
+    monkeypatch.setattr(db_session, "close", lambda: None)
+    monkeypatch.setattr(contact_enrichment, "SessionLocal", lambda: db_session)
+
+    contact_enrichment.run_contact_enrichment_pipeline(triggered_by="test", tenant_id=None)
+
+    assert captured["adapters_tenant"] == 1  # settings/key now read under the primary tenant
+    run = (db_session.query(JobRun)
+           .filter(JobRun.pipeline_name == "contact_enrichment")
+           .order_by(JobRun.run_id.desc()).first())
+    assert run is not None and run.tenant_id == 1  # run attribution matches the settings tenant
 
 
 def _make_lead(db, tenant_id, name, industry, size, **over):

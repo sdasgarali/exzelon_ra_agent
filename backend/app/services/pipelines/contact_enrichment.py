@@ -457,6 +457,14 @@ def run_contact_enrichment_pipeline(
         lead_ids: Optional list of specific lead IDs to enrich
         run_id: Optional pre-created job run ID
     """
+    # A contact-enrichment run always executes under ONE concrete tenant, so that
+    # tenant's own API keys + settings are used and only ITS leads are enriched.
+    # A super-admin who runs without selecting (impersonating) a tenant resolves to
+    # None → default to the primary tenant (1). This keeps the tenant used for the
+    # Apollo/contact keys, business-rule settings, and lead scope CONSISTENT with the
+    # JobRun's tenant, so tenant-specific settings take precedence over the global
+    # (super-admin) settings — matching the convention of the other pipelines.
+    tenant_id = tenant_id if tenant_id is not None else 1
     db = SessionLocal()
     counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0, "excluded": 0}
     lead_results = []
