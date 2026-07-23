@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc, or_, and_
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import (
     tenant_filter, SIZE_OPERATORS, effective_size_expr, size_operator_clause,
@@ -1909,7 +1909,7 @@ async def bulk_enrich_leads(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Trigger contact enrichment for selected leads (runs in background)."""
     lead_ids = request.lead_ids

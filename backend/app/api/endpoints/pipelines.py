@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from datetime import timezone
-from app.api.deps import get_db, get_current_tenant_id
+from app.api.deps import get_db, get_current_tenant_id, require_tenant_id
 from app.api.deps.auth import require_module_permission, require_module_tab_permission
 from app.core.rate_limiter import limiter
 from app.db.models.user import User
@@ -323,7 +323,7 @@ async def run_lead_sourcing(
     lob_id: Optional[int] = Query(default=None, description="LOB to scope lead sources"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Run lead sourcing pipeline."""
     from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
@@ -384,7 +384,7 @@ async def upload_leads_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Upload leads from XLSX file."""
     if not file.filename.endswith(('.xlsx', '.xls')):
@@ -499,7 +499,7 @@ async def run_contact_enrichment(
     body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'contact_enrichment', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Run contact enrichment pipeline. Optionally pass lead_ids to enrich specific leads."""
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
@@ -566,7 +566,7 @@ async def run_email_validation(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'email_validation', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Run email validation pipeline."""
     from app.core.settings_resolver import get_tenant_setting_bool
@@ -599,7 +599,7 @@ async def run_email_validation_selected(
     body: ContactIdsRequest = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'email_validation', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Run email validation for selected contact IDs."""
     from app.core.settings_resolver import get_tenant_setting_bool
@@ -648,7 +648,7 @@ async def run_outreach(
     body: Optional[LeadIdsRequest] = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'outreach', 'read_write')),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    tenant_id: int = Depends(require_tenant_id),
 ):
     """Run outreach pipeline. Optionally pass lead_ids to target specific leads."""
     from app.core.settings_resolver import get_tenant_setting_bool

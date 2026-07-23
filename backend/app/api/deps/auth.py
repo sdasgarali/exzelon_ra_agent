@@ -309,3 +309,22 @@ async def get_current_tenant_id(
             detail="No tenant assigned to this user",
         )
     return tid
+
+
+async def require_tenant_id(
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+) -> int:
+    """Like :func:`get_current_tenant_id` but REQUIRES a concrete tenant.
+
+    Tenant-scoped, resource-spending actions (running a pipeline, sending email,
+    validating, importing) must run under exactly one tenant so that tenant's own
+    API keys/settings are used and only its data is touched. A super admin who has
+    not selected (impersonated) a tenant resolves to ``None`` — this returns 400
+    instead of silently defaulting to a tenant.
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select a tenant first — impersonate the tenant you want to run this for before starting a pipeline.",
+        )
+    return tenant_id

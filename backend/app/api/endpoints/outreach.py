@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.contact import ContactDetails
@@ -206,7 +206,7 @@ async def run_mailmerge_export(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id)
+    tenant_id: int = Depends(require_tenant_id)
 ):
     """Generate mail merge export package."""
     from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
@@ -230,7 +230,7 @@ async def send_emails(
     preview_mode: bool = Query(False, description="If true, generate drafts instead of sending"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id)
+    tenant_id: int = Depends(require_tenant_id)
 ):
     """Send emails programmatically (respects daily limits and cooldown)."""
     from app.services.pipelines.outreach import run_outreach_send_pipeline
@@ -255,7 +255,7 @@ async def check_replies(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id)
+    tenant_id: int = Depends(require_tenant_id)
 ):
     """Manually trigger reply checking for all mailboxes."""
     from app.services.reply_tracker import check_all_mailbox_replies
