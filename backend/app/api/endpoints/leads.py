@@ -5,7 +5,7 @@ import re
 import logging
 from typing import Optional, List, Literal
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from app.db.query_helpers import (
     tenant_filter, SIZE_OPERATORS, effective_size_expr, size_operator_clause,
     effective_salary_bounds, salary_operator_clause,
 )
+from app.utils.text_filter import text_filter_from_params
 from app.db.models.user import User, UserRole
 from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
@@ -93,7 +94,7 @@ async def list_leads(
     salary_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' salary operator"),
     salary_include_unknown: bool = Query(False, description="Include leads with unknown salary when a salary filter is active"),
     data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
-    employment_type: Optional[str] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
+    employment_type: Optional[List[str]] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
     exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
     title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
     from_date: Optional[date] = None,
@@ -106,6 +107,7 @@ async def list_leads(
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
     sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
     show_archived: bool = Query(False, description="Include archived leads"),
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -200,7 +202,7 @@ async def list_leads(
     if data_type:
         query = query.filter(LeadDetails.data_type == data_type)
     if employment_type:
-        query = query.filter(LeadDetails.employment_type == employment_type)
+        query = query.filter(LeadDetails.employment_type.in_(employment_type))
 
     if exclude_keywords:
         excl_conditions = [LeadDetails.job_title.ilike(f"%{kw}%") for kw in exclude_keywords]
@@ -209,6 +211,26 @@ async def list_leads(
 
     if title:
         query = query.filter(or_(*[LeadDetails.job_title.ilike(f"%{t}%") for t in title]))
+
+    # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
+    # Server-side predicates so they work even when the typed text isn't a known
+    # checklist value. Industry also spans the client_info firmographics.
+    qp = request.query_params
+    title_tc = text_filter_from_params(qp, "title", LeadDetails.job_title)
+    if title_tc is not None:
+        query = query.filter(title_tc)
+    company_tc = text_filter_from_params(qp, "company", LeadDetails.client_name)
+    if company_tc is not None:
+        query = query.filter(company_tc)
+    emp_tc = text_filter_from_params(qp, "employment_type", LeadDetails.employment_type)
+    if emp_tc is not None:
+        query = query.filter(emp_tc)
+    ind_tc = text_filter_from_params(qp, "industry", LeadDetails.industry)
+    if ind_tc is not None:
+        client_ind_tc = text_filter_from_params(qp, "industry", ClientInfo.industry)
+        cq = tenant_filter(db.query(ClientInfo.client_name).filter(client_ind_tc), ClientInfo, tenant_id)
+        match_names = [r[0] for r in cq.all()]
+        query = query.filter(or_(ind_tc, LeadDetails.client_name.in_(match_names) if match_names else False))
 
     if from_date:
         query = query.filter(LeadDetails.posting_date >= from_date)
@@ -904,6 +926,13 @@ async def get_lead_filter_options(
     size_query = tenant_filter(size_query, ClientInfo, tenant_id)
     sizes = [r[0] for r in size_query.distinct().order_by(ClientInfo.company_size).all()]
 
+    # Distinct position types (employment_type) for the Excel-style Position Type filter
+    emp_query = db.query(LeadDetails.employment_type).filter(
+        LeadDetails.employment_type.isnot(None), LeadDetails.employment_type != ""
+    )
+    emp_query = tenant_filter(emp_query, LeadDetails, tenant_id)
+    employment_types = [r[0] for r in emp_query.distinct().order_by(LeadDetails.employment_type).all()]
+
     # Exclusion keywords from tenant settings — fall back to config defaults when DB has empty list
     it_kw = get_tenant_setting(db, "exclude_it_keywords", tenant_id=tenant_id, default=None)
     if not it_kw:
@@ -978,6 +1007,7 @@ async def get_lead_filter_options(
         },
         "job_titles": all_titles,
         "job_title_categories": {k: sorted(v) for k, v in sorted(job_cats.items())},
+        "employment_types": employment_types,
     }
 
 

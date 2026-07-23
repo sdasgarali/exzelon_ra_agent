@@ -15,6 +15,7 @@ from app.api.deps.auth import get_current_active_user, require_role, get_current
 from app.core.rate_limiter import limiter
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
+from app.utils.text_filter import text_filter_from_params
 from app.db.models.user import User, UserRole
 from app.db.models.campaign import (
     Campaign, CampaignSchedule, SequenceStep, CampaignContact,
@@ -310,6 +311,7 @@ def get_available_leads(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    request: Request = None,  # type: ignore[assignment]
 ):
     """Get leads available for campaign enrollment.
 
@@ -408,6 +410,26 @@ def get_available_leads(
 
     if title:
         query = query.filter(or_(*[LeadDetails.job_title.ilike(f"%{t}%") for t in title]))
+
+    # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
+    # Server-side predicates so they work even when the typed text isn't a known
+    # checklist value. Industry also spans the client_info firmographics.
+    qp = request.query_params
+    title_tc = text_filter_from_params(qp, "title", LeadDetails.job_title)
+    if title_tc is not None:
+        query = query.filter(title_tc)
+    company_tc = text_filter_from_params(qp, "company", LeadDetails.client_name)
+    if company_tc is not None:
+        query = query.filter(company_tc)
+    emp_tc = text_filter_from_params(qp, "employment_type", LeadDetails.employment_type)
+    if emp_tc is not None:
+        query = query.filter(emp_tc)
+    ind_tc = text_filter_from_params(qp, "industry", LeadDetails.industry)
+    if ind_tc is not None:
+        client_ind_tc = text_filter_from_params(qp, "industry", ClientInfo.industry)
+        cq = tenant_filter(db.query(ClientInfo.client_name).filter(client_ind_tc), ClientInfo, tenant_id)
+        match_names = [r[0] for r in cq.all()]
+        query = query.filter(or_(ind_tc, LeadDetails.client_name.in_(match_names) if match_names else False))
 
     total = query.count()
 

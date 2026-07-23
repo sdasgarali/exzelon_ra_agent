@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { clientsApi, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { SizeFilter, SizeFilterValue, EMPTY_SIZE_FILTER, sizeFilterParams, sizeFilterActive } from '@/components/size-filter'
+import { ExcelTextFilter, TextCondition, textConditionParams, textConditionActive } from '@/components/excel-text-filter'
 
 interface Client {
   client_id: number
@@ -84,7 +85,9 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
-  const [filterIndustry, setFilterIndustry] = useState('')
+  const [filterIndustry, setFilterIndustry] = useState<string[]>([])
+  const [filterIndustryText, setFilterIndustryText] = useState<TextCondition | null>(null)
+  const [filterCompanyText, setFilterCompanyText] = useState<TextCondition | null>(null)
   const [sizeFilter, setSizeFilter] = useState<SizeFilterValue>(EMPTY_SIZE_FILTER)
   const [filterState, setFilterState] = useState('')
   const [filterEnrichment, setFilterEnrichment] = useState('')
@@ -121,7 +124,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, sizeFilter, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterIndustryText, filterCompanyText, sizeFilter, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
 
   const fetchClients = async () => {
     try {
@@ -136,7 +139,10 @@ export default function ClientsPage() {
       if (debouncedSearch) params.search = debouncedSearch
       if (filterStatus) params.status = filterStatus
       if (filterCategory) params.category = filterCategory
-      if (filterIndustry) params.industry = filterIndustry
+      if (filterIndustry.length) params.industry = filterIndustry
+      // Excel-style Text Filter conditions
+      Object.assign(params, textConditionParams('industry', filterIndustryText))
+      Object.assign(params, textConditionParams('company', filterCompanyText))
       Object.assign(params, sizeFilterParams(sizeFilter))
       if (filterState) params.location_state = filterState
       if (filterEnrichment) params.enrichment = filterEnrichment
@@ -309,7 +315,9 @@ export default function ClientsPage() {
     setSearch('')
     setFilterStatus('')
     setFilterCategory('')
-    setFilterIndustry('')
+    setFilterIndustry([])
+    setFilterIndustryText(null)
+    setFilterCompanyText(null)
     setSizeFilter(EMPTY_SIZE_FILTER)
     setFilterState('')
     setFilterEnrichment('')
@@ -352,7 +360,10 @@ export default function ClientsPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize) || 1
-  const activeFiltersCount = [filterStatus, filterCategory, filterIndustry, filterState, filterEnrichment, search].filter(Boolean).length + (sizeFilterActive(sizeFilter) ? 1 : 0) + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterCategory, filterState, filterEnrichment, search].filter(Boolean).length
+    + (filterIndustry.length ? 1 : 0)
+    + [filterIndustryText, filterCompanyText].filter(textConditionActive).length
+    + (sizeFilterActive(sizeFilter) ? 1 : 0) + (showArchived ? 1 : 0)
 
   const PaginationBar = ({ className = '' }: { className?: string }) => (
     <div className={`bg-gray-50 px-6 py-3 flex items-center justify-between ${className}`}>
@@ -514,18 +525,24 @@ export default function ClientsPage() {
             ))}
           </select>
 
-          {filterOptions.industries.length > 0 && (
-            <select
-              value={filterIndustry}
-              onChange={(e) => { setFilterIndustry(e.target.value); setPage(1); }}
-              className="input w-full sm:w-44"
-            >
-              <option value="">All Industries</option>
-              {filterOptions.industries.map(i => (
-                <option key={i} value={i}>{i}</option>
-              ))}
-            </select>
-          )}
+          <ExcelTextFilter
+            label="Industries"
+            options={filterOptions.industries}
+            selected={filterIndustry}
+            onChange={setFilterIndustry}
+            textCondition={filterIndustryText}
+            onTextConditionChange={setFilterIndustryText}
+            onAfterChange={() => setPage(1)}
+          />
+
+          <ExcelTextFilter
+            label="Company"
+            selected={[]}
+            onChange={() => {}}
+            textCondition={filterCompanyText}
+            onTextConditionChange={setFilterCompanyText}
+            onAfterChange={() => setPage(1)}
+          />
 
           <SizeFilter value={sizeFilter} onChange={(v) => { setSizeFilter(v); setPage(1); }} />
 

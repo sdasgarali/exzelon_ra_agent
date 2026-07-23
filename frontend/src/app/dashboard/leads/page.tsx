@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store'
 import { useLobStore } from '@/lib/lob-store'
 import { ContactsWizard } from '@/components/contacts-wizard'
 import { SizeFilter, NumericFilter, SizeFilterValue, EMPTY_SIZE_FILTER, sizeFilterParams, salaryFilterParams, sizeFilterActive } from '@/components/size-filter'
+import { ExcelTextFilter, TextCondition, textConditionParams, textConditionActive } from '@/components/excel-text-filter'
 
 interface Lead {
   lead_id: number
@@ -52,6 +53,7 @@ interface LeadFilterOptions {
   exclusion_keywords: { it_keywords: string[]; staffing_keywords: string[] }
   job_titles: string[]
   job_title_categories?: Record<string, string[]>
+  employment_types?: string[]
 }
 
 const STATUS_OPTIONS = [
@@ -117,9 +119,14 @@ export default function LeadsPage() {
   const [sizeFilter, setSizeFilter] = useState<SizeFilterValue>(EMPTY_SIZE_FILTER)
   const [salaryFilter, setSalaryFilter] = useState<SizeFilterValue>(EMPTY_SIZE_FILTER)
   const [filterDataType, setFilterDataType] = useState('')
-  const [filterEmploymentType, setFilterEmploymentType] = useState('')
+  const [filterEmploymentType, setFilterEmploymentType] = useState<string[]>([])
   const [filterExcludeKeywords, setFilterExcludeKeywords] = useState<string[]>([])
   const [filterTitle, setFilterTitle] = useState<string[]>([])
+  // Excel-style Text Filter conditions (Contains / Begins With / Custom / …)
+  const [filterIndustryText, setFilterIndustryText] = useState<TextCondition | null>(null)
+  const [filterTitleText, setFilterTitleText] = useState<TextCondition | null>(null)
+  const [filterCompanyText, setFilterCompanyText] = useState<TextCondition | null>(null)
+  const [filterEmploymentText, setFilterEmploymentText] = useState<TextCondition | null>(null)
   const [filterExtractedFrom, setFilterExtractedFrom] = useState('')
   const [filterExtractedTo, setFilterExtractedTo] = useState('')
   const [filterDownloaded, setFilterDownloaded] = useState('')
@@ -252,11 +259,11 @@ export default function LeadsPage() {
   // Clear selections when filters change (not on page/sort changes)
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, pageSize, showArchived])
+  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, pageSize, showArchived])
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, sortBy, sortOrder, showArchived, activeLobId])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, sortBy, sortOrder, showArchived, activeLobId])
 
   const fetchLeads = async () => {
     try {
@@ -279,9 +286,14 @@ export default function LeadsPage() {
       Object.assign(params, sizeFilterParams(sizeFilter))
       Object.assign(params, salaryFilterParams(salaryFilter))
       if (filterDataType) params.data_type = filterDataType
-      if (filterEmploymentType) params.employment_type = filterEmploymentType
+      if (filterEmploymentType.length) params.employment_type = filterEmploymentType
       if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
       if (filterTitle.length) params.title = filterTitle
+      // Excel-style Text Filter conditions
+      Object.assign(params, textConditionParams('industry', filterIndustryText))
+      Object.assign(params, textConditionParams('title', filterTitleText))
+      Object.assign(params, textConditionParams('company', filterCompanyText))
+      Object.assign(params, textConditionParams('employment_type', filterEmploymentText))
       if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
       if (filterExtractedTo) params.extracted_to = filterExtractedTo
       if (filterDownloaded) params.downloaded = filterDownloaded
@@ -342,9 +354,13 @@ export default function LeadsPage() {
     setSizeFilter(EMPTY_SIZE_FILTER)
     setSalaryFilter(EMPTY_SIZE_FILTER)
     setFilterDataType('')
-    setFilterEmploymentType('')
+    setFilterEmploymentType([])
     setFilterExcludeKeywords([])
     setFilterTitle([])
+    setFilterIndustryText(null)
+    setFilterTitleText(null)
+    setFilterCompanyText(null)
+    setFilterEmploymentText(null)
     setFilterDownloaded('')
     setShowArchived(false)
     setPage(1)
@@ -871,8 +887,9 @@ export default function LeadsPage() {
     )
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, filterEmploymentType, search].filter(Boolean).length
-    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (sizeFilterActive(sizeFilter) ? 1 : 0) + (sizeFilterActive(salaryFilter) ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, search].filter(Boolean).length
+    + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterEmploymentType.length > 0 ? 1 : 0) + (sizeFilterActive(sizeFilter) ? 1 : 0) + (sizeFilterActive(salaryFilter) ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
+    + [filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText].filter(textConditionActive).length
 
   // Helper: get column label with LOB overrides
   const colLabel = (field: string, defaultLabel: string): string => {
@@ -1253,7 +1270,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Industry</label>
-              <SearchableMultiSelect
+              <ExcelTextFilter
                 label="Industries"
                 grouped={!!leadFilterOptions.industry_categories && Object.keys(leadFilterOptions.industry_categories).length > 0}
                 options={leadFilterOptions.industry_categories && Object.keys(leadFilterOptions.industry_categories).length > 0
@@ -1261,6 +1278,9 @@ export default function LeadsPage() {
                   : leadFilterOptions.industries}
                 selected={filterIndustry}
                 onChange={setFilterIndustry}
+                textCondition={filterIndustryText}
+                onTextConditionChange={setFilterIndustryText}
+                onAfterChange={() => setPage(1)}
               />
             </div>
             <div className="col-span-2">
@@ -1291,16 +1311,28 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Position Type</label>
-              <select
-                value={filterEmploymentType}
-                onChange={(e) => { setFilterEmploymentType(e.target.value); setPage(1); }}
-                className="input w-full"
-              >
-                <option value="">All</option>
-                {EMPLOYMENT_TYPE_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
+              <ExcelTextFilter
+                label="Position Types"
+                options={leadFilterOptions.employment_types && leadFilterOptions.employment_types.length > 0
+                  ? leadFilterOptions.employment_types
+                  : EMPLOYMENT_TYPE_OPTIONS}
+                selected={filterEmploymentType}
+                onChange={setFilterEmploymentType}
+                textCondition={filterEmploymentText}
+                onTextConditionChange={setFilterEmploymentText}
+                onAfterChange={() => setPage(1)}
+              />
+            </div>
+            <div>
+              <label className="label text-sm">Company Name</label>
+              <ExcelTextFilter
+                label="Company"
+                selected={[]}
+                onChange={() => {}}
+                textCondition={filterCompanyText}
+                onTextConditionChange={setFilterCompanyText}
+                onAfterChange={() => setPage(1)}
+              />
             </div>
             <div>
               <label className="label text-sm">Exclusion Keywords</label>
@@ -1317,7 +1349,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Job Title</label>
-              <SearchableMultiSelect
+              <ExcelTextFilter
                 label="Titles"
                 grouped={!!leadFilterOptions.job_title_categories && Object.keys(leadFilterOptions.job_title_categories).length > 0}
                 options={leadFilterOptions.job_title_categories && Object.keys(leadFilterOptions.job_title_categories).length > 0
@@ -1325,6 +1357,9 @@ export default function LeadsPage() {
                   : leadFilterOptions.job_titles}
                 selected={filterTitle}
                 onChange={setFilterTitle}
+                textCondition={filterTitleText}
+                onTextConditionChange={setFilterTitleText}
+                onAfterChange={() => setPage(1)}
               />
             </div>
             <div>
