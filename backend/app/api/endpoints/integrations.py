@@ -354,13 +354,9 @@ _RP_ATTR_EVENTS = {"offer.accepted", "placement.created", "invoice.paid"}
 
 
 def _lead_id_from_external_ref(external_ref: Optional[str]) -> Optional[int]:
-    """'ra-lead-42' -> 42."""
-    if external_ref and external_ref.startswith("ra-lead-"):
-        try:
-            return int(external_ref[len("ra-lead-"):])
-        except ValueError:
-            return None
-    return None
+    """'ra-lead-42' or 'ra-t1-lead-42' -> 42. Delegates to the shared parser."""
+    from app.services.integrations.resource_pool_client import parse_external_ref
+    return parse_external_ref(external_ref)[1]
 
 
 @router.post("/resource-pool/webhook")
@@ -394,15 +390,21 @@ async def resource_pool_webhook(request: Request, db: Session = Depends(get_db))
     from app.db.models.lead import LeadDetails
     from app.db.models.outreach import OutreachEvent
 
+    from app.services.integrations.resource_pool_client import parse_external_ref
     external_ref = data.get("externalRef")
-    lead_id = _lead_id_from_external_ref(external_ref)
+    ref_tenant_id, lead_id = parse_external_ref(external_ref)
 
     # Resolve lead → tenant + source; and a best-effort originating campaign.
-    tenant_id, source, campaign_id = 1, None, None
+    # When the ref carries a tenant (ra-t<tenant>-lead-<id>), scope the lead
+    # lookup by it so a lead_id shared across tenants maps to the RIGHT lead.
+    tenant_id, source, campaign_id = ref_tenant_id or 1, None, None
     if lead_id is not None:
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+        lq = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+        if ref_tenant_id is not None:
+            lq = lq.filter(LeadDetails.tenant_id == ref_tenant_id)
+        lead = lq.first()
         if lead:
-            tenant_id = lead.tenant_id or 1
+            tenant_id = lead.tenant_id or ref_tenant_id or 1
             source = lead.source
             oe = (db.query(OutreachEvent)
                   .filter(OutreachEvent.lead_id == lead_id, OutreachEvent.campaign_id.isnot(None))
@@ -550,12 +552,12 @@ def resource_pool_match_summary(
     """Candidate match summary for a lead's job (count of candidates ≥ threshold% fit
     + top anonymized matches), fetched from Resource Pool — powers the outreach pitch.
     """
-    from app.services.integrations.resource_pool_client import ResourcePoolClient
+    from app.services.integrations.resource_pool_client import ResourcePoolClient, build_external_ref
     client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
     if client is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Resource Pool integration not configured (set resourcepool_api_url + resourcepool_api_key).")
-    external_ref = f"ra-lead-{lead_id}"
+    external_ref = build_external_ref(lead_id, tenant_id)
     try:
         summary = client.get_match_summary(external_ref, threshold=threshold)
     except httpx.HTTPStatusError as e:

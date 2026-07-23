@@ -5,6 +5,7 @@ import pytest
 
 from app.services.integrations.resource_pool_client import (
     ResourcePoolClient, build_lead_payload, _tenant_domain,
+    build_external_ref, parse_external_ref,
 )
 
 pytestmark = pytest.mark.unit
@@ -58,6 +59,29 @@ def test_build_lead_payload_omits_tenant_domain_when_absent():
 def test_build_lead_payload_includes_tenant_domain_when_present():
     p = build_lead_payload(_lead(), tenant_domain="acme.com")
     assert p["tenantDomain"] == "acme.com"
+
+
+def test_build_external_ref_tenant_scoped_and_legacy():
+    assert build_external_ref(42, tenant_id=1) == "ra-t1-lead-42"
+    assert build_external_ref(42) == "ra-lead-42"           # no tenant → legacy form
+    assert build_external_ref(42, tenant_id=None) == "ra-lead-42"
+
+
+def test_parse_external_ref_both_forms():
+    assert parse_external_ref("ra-t3-lead-815") == (3, 815)  # tenant-scoped
+    assert parse_external_ref("ra-lead-815") == (None, 815)  # legacy (tenant unknown)
+    assert parse_external_ref("garbage") == (None, None)
+    assert parse_external_ref(None) == (None, None)
+
+
+def test_external_ref_roundtrips():
+    for tid in (None, 1, 27):
+        assert parse_external_ref(build_external_ref(815, tid)) == (tid, 815)
+
+
+def test_build_lead_payload_scopes_external_ref_by_tenant():
+    assert build_lead_payload(_lead(), tenant_id=2)["externalRef"] == "ra-t2-lead-42"
+    assert build_lead_payload(_lead())["externalRef"] == "ra-lead-42"  # unchanged default
 
 
 class _FakeQuery:

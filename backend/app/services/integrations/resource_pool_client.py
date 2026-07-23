@@ -7,6 +7,7 @@ into the Resource Pool ATS via its REST API (`POST /api/v1/leads`, Bearer key,
 """
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -74,8 +75,41 @@ def _clean(v: Optional[str]) -> Optional[str]:
     return v or None
 
 
+# ── Cross-system lead key (RP jobCode = externalRef) ──
+# RP's ``jobCode`` is globally unique, but a lead_id is only unique WITHIN an RA
+# tenant. So the key is tenant-scoped — ``ra-t<tenant_id>-lead-<lead_id>`` — to
+# stop two tenants with the same numeric lead_id from colliding on one Job.
+# The legacy ``ra-lead-<lead_id>`` form (no tenant) is still produced when there
+# is no tenant context and is still parsed, so already-pushed jobs keep working.
+
+_EXTERNAL_REF_RE = re.compile(r"^ra-(?:t(\d+)-)?lead-(\d+)$")
+
+
+def build_external_ref(lead_id: int, tenant_id: Optional[int] = None) -> str:
+    """Stable RP jobCode for a lead. Tenant-scoped when a tenant is known."""
+    if tenant_id:
+        return f"ra-t{tenant_id}-lead-{lead_id}"
+    return f"ra-lead-{lead_id}"
+
+
+def parse_external_ref(external_ref: Optional[str]) -> Tuple[Optional[int], Optional[int]]:
+    """Inverse of :func:`build_external_ref`. Returns ``(tenant_id, lead_id)``.
+
+    Accepts BOTH the tenant-scoped ``ra-t<tenant>-lead-<id>`` and the legacy
+    ``ra-lead-<id>`` (tenant None) forms. Returns ``(None, None)`` if unparseable.
+    """
+    if not external_ref:
+        return (None, None)
+    m = _EXTERNAL_REF_RE.match(external_ref.strip())
+    if not m:
+        return (None, None)
+    tenant = int(m.group(1)) if m.group(1) else None
+    return (tenant, int(m.group(2)))
+
+
 def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD",
-                       tenant_domain: Optional[str] = None) -> Dict[str, Any]:
+                       tenant_domain: Optional[str] = None,
+                       tenant_id: Optional[int] = None) -> Dict[str, Any]:
     """Map a LeadDetails (+ optional ClientInfo, ContactDetails) to the RP intake payload.
 
     - ``company`` is the matching ClientInfo (firmographics), if available.
@@ -84,6 +118,8 @@ def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD",
       a positive client reply).
     - ``tenant_domain`` is this RA tenant's registered domain — sent so Resource
       Pool routes the Job to the matching RP tenant (1:1 by domain).
+    - ``tenant_id`` scopes the ``externalRef`` (RP jobCode) so leads from
+      different tenants can't collide on the same numeric lead_id.
     """
     stage = stage if stage in _VALID_STAGES else "LEAD"
     client_name = _clean(getattr(lead, "client_name", None)) or "Unknown Company"
@@ -92,7 +128,7 @@ def build_lead_payload(lead, company=None, contact=None, stage: str = "LEAD",
                                        _clean(getattr(lead, "state", None))] if p]) or None
 
     payload: Dict[str, Any] = {
-        "externalRef": f"ra-lead-{lead.lead_id}",
+        "externalRef": build_external_ref(lead.lead_id, tenant_id),
         "company": {
             "name": (_clean(getattr(company, "client_name", None)) if company else None) or client_name,
             "industry": (_clean(getattr(company, "industry", None)) if company else None)
@@ -200,7 +236,7 @@ def push_lead_by_id(db, lead_id: int, tenant_id: Optional[int] = None, stage: st
     contact = _pick_contact(db, lead_id, tenant_id)
     tenant_domain = _tenant_domain(db, tenant_id)
     payload = build_lead_payload(lead, company=company, contact=contact, stage=stage,
-                                 tenant_domain=tenant_domain)
+                                 tenant_domain=tenant_domain, tenant_id=tenant_id)
     rp = client.push_lead(payload)
 
     try:
@@ -250,7 +286,7 @@ def build_candidate_pitch(db, lead_id: Optional[int], tenant_id: Optional[int] =
         client = ResourcePoolClient.from_settings(db, tenant_id=tenant_id)
         if client is not None:
             client.timeout = 8  # keep the send loop snappy
-            summary = client.get_match_summary(f"ra-lead-{lead_id}", threshold=threshold)
+            summary = client.get_match_summary(build_external_ref(lead_id, tenant_id), threshold=threshold)
             n = int(summary.get("matchCount") or 0)
             if n > 0:
                 role = (summary.get("jobTitle") or "this").strip() or "this"
