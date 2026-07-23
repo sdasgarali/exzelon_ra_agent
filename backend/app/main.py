@@ -635,6 +635,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for role enum: {e}")
 
+    # Migration: ensure lead_status enum includes 'excluded' (pre-enrichment exclusion gate).
+    # Without it, persisting an excluded lead raises "Data truncated for column 'lead_status'"
+    # (MySQL error 1265) and crashes the contact-enrichment pipeline.
+    try:
+        from sqlalchemy import text as sa_text_leadstatus
+        if settings.DB_TYPE == "mysql":
+            with engine.connect() as conn:
+                try:
+                    conn.execute(sa_text_leadstatus(
+                        "ALTER TABLE lead_details MODIFY COLUMN lead_status "
+                        "ENUM('open','hunting','closed_hired','closed_not_hired','closed_test',"
+                        "'new','enriched','validated','sent','skipped','excluded') "
+                        "NOT NULL DEFAULT 'new'"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: ensured LeadStatus enum includes 'excluded'")
+                except Exception as e2:
+                    logger.debug(f"lead_status enum migration (may already be done): {e2}")
+    except Exception as e:
+        logger.warning(f"Migration check for lead_status enum: {e}")
+
     # Migration: add lead_results_json column if missing
     try:
         from sqlalchemy import text as sa_text
