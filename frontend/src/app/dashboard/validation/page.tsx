@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { contactsApi, pipelinesApi, api } from '@/lib/api'
+import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
 
 interface Contact {
   contact_id: number
@@ -29,6 +30,7 @@ export default function ValidationPage() {
   const [stats, setStats] = useState<ValidationStats>({ total: 0, by_validation: {} })
   const [loading, setLoading] = useState(true)
   const [validating, setValidating] = useState(false)
+  const { needsTenantSelection, runDisabledTitle } = useNeedsTenantSelection()
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [page, setPage] = useState(1)
@@ -340,19 +342,23 @@ export default function ValidationPage() {
           {selectedIds.size > 0 && (
             <button
               onClick={handleValidateSelected}
-              disabled={validating}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium">
+              disabled={validating || needsTenantSelection}
+              title={runDisabledTitle}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed font-medium">
               {validating ? 'Validating...' : `Validate Selected (${selectedIds.size})`}
             </button>
           )}
           <button
             onClick={runFullValidation}
-            disabled={validating}
-            className="btn-primary">
+            disabled={validating || needsTenantSelection}
+            title={runDisabledTitle}
+            className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed">
             {validating ? 'Starting...' : 'Run Validation Pipeline'}
           </button>
         </div>
       </div>
+
+      <SelectTenantBanner action="validate contacts" />
 
       {error && (
         <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 flex justify-between">

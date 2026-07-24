@@ -9,6 +9,7 @@ import { useLobStore } from '@/lib/lob-store'
 import { ContactsWizard } from '@/components/contacts-wizard'
 import { SizeFilter, NumericFilter, SizeFilterValue, EMPTY_SIZE_FILTER, sizeFilterParams, salaryFilterParams, sizeFilterActive } from '@/components/size-filter'
 import { ExcelTextFilter, TextCondition, textConditionParams, textConditionActive } from '@/components/excel-text-filter'
+import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
 
 interface Lead {
   lead_id: number
@@ -94,6 +95,7 @@ const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporar
 export default function LeadsPage() {
   const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
+  const { needsTenantSelection, runDisabledTitle } = useNeedsTenantSelection()
   const activeLobId = useLobStore((s) => s.activeLobId)
   const getActiveLob = useLobStore((s) => s.getActiveLob)
   const [columnConfig, setColumnConfig] = useState<ColumnConfig | null>(null)
@@ -946,6 +948,7 @@ export default function LeadsPage() {
 
   return (
     <div>
+      <SelectTenantBanner action="enrich leads or send outreach" />
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -971,7 +974,9 @@ export default function LeadsPage() {
                 <>
                   <button
                     onClick={handleOpenEnrichPreview}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm font-medium"
+                    disabled={needsTenantSelection}
+                    title={runDisabledTitle}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Contact Enrich ({selectedIds.size})
                   </button>
@@ -992,9 +997,9 @@ export default function LeadsPage() {
                         setLoadingPreview(false)
                       }
                     }}
-                    disabled={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0}
+                    disabled={needsTenantSelection || Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0}
                     className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0 ? 'No selected leads have contacts' : ''}
+                    title={needsTenantSelection ? runDisabledTitle : (Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length === 0 ? 'No selected leads have contacts' : '')}
                   >
                     Send Outreach ({Array.from(selectedIds).filter(id => (contactCountCache[id] || 0) > 0).length})
                   </button>

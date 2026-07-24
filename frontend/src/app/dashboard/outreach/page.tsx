@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import DOMPurify from 'dompurify'
 import { dashboardApi, pipelinesApi, settingsApi, outreachApi, campaignsApi, mailboxesApi } from '@/lib/api'
 import { FilterMultiSelect } from '@/components/filter-multi-select'
+import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
 
 interface OutreachStats {
   emails_sent: number
@@ -57,6 +58,7 @@ interface Setting {
 }
 
 export default function OutreachPage() {
+  const { needsTenantSelection, runDisabledTitle } = useNeedsTenantSelection()
   const [stats, setStats] = useState<OutreachStats | null>(null)
   const [events, setEvents] = useState<OutreachEvent[]>([])
   const [settings, setSettings] = useState<Record<string, any>>({})
@@ -295,13 +297,16 @@ export default function OutreachPage() {
           )}
           <button
             onClick={handleCheckReplies}
-            disabled={checkingReplies}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+            disabled={checkingReplies || needsTenantSelection}
+            title={runDisabledTitle}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {checkingReplies ? 'Checking...' : 'Check Replies'}
           </button>
         </div>
       </div>
+
+      <SelectTenantBanner action="send outreach or check replies" />
 
       {error && (
         <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg mb-4 flex justify-between">
@@ -379,7 +384,7 @@ export default function OutreachPage() {
             </div>
           )}
           <div className="flex items-end">
-            <button onClick={runOutreach} disabled={running} className="btn-primary">
+            <button onClick={runOutreach} disabled={running || needsTenantSelection} title={runDisabledTitle} className="btn-primary disabled:opacity-60 disabled:cursor-not-allowed">
               {running ? 'Starting...' : mode === 'mailmerge' ? 'Export for Mailmerge' : 'Run Outreach'}
             </button>
           </div>
