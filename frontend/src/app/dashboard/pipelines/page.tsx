@@ -6,7 +6,7 @@ import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } fr
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
-import { useAuthStore } from '@/lib/store'
+import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
 import { Search, UserPlus, ShieldCheck, Send, FileText, Download } from 'lucide-react'
 
 // LOB-type-specific lead sourcing descriptions
@@ -85,14 +85,8 @@ export default function PipelinesPage() {
   const router = useRouter()
   const { activeLobId, getActiveLob } = useLobStore()
   // A super-admin who isn't impersonating a tenant has no tenant context, so the
-  // backend blocks pipeline runs (400 "Select a tenant first"). Disable the run
-  // buttons + explain, instead of letting them click into an error.
-  const currentUser = useAuthStore((s) => s.user)
-  const impersonation = useAuthStore((s) => s.impersonation)
-  const needsTenantSelection = currentUser?.role === 'super_admin' && !impersonation
-  const runDisabledTitle = needsTenantSelection
-    ? 'Select a tenant first — impersonate a tenant (Tenants page) to run pipelines.'
-    : undefined
+  // backend blocks pipeline runs (400). Disable the run buttons + explain instead.
+  const { needsTenantSelection, runDisabledTitle } = useNeedsTenantSelection()
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [stats, setStats] = useState<PipelineStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -698,19 +692,7 @@ export default function PipelinesPage() {
         </div>
       )}
 
-      {needsTenantSelection && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <span className="text-sm">
-            You&rsquo;re signed in as a super-admin with <strong>no tenant selected</strong>. Pipelines run under a specific tenant (using that tenant&rsquo;s API keys &amp; settings), so select a tenant to run them.
-          </span>
-          <button
-            onClick={() => router.push('/dashboard/tenants')}
-            className="shrink-0 text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-lg px-3 py-1.5"
-          >
-            Select a tenant
-          </button>
-        </div>
-      )}
+      <SelectTenantBanner action="run pipelines" />
 
       {/* Complete Workflow Visualization */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-6">
