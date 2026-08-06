@@ -653,6 +653,9 @@ def export_leads_for_resource_pool(
     from app.services.integrations.resource_pool_client import build_lead_payload, _tenant_domain
 
     lq = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
+    # Match the app's "Leads" section: only ACTIVE (non-archived) leads are
+    # exportable — archived leads are historical and must not flood Resource Pool.
+    lq = lq.filter(LeadDetails.is_archived == False)  # noqa: E712 (SQLAlchemy needs ==)
     # Only leads that actually have >=1 contact are exportable — filter at the SQL
     # level so ``limit`` counts RETURNED (with-contact) leads and pagination via
     # since_id/nextSinceId reaches every one of them (not just the first scan window).
