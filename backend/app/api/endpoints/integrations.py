@@ -614,3 +614,68 @@ def resource_pool_attribution_export(
     fname = f"attribution_{start or 'all'}_{end or 'all'}.csv"
     return StreamingResponse(_iter(), media_type="text/csv",
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+# ─── Resource Pool export (pull side of RP's "Import from NeuraLeads") ──────────
+
+def _export_contact(c) -> dict:
+    """Serialize a ContactDetails to the RP import contact shape."""
+    name = " ".join([p for p in [(c.first_name or "").strip(), (c.last_name or "").strip()] if p]).strip()
+    return {
+        "name": name or (getattr(c, "client_name", None) or "Contact"),
+        "email": (c.email or None),
+        "phone": (getattr(c, "phone", None) or None),
+        "title": (getattr(c, "title", None) or None),
+        "priority": getattr(c, "priority_level", None),
+        "validationStatus": getattr(c, "validation_status", None),
+    }
+
+
+@router.get("/export/leads")
+def export_leads_for_resource_pool(
+    limit: int = Query(50, ge=1, le=200),
+    since_id: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Export this tenant's leads (company + job + FULL contact list + opportunity)
+    so Resource Pool can PULL them via its "Import from NeuraLeads" button.
+
+    Auth: standard user auth — accepts ``X-API-Key`` (tenant-scoped), so an RP-held
+    NeuraLeads key only ever sees its own tenant's leads. Only leads with at least
+    one contact are returned. Page forward with ``since_id`` = the previous
+    response's ``nextSinceId``.
+    """
+    from app.db.models.lead import LeadDetails
+    from app.db.models.client import ClientInfo
+    from app.db.models.contact import ContactDetails
+    from app.services.integrations.resource_pool_client import build_lead_payload, _tenant_domain
+
+    lq = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
+    if since_id:
+        lq = lq.filter(LeadDetails.lead_id > since_id)
+    leads = lq.order_by(LeadDetails.lead_id.asc()).limit(limit).all()
+
+    tenant_domain = _tenant_domain(db, tenant_id)
+    out: List[dict] = []
+    for lead in leads:
+        contacts = tenant_filter(
+            db.query(ContactDetails).filter(ContactDetails.lead_id == lead.lead_id),
+            ContactDetails, tenant_id,
+        ).all()
+        if not contacts:
+            continue  # nothing to hand off without a client contact
+        company = None
+        if lead.client_name:
+            company = tenant_filter(
+                db.query(ClientInfo).filter(ClientInfo.client_name == lead.client_name),
+                ClientInfo, tenant_id,
+            ).first()
+        payload = build_lead_payload(lead, company=company, contact=None, stage="LEAD",
+                                     tenant_domain=tenant_domain, tenant_id=tenant_id)
+        payload["contacts"] = [_export_contact(c) for c in contacts]
+        out.append(payload)
+
+    next_since_id = leads[-1].lead_id if leads else since_id
+    return {"leads": out, "count": len(out), "nextSinceId": next_since_id}
