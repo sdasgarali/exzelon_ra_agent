@@ -686,6 +686,14 @@ def export_leads_for_resource_pool(
             ).first()
         payload = build_lead_payload(lead, company=company, contact=None, stage="LEAD",
                                      tenant_domain=tenant_domain, tenant_id=tenant_id)
+        # Enrich the job with fields Resource Pool surfaces (Type, pay). Leads are
+        # job postings: they carry an employment type + annual salary (not an hourly
+        # bill rate), so salary is handed over as pay-range, and billRate stays null.
+        payload["job"]["employmentType"] = _clean(getattr(lead, "employment_type", None))
+        smin = getattr(lead, "salary_min", None)
+        smax = getattr(lead, "salary_max", None)
+        payload["job"]["salaryMin"] = float(smin) if smin is not None else None
+        payload["job"]["salaryMax"] = float(smax) if smax is not None else None
         payload["contacts"] = [_export_contact(c) for c in contacts]
         out.append(payload)
 
