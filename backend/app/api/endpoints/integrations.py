@@ -653,6 +653,15 @@ def export_leads_for_resource_pool(
     from app.services.integrations.resource_pool_client import build_lead_payload, _tenant_domain
 
     lq = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
+    # Only leads that actually have >=1 contact are exportable — filter at the SQL
+    # level so ``limit`` counts RETURNED (with-contact) leads and pagination via
+    # since_id/nextSinceId reaches every one of them (not just the first scan window).
+    contact_exists = db.query(ContactDetails.contact_id).filter(
+        ContactDetails.lead_id == LeadDetails.lead_id
+    )
+    if tenant_id is not None:
+        contact_exists = contact_exists.filter(ContactDetails.tenant_id == tenant_id)
+    lq = lq.filter(contact_exists.exists())
     if since_id:
         lq = lq.filter(LeadDetails.lead_id > since_id)
     leads = lq.order_by(LeadDetails.lead_id.asc()).limit(limit).all()
