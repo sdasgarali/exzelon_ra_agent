@@ -650,7 +650,7 @@ def export_leads_for_resource_pool(
     from app.db.models.lead import LeadDetails
     from app.db.models.client import ClientInfo
     from app.db.models.contact import ContactDetails
-    from app.services.integrations.resource_pool_client import build_lead_payload, _tenant_domain
+    from app.services.integrations.resource_pool_client import build_lead_payload, _tenant_domain, _clean
 
     lq = tenant_filter(db.query(LeadDetails), LeadDetails, tenant_id)
     # Match the app's "Leads" section: only ACTIVE (non-archived) leads are
