@@ -111,6 +111,21 @@ Existing rows (R1603 + "many more") already carry the understated numeric `compa
 2. **Server-side band filter (item C): YES** — added. Fantastic.jobs now receives `organization_size=1,2-10,11-50,51-200` (buckets ≤ 200) so oversized companies are never fetched.
 3. **Backfill (item D): audit report first (D2).** Read-only `scripts/audit_fantastic_jobs_company_size.py` ships to quantify the damage; no writes/spend until numbers are reviewed.
 
+## 5b. Prod audit results (tenant 1, ceiling >200 — run 2026-08-07)
+`python scripts/audit_fantastic_jobs_company_size.py --tenant 1`
+
+| Metric | Count |
+|---|---|
+| Total fantastic_jobs/linkedin leads | **2,725** |
+| stored size = **band** (trustworthy) | **0** ← confirms the adapter *never* stored the band pre-fix |
+| stored size = bare integer (**suspect**) | 1,463 |
+| stored size = blank/unknown | 1,262 |
+| already EXCLUDED | 90 |
+| **Suspect ≤200 already enriched (Apollo credits LIKELY already spent)** | **870** |
+| **Suspect ≤200 still pending (future waste risk)** | **503** |
+
+Worst sourcing runs (UI `R<id>`): **R1603 = 487**, R1588 = 477, R1591 = 409 suspect leads — three fantastic_jobs runs account for ~1,373 of the suspect leads. Example understated rows: *Crete United* (154 stored — actually a large HVAC rollup), *Invivyd* (189), *Coalesce Management Consulting* (163). Takeaway: **0 trustworthy bands** means every sized fantastic_jobs lead was gated on the understated headcount; 870 already cost Apollo credits and 503 are still queued. This justifies a re-verify backfill (D1) for the still-pending 503 (cheap firmographic-by-domain) once the fix ships — and the fix stops all future runs at source.
+
 ## 6. Deployment / follow-up steps
 - **Set prod tenant-1 override to 200** (tenant overrides shadow the global default — see `settings-store-tenant-override-gotcha`):
   `set_tenant_setting(db, "lead_sourcing_max_employee_count", 200, tenant_id=1)`.

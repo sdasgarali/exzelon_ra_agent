@@ -129,11 +129,23 @@ def main():
         sample = (suspect_enriched + suspect_pending)[: args.sample]
         if sample:
             print(f"Examples (first {len(sample)}):")
-            print(f"  {'lead_id':<10} {'status':<16} {'size':<10} company")
+            print(f"  {'lead_id':<9} {'run':<8} {'status':<12} {'size':<8} company")
             for ld in sample:
-                lid = getattr(ld, "lead_ref", None) or ld.id
-                print(f"  {str(lid):<10} {_status_val(ld.lead_status):<16} "
-                      f"{str(ld.company_size):<10} {(ld.client_name or '')[:40]}")
+                run = f"R{ld.run_id}" if ld.run_id else "-"
+                print(f"  {str(ld.lead_id):<9} {run:<8} "
+                      f"{_status_val(ld.lead_status):<12} "
+                      f"{str(ld.company_size):<8} {(ld.client_name or '')[:38]}")
+
+        # Also surface the worst-hit sourcing runs so a whole batch can be
+        # re-verified at once (R1603 = run_id 1603 in the UI).
+        run_counts = Counter(
+            ld.run_id for ld in (suspect_enriched + suspect_pending) if ld.run_id
+        )
+        if run_counts:
+            print()
+            print("Top sourcing runs by suspect-lead count (UI shows these as R<id>):")
+            for run_id, n in run_counts.most_common(10):
+                print(f"  R{run_id:<8} {n}")
         print()
         print("NOTE: stored bare-integer sizes cannot be trusted for "
               "fantastic_jobs leads.")
