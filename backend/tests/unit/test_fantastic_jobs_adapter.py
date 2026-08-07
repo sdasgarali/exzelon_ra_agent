@@ -25,6 +25,68 @@ def test_fetch_jobs_accepts_pipeline_contract():
     assert jobs == []
 
 
+def test_normalize_prefers_self_reported_band_over_headcount():
+    """The R1603 bug: org_linkedin_headcount (tagged members) is understated.
+    company_size must carry the self-reported band so the >200 ICP gate can act
+    on the true size; the raw headcount stays available as employee_count."""
+    a = FantasticJobsAdapter(api_key="k")
+    raw = {
+        "id": 1603, "title": "HR Manager", "organization": "BigCo",
+        "org_linkedin_industry": "Construction",
+        "org_linkedin_headcount": 156,        # understated tagged-member count
+        "org_linkedin_size": "1001-5000",      # self-reported band (LinkedIn ">1000")
+        "url": "https://linkedin.com/jobs/view/1603",
+    }
+    n = a.normalize(raw)
+    assert n["company_size"] == "1001-5000"    # band preferred, not "156"
+    assert n["employee_count"] == 156          # raw headcount still surfaced
+
+
+def test_normalize_falls_back_to_headcount_when_no_band():
+    a = FantasticJobsAdapter(api_key="k")
+    n = a.normalize({"organization": "Acme", "org_linkedin_headcount": 85,
+                     "url": "u"})
+    assert n["company_size"] == "85"
+
+
+def test_fetch_pushes_server_side_size_band_filter(monkeypatch):
+    """The adapter must push organization_size (self-reported band buckets <=
+    ceiling) so oversized companies are never fetched — the headcount filter
+    alone keys on the understated count."""
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return []
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, params=None, headers=None, timeout=None):
+            captured.update(params or {})
+            return _Resp()
+
+    import app.services.adapters.job_sources.fantastic_jobs as mod
+    monkeypatch.setattr(mod.httpx, "Client", _Client)
+
+    a = FantasticJobsAdapter(api_key="k")
+    a.fetch_jobs(location="United States", posted_within_days=7,
+                 job_titles=["HR Manager"], limit=100,
+                 tuning={"max_pages": 1, "max_employee_count": 200})
+
+    assert captured.get("organization_size") == "1,2-10,11-50,51-200"
+    assert captured.get("organization_headcount_lt") == 201
+
+
 def test_is_configured_and_host_default():
     assert FantasticJobsAdapter(api_key="").is_configured() is False
     assert FantasticJobsAdapter(api_key="k").is_configured() is True

@@ -80,6 +80,70 @@ def exceeds_size_ceiling(value, ceiling: int) -> bool:
     return count > ceiling
 
 
+def exceeds_size_ceiling_any(values: Iterable, ceiling: int) -> bool:
+    """Conservative multi-signal ceiling check — drops when ANY known signal is
+    above ``ceiling`` (compares the LARGEST parsed value).
+
+    A job board can expose more than one size signal for the same company. E.g.
+    Fantastic.jobs returns both ``org_linkedin_headcount`` (a count of tagged
+    LinkedIn *member profiles* — systematically UNDERSTATED) and
+    ``org_linkedin_size`` (the company's SELF-REPORTED size band). Keying a
+    cost-control drop gate on the lowest signal lets a large company slip through
+    on its understated headcount (the R1603 bug: headcount 156 but band
+    "1001-5000"). For exclusion we therefore take the most conservative (largest)
+    estimate and drop when it exceeds the ceiling.
+
+    Unknown/unparseable signals are ignored; all-unknown returns False (recall
+    preserved — never drop on unknown size). A non-positive ceiling disables it.
+    """
+    if not ceiling or ceiling <= 0:
+        return False
+    counts = [parse_employee_count(v) for v in values]
+    counts = [c for c in counts if c is not None]
+    if not counts:
+        return False
+    return max(counts) > ceiling
+
+
+def below_size_floor_any(values: Iterable, floor: int) -> bool:
+    """Conservative multi-signal floor check — symmetric to
+    :func:`exceeds_size_ceiling_any`.
+
+    Drops only when the LARGEST known size signal is still below ``floor`` so a
+    company is never dropped as "too small" while another signal says it could be
+    in-band. All-unknown returns False (recall preserved); non-positive floor
+    disables it.
+    """
+    if not floor or floor <= 0:
+        return False
+    counts = [parse_employee_count(v) for v in values]
+    counts = [c for c in counts if c is not None]
+    if not counts:
+        return False
+    return max(counts) < floor
+
+
+def size_buckets_within_ceiling(ceiling: int) -> list:
+    """LinkedIn self-reported size buckets whose lower bound is ``<= ceiling``.
+
+    Used to push a server-side size filter (Fantastic.jobs ``organization_size``,
+    which matches the ``org_linkedin_size`` band) so oversized companies are never
+    fetched. Recall-preserving in the same lower-bound sense as
+    :func:`parse_employee_count`: a bucket is kept if a company in it *could* be
+    within the ceiling. Returns ``[]`` for a non-positive ceiling (filter off).
+
+    Example: ceiling 200 -> ['1', '2-10', '11-50', '51-200'] (drops 201-500 and up).
+    """
+    if not ceiling or ceiling <= 0:
+        return []
+    # (bucket label, lower bound) — the canonical LinkedIn / Fantastic.jobs bands.
+    _BANDS = [
+        ("1", 1), ("2-10", 2), ("11-50", 11), ("51-200", 51), ("201-500", 201),
+        ("501-1000", 501), ("1001-5000", 1001), ("5001-10000", 5001), ("10001+", 10001),
+    ]
+    return [label for label, lower in _BANDS if lower <= ceiling]
+
+
 def below_size_floor(value, floor: int) -> bool:
     """True when a parsed employee count is strictly below ``floor``.
 

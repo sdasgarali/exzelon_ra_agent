@@ -33,8 +33,8 @@ import structlog
 from app.core.config import settings
 from app.core.settings_resolver import get_tenant_setting
 from app.services.company_filters import (
-    exceeds_size_ceiling,
-    below_size_floor,
+    exceeds_size_ceiling_any,
+    below_size_floor_any,
     industry_is_excluded,
     is_placeholder_company,
     salary_below_threshold,
@@ -228,15 +228,20 @@ class LeadEligibilityGate:
         if industry_is_excluded(_field(lead, "industry"), self.excluded_industries):
             return False, "industry_excluded"
 
-        # 6) Size ceiling (unknown → not excluded).
-        size_signal = _field(lead, "_employee_count")
-        if size_signal is None:
-            size_signal = _field(lead, "company_size")
-        if exceeds_size_ceiling(size_signal, self.max_employee_count):
+        # 6) Size ceiling (unknown → not excluded). Conservative across every
+        # available size signal — drops on the LARGEST of enriched/raw headcount
+        # and the self-reported size band so a company can't slip through on an
+        # understated signal (the R1603 bug).
+        size_values = (
+            _field(lead, "_employee_count"),
+            _field(lead, "employee_count"),
+            _field(lead, "company_size"),
+        )
+        if exceeds_size_ceiling_any(size_values, self.max_employee_count):
             return False, "size_ceiling"
 
         # 7) Size floor (unknown → not excluded).
-        if below_size_floor(size_signal, self.min_employee_count):
+        if below_size_floor_any(size_values, self.min_employee_count):
             return False, "size_floor"
 
         return True, None

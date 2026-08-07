@@ -201,8 +201,9 @@ class Settings(BaseSettings):
 
     # Pipeline-wide company-size ceiling applied to ALL sources (not just
     # TheirStack) after fetch/enrichment. Companies with >this many employees are
-    # dropped at sourcing. Override per-tenant via `lead_sourcing_max_employee_count`.
-    LEAD_SOURCING_MAX_EMPLOYEE_COUNT: int = 500
+    # dropped at sourcing. ICP ceiling is 200 (companies >200 employees are out of
+    # scope). Override per-tenant via `lead_sourcing_max_employee_count`.
+    LEAD_SOURCING_MAX_EMPLOYEE_COUNT: int = 200
     # Pipeline-wide company-size FLOOR applied to ALL sources after
     # fetch/enrichment. Companies with fewer than this many employees are dropped
     # at sourcing. Recall-preserving: unknown size is never dropped. Default 1 =

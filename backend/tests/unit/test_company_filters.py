@@ -4,13 +4,68 @@ import pytest
 from app.services.company_filters import (
     parse_employee_count,
     exceeds_size_ceiling,
+    exceeds_size_ceiling_any,
     below_size_floor,
+    below_size_floor_any,
+    size_buckets_within_ceiling,
     industry_is_excluded,
     is_placeholder_company,
     salary_below_threshold,
 )
 
 pytestmark = pytest.mark.unit
+
+
+class TestExceedsSizeCeilingAny:
+    """Conservative multi-signal ceiling — drop when the LARGEST signal is over."""
+
+    def test_understated_headcount_with_large_band_is_dropped(self):
+        # The R1603 bug: tagged-member headcount 156, self-reported band 1001-5000.
+        assert exceeds_size_ceiling_any([156, "1001-5000"], 200) is True
+
+    def test_understated_headcount_alone_is_kept(self):
+        assert exceeds_size_ceiling_any([156], 200) is False
+
+    def test_band_order_independent(self):
+        assert exceeds_size_ceiling_any(["1001-5000", 156], 200) is True
+
+    def test_all_signals_within_ceiling_kept(self):
+        assert exceeds_size_ceiling_any([50, "51-200"], 200) is False
+
+    @pytest.mark.parametrize("values", [[], [None], [None, ""], ["unknown", None]])
+    def test_all_unknown_never_dropped(self, values):
+        assert exceeds_size_ceiling_any(values, 200) is False
+
+    def test_zero_ceiling_disables(self):
+        assert exceeds_size_ceiling_any([9999, "10001+"], 0) is False
+
+
+class TestBelowSizeFloorAny:
+    def test_dropped_only_when_largest_below_floor(self):
+        assert below_size_floor_any([5, "1-10"], 50) is True
+
+    def test_kept_when_any_signal_meets_floor(self):
+        assert below_size_floor_any([5, "201-500"], 50) is False
+
+    def test_all_unknown_never_dropped(self):
+        assert below_size_floor_any([None, ""], 50) is False
+
+    def test_zero_floor_disables(self):
+        assert below_size_floor_any([1], 0) is False
+
+
+class TestSizeBucketsWithinCeiling:
+    def test_ceiling_200_excludes_201_and_up(self):
+        assert size_buckets_within_ceiling(200) == ["1", "2-10", "11-50", "51-200"]
+
+    def test_ceiling_500_includes_201_500(self):
+        assert size_buckets_within_ceiling(500) == [
+            "1", "2-10", "11-50", "51-200", "201-500",
+        ]
+
+    @pytest.mark.parametrize("ceiling", [0, -1])
+    def test_non_positive_ceiling_off(self, ceiling):
+        assert size_buckets_within_ceiling(ceiling) == []
 
 
 class TestSalaryBelowThreshold:
