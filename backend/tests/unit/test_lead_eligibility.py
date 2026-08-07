@@ -60,6 +60,30 @@ class TestGateRules:
         assert eligible is False
         assert reason == "size_ceiling"
 
+    def test_self_reported_band_over_ceiling_excluded(self, db_session, test_tenant):
+        """R1603: a company whose stored size is the self-reported band
+        "1001-5000" must be dropped even though its tagged-member headcount is low."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(_lead(company_size="1001-5000"))
+        assert eligible is False
+        assert reason == "size_ceiling"
+
+    def test_conservative_across_headcount_and_band(self, db_session, test_tenant):
+        """When both signals are present, the LARGEST wins the drop decision — an
+        understated headcount of 156 must not rescue a 1001-5000 company."""
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(
+            _lead(company_size="1001-5000", _employee_count=156)
+        )
+        assert eligible is False
+        assert reason == "size_ceiling"
+
+    def test_band_just_over_200_ceiling_excluded(self, db_session, test_tenant):
+        gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
+        eligible, reason = gate.check(_lead(company_size="201-500"))
+        assert eligible is False
+        assert reason == "size_ceiling"
+
     def test_staffing_keyword_in_company_excluded(self, db_session, test_tenant):
         gate = LeadEligibilityGate(db_session, tenant_id=test_tenant.tenant_id)
         eligible, reason = gate.check(_lead(client_name="Acme Staffing Agency"))

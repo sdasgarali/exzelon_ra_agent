@@ -1539,8 +1539,8 @@ def _apply_company_gate(
     from app.services.company_filters import (
         is_placeholder_company,
         industry_is_excluded,
-        exceeds_size_ceiling,
-        below_size_floor,
+        exceeds_size_ceiling_any,
+        below_size_floor_any,
         salary_below_threshold,
     )
 
@@ -1609,13 +1609,20 @@ def _apply_company_gate(
         if salary_below_threshold(job.get("salary_min"), job.get("salary_max"), min_salary_threshold):
             counters["excluded_salary"] += 1
             continue
-        size_signal = job.get("_employee_count")
-        if size_signal is None:
-            size_signal = job.get("company_size")
-        if exceeds_size_ceiling(size_signal, max_employee_count):
+        # Conservative multi-signal size gate: judge the LARGEST of the enriched
+        # headcount, the raw adapter headcount, and the self-reported size band so
+        # an oversized company can't slip through on an understated signal (the
+        # R1603 bug). `employee_count` is included because some adapters emit it
+        # without the `_`-prefixed enriched key.
+        size_values = (
+            job.get("_employee_count"),
+            job.get("employee_count"),
+            job.get("company_size"),
+        )
+        if exceeds_size_ceiling_any(size_values, max_employee_count):
             counters["excluded_too_large"] += 1
             continue
-        if below_size_floor(size_signal, min_employee_count):
+        if below_size_floor_any(size_values, min_employee_count):
             counters["excluded_too_small"] += 1
             continue
         if industry_is_excluded(job.get("industry"), excluded_industries):

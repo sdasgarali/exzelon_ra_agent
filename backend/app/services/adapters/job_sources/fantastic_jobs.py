@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 from app.services.adapters.base import JobSourceAdapter
+from app.services.company_filters import size_buckets_within_ceiling
 from app.core.config import settings
 
 # US state name → 2-letter code, for extracting `state` from derived locations.
@@ -133,6 +134,16 @@ class FantasticJobsAdapter(JobSourceAdapter):
                     # drop postings that duplicate an ATS-feed listing
                     "exclude_ats_duplicate": "true",
                 }
+                # Also push the SELF-REPORTED size band as a server-side filter
+                # (organization_size maps to the org_linkedin_size bucket). The
+                # headcount filter above keys on the understated tagged-member
+                # count, so a large company with few tagged members slips through
+                # it; the band filter excludes those buckets at the source so we
+                # never fetch — or pay to enrich — an oversized company. Inclusion
+                # list of buckets whose lower bound is <= the ICP ceiling.
+                size_buckets = size_buckets_within_ceiling(max_employee_count)
+                if size_buckets:
+                    params["organization_size"] = ",".join(size_buckets)
                 if title_or:
                     params["title"] = title_or
                 if exclude_industries:
@@ -207,7 +218,16 @@ class FantasticJobsAdapter(JobSourceAdapter):
             "employer_linkedin_url": raw_data.get("organization_url") or "",
             "employer_website": raw_data.get("org_linkedin_website") or "",
             "industry": raw_data.get("org_linkedin_industry") or "",
-            "company_size": str(employee_count) if employee_count else (raw_data.get("org_linkedin_size") or ""),
+            # Prefer the SELF-REPORTED size band (org_linkedin_size, e.g.
+            # "1001-5000") over org_linkedin_headcount. Headcount is only a count
+            # of tagged LinkedIn member profiles and is systematically understated
+            # (the R1603 bug: headcount 156 for a 1001-5000-employee company),
+            # which let oversized companies pass the ICP size gate and burned
+            # Apollo contact-discovery credits. The band matches what the LinkedIn
+            # profile shows and is the authoritative signal for the gate. The raw
+            # headcount is still surfaced as `employee_count` for telemetry and is
+            # folded into the conservative (max-of-signals) gate decision.
+            "company_size": (raw_data.get("org_linkedin_size") or (str(employee_count) if employee_count else "")),
             "employee_count": employee_count,
             "is_staffing_agency": bool(raw_data.get("org_linkedin_recruitment_agency_derived")),
             "recruiter_name": raw_data.get("recruiter_name") or "",

@@ -662,7 +662,7 @@ DEFAULT_SETTINGS = {
     "pipeline_max_workers": {"value": 6, "type": "integer", "description": "Thread pool size for parallel adapter execution"},
     "posted_within_days": {"value": 7, "type": "integer", "description": "Only fetch jobs posted within this many days (1-90). Lower = fewer duplicates."},
     "posted_within_hours": {"value": 0, "type": "integer", "description": "Fetch window in hours (0 = use posted_within_days). 1-2160. When set, takes precedence; hour-aware sources (Fantastic.jobs) honor it exactly, day-based sources use ceil(hours/24) days."},
-    "lead_sourcing_max_employee_count": {"value": 500, "type": "integer", "description": "Drop companies larger than this many employees at sourcing (0 = no size limit)"},
+    "lead_sourcing_max_employee_count": {"value": 200, "type": "integer", "description": "Drop companies larger than this many employees at sourcing (0 = no size limit)"},
     "lead_sourcing_drop_confidential": {"value": True, "type": "boolean", "description": "Drop confidential/blank employer postings at sourcing"},
     "lead_sourcing_excluded_industries": {"value": [], "type": "list", "description": "Industries hard-dropped at sourcing (substring match); empty = built-in IT/staffing/government defaults"},
     "lead_sourcing_enrich_company_at_source": {"value": True, "type": "boolean", "description": "Fill missing company industry/size via AI (Groq) at sourcing, cached on ClientInfo"},
