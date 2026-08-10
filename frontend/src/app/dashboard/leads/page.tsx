@@ -267,6 +267,41 @@ export default function LeadsPage() {
     fetchLeads()
   }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, sortBy, sortOrder, showArchived, activeLobId])
 
+  // Build the active filter set shared by the leads list AND the CSV export, so
+  // an export always matches exactly what the user is viewing (WYSIWYG). Excludes
+  // pagination/sort — callers add those as needed.
+  const buildLeadFilterParams = (): Record<string, any> => {
+    const params: Record<string, any> = {}
+    if (debouncedSearch) params.search = debouncedSearch
+    if (filterStatus) params.status = filterStatus
+    if (filterSource) params.source = filterSource
+    if (filterState.length) params.state = filterState
+    if (filterFromDate) params.from_date = filterFromDate
+    if (filterToDate) params.to_date = filterToDate
+    if (filterIndustry.length) params.industry = filterIndustry
+    Object.assign(params, sizeFilterParams(sizeFilter))
+    Object.assign(params, salaryFilterParams(salaryFilter))
+    if (filterDataType) params.data_type = filterDataType
+    if (filterEmploymentType.length) params.employment_type = filterEmploymentType
+    if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
+    if (filterTitle.length) params.title = filterTitle
+    // Excel-style Text Filter conditions
+    Object.assign(params, textConditionParams('industry', filterIndustryText))
+    Object.assign(params, textConditionParams('title', filterTitleText))
+    Object.assign(params, textConditionParams('company', filterCompanyText))
+    Object.assign(params, textConditionParams('employment_type', filterEmploymentText))
+    if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
+    if (filterExtractedTo) params.extracted_to = filterExtractedTo
+    if (filterDownloaded) params.downloaded = filterDownloaded
+    if (showArchived) params.show_archived = true
+    // Filter by active LOB if one is selected
+    const activeLob = getActiveLob()
+    if (activeLob && activeLob.lob_type !== 'staffing') {
+      params.lob_id = activeLob.lob_id
+    }
+    return params
+  }
+
   const fetchLeads = async () => {
     try {
       setLoading(true)
@@ -277,33 +312,7 @@ export default function LeadsPage() {
         page_size: pageSize,
         sort_by: sortBy,
         sort_order: sortOrder,
-      }
-      if (debouncedSearch) params.search = debouncedSearch
-      if (filterStatus) params.status = filterStatus
-      if (filterSource) params.source = filterSource
-      if (filterState.length) params.state = filterState
-      if (filterFromDate) params.from_date = filterFromDate
-      if (filterToDate) params.to_date = filterToDate
-      if (filterIndustry.length) params.industry = filterIndustry
-      Object.assign(params, sizeFilterParams(sizeFilter))
-      Object.assign(params, salaryFilterParams(salaryFilter))
-      if (filterDataType) params.data_type = filterDataType
-      if (filterEmploymentType.length) params.employment_type = filterEmploymentType
-      if (filterExcludeKeywords.length) params.exclude_keywords = filterExcludeKeywords
-      if (filterTitle.length) params.title = filterTitle
-      // Excel-style Text Filter conditions
-      Object.assign(params, textConditionParams('industry', filterIndustryText))
-      Object.assign(params, textConditionParams('title', filterTitleText))
-      Object.assign(params, textConditionParams('company', filterCompanyText))
-      Object.assign(params, textConditionParams('employment_type', filterEmploymentText))
-      if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
-      if (filterExtractedTo) params.extracted_to = filterExtractedTo
-      if (filterDownloaded) params.downloaded = filterDownloaded
-      if (showArchived) params.show_archived = true
-      // Filter by active LOB if one is selected
-      const activeLob = getActiveLob()
-      if (activeLob && activeLob.lob_type !== 'staffing') {
-        params.lob_id = activeLob.lob_id
+        ...buildLeadFilterParams(),
       }
 
       const response = await leadsApi.list(params)
@@ -375,21 +384,29 @@ export default function LeadsPage() {
       // POST with a JSON body (not GET query params): a "selected" export of many
       // leads would otherwise put hundreds of lead_ids in the URL and exceed the
       // proxy's request-line limit, failing the request.
-      const body: Record<string, unknown> = {}
-      if (mode === 'selected') {
-        body.lead_ids = Array.from(selectedIds)
-      } else {
-        if (filterStatus) body.status = filterStatus
-        if (filterSource) body.source = filterSource
-        if (filterState.length) body.state = filterState
-        if (filterFromDate) body.from_date = filterFromDate
-        if (filterToDate) body.to_date = filterToDate
-        if (debouncedSearch) body.search = debouncedSearch
-      }
+      // "All" exports the exact filtered view the user sees (WYSIWYG); "selected"
+      // exports the checked rows. Sent as a JSON body so large selections don't
+      // overflow the URL length limit.
+      const body: Record<string, unknown> =
+        mode === 'selected'
+          ? { lead_ids: Array.from(selectedIds) }
+          : buildLeadFilterParams()
 
       const response = await api.post('/leads/export/csv', body, {
         responseType: 'blob'
       })
+
+      // Guard against a silent "blank" download: the CSV always contains a header
+      // row, so a header-only payload means zero leads matched. Tell the user
+      // instead of downloading an empty-looking file.
+      const csvText = await (response.data as Blob).text()
+      const dataRows = csvText.split('\n').filter(line => line.trim() !== '').length - 1
+      if (dataRows <= 0) {
+        setError(mode === 'selected'
+          ? 'No matching leads to export for the current selection.'
+          : 'No leads matched your current filters — nothing to export. (Tip: check the Archived toggle and active filters.)')
+        return
+      }
 
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]))
@@ -401,7 +418,7 @@ export default function LeadsPage() {
       link.remove()
       window.URL.revokeObjectURL(url)
 
-      setSuccess(`Export completed — ${mode === 'selected' ? selectedIds.size + ' selected' : 'all filtered'} leads`)
+      setSuccess(`Export completed — ${dataRows} row${dataRows === 1 ? '' : 's'} (${mode === 'selected' ? selectedIds.size + ' selected leads' : 'all filtered leads'})`)
       setTimeout(() => setSuccess(''), 3000)
       fetchLeads() // Refresh to show updated downloaded_at
     } catch (err: any) {
