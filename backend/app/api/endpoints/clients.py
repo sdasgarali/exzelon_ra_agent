@@ -79,31 +79,31 @@ def compute_client_category(db: Session, client_name: str, tenant_id: Optional[i
         return ClientCategory.PROSPECT
 
 
-@router.get("")
-async def list_clients(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
-    status: Optional[ClientStatus] = None,
-    category: Optional[ClientCategory] = None,
-    industry: Optional[List[str]] = Query(None, description="Filter by one or more industries"),
-    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
-    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
-    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
-    company_size_include_unknown: bool = Query(False, description="Include companies with unknown size when a size filter is active"),
+def _apply_client_filters(
+    query,
+    db: Session,
+    tenant_id: Optional[int],
+    *,
+    status=None,
+    category=None,
+    industry: Optional[List[str]] = None,
+    company_size_op: Optional[str] = None,
+    company_size_value: Optional[int] = None,
+    company_size_value2: Optional[int] = None,
+    company_size_include_unknown: bool = False,
     location_state: Optional[str] = None,
     search: Optional[str] = None,
-    sort_by: Optional[str] = Query("client_name", description="Column to sort by"),
-    sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
-    enrichment: Optional[str] = Query(None, description="Filter: 'never', 'enriched', 'multiple'"),
-    show_archived: bool = Query(False, description="Include archived clients"),
-    request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    enrichment: Optional[str] = None,
+    text_params=None,
 ):
-    """List clients with filtering and sorting."""
-    query = active_query(db, ClientInfo, show_archived=show_archived)
-    query = tenant_filter(query, ClientInfo, tenant_id)
+    """Apply the shared Clients list/export WHERE filters to ``query``.
+
+    Single source of truth so a CSV export matches exactly what the list shows
+    (WYSIWYG). Archive handling (``active_query`` / ``show_archived``) and
+    ``tenant_filter`` stay with the caller. ``text_params`` is a Mapping for the
+    Excel-style text filters — ``request.query_params`` (GET).
+    """
+    text_params = text_params if text_params is not None else {}
 
     if status:
         query = query.filter(ClientInfo.status == status)
@@ -144,13 +144,52 @@ async def list_clients(
     # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
     # Server-side predicates so filters work even when the typed text isn't a known
     # checklist value.
-    qp = request.query_params
+    qp = text_params
     industry_tc = text_filter_from_params(qp, "industry", ClientInfo.industry)
     if industry_tc is not None:
         query = query.filter(industry_tc)
     company_tc = text_filter_from_params(qp, "company", ClientInfo.client_name)
     if company_tc is not None:
         query = query.filter(company_tc)
+
+    return query
+
+
+@router.get("")
+async def list_clients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    status: Optional[ClientStatus] = None,
+    category: Optional[ClientCategory] = None,
+    industry: Optional[List[str]] = Query(None, description="Filter by one or more industries"),
+    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
+    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
+    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
+    company_size_include_unknown: bool = Query(False, description="Include companies with unknown size when a size filter is active"),
+    location_state: Optional[str] = None,
+    search: Optional[str] = None,
+    sort_by: Optional[str] = Query("client_name", description="Column to sort by"),
+    sort_order: Optional[Literal["asc", "desc"]] = Query("asc", description="Sort direction"),
+    enrichment: Optional[str] = Query(None, description="Filter: 'never', 'enriched', 'multiple'"),
+    show_archived: bool = Query(False, description="Include archived clients"),
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List clients with filtering and sorting."""
+    query = active_query(db, ClientInfo, show_archived=show_archived)
+    query = tenant_filter(query, ClientInfo, tenant_id)
+
+    query = _apply_client_filters(
+        query, db, tenant_id,
+        status=status, category=category, industry=industry,
+        company_size_op=company_size_op, company_size_value=company_size_value,
+        company_size_value2=company_size_value2,
+        company_size_include_unknown=company_size_include_unknown,
+        location_state=location_state, search=search, enrichment=enrichment,
+        text_params=request.query_params,
+    )
 
     total = query.count()
 
@@ -203,25 +242,38 @@ async def get_client_stats(
 async def export_clients_csv(
     status: Optional[ClientStatus] = None,
     category: Optional[ClientCategory] = None,
+    industry: Optional[List[str]] = Query(None, description="Filter by one or more industries"),
+    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
+    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
+    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
+    company_size_include_unknown: bool = Query(False, description="Include companies with unknown size when a size filter is active"),
+    location_state: Optional[str] = None,
     search: Optional[str] = None,
+    enrichment: Optional[str] = Query(None, description="Filter: 'never', 'enriched', 'multiple'"),
     show_archived: bool = Query(False, description="Include archived clients"),
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Export clients to CSV file."""
+    """Export clients to CSV file.
+
+    Filtering mirrors the clients list (via ``_apply_client_filters``) so the
+    export set equals the on-screen set. Any list query param — industry, numeric
+    company size, location, enrichment, Excel text filters — applies here too.
+    """
     query = active_query(db, ClientInfo, show_archived=show_archived)
     query = tenant_filter(query, ClientInfo, tenant_id)
 
-    if status:
-        query = query.filter(ClientInfo.status == status)
-    if category:
-        query = query.filter(ClientInfo.client_category == category)
-    if search:
-        query = query.filter(
-            (ClientInfo.client_name.ilike(f"%{search}%")) |
-            (ClientInfo.industry.ilike(f"%{search}%"))
-        )
+    query = _apply_client_filters(
+        query, db, tenant_id,
+        status=status, category=category, industry=industry,
+        company_size_op=company_size_op, company_size_value=company_size_value,
+        company_size_value2=company_size_value2,
+        company_size_include_unknown=company_size_include_unknown,
+        location_state=location_state, search=search, enrichment=enrichment,
+        text_params=request.query_params if request is not None else {},
+    )
 
     def generate_csv():
         output = io.StringIO()
