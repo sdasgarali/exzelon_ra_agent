@@ -126,6 +126,25 @@ export default function ClientsPage() {
     fetchClients()
   }, [page, pageSize, debouncedSearch, filterStatus, filterCategory, filterIndustry, filterIndustryText, filterCompanyText, sizeFilter, filterState, filterEnrichment, sortBy, sortOrder, showArchived])
 
+  // Build the active filter set shared by the clients list AND the CSV export, so
+  // an export always matches exactly what the user is viewing (WYSIWYG). Excludes
+  // pagination/sort — callers add those as needed.
+  const buildClientFilterParams = (): Record<string, any> => {
+    const params: Record<string, any> = {}
+    if (debouncedSearch) params.search = debouncedSearch
+    if (filterStatus) params.status = filterStatus
+    if (filterCategory) params.category = filterCategory
+    if (filterIndustry.length) params.industry = filterIndustry
+    // Excel-style Text Filter conditions
+    Object.assign(params, textConditionParams('industry', filterIndustryText))
+    Object.assign(params, textConditionParams('company', filterCompanyText))
+    Object.assign(params, sizeFilterParams(sizeFilter))
+    if (filterState) params.location_state = filterState
+    if (filterEnrichment) params.enrichment = filterEnrichment
+    if (showArchived) params.show_archived = true
+    return params
+  }
+
   const fetchClients = async () => {
     try {
       setLoading(true)
@@ -135,18 +154,8 @@ export default function ClientsPage() {
         limit: pageSize,
         sort_by: sortBy,
         sort_order: sortOrder,
+        ...buildClientFilterParams(),
       }
-      if (debouncedSearch) params.search = debouncedSearch
-      if (filterStatus) params.status = filterStatus
-      if (filterCategory) params.category = filterCategory
-      if (filterIndustry.length) params.industry = filterIndustry
-      // Excel-style Text Filter conditions
-      Object.assign(params, textConditionParams('industry', filterIndustryText))
-      Object.assign(params, textConditionParams('company', filterCompanyText))
-      Object.assign(params, sizeFilterParams(sizeFilter))
-      if (filterState) params.location_state = filterState
-      if (filterEnrichment) params.enrichment = filterEnrichment
-      if (showArchived) params.show_archived = true
 
       const response = await clientsApi.list(params)
       const clientList = Array.isArray(response) ? response : (response?.items || [])
@@ -215,13 +224,17 @@ export default function ClientsPage() {
   const handleExport = async () => {
     try {
       setExporting(true)
-      const params: Record<string, any> = {}
-      if (filterStatus) params.status = filterStatus
-      if (filterCategory) params.category = filterCategory
-      if (debouncedSearch) params.search = debouncedSearch
-      if (showArchived) params.show_archived = true
+      // Export the exact filtered view the user sees (WYSIWYG).
+      const blob = await clientsApi.exportCsv(buildClientFilterParams())
 
-      const blob = await clientsApi.exportCsv(params)
+      // Guard against a silent "blank" download: the CSV always contains a header
+      // row, so a header-only payload means zero clients matched. Warn instead.
+      const csvText = await (blob as Blob).text()
+      const dataRows = csvText.split('\n').filter(line => line.trim() !== '').length - 1
+      if (dataRows <= 0) {
+        setError('No clients matched your current filters — nothing to export. (Tip: check the Archived toggle and active filters.)')
+        return
+      }
 
       const url = window.URL.createObjectURL(new Blob([blob]))
       const link = document.createElement('a')
@@ -232,7 +245,7 @@ export default function ClientsPage() {
       link.remove()
       window.URL.revokeObjectURL(url)
 
-      setSuccess('Export completed successfully')
+      setSuccess(`Export completed — ${dataRows} row${dataRows === 1 ? '' : 's'}`)
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to export clients')
