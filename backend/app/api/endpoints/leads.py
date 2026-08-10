@@ -74,50 +74,48 @@ SORT_COLUMNS = {
 }
 
 
-@router.get("", response_model=LeadListResponse)
-async def list_leads(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
-    limit: Optional[int] = Query(None, ge=1, le=500),
-    status: Optional[str] = Query(None, description="Lead status or campaign_* prefix for campaign statuses"),
+def _apply_lead_filters(
+    query,
+    db: Session,
+    tenant_id: Optional[int],
+    *,
+    status: Optional[str] = None,
     source: Optional[str] = None,
-    state: Optional[List[str]] = Query(None),
+    state: Optional[List[str]] = None,
     client_name: Optional[str] = None,
     job_title: Optional[str] = None,
-    industry: Optional[List[str]] = Query(None),
-    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
-    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
-    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
-    company_size_include_unknown: bool = Query(False, description="Include leads with unknown size when a size filter is active"),
-    salary_op: Optional[str] = Query(None, description="Numeric salary operator: eq, ne, lt, lte, gt, gte, between (range-aware)"),
-    salary_value: Optional[int] = Query(None, ge=0, description="Salary comparison value"),
-    salary_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' salary operator"),
-    salary_include_unknown: bool = Query(False, description="Include leads with unknown salary when a salary filter is active"),
-    data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
-    employment_type: Optional[List[str]] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
-    exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
-    title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
+    industry: Optional[List[str]] = None,
+    company_size_op: Optional[str] = None,
+    company_size_value: Optional[int] = None,
+    company_size_value2: Optional[int] = None,
+    company_size_include_unknown: bool = False,
+    salary_op: Optional[str] = None,
+    salary_value: Optional[int] = None,
+    salary_value2: Optional[int] = None,
+    salary_include_unknown: bool = False,
+    data_type: Optional[str] = None,
+    employment_type: Optional[List[str]] = None,
+    exclude_keywords: Optional[List[str]] = None,
+    title: Optional[List[str]] = None,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
-    extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
-    extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
-    downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
-    lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
+    extracted_from: Optional[date] = None,
+    extracted_to: Optional[date] = None,
+    downloaded: Optional[str] = None,
+    lob_id: Optional[int] = None,
     search: Optional[str] = None,
-    sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
-    sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
-    show_archived: bool = Query(False, description="Include archived leads"),
-    request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+    show_archived: bool = False,
+    text_params=None,
 ):
-    """List leads with filtering, sorting, and pagination."""
-    if limit:
-        page_size = limit
+    """Apply the shared Leads list/export WHERE filters to ``query``.
 
-    query = db.query(LeadDetails)
-    query = tenant_filter(query, LeadDetails, tenant_id)
+    Single source of truth for both ``list_leads`` (query params) and the CSV
+    export (JSON body), so an export always matches exactly what the list shows.
+    ``text_params`` is a Mapping used by the Excel-style text filters — either
+    ``request.query_params`` (GET) or ``body.model_dump()`` (POST). Sorting,
+    pagination and counts stay with the caller.
+    """
+    text_params = text_params if text_params is not None else {}
 
     if show_archived:
         query = query.filter(LeadDetails.is_archived == True)
@@ -215,7 +213,7 @@ async def list_leads(
     # ── Excel-style "Text Filters" (Equals / Contains / Begins With / … / Custom) ──
     # Server-side predicates so they work even when the typed text isn't a known
     # checklist value. Industry also spans the client_info firmographics.
-    qp = request.query_params
+    qp = text_params
     title_tc = text_filter_from_params(qp, "title", LeadDetails.job_title)
     if title_tc is not None:
         query = query.filter(title_tc)
@@ -273,6 +271,72 @@ async def list_leads(
                 (LeadDetails.state.ilike(f"%{search}%")) |
                 (LeadDetails.lead_id.in_(contact_lead_ids))
             )
+
+    return query
+
+
+@router.get("", response_model=LeadListResponse)
+async def list_leads(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    status: Optional[str] = Query(None, description="Lead status or campaign_* prefix for campaign statuses"),
+    source: Optional[str] = None,
+    state: Optional[List[str]] = Query(None),
+    client_name: Optional[str] = None,
+    job_title: Optional[str] = None,
+    industry: Optional[List[str]] = Query(None),
+    company_size_op: Optional[str] = Query(None, description="Numeric size operator: eq, ne, lt, lte, gt, gte, between"),
+    company_size_value: Optional[int] = Query(None, ge=0, description="Employee-count comparison value"),
+    company_size_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' operator"),
+    company_size_include_unknown: bool = Query(False, description="Include leads with unknown size when a size filter is active"),
+    salary_op: Optional[str] = Query(None, description="Numeric salary operator: eq, ne, lt, lte, gt, gte, between (range-aware)"),
+    salary_value: Optional[int] = Query(None, ge=0, description="Salary comparison value"),
+    salary_value2: Optional[int] = Query(None, ge=0, description="Upper bound for the 'between' salary operator"),
+    salary_include_unknown: bool = Query(False, description="Include leads with unknown salary when a salary filter is active"),
+    data_type: Optional[str] = Query(None, description="Filter by data type: 'test' or 'prod'"),
+    employment_type: Optional[List[str]] = Query(None, description="Position type filter (e.g. Full-time, Contract)"),
+    exclude_keywords: Optional[List[str]] = Query(None, description="Exclude leads matching these keywords in title/company"),
+    title: Optional[List[str]] = Query(None, description="Include leads matching these job titles"),
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
+    extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
+    downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
+    lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
+    search: Optional[str] = None,
+    sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
+    sort_order: Optional[Literal["asc", "desc"]] = Query("desc", description="Sort direction"),
+    show_archived: bool = Query(False, description="Include archived leads"),
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """List leads with filtering, sorting, and pagination."""
+    if limit:
+        page_size = limit
+
+    query = db.query(LeadDetails)
+    query = tenant_filter(query, LeadDetails, tenant_id)
+
+    query = _apply_lead_filters(
+        query, db, tenant_id,
+        status=status, source=source, state=state,
+        client_name=client_name, job_title=job_title, industry=industry,
+        company_size_op=company_size_op, company_size_value=company_size_value,
+        company_size_value2=company_size_value2,
+        company_size_include_unknown=company_size_include_unknown,
+        salary_op=salary_op, salary_value=salary_value, salary_value2=salary_value2,
+        salary_include_unknown=salary_include_unknown,
+        data_type=data_type, employment_type=employment_type,
+        exclude_keywords=exclude_keywords, title=title,
+        from_date=from_date, to_date=to_date,
+        extracted_from=extracted_from, extracted_to=extracted_to,
+        downloaded=downloaded, lob_id=lob_id, search=search,
+        show_archived=show_archived,
+        text_params=request.query_params,
+    )
 
     total = query.count()
 
@@ -655,14 +719,16 @@ async def get_status_transitions(
 
 @router.get("/export/csv")
 async def export_leads_csv(
-    lead_status: Optional[LeadStatus] = Query(None, alias="status"),
+    lead_status: Optional[str] = Query(None, alias="status"),
     source: Optional[str] = None,
-    state: Optional[str] = None,
+    state: Optional[List[str]] = Query(None),
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
     show_archived: bool = Query(False, description="Include archived leads"),
+    lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     lead_ids: Optional[List[int]] = Query(None, description="Export only these lead IDs (selected leads)"),
+    request: Request = None,  # type: ignore[assignment]
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -672,34 +738,26 @@ async def export_leads_csv(
     Each row is a Lead+Contact combination. A lead with 4 contacts produces
     4 rows, all sharing the same lead fields but with different contact fields.
     Leads with no contacts still produce one row with empty contact columns.
+
+    Filtering mirrors the leads list (via ``_apply_lead_filters``) so an export
+    matches exactly what the user is viewing. GET is retained for backward compat;
+    the leads page uses the POST route. Any list query param (including numeric
+    size/salary and Excel text filters) applies here too via ``request``.
     """
     # Build lead query with filters
     lead_query = db.query(LeadDetails)
     lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
 
-    # If specific lead IDs requested, filter to just those
+    # If specific lead IDs requested, filter to just those (ignore other filters)
     if lead_ids:
         lead_query = lead_query.filter(LeadDetails.lead_id.in_(lead_ids))
     else:
-        if show_archived:
-            lead_query = lead_query.filter(LeadDetails.is_archived == True)
-        else:
-            lead_query = lead_query.filter(LeadDetails.is_archived == False)
-
-    if lead_status:
-        lead_query = lead_query.filter(LeadDetails.lead_status == lead_status)
-    if source:
-        lead_query = lead_query.filter(LeadDetails.source == source)
-    if state:
-        lead_query = lead_query.filter(LeadDetails.state == state)
-    if from_date:
-        lead_query = lead_query.filter(LeadDetails.posting_date >= from_date)
-    if to_date:
-        lead_query = lead_query.filter(LeadDetails.posting_date <= to_date)
-    if search:
-        lead_query = lead_query.filter(
-            (LeadDetails.client_name.ilike(f"%{search}%")) |
-            (LeadDetails.job_title.ilike(f"%{search}%"))
+        lead_query = _apply_lead_filters(
+            lead_query, db, tenant_id,
+            status=lead_status, source=source, state=state,
+            from_date=from_date, to_date=to_date, search=search,
+            lob_id=lob_id, show_archived=show_archived,
+            text_params=request.query_params if request is not None else {},
         )
 
     return _export_leads_stream(db, lead_query)
@@ -850,15 +908,40 @@ def _export_leads_stream(db: Session, lead_query):
 class LeadExportRequest(BaseModel):
     """Body for POST /leads/export/csv — filters and/or an explicit lead_ids set.
 
-    Sending lead_ids in the body (rather than GET query params) lets large
-    "selected" exports work: the URL length limit no longer applies.
+    Mirrors the full leads-list filter set so an "export all" matches exactly
+    what the user is viewing (WYSIWYG). Sending these in the body (rather than
+    GET query params) lets large "selected" exports work — the URL length limit
+    no longer applies. ``extra='allow'`` carries the dynamic Excel-style text
+    filter keys (e.g. ``industry_op`` / ``industry_val``) straight to
+    ``text_filter_from_params`` via ``model_dump()``.
     """
+    model_config = {"extra": "allow"}
+
     lead_ids: Optional[List[int]] = None
-    status: Optional[LeadStatus] = None
+    status: Optional[str] = None
     source: Optional[str] = None
     state: Optional[List[str]] = None
+    client_name: Optional[str] = None
+    job_title: Optional[str] = None
+    industry: Optional[List[str]] = None
+    company_size_op: Optional[str] = None
+    company_size_value: Optional[int] = None
+    company_size_value2: Optional[int] = None
+    company_size_include_unknown: bool = False
+    salary_op: Optional[str] = None
+    salary_value: Optional[int] = None
+    salary_value2: Optional[int] = None
+    salary_include_unknown: bool = False
+    data_type: Optional[str] = None
+    employment_type: Optional[List[str]] = None
+    exclude_keywords: Optional[List[str]] = None
+    title: Optional[List[str]] = None
     from_date: Optional[date] = None
     to_date: Optional[date] = None
+    extracted_from: Optional[date] = None
+    extracted_to: Optional[date] = None
+    downloaded: Optional[str] = None
+    lob_id: Optional[int] = None
     search: Optional[str] = None
     show_archived: bool = False
 
@@ -872,33 +955,36 @@ async def export_leads_csv_post(
 ):
     """Export leads to CSV via JSON body (mirrors the GET route).
 
-    Used for "selected" exports of many leads, whose ids would overflow the
-    URL if sent as GET query params.
+    Applies the same filters as the leads list (via ``_apply_lead_filters``) so
+    the export set equals the on-screen set. Used for "selected" exports of many
+    leads, whose ids would overflow the URL if sent as GET query params.
     """
     lead_query = db.query(LeadDetails)
     lead_query = tenant_filter(lead_query, LeadDetails, tenant_id)
 
     if body.lead_ids:
+        # Explicit selection wins — ignore the other filters.
         lead_query = lead_query.filter(LeadDetails.lead_id.in_(body.lead_ids))
     else:
-        lead_query = lead_query.filter(
-            LeadDetails.is_archived == (True if body.show_archived else False)
-        )
-
-    if body.status:
-        lead_query = lead_query.filter(LeadDetails.lead_status == body.status)
-    if body.source:
-        lead_query = lead_query.filter(LeadDetails.source == body.source)
-    if body.state:
-        lead_query = lead_query.filter(LeadDetails.state.in_(body.state))
-    if body.from_date:
-        lead_query = lead_query.filter(LeadDetails.posting_date >= body.from_date)
-    if body.to_date:
-        lead_query = lead_query.filter(LeadDetails.posting_date <= body.to_date)
-    if body.search:
-        lead_query = lead_query.filter(
-            (LeadDetails.client_name.ilike(f"%{body.search}%")) |
-            (LeadDetails.job_title.ilike(f"%{body.search}%"))
+        lead_query = _apply_lead_filters(
+            lead_query, db, tenant_id,
+            status=body.status, source=body.source, state=body.state,
+            client_name=body.client_name, job_title=body.job_title,
+            industry=body.industry,
+            company_size_op=body.company_size_op,
+            company_size_value=body.company_size_value,
+            company_size_value2=body.company_size_value2,
+            company_size_include_unknown=body.company_size_include_unknown,
+            salary_op=body.salary_op, salary_value=body.salary_value,
+            salary_value2=body.salary_value2,
+            salary_include_unknown=body.salary_include_unknown,
+            data_type=body.data_type, employment_type=body.employment_type,
+            exclude_keywords=body.exclude_keywords, title=body.title,
+            from_date=body.from_date, to_date=body.to_date,
+            extracted_from=body.extracted_from, extracted_to=body.extracted_to,
+            downloaded=body.downloaded, lob_id=body.lob_id, search=body.search,
+            show_archived=body.show_archived,
+            text_params=body.model_dump(),
         )
 
     return _export_leads_stream(db, lead_query)

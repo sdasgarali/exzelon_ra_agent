@@ -57,6 +57,87 @@ class TestLeadsEndpoints:
         response = client.post("/api/v1/leads/export/csv", json={"lead_ids": [1]})
         assert response.status_code == 401
 
+    @pytest.fixture
+    def archived_lead(self, db_session, test_tenant):
+        """An archived lead — the scenario that produced the 'blank CSV' bug."""
+        lead = LeadDetails(
+            tenant_id=test_tenant.tenant_id,
+            client_name="Archived Corp",
+            job_title="Archived Role",
+            state="NY",
+            posting_date=date.today(),
+            job_link="https://jobs.example.com/arch",
+            source="linkedin",
+            lead_status=LeadStatus.NEW,
+            is_archived=True,
+        )
+        db_session.add(lead)
+        db_session.commit()
+        db_session.refresh(lead)
+        return lead
+
+    def test_export_default_excludes_archived(self, client, auth_headers, sample_lead, archived_lead):
+        """Default export (no show_archived) returns only non-archived leads."""
+        response = client.post("/api/v1/leads/export/csv", headers=auth_headers, json={})
+        assert response.status_code == 200
+        body = response.text
+        assert "Test Company" in body       # non-archived present
+        assert "Archived Corp" not in body  # archived excluded
+
+    def test_export_show_archived_returns_archived(self, client, auth_headers, sample_lead, archived_lead):
+        """WYSIWYG: viewing archived → export honors show_archived and returns them.
+
+        Regression for the header-only 'blank CSV': the export used to ignore the
+        archived toggle and always filter is_archived == False.
+        """
+        response = client.post(
+            "/api/v1/leads/export/csv", headers=auth_headers, json={"show_archived": True}
+        )
+        assert response.status_code == 200
+        body = response.text
+        assert "Archived Corp" in body       # archived now included
+        assert "Test Company" not in body    # non-archived excluded
+
+    def test_export_honors_industry_text_filter(self, client, auth_headers, db_session, test_tenant):
+        """Excel-style text filter (industry contains) carried via the JSON body."""
+        for name, industry in [("Alpha LLC", "Healthcare"), ("Beta LLC", "Manufacturing")]:
+            db_session.add(LeadDetails(
+                tenant_id=test_tenant.tenant_id, client_name=name, job_title="Role",
+                state="CA", posting_date=date.today(), source="linkedin",
+                lead_status=LeadStatus.NEW, industry=industry,
+            ))
+        db_session.commit()
+        response = client.post(
+            "/api/v1/leads/export/csv", headers=auth_headers,
+            json={"industry_op": "contains", "industry_val": "Health"},
+        )
+        assert response.status_code == 200
+        body = response.text
+        assert "Alpha LLC" in body      # matches industry filter
+        assert "Beta LLC" not in body   # filtered out
+
+    def test_export_honors_lob_id(self, client, auth_headers, db_session, test_tenant):
+        """Export scoped by lob_id returns only that LOB's leads."""
+        keep = LeadDetails(
+            tenant_id=test_tenant.tenant_id, client_name="LobKeep Inc", job_title="Role",
+            state="CA", posting_date=date.today(), source="linkedin",
+            lead_status=LeadStatus.NEW, lob_id=42,
+        )
+        drop = LeadDetails(
+            tenant_id=test_tenant.tenant_id, client_name="LobDrop Inc", job_title="Role",
+            state="CA", posting_date=date.today(), source="linkedin",
+            lead_status=LeadStatus.NEW, lob_id=7,
+        )
+        db_session.add_all([keep, drop])
+        db_session.commit()
+        response = client.post(
+            "/api/v1/leads/export/csv", headers=auth_headers, json={"lob_id": 42}
+        )
+        assert response.status_code == 200
+        body = response.text
+        assert "LobKeep Inc" in body
+        assert "LobDrop Inc" not in body
+
     def test_list_leads(self, client, auth_headers, sample_lead):
         """Test listing leads."""
         response = client.get("/api/v1/leads", headers=auth_headers)
