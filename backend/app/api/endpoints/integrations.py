@@ -694,6 +694,7 @@ def export_leads_for_resource_pool(
         smax = getattr(lead, "salary_max", None)
         payload["job"]["salaryMin"] = float(smin) if smin is not None else None
         payload["job"]["salaryMax"] = float(smax) if smax is not None else None
+        payload["job"]["link"] = _clean(getattr(lead, "job_link", None))
         payload["contacts"] = [_export_contact(c) for c in contacts]
         out.append(payload)
 
