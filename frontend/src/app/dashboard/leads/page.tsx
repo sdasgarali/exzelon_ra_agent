@@ -22,6 +22,8 @@ interface Lead {
   employment_type: string | null
   lead_status: string
   campaign_status?: string | null
+  campaign_id?: number | null
+  mailing_status?: string | null
   contact_email: string
   salary_min: number
   salary_max: number
@@ -77,6 +79,16 @@ const STATUS_OPTIONS = [
 // Pipeline statuses that can be set via the dropdown (excludes campaign-derived statuses)
 const PIPELINE_STATUS_OPTIONS = STATUS_OPTIONS.filter(s => !s.value.startsWith('campaign_'))
 
+// Badge colors for the derived "Mailing-Status" column (server sends the label directly).
+const MAILING_STATUS_COLORS: Record<string, string> = {
+  'Campaign-Draft': 'bg-cyan-100 text-cyan-800',
+  'Campaign-Active': 'bg-emerald-100 text-emerald-800',
+  'Campaign-Paused': 'bg-amber-200 text-amber-900',
+  'Campaign-Closed': 'bg-sky-100 text-sky-800',
+  'Mailed-Offline': 'bg-green-100 text-green-800',
+  'Not-Mailed': 'bg-gray-100 text-gray-600',
+}
+
 const SOURCE_OPTIONS = ['jsearch', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
 
 const US_STATES = [
@@ -95,6 +107,7 @@ const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporar
 export default function LeadsPage() {
   const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.isSuperAdmin())
+  const isAdmin = useAuthStore((s) => s.isAdmin())
   const { needsTenantSelection, runDisabledTitle } = useNeedsTenantSelection()
   const activeLobId = useLobStore((s) => s.activeLobId)
   const getActiveLob = useLobStore((s) => s.getActiveLob)
@@ -328,16 +341,28 @@ export default function LeadsPage() {
     }
   }
 
-  const updateLeadStatus = async (leadId: number, newStatus: string) => {
+  const updateLeadStatus = async (leadId: number, newStatus: string, force = false) => {
     try {
       setUpdating(leadId)
-      await leadsApi.update(leadId, { lead_status: newStatus })
+      await leadsApi.update(leadId, { lead_status: newStatus }, force)
       setLeads(leads.map(lead =>
         lead.lead_id === leadId ? { ...lead, lead_status: newStatus } : lead
       ))
-      setSuccess('Status updated successfully')
+      setSuccess(force ? 'Status overridden successfully' : 'Status updated successfully')
       setTimeout(() => setSuccess(''), 2000)
     } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      const isTransitionBlock =
+        err?.response?.status === 400 &&
+        typeof detail === 'string' &&
+        detail.includes('Cannot transition')
+      // Admins/super-admins may override a blocked transition after confirming.
+      if (isTransitionBlock && isAdmin && !force) {
+        if (window.confirm(`${detail}\n\nStill want to continue? (Admin override)`)) {
+          await updateLeadStatus(leadId, newStatus, true)
+        }
+        return
+      }
       setError(getApiError(err, 'Failed to update status'))
     } finally {
       setUpdating(null)
@@ -958,7 +983,8 @@ export default function LeadsPage() {
   }
 
   // Compute total visible column count for colSpan
-  const baseColCount = 17
+  // 19 = base columns incl. Mailing-Status + Campaign-ID
+  const baseColCount = 19
     - (isHidden('salary_min') ? 0 : 0) // salary is not a separate column currently
     - (isHidden('employment_type') ? 1 : 0)
     + (columnConfig?.metadata_columns?.length ?? 0)
@@ -1583,6 +1609,12 @@ export default function LeadsPage() {
                 >
                   Status <SortIcon field="lead_status" />
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mailing-Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Campaign-ID
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -1755,6 +1787,32 @@ export default function LeadsPage() {
                             </option>
                           ))}
                         </select>
+                      )}
+                    </td>
+                    {/* Mailing-Status (derived from campaign enrollment + download flag) */}
+                    <td className="px-4 py-3">
+                      {lead.mailing_status ? (
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full inline-block ${MAILING_STATUS_COLORS[lead.mailing_status] || 'bg-gray-100 text-gray-600'}`}
+                        >
+                          {lead.mailing_status}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    {/* Campaign-ID */}
+                    <td className="px-4 py-3 text-sm">
+                      {lead.campaign_id ? (
+                        <a
+                          href={`/dashboard/campaigns?campaign_id=${lead.campaign_id}`}
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          #{lead.campaign_id}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
                       )}
                     </td>
                   </tr>
