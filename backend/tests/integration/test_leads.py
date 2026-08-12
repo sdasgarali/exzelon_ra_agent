@@ -284,6 +284,65 @@ class TestLeadsEndpoints:
         assert item["mailing_status"] == "Not-Mailed"
         assert item["campaign_id"] is None
 
+    def _enroll_lead(self, db_session, test_tenant, lead, camp_status):
+        """Enroll ``lead`` in a campaign of the given status; return the campaign."""
+        from app.db.models.campaign import Campaign, CampaignContact, CampaignStatus
+        from app.db.models.contact import ContactDetails
+        camp = Campaign(
+            tenant_id=test_tenant.tenant_id,
+            name=f"Campaign-{camp_status.value}",
+            status=camp_status,
+        )
+        db_session.add(camp)
+        db_session.commit()
+        db_session.refresh(camp)
+        contact = ContactDetails(
+            tenant_id=test_tenant.tenant_id,
+            client_name=lead.client_name,
+            first_name="Test",
+            last_name="Contact",
+            email="test.contact@example.com",
+            lead_id=lead.lead_id,
+        )
+        db_session.add(contact)
+        db_session.commit()
+        db_session.refresh(contact)
+        db_session.add(CampaignContact(
+            campaign_id=camp.campaign_id,
+            contact_id=contact.contact_id,
+            lead_id=lead.lead_id,
+        ))
+        db_session.commit()
+        return camp
+
+    def test_mailing_status_filter_campaign_active(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """mailing_status=Campaign-Active returns enrolled leads and excludes others."""
+        from app.db.models.campaign import CampaignStatus
+        self._enroll_lead(db_session, test_tenant, sample_lead, CampaignStatus.ACTIVE)
+
+        active = client.get("/api/v1/leads?mailing_status=Campaign-Active", headers=auth_headers)
+        assert active.status_code == 200
+        ids = [i["lead_id"] for i in active.json()["items"]]
+        assert sample_lead.lead_id in ids
+        assert all(i["mailing_status"] == "Campaign-Active" for i in active.json()["items"])
+
+        not_mailed = client.get("/api/v1/leads?mailing_status=Not-Mailed", headers=auth_headers)
+        assert sample_lead.lead_id not in [i["lead_id"] for i in not_mailed.json()["items"]]
+
+    def test_mailing_status_filter_not_mailed(self, client, auth_headers, sample_lead):
+        """An un-enrolled, never-downloaded lead matches Not-Mailed only."""
+        resp = client.get("/api/v1/leads?mailing_status=Not-Mailed", headers=auth_headers)
+        assert resp.status_code == 200
+        assert sample_lead.lead_id in [i["lead_id"] for i in resp.json()["items"]]
+
+    def test_search_by_campaign_id(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """The search bar finds leads by their associated campaign id (C:<id>)."""
+        from app.db.models.campaign import CampaignStatus
+        camp = self._enroll_lead(db_session, test_tenant, sample_lead, CampaignStatus.ACTIVE)
+        resp = client.get(f"/api/v1/leads?search=C:{camp.campaign_id}", headers=auth_headers)
+        assert resp.status_code == 200
+        assert sample_lead.lead_id in [i["lead_id"] for i in resp.json()["items"]]
+
     def test_delete_lead(self, client, auth_headers, sample_lead):
         """Test deleting (archiving) a lead."""
         response = client.delete(

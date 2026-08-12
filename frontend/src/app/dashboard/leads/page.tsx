@@ -89,6 +89,12 @@ const MAILING_STATUS_COLORS: Record<string, string> = {
   'Not-Mailed': 'bg-gray-100 text-gray-600',
 }
 
+// Options for the advanced-filter Mailing-Status dropdown (order matters for UX).
+const MAILING_STATUS_FILTER_OPTIONS = [
+  'Campaign-Draft', 'Campaign-Active', 'Campaign-Paused',
+  'Campaign-Closed', 'Mailed-Offline', 'Not-Mailed',
+]
+
 const SOURCE_OPTIONS = ['jsearch', 'indeed', 'linkedin', 'glassdoor', 'mock', 'import']
 
 const US_STATES = [
@@ -145,6 +151,12 @@ export default function LeadsPage() {
   const [filterExtractedFrom, setFilterExtractedFrom] = useState('')
   const [filterExtractedTo, setFilterExtractedTo] = useState('')
   const [filterDownloaded, setFilterDownloaded] = useState('')
+  const [filterMailingStatus, setFilterMailingStatus] = useState('')
+  // Synced horizontal scrollbars (top mirror + the table's own scroll container)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const bodyScrollRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
+  const [tableScrollWidth, setTableScrollWidth] = useState(0)
 
   // Export modal
   const [showExportModal, setShowExportModal] = useState(false)
@@ -274,11 +286,11 @@ export default function LeadsPage() {
   // Clear selections when filters change (not on page/sort changes)
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, pageSize, showArchived])
+  }, [debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterMailingStatus, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, pageSize, showArchived])
 
   useEffect(() => {
     fetchLeads()
-  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, sortBy, sortOrder, showArchived, activeLobId])
+  }, [page, pageSize, debouncedSearch, filterStatus, filterSource, filterState, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterMailingStatus, filterIndustry, sizeFilter, salaryFilter, filterDataType, filterEmploymentType, filterExcludeKeywords, filterTitle, filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText, sortBy, sortOrder, showArchived, activeLobId])
 
   // Build the active filter set shared by the leads list AND the CSV export, so
   // an export always matches exactly what the user is viewing (WYSIWYG). Excludes
@@ -306,6 +318,7 @@ export default function LeadsPage() {
     if (filterExtractedFrom) params.extracted_from = filterExtractedFrom
     if (filterExtractedTo) params.extracted_to = filterExtractedTo
     if (filterDownloaded) params.downloaded = filterDownloaded
+    if (filterMailingStatus) params.mailing_status = filterMailingStatus
     if (showArchived) params.show_archived = true
     // Filter by active LOB if one is selected
     const activeLob = getActiveLob()
@@ -398,6 +411,7 @@ export default function LeadsPage() {
     setFilterCompanyText(null)
     setFilterEmploymentText(null)
     setFilterDownloaded('')
+    setFilterMailingStatus('')
     setShowArchived(false)
     setPage(1)
   }
@@ -931,7 +945,7 @@ export default function LeadsPage() {
     )
   }
 
-  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterDataType, search].filter(Boolean).length
+  const activeFiltersCount = [filterStatus, filterSource, filterFromDate, filterToDate, filterExtractedFrom, filterExtractedTo, filterDownloaded, filterMailingStatus, filterDataType, search].filter(Boolean).length
     + (filterState.length > 0 ? 1 : 0) + (filterIndustry.length > 0 ? 1 : 0) + (filterEmploymentType.length > 0 ? 1 : 0) + (sizeFilterActive(sizeFilter) ? 1 : 0) + (sizeFilterActive(salaryFilter) ? 1 : 0) + (filterExcludeKeywords.length > 0 ? 1 : 0) + (filterTitle.length > 0 ? 1 : 0) + (showArchived ? 1 : 0)
     + [filterIndustryText, filterTitleText, filterCompanyText, filterEmploymentText].filter(textConditionActive).length
 
@@ -988,6 +1002,23 @@ export default function LeadsPage() {
     - (isHidden('salary_min') ? 0 : 0) // salary is not a separate column currently
     - (isHidden('employment_type') ? 1 : 0)
     + (columnConfig?.metadata_columns?.length ?? 0)
+
+  // Keep the top scrollbar's spacer as wide as the real table so both scroll in sync.
+  useEffect(() => {
+    const measure = () => setTableScrollWidth(tableRef.current?.scrollWidth ?? 0)
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [leads, columnConfig, loading])
+
+  // Mirror horizontal scroll between the top scrollbar and the table container.
+  const syncScroll = (from: 'top' | 'body') => {
+    const top = topScrollRef.current
+    const body = bodyScrollRef.current
+    if (!top || !body) return
+    if (from === 'top') body.scrollLeft = top.scrollLeft
+    else top.scrollLeft = body.scrollLeft
+  }
 
   return (
     <div>
@@ -1247,7 +1278,7 @@ export default function LeadsPage() {
           <div className="flex-1 min-w-64">
             <input
               type="text"
-              placeholder="Search by ID (#42), Run ID (R5), company, job title, or state..."
+              placeholder="Search by ID (#42), Run ID (R5), Campaign ID (C:42), company, job title, or state..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="input w-full"
@@ -1459,6 +1490,19 @@ export default function LeadsPage() {
               </select>
             </div>
             <div>
+              <label className="label text-sm">Mailing-Status</label>
+              <select
+                value={filterMailingStatus}
+                onChange={(e) => { setFilterMailingStatus(e.target.value); setPage(1); }}
+                className="input w-full"
+              >
+                <option value="">All</option>
+                {MAILING_STATUS_FILTER_OPTIONS.map((ms) => (
+                  <option key={ms} value={ms}>{ms}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="label text-sm">Page Size</label>
               <select
                 value={pageSize}
@@ -1502,8 +1546,18 @@ export default function LeadsPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        {/* Top horizontal scrollbar — mirrors the table so users can scroll
+            sideways without first scrolling to the bottom of a long list. */}
+        <div
+          ref={topScrollRef}
+          onScroll={() => syncScroll('top')}
+          className="overflow-x-auto"
+          style={{ overflowY: 'hidden' }}
+        >
+          <div style={{ width: tableScrollWidth, height: 1 }} />
+        </div>
+        <div ref={bodyScrollRef} onScroll={() => syncScroll('body')} className="overflow-x-auto">
+          <table ref={tableRef} className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-3 py-3 w-10">

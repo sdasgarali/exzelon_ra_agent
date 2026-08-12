@@ -146,6 +146,7 @@ def _apply_lead_filters(
     extracted_from: Optional[date] = None,
     extracted_to: Optional[date] = None,
     downloaded: Optional[str] = None,
+    mailing_status: Optional[str] = None,
     lob_id: Optional[int] = None,
     search: Optional[str] = None,
     show_archived: bool = False,
@@ -181,6 +182,51 @@ def _apply_lead_filters(
             query = query.filter(LeadDetails.lead_id.in_(db.query(camp_lead_ids_sq)))
         else:
             query = query.filter(LeadDetails.lead_status == status)
+
+    # Mailing-Status filter — mirrors the derived column (mailing_status_label).
+    # Priority active > paused > draft > completed, so e.g. "Campaign-Paused"
+    # means the lead's *best* campaign status is paused (not also active).
+    if mailing_status:
+        from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+
+        def _ids_in(*statuses):
+            return db.query(_CC.lead_id).join(
+                _Camp, _CC.campaign_id == _Camp.campaign_id
+            ).filter(
+                _CC.lead_id.isnot(None),
+                _Camp.is_archived == False,
+                _Camp.status.in_(statuses),
+            ).distinct()
+
+        ms = mailing_status
+        if ms == "Campaign-Active":
+            query = query.filter(LeadDetails.lead_id.in_(_ids_in("active")))
+        elif ms == "Campaign-Paused":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("paused")),
+                ~LeadDetails.lead_id.in_(_ids_in("active")),
+            )
+        elif ms == "Campaign-Draft":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("draft")),
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused")),
+            )
+        elif ms == "Campaign-Closed":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("completed")),
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft")),
+            )
+        elif ms == "Mailed-Offline":
+            query = query.filter(
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                LeadDetails.downloaded_at.isnot(None),
+            )
+        elif ms == "Not-Mailed":
+            query = query.filter(
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                LeadDetails.downloaded_at.is_(None),
+            )
+
     if source:
         query = query.filter(LeadDetails.source == source)
     if state:
@@ -290,18 +336,32 @@ def _apply_lead_filters(
     if lob_id is not None:
         query = query.filter(LeadDetails.lob_id == lob_id)
     if search:
-        # Support searching by numeric ID or run ID (e.g. "42", "#42", "R42", "run:42")
+        # Support searching by numeric ID, run ID, or campaign ID
+        # (e.g. "42", "#42", "R42", "run:42", "campaign:42", "c:42").
+        from app.db.models.campaign import CampaignContact as _CCSearch
+        search_l = search.lower().strip()
         search_stripped = search.lstrip('#').strip()
-        run_prefix = search.lower().startswith('r') or search.lower().startswith('run:')
-        run_num = search.lstrip('rRunRUN:').strip() if run_prefix else None
-        if run_num and run_num.isdigit():
+        camp_prefix = search_l.startswith('campaign:') or search_l.startswith('c:')
+        camp_num = search.split(':', 1)[1].strip() if (camp_prefix and ':' in search) else None
+        run_prefix = search_l.startswith('r') or search_l.startswith('run:')
+        run_num = search.lstrip('rRunRUN:').strip() if (run_prefix and not camp_prefix) else None
+
+        def _campaign_lead_ids(cid):
+            return db.query(_CCSearch.lead_id).filter(
+                _CCSearch.campaign_id == cid, _CCSearch.lead_id.isnot(None)
+            ).distinct()
+
+        if camp_num and camp_num.isdigit():
+            query = query.filter(LeadDetails.lead_id.in_(_campaign_lead_ids(int(camp_num))))
+        elif run_num and run_num.isdigit():
             query = query.filter(LeadDetails.run_id == int(run_num))
         elif search_stripped.isdigit():
-            # Could be lead_id or run_id — match either
+            # Plain number — match lead_id, run_id, or the associated campaign_id
             num_val = int(search_stripped)
             query = query.filter(
                 (LeadDetails.lead_id == num_val) |
-                (LeadDetails.run_id == num_val)
+                (LeadDetails.run_id == num_val) |
+                (LeadDetails.lead_id.in_(_campaign_lead_ids(num_val)))
             )
         else:
             # Find lead IDs that have contacts matching the search email
@@ -347,6 +407,7 @@ async def list_leads(
     extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
     extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
     downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
+    mailing_status: Optional[str] = Query(None, description="Filter by Mailing-Status label (e.g. Campaign-Active, Mailed-Offline, Not-Mailed)"),
     lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
@@ -377,7 +438,8 @@ async def list_leads(
         exclude_keywords=exclude_keywords, title=title,
         from_date=from_date, to_date=to_date,
         extracted_from=extracted_from, extracted_to=extracted_to,
-        downloaded=downloaded, lob_id=lob_id, search=search,
+        downloaded=downloaded, mailing_status=mailing_status,
+        lob_id=lob_id, search=search,
         show_archived=show_archived,
         text_params=request.query_params,
     )
@@ -775,6 +837,7 @@ async def export_leads_csv(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
+    mailing_status: Optional[str] = Query(None, description="Filter by Mailing-Status label"),
     show_archived: bool = Query(False, description="Include archived leads"),
     lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     lead_ids: Optional[List[int]] = Query(None, description="Export only these lead IDs (selected leads)"),
@@ -806,6 +869,7 @@ async def export_leads_csv(
             lead_query, db, tenant_id,
             status=lead_status, source=source, state=state,
             from_date=from_date, to_date=to_date, search=search,
+            mailing_status=mailing_status,
             lob_id=lob_id, show_archived=show_archived,
             text_params=request.query_params if request is not None else {},
         )
@@ -1012,6 +1076,7 @@ class LeadExportRequest(BaseModel):
     extracted_from: Optional[date] = None
     extracted_to: Optional[date] = None
     downloaded: Optional[str] = None
+    mailing_status: Optional[str] = None
     lob_id: Optional[int] = None
     search: Optional[str] = None
     show_archived: bool = False
@@ -1053,7 +1118,8 @@ async def export_leads_csv_post(
             exclude_keywords=body.exclude_keywords, title=body.title,
             from_date=body.from_date, to_date=body.to_date,
             extracted_from=body.extracted_from, extracted_to=body.extracted_to,
-            downloaded=body.downloaded, lob_id=body.lob_id, search=body.search,
+            downloaded=body.downloaded, mailing_status=body.mailing_status,
+            lob_id=body.lob_id, search=body.search,
             show_archived=body.show_archived,
             text_params=body.model_dump(),
         )
