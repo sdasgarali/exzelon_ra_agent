@@ -199,8 +199,8 @@ export const leadsApi = {
     const response = await api.post('/leads', data)
     return response.data
   },
-  update: async (id: number, data: any) => {
-    const response = await api.put(`/leads/${id}`, data)
+  update: async (id: number, data: any, force = false) => {
+    const response = await api.put(`/leads/${id}`, data, force ? { params: { force: true } } : undefined)
     return response.data
   },
   delete: async (id: number) => {

@@ -68,6 +68,11 @@ class LeadResponse(LeadBase):
     employer_website: Optional[str] = None
     run_id: Optional[int] = None
     lob_id: Optional[int] = None
+    # Campaign / mailing state (derived from campaign_contacts → campaigns).
+    # Must be declared here or FastAPI's response_model strips them from the payload.
+    campaign_status: Optional[str] = None
+    campaign_id: Optional[int] = None
+    mailing_status: Optional[str] = None
     metadata: Optional[dict] = None
     intent_score: Optional[int] = None
     intent_signals: Optional[List[str]] = None

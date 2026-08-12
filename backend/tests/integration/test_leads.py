@@ -228,6 +228,62 @@ class TestLeadsEndpoints:
         assert data["job_title"] == "Updated Position"
         assert data["lead_status"] == "enriched"
 
+    def _make_hunting_lead(self, db_session, test_tenant):
+        lead = LeadDetails(
+            tenant_id=test_tenant.tenant_id,
+            client_name="Hunting Corp",
+            job_title="Recruiter",
+            state="NY",
+            posting_date=date.today(),
+            source="linkedin",
+            lead_status=LeadStatus.HUNTING,
+        )
+        db_session.add(lead)
+        db_session.commit()
+        db_session.refresh(lead)
+        return lead
+
+    def test_blocked_transition_returns_400(self, client, auth_headers, db_session, test_tenant):
+        """hunting -> enriched is not allowed; without force it is rejected."""
+        lead = self._make_hunting_lead(db_session, test_tenant)
+        response = client.put(
+            f"/api/v1/leads/{lead.lead_id}",
+            headers=auth_headers,
+            json={"lead_status": "enriched"},
+        )
+        assert response.status_code == 400
+        assert "Cannot transition from 'hunting' to 'enriched'" in response.json()["detail"]
+
+    def test_admin_can_force_blocked_transition(self, client, auth_headers, db_session, test_tenant):
+        """An admin may override the blocked transition with ?force=true."""
+        lead = self._make_hunting_lead(db_session, test_tenant)
+        response = client.put(
+            f"/api/v1/leads/{lead.lead_id}?force=true",
+            headers=auth_headers,
+            json={"lead_status": "enriched"},
+        )
+        assert response.status_code == 200
+        assert response.json()["lead_status"] == "enriched"
+
+    def test_operator_cannot_force_blocked_transition(self, client, operator_headers, db_session, test_tenant):
+        """A non-admin cannot override even when passing force=true."""
+        lead = self._make_hunting_lead(db_session, test_tenant)
+        response = client.put(
+            f"/api/v1/leads/{lead.lead_id}?force=true",
+            headers=operator_headers,
+            json={"lead_status": "enriched"},
+        )
+        assert response.status_code == 400
+
+    def test_list_leads_exposes_mailing_status(self, client, auth_headers, sample_lead):
+        """The list response carries the derived mailing_status + campaign_id fields."""
+        response = client.get("/api/v1/leads", headers=auth_headers)
+        assert response.status_code == 200
+        item = next(i for i in response.json()["items"] if i["lead_id"] == sample_lead.lead_id)
+        # Un-enrolled, never downloaded -> Not-Mailed, no campaign id.
+        assert item["mailing_status"] == "Not-Mailed"
+        assert item["campaign_id"] is None
+
     def test_delete_lead(self, client, auth_headers, sample_lead):
         """Test deleting (archiving) a lead."""
         response = client.delete(

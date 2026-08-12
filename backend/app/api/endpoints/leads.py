@@ -73,6 +73,50 @@ SORT_COLUMNS = {
     "lob_id": LeadDetails.lob_id,
 }
 
+# Maps campaign lifecycle status -> user-facing "Mailing-Status" label.
+_MAILING_STATUS_BY_CAMPAIGN = {
+    "active": "Campaign-Active",
+    "paused": "Campaign-Paused",
+    "draft": "Campaign-Draft",
+    "completed": "Campaign-Closed",
+}
+
+
+def mailing_status_label(campaign_status: Optional[str], downloaded_at) -> str:
+    """Derive the lead's Mailing-Status from its campaign enrollment + download flag.
+
+    A campaign-enrolled lead reflects the campaign's lifecycle; an un-enrolled lead
+    that was exported/downloaded is treated as mailed offline; everything else is
+    not yet mailed.
+    """
+    if campaign_status in _MAILING_STATUS_BY_CAMPAIGN:
+        return _MAILING_STATUS_BY_CAMPAIGN[campaign_status]
+    if downloaded_at is not None:
+        return "Mailed-Offline"
+    return "Not-Mailed"
+
+
+def _campaign_fields_for_lead(db, lead):
+    """Return (campaign_status, campaign_id, mailing_status) for a single lead.
+
+    Mirrors the batch logic in ``list_leads``: pick the highest-priority active
+    campaign the lead is enrolled in (archived campaigns excluded).
+    """
+    from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+    _priority = {'active': 0, 'paused': 1, 'draft': 2, 'completed': 3}
+    rows = db.query(_CC.lead_id, _Camp.status, _Camp.campaign_id).join(
+        _Camp, _CC.campaign_id == _Camp.campaign_id
+    ).filter(
+        _CC.lead_id == lead.lead_id,
+        _Camp.is_archived == False,
+    ).all()
+    best_status, best_id = None, None
+    for _lid, cstatus, cid in rows:
+        cstatus_val = cstatus.value if hasattr(cstatus, 'value') else cstatus
+        if best_status is None or _priority.get(cstatus_val, 99) < _priority.get(best_status, 99):
+            best_status, best_id = cstatus_val, cid
+    return best_status, best_id, mailing_status_label(best_status, lead.downloaded_at)
+
 
 def _apply_lead_filters(
     query,
@@ -419,13 +463,15 @@ async def list_leads(
         for name, ind, size, website in client_rows:
             client_info_map[name] = {"industry": ind, "company_size": size, "website": website}
 
-    # Batch fetch campaign status for leads via campaign_contacts → campaigns
+    # Batch fetch campaign status + id for leads via campaign_contacts → campaigns
     campaign_status_map: dict[int, str] = {}
+    campaign_id_map: dict[int, int] = {}
     if lead_ids:
         from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
         camp_rows = db.query(
             _CC.lead_id,
-            _Camp.status
+            _Camp.status,
+            _Camp.campaign_id,
         ).join(
             _Camp, _CC.campaign_id == _Camp.campaign_id
         ).filter(
@@ -434,13 +480,14 @@ async def list_leads(
             _Camp.is_archived == False,
         ).all()
 
-        # Pick highest-priority campaign status per lead
+        # Pick highest-priority campaign status per lead (and its campaign id)
         _priority = {'active': 0, 'paused': 1, 'draft': 2, 'completed': 3}
-        for lid, cstatus in camp_rows:
+        for lid, cstatus, cid in camp_rows:
             cstatus_val = cstatus.value if hasattr(cstatus, 'value') else cstatus
             existing = campaign_status_map.get(lid)
             if existing is None or _priority.get(cstatus_val, 99) < _priority.get(existing, 99):
                 campaign_status_map[lid] = cstatus_val
+                campaign_id_map[lid] = cid
 
     lead_responses = []
     for lead in leads:
@@ -451,7 +498,10 @@ async def list_leads(
         lead_dict['company_size'] = lead.company_size or ci.get("company_size")
         lead_dict['employer_website'] = lead.employer_website or ci.get("website")
         lead_dict['data_type'] = lead.data_type.value if hasattr(lead.data_type, 'value') else (lead.data_type or 'prod')
-        lead_dict['campaign_status'] = campaign_status_map.get(lead.lead_id)
+        _cstatus = campaign_status_map.get(lead.lead_id)
+        lead_dict['campaign_status'] = _cstatus
+        lead_dict['campaign_id'] = campaign_id_map.get(lead.lead_id)
+        lead_dict['mailing_status'] = mailing_status_label(_cstatus, lead.downloaded_at)
         lead_dict['lob_id'] = lead.lob_id
         # Parse metadata_json into dict
         if lead.metadata_json:
@@ -796,7 +846,7 @@ def _export_leads_stream(db: Session, lead_query):
             "Position Type", "Posting Date", "Job Link", "Source",
             "Lead Status", "Salary Min", "Salary Max", "Industry",
             "Company Size", "Employer LinkedIn", "Employer Website",
-            "Lead Created At", "Downloaded At",
+            "Lead Created At", "Downloaded At", "Mailing Status", "Campaign ID",
             # Contact fields
             "Contact ID", "Contact First Name", "Contact Last Name",
             "Contact Title", "Contact Email", "Contact Phone",
@@ -843,6 +893,25 @@ def _export_leads_stream(db: Session, lead_query):
                 ).all()
                 contacts_by_id = {c.contact_id: c for c in contacts}
 
+            # Campaign status + id per lead (for Mailing Status / Campaign ID columns)
+            from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+            _priority = {'active': 0, 'paused': 1, 'draft': 2, 'completed': 3}
+            camp_status_map: dict[int, str] = {}
+            camp_id_map: dict[int, int] = {}
+            camp_rows = db.query(_CC.lead_id, _Camp.status, _Camp.campaign_id).join(
+                _Camp, _CC.campaign_id == _Camp.campaign_id
+            ).filter(
+                _CC.lead_id.in_(lead_ids),
+                _CC.lead_id.isnot(None),
+                _Camp.is_archived == False,
+            ).all()
+            for _lid, _cstatus, _cid in camp_rows:
+                _cval = _cstatus.value if hasattr(_cstatus, 'value') else _cstatus
+                _existing = camp_status_map.get(_lid)
+                if _existing is None or _priority.get(_cval, 99) < _priority.get(_existing, 99):
+                    camp_status_map[_lid] = _cval
+                    camp_id_map[_lid] = _cid
+
             for lead in leads:
                 cids = lead_contact_map.get(lead.lead_id, [])
                 lead_row = [
@@ -864,6 +933,8 @@ def _export_leads_stream(db: Session, lead_query):
                     lead.employer_website or "",
                     lead.created_at.isoformat() if lead.created_at else "",
                     lead.downloaded_at.isoformat() if lead.downloaded_at else "",
+                    mailing_status_label(camp_status_map.get(lead.lead_id), lead.downloaded_at),
+                    camp_id_map.get(lead.lead_id) or "",
                 ]
 
                 if not cids:
@@ -2287,6 +2358,11 @@ async def get_lead_detail(
         lead_dict['industry'] = lead.industry
         lead_dict['company_size'] = lead.company_size
 
+    _cstatus, _cid, _mstatus = _campaign_fields_for_lead(db, lead)
+    lead_dict['campaign_status'] = _cstatus
+    lead_dict['campaign_id'] = _cid
+    lead_dict['mailing_status'] = _mstatus
+
     return lead_dict
 
 
@@ -2388,7 +2464,9 @@ async def get_lead(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found"
         )
-    return LeadResponse.model_validate(lead)
+    resp = LeadResponse.model_validate(lead)
+    resp.campaign_status, resp.campaign_id, resp.mailing_status = _campaign_fields_for_lead(db, lead)
+    return resp
 
 
 @router.post("", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
@@ -2435,6 +2513,11 @@ async def create_lead(
 async def update_lead(
     lead_id: int,
     lead_in: LeadUpdate,
+    force: bool = Query(
+        False,
+        description="Bypass the lead-status state-machine (admin/super_admin only). "
+                    "Requires an explicit user confirmation on the frontend.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
@@ -2453,16 +2536,23 @@ async def update_lead(
     update_data = lead_in.model_dump(exclude_unset=True)
 
     # Validate status transition if status is changing
+    forced_transition = False
     if "lead_status" in update_data and update_data["lead_status"] != lead.lead_status:
         new_status = update_data["lead_status"]
         if isinstance(new_status, str):
             new_status = LeadStatus(new_status)
         if not validate_transition(lead.lead_status, new_status):
-            allowed = get_allowed_transitions(lead.lead_status)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot transition from '{lead.lead_status.value}' to '{new_status.value}'. Allowed: {allowed}"
-            )
+            # Admins/super-admins may override a blocked transition when they
+            # explicitly pass force=true (confirmed via a frontend popup).
+            can_override = current_user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+            if force and can_override:
+                forced_transition = True
+            else:
+                allowed = get_allowed_transitions(lead.lead_status)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot transition from '{lead.lead_status.value}' to '{new_status.value}'. Allowed: {allowed}"
+                )
 
     # Track changes for audit
     changes = {}
@@ -2473,6 +2563,9 @@ async def update_lead(
             new_str = value.value if hasattr(value, 'value') else str(value) if value is not None else None
             changes[field] = {"old": old_str, "new": new_str}
         setattr(lead, field, value)
+
+    if forced_transition:
+        changes["forced_transition"] = {"old": None, "new": True}
 
     if changes:
         _audit(db, "lead", lead.lead_id, "update", changes, changed_by=current_user.email)
