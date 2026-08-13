@@ -36,6 +36,7 @@ jest.mock('@/components/toast', () => ({
   }),
 }))
 
+import { outreachRolesApi } from '@/lib/api'
 import MailboxesPage from '../page'
 
 const mockMailboxes = [
@@ -68,6 +69,8 @@ const mockMailboxes = [
     auth_method: 'password',
     oauth_tenant_id: null,
     oauth_connected: false,
+    outreach_role_id: 5,
+    outreach_role_name: 'RA',
   },
   {
     mailbox_id: 2,
@@ -98,6 +101,8 @@ const mockMailboxes = [
     auth_method: 'oauth2',
     oauth_tenant_id: 'test-tenant',
     oauth_connected: true,
+    outreach_role_id: null,
+    outreach_role_name: null,
   },
 ]
 
@@ -200,5 +205,21 @@ describe('MailboxesPage', () => {
     })
     // Page should still render without crashing
     expect(screen.getByText('Sender Mailboxes')).toBeInTheDocument()
+  })
+
+  test('filters mailboxes by Role', async () => {
+    (outreachRolesApi.list as jest.Mock).mockResolvedValueOnce([{ role_id: 5, role_name: 'RA' }])
+    await act(async () => {
+      render(<MailboxesPage />)
+    })
+    await waitFor(() => expect(screen.getByText('sender1@example.com')).toBeInTheDocument())
+
+    // Selecting "No Role" hides the RA-tagged mailbox and keeps the unassigned one.
+    const roleSelect = screen.getByDisplayValue('All Roles')
+    await userEvent.selectOptions(roleSelect, 'none')
+    await waitFor(() => {
+      expect(screen.queryByText('sender1@example.com')).not.toBeInTheDocument()
+      expect(screen.getByText('sender2@example.com')).toBeInTheDocument()
+    })
   })
 })
