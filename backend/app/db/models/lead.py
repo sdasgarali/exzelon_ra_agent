@@ -119,6 +119,12 @@ class LeadDetails(Base):
     # Download/export tracking
     downloaded_at = Column(DateTime, nullable=True)
 
+    # Manual overrides for the derived Mailing-Status / Response columns. Set via the
+    # bulk-update modal for leads mailed offline (Mailed-Offline), where there is no
+    # campaign or inbox reply to derive from. When set, they win over the derived value.
+    mailing_status_override = Column(String(50), nullable=True)
+    response_status_override = Column(String(50), nullable=True)
+
     # Legacy one-to-many relationship (contacts with lead_id FK)
     # No cascade delete — contacts must survive lead deletion to grow the database
     contacts = relationship("ContactDetails", back_populates="lead")

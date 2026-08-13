@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { leadsApi, pipelinesApi, lobApi, api, getApiError } from '@/lib/api'
+import { leadsApi, pipelinesApi, lobApi, campaignsApi, api, getApiError } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { useLobStore } from '@/lib/lob-store'
 import { ContactsWizard } from '@/components/contacts-wizard'
@@ -88,12 +88,25 @@ const MAILING_STATUS_COLORS: Record<string, string> = {
   'Campaign-Closed': 'bg-sky-100 text-sky-800',
   'Mailed-Offline': 'bg-green-100 text-green-800',
   'Not-Mailed': 'bg-gray-100 text-gray-600',
+  // Manual-override-only labels (set via bulk update on Mailed-Offline leads).
+  'Follow-Up-Sent': 'bg-lime-100 text-lime-800',
+  'Bounced': 'bg-orange-100 text-orange-800',
+  'No-Valid-Email': 'bg-red-100 text-red-800',
 }
 
 // Options for the advanced-filter Mailing-Status dropdown (order matters for UX).
 const MAILING_STATUS_FILTER_OPTIONS = [
   'Campaign-Draft', 'Campaign-Active', 'Campaign-Paused',
   'Campaign-Closed', 'Mailed-Offline', 'Not-Mailed',
+  'Follow-Up-Sent', 'Bounced', 'No-Valid-Email',
+]
+
+// Values an RA may set by hand in the bulk-update modal for Mailed-Offline leads.
+const MAILING_STATUS_OVERRIDE_OPTIONS = [
+  'Not-Mailed', 'Mailed-Offline', 'Follow-Up-Sent', 'Bounced', 'No-Valid-Email',
+]
+const RESPONSE_STATUS_OVERRIDE_OPTIONS = [
+  'Interested', 'Referral', 'Question', 'Not-Interested', 'Do-Not-Contact', 'OOO', 'Other',
 ]
 
 // Badge colors for the derived "Response" column — a lead-level rollup of its
@@ -213,7 +226,13 @@ export default function LeadsPage() {
   const [deleting, setDeleting] = useState(false)
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false)
   const [bulkUpdating, setBulkUpdating] = useState(false)
-  const [bulkUpdateForm, setBulkUpdateForm] = useState({ data_type: '' })
+  const [bulkUpdateForm, setBulkUpdateForm] = useState({
+    data_type: '',
+    mailing_status_override: '',
+    response_status_override: '',
+    enroll_campaign_id: '',
+  })
+  const [campaignOptions, setCampaignOptions] = useState<{ campaign_id: number; name: string }[]>([])
 
   // Bulk outreach
   const [showOutreachModal, setShowOutreachModal] = useState(false)
@@ -585,19 +604,33 @@ export default function LeadsPage() {
     }
   }
 
+  const resetBulkForm = () => setBulkUpdateForm({
+    data_type: '', mailing_status_override: '', response_status_override: '', enroll_campaign_id: '',
+  })
+
+  const bulkFormHasChanges = (
+    bulkUpdateForm.data_type !== '' ||
+    bulkUpdateForm.mailing_status_override !== '' ||
+    bulkUpdateForm.response_status_override !== '' ||
+    bulkUpdateForm.enroll_campaign_id !== ''
+  )
+
   const handleBulkUpdate = async () => {
     const updates: Record<string, any> = {}
     if (bulkUpdateForm.data_type !== '') updates.data_type = bulkUpdateForm.data_type
+    if (bulkUpdateForm.mailing_status_override !== '') updates.mailing_status_override = bulkUpdateForm.mailing_status_override
+    if (bulkUpdateForm.response_status_override !== '') updates.response_status_override = bulkUpdateForm.response_status_override
+    if (bulkUpdateForm.enroll_campaign_id !== '') updates.enroll_campaign_id = Number(bulkUpdateForm.enroll_campaign_id)
     if (Object.keys(updates).length === 0) return
     setBulkUpdating(true)
     try {
-      await leadsApi.bulkUpdate(Array.from(selectedIds), updates)
-      setSuccess(`Updated ${selectedIds.size} lead(s)`)
+      const res = await leadsApi.bulkUpdate(Array.from(selectedIds), updates)
+      setSuccess(res?.message || `Updated ${selectedIds.size} lead(s)`)
       setShowBulkUpdateModal(false)
-      setBulkUpdateForm({ data_type: '' })
+      resetBulkForm()
       setSelectedIds(new Set())
       fetchLeads()
-      setTimeout(() => setSuccess(''), 4000)
+      setTimeout(() => setSuccess(''), 5000)
     } catch (err: any) {
       setError(getApiError(err, 'Bulk update failed'))
       setTimeout(() => setError(''), 4000)
@@ -605,6 +638,18 @@ export default function LeadsPage() {
       setBulkUpdating(false)
     }
   }
+
+  // Load campaign options for the "Enroll in Campaign" dropdown when the modal opens.
+  useEffect(() => {
+    if (showBulkUpdateModal && campaignOptions.length === 0) {
+      campaignsApi.list({ page_size: 200 })
+        .then((data: any) => {
+          const items = Array.isArray(data) ? data : (data?.items || [])
+          setCampaignOptions(items.map((c: any) => ({ campaign_id: c.campaign_id, name: c.name })))
+        })
+        .catch(() => {})
+    }
+  }, [showBulkUpdateModal])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatusValue) return
@@ -2111,10 +2156,40 @@ export default function LeadsPage() {
                   <option value="prod">Prod</option>
                 </select>
               </div>
+
+              {/* Mailed-Offline fields — applied only to selected leads that are Mailed-Offline */}
+              <div className="pt-3 mt-1 border-t">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mailed-Offline fields</p>
+                <p className="text-xs text-gray-400 mb-3">Applied only to selected leads whose Mailing-Status is <span className="font-medium">Mailed-Offline</span>; others are skipped.</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mailing-Status</label>
+                    <select value={bulkUpdateForm.mailing_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, mailing_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                      <option value="">— No change —</option>
+                      {MAILING_STATUS_OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Response</label>
+                    <select value={bulkUpdateForm.response_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, response_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                      <option value="">— No change —</option>
+                      {RESPONSE_STATUS_OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Enroll in Campaign</label>
+                    <select value={bulkUpdateForm.enroll_campaign_id} onChange={e => setBulkUpdateForm(f => ({ ...f, enroll_campaign_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                      <option value="">— No change —</option>
+                      {campaignOptions.map(c => <option key={c.campaign_id} value={c.campaign_id}>{c.name} (#{c.campaign_id})</option>)}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">Enrolls the lead&apos;s contacts — the lead will become Campaign-Active.</p>
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateForm({ data_type: '' }) }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={handleBulkUpdate} disabled={bulkUpdating || bulkUpdateForm.data_type === ''} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+              <button onClick={() => { setShowBulkUpdateModal(false); resetBulkForm() }} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleBulkUpdate} disabled={bulkUpdating || !bulkFormHasChanges} className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                 {bulkUpdating ? 'Updating...' : 'Update'}
               </button>
             </div>

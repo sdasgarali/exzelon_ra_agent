@@ -1558,6 +1558,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for downloaded_at column: {e}")
 
+    # Migration: add manual override columns for derived Mailing-Status / Response
+    try:
+        from sqlalchemy import text as sa_text_ovr, inspect as sa_inspect_ovr
+        with engine.connect() as conn:
+            inspector_ovr = sa_inspect_ovr(engine)
+            lead_cols_ovr = [c["name"] for c in inspector_ovr.get_columns("lead_details")]
+            for _col in ("mailing_status_override", "response_status_override"):
+                if _col not in lead_cols_ovr:
+                    try:
+                        conn.execute(sa_text_ovr(f"ALTER TABLE lead_details ADD COLUMN {_col} VARCHAR(50) NULL"))
+                        conn.commit()
+                        logger.info(f"Migration: added {_col} column to lead_details")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for lead override columns: {e}")
+
     # Migration: add onboarding_dismissed_at column to users
     try:
         from sqlalchemy import text as sa_text_onboard, inspect as sa_inspect_onboard

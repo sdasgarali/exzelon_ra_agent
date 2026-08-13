@@ -1,6 +1,6 @@
 """Integration tests for leads endpoints."""
 import pytest
-from datetime import date
+from datetime import date, datetime
 from app.db.models.lead import LeadDetails, LeadStatus
 
 pytestmark = pytest.mark.integration
@@ -470,6 +470,87 @@ class TestLeadsEndpoints:
         assert asc.status_code == 200
         ids = [i["lead_id"] for i in asc.json()["items"]]
         assert ids.index(lead_a.lead_id) < ids.index(sample_lead.lead_id)
+
+    # ---- Bulk-update editable Mailing-Status/Response/Campaign for Mailed-Offline leads ----
+
+    def _offline_lead(self, db_session, test_tenant, client_name):
+        """A Mailed-Offline lead: downloaded, not in any campaign."""
+        lead = self._bare_lead(db_session, test_tenant, client_name)
+        lead.downloaded_at = datetime.utcnow()
+        db_session.commit()
+        db_session.refresh(lead)
+        return lead
+
+    def _item(self, resp, lead_id):
+        return next(i for i in resp.json()["items"] if i["lead_id"] == lead_id)
+
+    def test_bulk_override_applies_only_to_mailed_offline(self, client, sa_headers, db_session, test_tenant, sample_lead):
+        """Overrides land on the Mailed-Offline lead and skip the Not-Mailed one."""
+        offline = self._offline_lead(db_session, test_tenant, "Offline Co")
+        # sample_lead has no downloaded_at -> Not-Mailed -> should be skipped.
+        resp = client.put("/api/v1/leads/bulk/update", json={
+            "lead_ids": [offline.lead_id, sample_lead.lead_id],
+            "updates": {"mailing_status_override": "Follow-Up-Sent", "response_status_override": "Interested"},
+        }, headers=sa_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["offline_eligible_count"] == 1
+        assert body["skipped_count"] == 1
+
+        lst = client.get("/api/v1/leads", headers=sa_headers)
+        assert self._item(lst, offline.lead_id)["mailing_status"] == "Follow-Up-Sent"
+        assert self._item(lst, offline.lead_id)["response_status"] == "Interested"
+        # The skipped Not-Mailed lead is unchanged.
+        assert self._item(lst, sample_lead.lead_id)["mailing_status"] == "Not-Mailed"
+
+    def test_bulk_override_rejects_invalid_value(self, client, sa_headers, db_session, test_tenant):
+        offline = self._offline_lead(db_session, test_tenant, "Bad Co")
+        resp = client.put("/api/v1/leads/bulk/update", json={
+            "lead_ids": [offline.lead_id],
+            "updates": {"mailing_status_override": "Nonsense"},
+        }, headers=sa_headers)
+        assert resp.status_code == 400
+
+    def test_bulk_override_wins_in_filter(self, client, sa_headers, db_session, test_tenant):
+        """A Mailed-Offline lead overridden to Interested is returned by the Response filter."""
+        offline = self._offline_lead(db_session, test_tenant, "Filter Co")
+        client.put("/api/v1/leads/bulk/update", json={
+            "lead_ids": [offline.lead_id],
+            "updates": {"response_status_override": "Interested"},
+        }, headers=sa_headers)
+        r = client.get("/api/v1/leads?response_status=Interested", headers=sa_headers)
+        assert offline.lead_id in [i["lead_id"] for i in r.json()["items"]]
+        # And the new mailing override label filters too.
+        client.put("/api/v1/leads/bulk/update", json={
+            "lead_ids": [offline.lead_id],
+            "updates": {"mailing_status_override": "Bounced"},
+        }, headers=sa_headers)
+        r2 = client.get("/api/v1/leads?mailing_status=Bounced", headers=sa_headers)
+        assert offline.lead_id in [i["lead_id"] for i in r2.json()["items"]]
+
+    def test_bulk_enroll_campaign_flips_mailing_status(self, client, sa_headers, db_session, test_tenant):
+        """Selecting a campaign enrolls the lead's contacts and flips it to Campaign-Active."""
+        from app.db.models.campaign import Campaign, CampaignStatus
+        from app.db.models.contact import ContactDetails
+        offline = self._offline_lead(db_session, test_tenant, "Enroll Co")
+        contact = ContactDetails(
+            tenant_id=test_tenant.tenant_id, client_name=offline.client_name,
+            first_name="En", last_name="Roll", email="enroll@example.com", lead_id=offline.lead_id,
+        )
+        camp = Campaign(tenant_id=test_tenant.tenant_id, name="Offline Batch", status=CampaignStatus.ACTIVE)
+        db_session.add_all([contact, camp])
+        db_session.commit()
+        db_session.refresh(camp)
+
+        resp = client.put("/api/v1/leads/bulk/update", json={
+            "lead_ids": [offline.lead_id],
+            "updates": {"enroll_campaign_id": camp.campaign_id},
+        }, headers=sa_headers)
+        assert resp.status_code == 200
+        assert resp.json()["enrolled_count"] >= 1
+
+        lst = client.get("/api/v1/leads", headers=sa_headers)
+        assert self._item(lst, offline.lead_id)["mailing_status"] == "Campaign-Active"
 
     def test_search_by_campaign_id(self, client, auth_headers, db_session, test_tenant, sample_lead):
         """The search bar finds leads by their associated campaign id (C:<id>)."""
