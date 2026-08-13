@@ -127,7 +127,7 @@ const US_STATES = [
   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
 ]
 
-type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size' | 'run_id' | 'downloaded_at'
+type SortField = 'lead_id' | 'client_name' | 'job_title' | 'state' | 'posting_date' | 'created_at' | 'source' | 'employment_type' | 'lead_status' | 'contact_count' | 'industry' | 'company_size' | 'run_id' | 'downloaded_at' | 'mailing_status' | 'response_status' | 'campaign_id'
 type SortOrder = 'asc' | 'desc'
 
 const EMPLOYMENT_TYPE_OPTIONS = ['Full-time', 'Contract', 'Part-time', 'Temporary', 'Internship']
@@ -1700,14 +1700,23 @@ export default function LeadsPage() {
                 >
                   Status <SortIcon field="lead_status" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Mailing-Status
+                <th
+                  onClick={() => handleSort('mailing_status')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Mailing-Status <SortIcon field="mailing_status" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Response
+                <th
+                  onClick={() => handleSort('response_status')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Response <SortIcon field="response_status" />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Campaign-ID
+                <th
+                  onClick={() => handleSort('campaign_id')}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                >
+                  Campaign-ID <SortIcon field="campaign_id" />
                 </th>
               </tr>
             </thead>
