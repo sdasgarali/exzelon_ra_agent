@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_active_user
+from app.api.deps.auth import role_value
 from app.api.deps.plan_limits import check_plan_limit
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_access_token
 from app.core.config import settings
@@ -108,7 +109,7 @@ async def login(
     # Build token with tenant context
     token_data = {
         "sub": user.email,
-        "role": user.role.value if user.role else None,
+        "role": role_value(user) or None,
         "tenant_id": user.tenant_id,
         "plan": user.tenant.plan.value if user.tenant else None,
     }
@@ -229,7 +230,7 @@ async def register(
 
     NOTE: This is NOT for self-service signup. Use /auth/signup for that.
     This endpoint requires authentication and creates users within the
-    caller's tenant with viewer role.
+    caller's tenant with the lowest (recruiter) role.
     """
     # Only admins can create users
     if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
@@ -245,12 +246,12 @@ async def register(
             detail="Email already registered"
         )
 
-    # SECURITY FIX: Ignore role from request body -- always create as viewer
+    # SECURITY FIX: Ignore role from request body -- always create as recruiter (lowest role)
     user = User(
         email=user_in.email,
         password_hash=get_password_hash(user_in.password),
         full_name=user_in.full_name,
-        role=UserRole.VIEWER,
+        role=UserRole.RECRUITER,
         tenant_id=current_user.tenant_id,
         is_active=True,
         is_verified=True,  # Admin-created users are pre-verified
@@ -301,7 +302,7 @@ async def refresh_token(
 
     token_data = {
         "sub": user.email,
-        "role": user.role.value if user.role else None,
+        "role": role_value(user) or None,
         "tenant_id": user.tenant_id,
         "plan": user.tenant.plan.value if user.tenant else None,
     }

@@ -30,7 +30,7 @@ class SMSBulkSend(BaseModel):
 def send_sms(
     data: SMSSend,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send an SMS message via Twilio."""

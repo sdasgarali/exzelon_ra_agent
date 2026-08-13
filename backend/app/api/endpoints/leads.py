@@ -2266,10 +2266,10 @@ async def bulk_unarchive_leads(
 async def bulk_update_status(
     request: BulkLeadStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Update status of multiple leads at once. Admin/Operator only."""
+    """Update status of multiple leads at once. Admin/BDM only."""
     lead_ids = request.lead_ids
     new_status = request.status
 
@@ -2608,7 +2608,7 @@ async def bulk_enrich_leads(
     request: BulkEnrichRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(require_tenant_id),
 ):
     """Trigger contact enrichment for selected leads (runs in background)."""

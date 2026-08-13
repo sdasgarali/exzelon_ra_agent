@@ -92,7 +92,7 @@ class TestLoginRecording:
             email="inactive@test.com",
             password_hash=get_password_hash("testpassword"),
             full_name="Inactive User",
-            role=UserRole.VIEWER,
+            role=UserRole.RECRUITER,
             is_active=False,
             is_verified=True,
             tenant_id=test_tenant.tenant_id,

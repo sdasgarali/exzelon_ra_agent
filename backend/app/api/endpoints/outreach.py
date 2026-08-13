@@ -148,10 +148,10 @@ async def create_outreach_event(
 async def bulk_delete_outreach_events(
     request: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """Delete multiple outreach events by IDs. Admin/Operator only."""
+    """Delete multiple outreach events by IDs. Admin/BDM only."""
     event_ids = request.get("event_ids", [])
     if not event_ids:
         raise HTTPException(status_code=400, detail="No event IDs provided")
@@ -180,10 +180,10 @@ async def bulk_delete_outreach_events(
 async def delete_outreach_event(
     event_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """Delete a single outreach event. Admin/Operator only."""
+    """Delete a single outreach event. Admin/BDM only."""
     event = db.query(OutreachEvent).filter(OutreachEvent.event_id == event_id).first()
     if not event:
         raise HTTPException(

@@ -434,7 +434,7 @@ def my_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user=Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(get_current_tenant_id),
 ):
     """List own tenant's invoices."""
@@ -462,7 +462,7 @@ def my_invoices(
 def my_invoice_detail(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user=Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(get_current_tenant_id),
 ):
     """Get invoice detail with line items (own tenant only)."""
@@ -492,7 +492,7 @@ def my_invoice_detail(
 def my_invoice_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user=Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(get_current_tenant_id),
 ):
     """Download own invoice PDF."""
@@ -570,7 +570,7 @@ def my_payments(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user=Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(get_current_tenant_id),
 ):
     """List own tenant's payment history."""

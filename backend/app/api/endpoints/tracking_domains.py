@@ -145,7 +145,7 @@ def list_tracking_domains(
     user: User = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """List all non-archived tracking domains (operator+ role)."""
+    """List all non-archived tracking domains (bdm+ role)."""
     q = db.query(TrackingDomain).filter(TrackingDomain.is_archived == False)
     q = tenant_filter(q, TrackingDomain, tenant_id)
     domains = q.order_by(TrackingDomain.domain_id).all()

@@ -42,7 +42,7 @@ def client_analytics(
     page_size: int = Query(50, ge=1, le=200),
     export: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-client breakdown: contacts, leads, emails sent, replies, bounces, placements, unsubs."""
@@ -194,7 +194,7 @@ def campaign_performance(
     page_size: int = Query(50, ge=1, le=200),
     export: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-campaign metrics using denormalized counters."""
@@ -286,7 +286,7 @@ def mailbox_health(
     page_size: int = Query(50, ge=1, le=200),
     export: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-mailbox stats from SenderMailbox model."""
@@ -352,7 +352,7 @@ def daily_activity(
     days: int = Query(30, ge=7, le=180),
     granularity: str = Query("daily"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Time-series aggregates: sent, opened, replied, bounced per day/week."""
@@ -421,7 +421,7 @@ def contact_engagement(
     page_size: int = Query(50, ge=1, le=200),
     export: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-contact outreach summary."""
@@ -520,7 +520,7 @@ def domain_deliverability(
     page_size: int = Query(50, ge=1, le=200),
     export: bool = Query(False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Recipient-domain-level deliverability stats."""

@@ -318,7 +318,7 @@ def push_lead_to_resource_pool(
     lead_id: int,
     stage: str = Query("LEAD", description="Opportunity stage: LEAD or QUALIFIED"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Push a qualified lead (Job + Company + Contact + Opportunity) to Resource Pool.
@@ -475,7 +475,7 @@ def resource_pool_attribution_summary(
     start: Optional[str] = Query(None, description="Inclusive start date (YYYY-MM-DD)"),
     end: Optional[str] = Query(None, description="Inclusive end date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Campaign→placement→revenue attribution summary from Resource Pool outcomes.
@@ -546,7 +546,7 @@ def resource_pool_match_summary(
     lead_id: int,
     threshold: int = Query(80, ge=0, le=100, description="Minimum fit %"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Candidate match summary for a lead's job (count of candidates ≥ threshold% fit
@@ -578,7 +578,7 @@ def resource_pool_attribution_export(
     start: Optional[str] = Query(None, description="Inclusive start date (YYYY-MM-DD)"),
     end: Optional[str] = Query(None, description="Inclusive end date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """CSV export of the (date-range-filtered) attribution rows."""

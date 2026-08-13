@@ -355,10 +355,10 @@ async def get_client_filter_options(
 async def bulk_delete_clients(
     request: BulkClientIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Archive multiple clients by IDs (soft delete). Admin/Operator only."""
+    """Archive multiple clients by IDs (soft delete). Admin/BDM only."""
     client_ids = request.client_ids
     if not client_ids:
         raise HTTPException(status_code=400, detail="No client IDs provided")

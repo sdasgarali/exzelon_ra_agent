@@ -33,7 +33,7 @@ def assign_leads_round_robin(
     if not campaign:
         return {"error": "Campaign not found"}
 
-    # Get active operators/admins in tenant
+    # Get active BDMs/admins in tenant
     users_q = db.query(User).filter(
         User.is_active == True,
         User.is_archived == False,

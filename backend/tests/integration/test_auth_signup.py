@@ -151,7 +151,7 @@ class TestSignupFlow:
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert resp.status_code == 200
-        assert resp.json()["role"] == "viewer"
+        assert resp.json()["role"] == "recruiter"
 
 
 class TestResendVerification:

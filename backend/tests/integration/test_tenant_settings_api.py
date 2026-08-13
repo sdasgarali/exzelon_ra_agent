@@ -62,8 +62,8 @@ def seed_global_settings(db_session):
     # Admin needs role_permissions to access tab-mapped settings
     role_perms = {
         "admin": {"settings": "full"},
-        "operator": {"settings": "read"},
-        "viewer": {"settings": "no_access"},
+        "bdm": {"settings": "read"},
+        "recruiter": {"settings": "no_access"},
     }
     db_session.add(Settings(key="role_permissions", value_json=json.dumps(role_perms), type="json"))
     db_session.commit()

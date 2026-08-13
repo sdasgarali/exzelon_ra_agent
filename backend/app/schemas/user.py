@@ -9,7 +9,7 @@ class UserBase(BaseModel):
     """Base user schema."""
     email: EmailStr
     full_name: Optional[str] = None
-    role: UserRole = UserRole.VIEWER
+    role: UserRole = UserRole.RECRUITER
     is_active: bool = True
 
 

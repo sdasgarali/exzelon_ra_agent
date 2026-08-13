@@ -27,22 +27,22 @@ def seed_users(db):
             "role": UserRole.ADMIN
         },
         {
-            "email": "operator@exzelon.com",
-            "password": "Operator@123",
-            "full_name": "Operator User",
-            "role": UserRole.OPERATOR
+            "email": "bdm@exzelon.com",
+            "password": "Bdm@123",
+            "full_name": "BDM User",
+            "role": UserRole.BDM
         },
         {
-            "email": "viewer@exzelon.com",
-            "password": "Viewer@123",
-            "full_name": "Viewer User",
-            "role": UserRole.VIEWER
+            "email": "recruiter@exzelon.com",
+            "password": "Recruiter@123",
+            "full_name": "Recruiter User",
+            "role": UserRole.RECRUITER
         },
         {
             "email": "testclient@example.com",
             "password": "TestClient@123",
             "full_name": "Test Client User",
-            "role": UserRole.OPERATOR
+            "role": UserRole.BDM
         }
     ]
 
@@ -285,8 +285,8 @@ def run_seed():
         print("\nDatabase seeding completed successfully!")
         print("\nTest credentials:")
         print("  Admin: admin@exzelon.com / Admin@123")
-        print("  Operator: operator@exzelon.com / Operator@123")
-        print("  Viewer: viewer@exzelon.com / Viewer@123")
+        print("  BDM: bdm@exzelon.com / Bdm@123")
+        print("  Recruiter: recruiter@exzelon.com / Recruiter@123")
         print("  Test Client: testclient@example.com / TestClient@123")
         print("\nMailboxes seeded: 11 sender mailboxes (Cold-Ready status)")
     finally:

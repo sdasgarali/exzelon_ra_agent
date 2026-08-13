@@ -337,7 +337,7 @@ def set_thread_category(
 def delete_thread(
     thread_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete all messages in a thread."""
@@ -358,7 +358,7 @@ def delete_thread(
 def bulk_delete_threads(
     data: BulkDeleteRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete multiple threads at once."""
@@ -384,7 +384,7 @@ def bulk_delete_threads(
 def send_reply(
     data: ReplyCompose,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send a reply in a thread."""
@@ -604,7 +604,7 @@ def approve_draft(
     thread_id: str,
     draft_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Approve and send an AI reply draft."""
@@ -648,7 +648,7 @@ def reject_draft(
     draft_id: int,
     reason: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Reject an AI reply draft."""
@@ -683,7 +683,7 @@ def reject_draft(
 def generate_draft(
     thread_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger AI draft generation for a thread."""

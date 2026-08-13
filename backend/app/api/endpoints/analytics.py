@@ -7,7 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.db.base import get_db
-from app.api.deps.auth import require_role, get_current_tenant_id
+from app.api.deps.auth import require_role, get_current_tenant_id, role_value
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus
@@ -65,7 +65,7 @@ def team_leaderboard(
         leaderboard.append({
             "user_id": user.user_id,
             "name": user.full_name or user.email,
-            "role": user.role.value if user.role else "viewer",
+            "role": role_value(user) or UserRole.RECRUITER.value,
             "emails_sent": emails_sent,
             "deals_won": deals_won,
             "total_won_value": float(total_won_value),
@@ -80,7 +80,7 @@ def team_leaderboard(
 @router.get("/campaign-comparison")
 def campaign_comparison(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Per-campaign metrics for comparison."""
@@ -495,7 +495,7 @@ def budget_status(
 def engagement_heatmap(
     days: int = Query(30, ge=7, le=90),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Aggregate opens/replies by hour-of-day and day-of-week for heatmap visualization."""
