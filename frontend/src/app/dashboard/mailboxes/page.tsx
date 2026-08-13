@@ -140,7 +140,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   OTHER: 'Other',
 }
 
-type SortKey = 'email' | 'provider' | 'warmup_status' | 'emails_sent_today' | 'total_emails_sent' | 'connection_status' | 'created_at'
+type SortKey = 'email' | 'provider' | 'warmup_status' | 'outreach_role_name' | 'emails_sent_today' | 'total_emails_sent' | 'connection_status' | 'created_at'
 type SortDir = 'asc' | 'desc'
 
 export default function MailboxesPage() {
@@ -164,6 +164,7 @@ export default function MailboxesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [connectionFilter, setConnectionFilter] = useState<string>('')
   const [providerFilter, setProviderFilter] = useState<string>('')
+  const [roleFilter, setRoleFilter] = useState<string>('')  // '' = all, 'none' = no role, else role_id
   const [sortKey, setSortKey] = useState<SortKey>('email')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
@@ -376,6 +377,13 @@ export default function MailboxesPage() {
       if (providerFilter) {
         if (mb.provider.toLowerCase() !== providerFilter.toLowerCase()) return false
       }
+      if (roleFilter) {
+        if (roleFilter === 'none') {
+          if (mb.outreach_role_id != null) return false
+        } else if (String(mb.outreach_role_id ?? '') !== roleFilter) {
+          return false
+        }
+      }
       return true
     })
 
@@ -386,6 +394,12 @@ export default function MailboxesPage() {
         case 'email': aVal = a.email.toLowerCase(); bVal = b.email.toLowerCase(); break
         case 'provider': aVal = a.provider.toLowerCase(); bVal = b.provider.toLowerCase(); break
         case 'warmup_status': aVal = a.warmup_status; bVal = b.warmup_status; break
+        case 'outreach_role_name': {
+          // Sort by role name; mailboxes with no role sort last (both directions).
+          aVal = (a.outreach_role_name || '￿').toLowerCase()
+          bVal = (b.outreach_role_name || '￿').toLowerCase()
+          break
+        }
         case 'emails_sent_today': aVal = a.emails_sent_today; bVal = b.emails_sent_today; break
         case 'total_emails_sent': aVal = a.total_emails_sent; bVal = b.total_emails_sent; break
         case 'connection_status': {
@@ -405,7 +419,7 @@ export default function MailboxesPage() {
     })
 
     return result
-  }, [mailboxes, searchQuery, connectionFilter, providerFilter, sortKey, sortDir, connectionStatus])
+  }, [mailboxes, searchQuery, connectionFilter, providerFilter, roleFilter, sortKey, sortDir, connectionStatus])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -899,10 +913,11 @@ export default function MailboxesPage() {
     setStatusFilter('')
     setConnectionFilter('')
     setProviderFilter('')
+    setRoleFilter('')
     setShowArchived(false)
   }
 
-  const hasActiveFilters = searchQuery || statusFilter || connectionFilter || providerFilter
+  const hasActiveFilters = searchQuery || statusFilter || connectionFilter || providerFilter || roleFilter
 
   if (loading) {
     return (
@@ -1025,6 +1040,16 @@ export default function MailboxesPage() {
               <option value="gmail">Gmail</option>
               <option value="smtp">Custom SMTP</option>
               <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="w-full sm:w-40">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="w-full px-3 py-2 border rounded-lg">
+              <option value="">All Roles</option>
+              {outreachRoles.map((r) => (
+                <option key={r.role_id} value={String(r.role_id)}>{r.role_name}</option>
+              ))}
+              <option value="none">No Role</option>
             </select>
           </div>
 
@@ -1153,7 +1178,9 @@ export default function MailboxesPage() {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('warmup_status')} title="Warmup lifecycle: Inactive → Warming Up (30 days) → Cold Ready → Active. Managed automatically by the warmup engine.">
                 Status <SortIcon column="warmup_status" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('outreach_role_name')}>
+                Role <SortIcon column="outreach_role_name" />
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-700" onClick={() => handleSort('emails_sent_today')}>
                 Today <SortIcon column="emails_sent_today" />
               </th>
