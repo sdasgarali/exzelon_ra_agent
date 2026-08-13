@@ -39,7 +39,7 @@ docker-compose up api    # Backend only with dependencies
 - **Entry point**: `main.py` — FastAPI app with lifespan handler (DB tables, seeds, APScheduler)
 - **Config**: `core/config.py` — Pydantic Settings from `.env`
 - **API routes**: `api/endpoints/` mounted under `/api/v1` via `api/router.py`
-- **Auth**: JWT (30-min access + 7-day refresh), Argon2, RBAC (super_admin/admin/operator/viewer), multi-tenant, email verification. Deps in `api/deps/auth.py`
+- **Auth**: JWT (30-min access + 7-day refresh), Argon2, RBAC (built-in roles super_admin/admin/bdm/recruiter — `operator`→`bdm`, `viewer`→`recruiter` — plus per-tenant custom roles via `services/role_registry.py`), multi-tenant, email verification. Deps in `api/deps/auth.py`
 - **Database**: SQLAlchemy 2.0 ORM, MySQL (`exzelon_ra_agent` on localhost:3306). SQLite for testing.
 
 ### Frontend (`frontend/src/`)

@@ -125,6 +125,7 @@ Domain reputation management subsystem:
 | CRM Auto-Forward | `services/crm_auto_forward.py` | Auto-forward interested inbox replies to CRM |
 | IMAP Reader | `services/warmup/imap_reader.py` | Read emulation for warmup |
 | LOB Defaults | `core/lob_defaults.py` | Shared LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES (used by main.py seeding, admin_tenants.py provisioning, lob.py type listing) |
+| Role Registry | `services/role_registry.py` | Built-in + per-tenant custom RBAC roles (`custom_roles`/`role_label_overrides` settings). `list_roles`/`get_role`/`resolve_base_role`/`create_role`/`update_role`/`delete_role`. Each custom role has a built-in `base_role`; `auth.py`'s `effective_base_role()`/`_role_matrix_config()` resolve custom→base for coarse `require_role` checks and matrix fallback. Guards: immutable built-in keys, no `super_admin` base, can't delete a built-in or an in-use role. Backs `api/endpoints/roles.py`. |
 
 ---
 

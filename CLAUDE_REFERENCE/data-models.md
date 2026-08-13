@@ -5,7 +5,7 @@
 ## Core Models
 
 - **Tenant** — multi-tenant organization with TenantPlan enum (starter/professional/enterprise), plan limits (max_users, max_mailboxes, max_contacts, max_campaigns, max_leads), unique slug, `website` (URL), `industry` (saas/recruiting/healthcare/ecommerce/finance/general)
-- **User** — users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), account lockout (failed_login_count, locked_until), tenant relationship
+- **User** — users with tenant_id FK, email verification (is_verified, verification_token, verification_sent_at), account lockout (failed_login_count, locked_until), tenant relationship. `role` is a **VARCHAR(50)** (migrated from a MySQL ENUM in 2026-08) so custom, settings-backed roles can be assigned alongside the built-in `UserRole` values `super_admin/admin/bdm/recruiter` (renamed from `operator`/`viewer`). Legacy values are normalized via `LEGACY_ROLE_ALIASES`/`role_value()` in `api/deps/auth.py`. Custom roles live in the per-tenant `custom_roles` setting (see `services/role_registry.py`) and each declares a built-in `base_role`.
 
 ## Lead & Contact Models
 

@@ -18,6 +18,7 @@ All endpoints are mounted under `/api/v1`.
 | `/deals` | `deals.py` | Deal CRUD, pipeline view, stats |
 | `/settings` | `settings.py` | App settings, role permissions |
 | `/users` | `users.py` | User management, role assignment |
+| `/roles` | `roles.py` | Role management (super admin). GET list (built-in + custom); POST/PUT/DELETE custom roles. Per-tenant; writes require an impersonated tenant. Built-ins protected. |
 | `/pipelines` | `pipelines.py` | Pipeline stage execution (sourcing/enrichment/validation/outreach) |
 | `/warmup` | `warmup.py` | Warmup profiles, DNS checks, blacklist monitoring |
 | `/webhooks` | `webhooks.py` | Webhook subscription CRUD |
