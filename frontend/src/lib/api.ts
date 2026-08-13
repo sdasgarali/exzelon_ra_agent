@@ -852,6 +852,37 @@ export const usersApi = {
   },
 }
 
+// Roles API (super_admin only). Custom roles are per-tenant; writes need an
+// impersonated tenant (X-Tenant-ID sent automatically by the auth interceptor).
+export interface RoleDef {
+  key: string
+  label: string
+  description: string
+  base_role: string
+  builtin: boolean
+  static?: boolean
+  user_count?: number
+}
+
+export const rolesApi = {
+  list: async (): Promise<RoleDef[]> => {
+    const response = await api.get('/roles')
+    return response.data?.roles ?? []
+  },
+  create: async (data: { key: string; label: string; description?: string; base_role: string }): Promise<RoleDef> => {
+    const response = await api.post('/roles', data)
+    return response.data
+  },
+  update: async (key: string, data: { label?: string; description?: string; base_role?: string }): Promise<RoleDef> => {
+    const response = await api.put(`/roles/${key}`, data)
+    return response.data
+  },
+  delete: async (key: string) => {
+    const response = await api.delete(`/roles/${key}`)
+    return response.data
+  },
+}
+
 // Backups API (admin+ for list/create/download, super_admin for delete/restore)
 export const backupsApi = {
   list: async () => {

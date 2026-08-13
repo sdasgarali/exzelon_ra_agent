@@ -123,6 +123,8 @@ async def login(
         expires_delta=timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     )
 
+    from app.api.deps.auth import effective_base_role
+    user.base_role = effective_base_role(user, None, db)
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -264,8 +266,13 @@ async def register(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_active_user)):
+async def get_me(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
     """Get current authenticated user."""
+    from app.api.deps.auth import effective_base_role
+    current_user.base_role = effective_base_role(current_user, None, db)
     return UserResponse.model_validate(current_user)
 
 

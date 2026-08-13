@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { usersApi, activityApi } from '@/lib/api';
+import { usersApi, activityApi, rolesApi, type RoleDef } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
+import { roleBadgeColor, roleLabel } from '@/lib/roles';
 
 interface User {
   user_id: number;
@@ -30,7 +31,7 @@ const DEFAULT_FORM: UserFormData = {
   email: '',
   password: '',
   full_name: '',
-  role: 'operator',
+  role: 'bdm',
   is_active: true,
 };
 
@@ -73,9 +74,19 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState(false);
   const [unlocking, setUnlocking] = useState<number | null>(null);
 
-  const roleOptions = isSuperAdmin
-    ? ['super_admin', 'admin', 'operator', 'viewer']
-    : ['admin', 'operator', 'viewer'];
+  // Assignable roles (built-in + custom) loaded from the roles API. Only super_admin
+  // can read /roles, so admins fall back to the static built-in list.
+  const [availableRoles, setAvailableRoles] = useState<RoleDef[]>([]);
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    rolesApi.list().then(setAvailableRoles).catch(() => setAvailableRoles([]));
+  }, [isSuperAdmin]);
+
+  const roleOptions = availableRoles.length
+    ? availableRoles.map((r) => r.key).filter((k) => isSuperAdmin || k !== 'super_admin')
+    : isSuperAdmin
+      ? ['super_admin', 'admin', 'bdm', 'recruiter']
+      : ['admin', 'bdm', 'recruiter'];
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -241,15 +252,7 @@ export default function UsersPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Role badge color
-  const roleBadge = (role: string) => {
-    const colors: Record<string, string> = {
-      super_admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      admin: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-      operator: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      viewer: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
-    };
-    return colors[role] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-  };
+  const roleBadge = (role: string) => roleBadgeColor(role);
 
   const isLocked = (u: User) => u.locked_until && new Date(u.locked_until) > new Date();
 
@@ -428,7 +431,7 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{u.email}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadge(u.role)}`}>
-                        {u.role.replace('_', ' ')}
+                        {roleLabel(u.role, availableRoles)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -588,7 +591,7 @@ export default function UsersPage() {
                 >
                   {roleOptions.map((r) => (
                     <option key={r} value={r}>
-                      {r.replace('_', ' ')}
+                      {roleLabel(r, availableRoles)}
                     </option>
                   ))}
                 </select>

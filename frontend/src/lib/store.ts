@@ -16,7 +16,8 @@ interface User {
   user_id: number
   email: string
   full_name: string | null
-  role: 'super_admin' | 'admin' | 'operator' | 'viewer'
+  role: string
+  base_role?: string | null  // built-in role a custom role resolves to (for UI gating)
   is_active: boolean
   tenant_id: number | null
   tenant: Tenant | null

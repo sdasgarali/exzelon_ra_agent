@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/store'
 import { tenantsApi } from '@/lib/api'
+import { roleBadgeColor, roleLabel } from '@/lib/roles'
 import { Modal } from '@/components/modal'
 import type { TenantSummary, TenantDetail, TenantUser } from '@/types/api'
 import {
@@ -29,13 +30,6 @@ const PLAN_COLORS: Record<string, string> = {
   starter: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   professional: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   enterprise: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-}
-
-const ROLE_COLORS: Record<string, string> = {
-  super_admin: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  admin: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-  operator: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  viewer: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
 }
 
 const LOB_TYPE_LABELS: Record<string, string> = {
@@ -572,8 +566,8 @@ export default function TenantManagementPage() {
                         <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">{u.email}</td>
                         <td className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{u.full_name || '—'}</td>
                         <td className="px-3 py-2 text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${ROLE_COLORS[u.role] || ROLE_COLORS.viewer}`}>
-                            {u.role.replace('_', ' ')}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${roleBadgeColor(u.role)}`}>
+                            {roleLabel(u.role)}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-center">

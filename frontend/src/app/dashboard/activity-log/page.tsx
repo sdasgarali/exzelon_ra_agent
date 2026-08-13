@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/store'
 import { activityApi } from '@/lib/api'
+import { roleBadgeColor, roleLabel } from '@/lib/roles'
 import {
   ScrollText,
   ShieldAlert,
@@ -471,13 +472,8 @@ export default function ActivityLogPage() {
                     <td className="px-4 py-3 text-gray-900 dark:text-white font-medium">{u.email}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{u.full_name || '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${
-                        u.role === 'super_admin' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                        : u.role === 'admin' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400'
-                        : u.role === 'operator' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
-                        {u.role}
+                      <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${roleBadgeColor(u.role)}`}>
+                        {roleLabel(u.role)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{u.tenant_id ?? '—'}</td>

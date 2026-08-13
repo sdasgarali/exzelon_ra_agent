@@ -541,7 +541,7 @@ export default function DashboardPage() {
   })
 
   const showOnboarding = onboardingStatus?.should_show_onboarding &&
-    user?.role !== 'viewer'
+    user?.role !== 'recruiter'
 
   const handleDismissOnboarding = async () => {
     try {
@@ -1065,8 +1065,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Actions — admin and operator only */}
-      {user?.role !== 'viewer' && (
+      {/* Quick Actions — admin and bdm only */}
+      {user?.role !== 'recruiter' && (
         <div className="card" data-tour="quick-actions">
           <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

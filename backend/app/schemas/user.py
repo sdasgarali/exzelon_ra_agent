@@ -70,6 +70,8 @@ class TenantInfo(BaseModel):
 class UserResponse(UserBase):
     """Schema for user response."""
     user_id: int
+    # Built-in role this (possibly custom) role resolves to, for coarse UI gating.
+    base_role: Optional[str] = None
     last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
