@@ -420,6 +420,57 @@ class TestLeadsEndpoints:
         assert "Response" in header
         assert "Interested" in body
 
+    # ---- Sorting by the derived columns (label-precedence ordinals) ----
+
+    def _bare_lead(self, db_session, test_tenant, client_name):
+        lead = LeadDetails(
+            tenant_id=test_tenant.tenant_id,
+            client_name=client_name,
+            job_title="Position",
+            lead_status=LeadStatus.NEW,
+        )
+        db_session.add(lead)
+        db_session.commit()
+        db_session.refresh(lead)
+        return lead
+
+    def test_sort_by_response_status(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """sort_by=response_status orders by label precedence: Interested (0)
+        before the no-outreach sample_lead (Not-Contacted, 9); reversed on desc."""
+        interested = self._bare_lead(db_session, test_tenant, "Interested Co")
+        self._add_reply(db_session, test_tenant, interested, "interested")
+
+        asc = client.get("/api/v1/leads?sort_by=response_status&sort_order=asc", headers=auth_headers)
+        assert asc.status_code == 200
+        ids = [i["lead_id"] for i in asc.json()["items"]]
+        assert ids.index(interested.lead_id) < ids.index(sample_lead.lead_id)
+
+        desc = client.get("/api/v1/leads?sort_by=response_status&sort_order=desc", headers=auth_headers)
+        ids_d = [i["lead_id"] for i in desc.json()["items"]]
+        assert ids_d.index(sample_lead.lead_id) < ids_d.index(interested.lead_id)
+
+    def test_sort_by_mailing_status(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """sort_by=mailing_status orders Campaign-Active (0) before Not-Mailed (5)."""
+        from app.db.models.campaign import CampaignStatus
+        active_lead = self._bare_lead(db_session, test_tenant, "Active Co")
+        self._enroll_lead(db_session, test_tenant, active_lead, CampaignStatus.ACTIVE)
+
+        asc = client.get("/api/v1/leads?sort_by=mailing_status&sort_order=asc", headers=auth_headers)
+        assert asc.status_code == 200
+        ids = [i["lead_id"] for i in asc.json()["items"]]
+        assert ids.index(active_lead.lead_id) < ids.index(sample_lead.lead_id)
+
+    def test_sort_by_campaign_id(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """sort_by=campaign_id sorts leads with a campaign ahead of leads without one (nulls last)."""
+        from app.db.models.campaign import CampaignStatus
+        lead_a = self._bare_lead(db_session, test_tenant, "Camp A")
+        self._enroll_lead(db_session, test_tenant, lead_a, CampaignStatus.ACTIVE)
+
+        asc = client.get("/api/v1/leads?sort_by=campaign_id&sort_order=asc", headers=auth_headers)
+        assert asc.status_code == 200
+        ids = [i["lead_id"] for i in asc.json()["items"]]
+        assert ids.index(lead_a.lead_id) < ids.index(sample_lead.lead_id)
+
     def test_search_by_campaign_id(self, client, auth_headers, db_session, test_tenant, sample_lead):
         """The search bar finds leads by their associated campaign id (C:<id>)."""
         from app.db.models.campaign import CampaignStatus

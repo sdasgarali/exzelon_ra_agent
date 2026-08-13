@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc, desc, or_, and_
+from sqlalchemy import func, asc, desc, or_, and_, case
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
 from app.api.deps.plan_limits import check_plan_limit
@@ -659,6 +659,85 @@ async def list_leads(
             query = query.order_by(asc(sort_expr))
         else:
             query = query.order_by(desc(sort_expr))
+    elif sort_by in ("mailing_status", "campaign_id"):
+        # Both derive from the lead's best (highest-priority) non-archived campaign.
+        from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+        _pri = case(
+            (_Camp.status == "active", 0),
+            (_Camp.status == "paused", 1),
+            (_Camp.status == "draft", 2),
+            (_Camp.status == "completed", 3),
+            else_=99,
+        )
+        if sort_by == "mailing_status":
+            # Order by an ordinal mirroring mailing_status_label precedence:
+            # Campaign-Active(0)..Campaign-Closed(3) < Mailed-Offline(4) < Not-Mailed(5).
+            camp_pri_sub = db.query(
+                _CC.lead_id.label("lead_id"),
+                func.min(_pri).label("best_pri"),
+            ).join(_Camp, _CC.campaign_id == _Camp.campaign_id).filter(
+                _CC.lead_id.isnot(None),
+                _Camp.is_archived == False,
+            ).group_by(_CC.lead_id).subquery()
+            query = query.outerjoin(camp_pri_sub, LeadDetails.lead_id == camp_pri_sub.c.lead_id)
+            mailing_ord = case(
+                (camp_pri_sub.c.best_pri.isnot(None), camp_pri_sub.c.best_pri),
+                (LeadDetails.downloaded_at.isnot(None), 4),
+                else_=5,
+            )
+            primary = asc(mailing_ord) if sort_order == "asc" else desc(mailing_ord)
+        else:
+            # campaign_id: the displayed id is the best-priority campaign's id.
+            best_campaign_id = db.query(_Camp.campaign_id).join(
+                _CC, _CC.campaign_id == _Camp.campaign_id
+            ).filter(
+                _CC.lead_id == LeadDetails.lead_id,
+                _Camp.is_archived == False,
+            ).order_by(_pri.asc(), _Camp.campaign_id.asc()).limit(1).correlate(LeadDetails).scalar_subquery()
+            # Leads with no campaign sort last in both directions.
+            if sort_order == "asc":
+                primary = asc(func.coalesce(best_campaign_id, 2147483647))
+            else:
+                primary = desc(func.coalesce(best_campaign_id, -1))
+        query = query.order_by(primary, LeadDetails.lead_id.asc())
+    elif sort_by == "response_status":
+        # Order by an ordinal mirroring response_status_label precedence:
+        # Interested(0)..Other(6) < Replied(7) < No-Response(8) < Not-Contacted(9).
+        _cat_ord = case(
+            (InboxMessage.category == "interested", 0),
+            (InboxMessage.category == "referral", 1),
+            (InboxMessage.category == "question", 2),
+            (InboxMessage.category == "not_interested", 3),
+            (InboxMessage.category == "do_not_contact", 4),
+            (InboxMessage.category == "ooo", 5),
+            (InboxMessage.category == "other", 6),
+            else_=None,
+        )
+        resp_cat_sub = db.query(
+            OutreachEvent.lead_id.label("lead_id"),
+            func.min(_cat_ord).label("best_cat_ord"),
+        ).join(InboxMessage, InboxMessage.outreach_event_id == OutreachEvent.event_id).filter(
+            OutreachEvent.lead_id.isnot(None),
+            InboxMessage.direction == MessageDirection.RECEIVED,
+            InboxMessage.is_deleted == False,
+            InboxMessage.category.isnot(None),
+        ).group_by(OutreachEvent.lead_id).subquery()
+        ev_sub = db.query(
+            OutreachEvent.lead_id.label("lead_id"),
+            func.max(case((OutreachEvent.status == OutreachStatus.REPLIED, 1), else_=0)).label("has_reply"),
+            func.count(OutreachEvent.event_id).label("ev_count"),
+        ).filter(OutreachEvent.lead_id.isnot(None)).group_by(OutreachEvent.lead_id).subquery()
+        query = query.outerjoin(
+            resp_cat_sub, LeadDetails.lead_id == resp_cat_sub.c.lead_id
+        ).outerjoin(ev_sub, LeadDetails.lead_id == ev_sub.c.lead_id)
+        resp_ord = case(
+            (resp_cat_sub.c.best_cat_ord.isnot(None), resp_cat_sub.c.best_cat_ord),
+            (ev_sub.c.has_reply == 1, 7),
+            (func.coalesce(ev_sub.c.ev_count, 0) > 0, 8),
+            else_=9,
+        )
+        primary = asc(resp_ord) if sort_order == "asc" else desc(resp_ord)
+        query = query.order_by(primary, LeadDetails.lead_id.asc())
     else:
         sort_column = SORT_COLUMNS.get(sort_by, LeadDetails.created_at)
         if sort_order == "asc":
