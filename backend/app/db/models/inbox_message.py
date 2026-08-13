@@ -71,6 +71,9 @@ class InboxMessage(Base):
         Index("idx_inbox_received", "received_at"),
         Index("idx_inbox_read", "is_read"),
         Index("idx_inbox_category", "category"),
+        # Covers the Response-column rollup: join on outreach_event_id, filtered by
+        # direction (RECEIVED) + category.
+        Index("idx_im_outreach_event_cat", "outreach_event_id", "direction", "category"),
     )
 
     def __repr__(self) -> str:

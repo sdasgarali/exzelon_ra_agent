@@ -335,6 +335,91 @@ class TestLeadsEndpoints:
         assert resp.status_code == 200
         assert sample_lead.lead_id in [i["lead_id"] for i in resp.json()["items"]]
 
+    # ---- Response column (lead-level rollup of contacts' inbound replies) ----
+
+    def _add_reply(self, db_session, test_tenant, lead, category):
+        """Attach a contact + a classified inbound reply (InboxMessage) to ``lead``.
+
+        Creates an OutreachEvent (REPLIED) linking contact->lead, and an
+        InboxMessage(direction=RECEIVED, category=...) linked via outreach_event_id,
+        mirroring how inbox_syncer classifies replies in production.
+        """
+        from app.db.models.contact import ContactDetails
+        from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
+        from app.db.models.inbox_message import InboxMessage, MessageDirection
+        contact = ContactDetails(
+            tenant_id=test_tenant.tenant_id,
+            client_name=lead.client_name,
+            first_name="Reply",
+            last_name=f"{category}",
+            email=f"{category}.{lead.lead_id}@example.com",
+            lead_id=lead.lead_id,
+        )
+        db_session.add(contact)
+        db_session.commit()
+        db_session.refresh(contact)
+        event = OutreachEvent(
+            tenant_id=test_tenant.tenant_id,
+            contact_id=contact.contact_id,
+            lead_id=lead.lead_id,
+            channel=OutreachChannel.SMTP,
+            status=OutreachStatus.REPLIED,
+        )
+        db_session.add(event)
+        db_session.commit()
+        db_session.refresh(event)
+        if category is not None:
+            db_session.add(InboxMessage(
+                tenant_id=test_tenant.tenant_id,
+                thread_id=f"t-{event.event_id}",
+                contact_id=contact.contact_id,
+                outreach_event_id=event.event_id,
+                direction=MessageDirection.RECEIVED,
+                from_email=contact.email,
+                to_email="rep@exzelon.com",
+                category=category,
+            ))
+            db_session.commit()
+        return contact, event
+
+    def test_list_leads_exposes_response_status(self, client, auth_headers, sample_lead):
+        """A lead with no outreach reports response_status = Not-Contacted."""
+        response = client.get("/api/v1/leads", headers=auth_headers)
+        assert response.status_code == 200
+        item = next(i for i in response.json()["items"] if i["lead_id"] == sample_lead.lead_id)
+        assert item["response_status"] == "Not-Contacted"
+
+    def test_response_status_interested_rollup(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """Positive-first: any interested reply makes the whole lead Interested,
+        even when another contact on the same lead replied not_interested."""
+        self._add_reply(db_session, test_tenant, sample_lead, "not_interested")
+        self._add_reply(db_session, test_tenant, sample_lead, "interested")
+
+        response = client.get("/api/v1/leads", headers=auth_headers)
+        item = next(i for i in response.json()["items"] if i["lead_id"] == sample_lead.lead_id)
+        assert item["response_status"] == "Interested"
+
+    def test_response_status_filter_interested(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """response_status=Interested returns the lead; Not-Contacted excludes it."""
+        self._add_reply(db_session, test_tenant, sample_lead, "interested")
+
+        interested = client.get("/api/v1/leads?response_status=Interested", headers=auth_headers)
+        assert interested.status_code == 200
+        assert sample_lead.lead_id in [i["lead_id"] for i in interested.json()["items"]]
+
+        not_contacted = client.get("/api/v1/leads?response_status=Not-Contacted", headers=auth_headers)
+        assert sample_lead.lead_id not in [i["lead_id"] for i in not_contacted.json()["items"]]
+
+    def test_response_status_export_wysiwyg(self, client, auth_headers, db_session, test_tenant, sample_lead):
+        """CSV export carries a Response column whose value matches the list."""
+        self._add_reply(db_session, test_tenant, sample_lead, "interested")
+        resp = client.post("/api/v1/leads/export/csv", json={}, headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.content.decode("utf-8")
+        header = body.splitlines()[0]
+        assert "Response" in header
+        assert "Interested" in body
+
     def test_search_by_campaign_id(self, client, auth_headers, db_session, test_tenant, sample_lead):
         """The search bar finds leads by their associated campaign id (C:<id>)."""
         from app.db.models.campaign import CampaignStatus

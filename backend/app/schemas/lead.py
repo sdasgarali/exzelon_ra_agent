@@ -73,6 +73,8 @@ class LeadResponse(LeadBase):
     campaign_status: Optional[str] = None
     campaign_id: Optional[int] = None
     mailing_status: Optional[str] = None
+    # Lead-level rollup of per-contact inbound reply classifications (Response column).
+    response_status: Optional[str] = None
     metadata: Optional[dict] = None
     intent_score: Optional[int] = None
     intent_signals: Optional[List[str]] = None
