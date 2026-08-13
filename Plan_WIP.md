@@ -22,10 +22,12 @@
 > query_helpers SIZE_OPERATORS) — "operator" there is a filter op, not a role.
 
 ## Immediate TODO
-- [x] Phase 1 — backend rename (committed 3dc642e)
-- [ ] Phase 2 — commit after full suite green
-- [ ] Phase 3 — frontend rename + Role Management tab
-- [ ] Phase 4 — tests + docs + deploy + PR
+- [x] Phase 1 — backend rename (3dc642e)
+- [x] Phase 2 — ENUM→VARCHAR + role_registry + /roles API (93e3413)
+- [x] Phase 3 — frontend rename + Role Management tab (0cddad0)
+- [x] Phase 4 — tests + docs (3a8c2fa). Backend 1334 pass, frontend 70 pass, build OK.
+- [x] Pushed + PR #81 opened. CI pending.
+- [ ] AWAITING USER: merge + deploy to prod (runs the ENUM→VARCHAR migration on live DB).
 
 ## Blockers / Notes
 - Legacy JWT/DB values normalized via LEGACY_ROLE_ALIASES + role_value() in
