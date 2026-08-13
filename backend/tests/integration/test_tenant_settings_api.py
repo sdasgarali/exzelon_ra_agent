@@ -43,7 +43,7 @@ def admin_b(db_session, tenant_b):
 def admin_b_headers(admin_b):
     token = create_access_token(data={
         "sub": admin_b.email,
-        "role": admin_b.role.value,
+        "role": admin_b.role,
         "tenant_id": admin_b.tenant_id,
         "plan": "professional",
     })

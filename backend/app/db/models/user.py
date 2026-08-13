@@ -1,6 +1,6 @@
 """User model with RBAC and multi-tenancy."""
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -29,9 +29,11 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
+    # VARCHAR (not ENUM) so custom/settings-backed roles can be assigned alongside
+    # the built-in UserRole values. Built-in constants still live in UserRole.
     role = Column(
-        Enum(UserRole, values_callable=lambda x: [e.value for e in x]),
-        default=UserRole.RECRUITER,
+        String(50),
+        default=UserRole.RECRUITER.value,
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)

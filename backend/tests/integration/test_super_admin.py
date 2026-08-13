@@ -193,7 +193,7 @@ class TestLastSuperAdminProtection:
 
         # Admin can't delete super_admin at all (separate check)
         from app.core.security import create_access_token
-        admin2_token = create_access_token(data={"sub": admin2.email, "role": admin2.role.value})
+        admin2_token = create_access_token(data={"sub": admin2.email, "role": admin2.role})
         admin2_headers = {"Authorization": f"Bearer {admin2_token}"}
         response = client.delete(
             f"/api/v1/users/{super_admin_user.user_id}",

@@ -617,23 +617,48 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for outreach_role_id: {e}")
 
-    # Migration: ensure role enum includes super_admin
+    # Migration: rename roles (operator→bdm, viewer→recruiter) AND convert the
+    # users.role column from ENUM to VARCHAR(50) so custom (settings-backed) roles
+    # can be assigned. Idempotent + ordered so existing rows never truncate.
     try:
         from sqlalchemy import text as sa_text_role
+        from sqlalchemy import inspect as sa_inspect_role
         if settings.DB_TYPE == "mysql":
             with engine.connect() as conn:
-                try:
+                col = next(
+                    (c for c in sa_inspect_role(engine).get_columns("users") if c["name"] == "role"),
+                    None,
+                )
+                col_type = str(col["type"]).upper() if col else ""
+                if col_type.startswith("ENUM"):
+                    # 1) widen enum to hold BOTH old + new values (avoids truncation on UPDATE)
                     conn.execute(sa_text_role(
                         "ALTER TABLE users MODIFY COLUMN role "
-                        "ENUM('super_admin','admin','operator','viewer') "
-                        "NOT NULL DEFAULT 'viewer'"
+                        "ENUM('super_admin','admin','operator','viewer','bdm','recruiter') "
+                        "NOT NULL DEFAULT 'recruiter'"
+                    ))
+                    # 2) migrate existing rows to the renamed values
+                    conn.execute(sa_text_role("UPDATE users SET role='bdm' WHERE role='operator'"))
+                    conn.execute(sa_text_role("UPDATE users SET role='recruiter' WHERE role='viewer'"))
+                    # 3) convert to VARCHAR so arbitrary custom-role keys are allowed
+                    conn.execute(sa_text_role(
+                        "ALTER TABLE users MODIFY COLUMN role VARCHAR(50) "
+                        "NOT NULL DEFAULT 'recruiter'"
                     ))
                     conn.commit()
-                    logger.info("Migration: updated UserRole enum to super_admin/admin/operator/viewer")
-                except Exception as e2:
-                    logger.debug(f"Role enum migration (may already be done): {e2}")
+                    logger.info(
+                        "Migration: renamed roles (operator→bdm, viewer→recruiter) and "
+                        "converted users.role ENUM→VARCHAR(50)"
+                    )
+                else:
+                    # Already VARCHAR — normalize any lingering legacy values defensively
+                    r1 = conn.execute(sa_text_role("UPDATE users SET role='bdm' WHERE role='operator'"))
+                    r2 = conn.execute(sa_text_role("UPDATE users SET role='recruiter' WHERE role='viewer'"))
+                    conn.commit()
+                    if (r1.rowcount or 0) or (r2.rowcount or 0):
+                        logger.info("Migration: normalized lingering legacy role values to bdm/recruiter")
     except Exception as e:
-        logger.warning(f"Migration check for role enum: {e}")
+        logger.warning(f"Migration check for role column: {e}")
 
     # Migration: ensure lead_status enum includes 'excluded' (pre-enrichment exclusion gate).
     # Without it, persisting an excluded lead raises "Data truncated for column 'lead_status'"

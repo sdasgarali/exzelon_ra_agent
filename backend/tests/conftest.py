@@ -207,7 +207,7 @@ def super_admin_token(super_admin_user):
     """Create a super admin JWT token."""
     return create_access_token(data={
         "sub": super_admin_user.email,
-        "role": super_admin_user.role.value,
+        "role": super_admin_user.role,
         "tenant_id": None,
         "plan": None,
     })
@@ -218,7 +218,7 @@ def admin_token(admin_user):
     """Create an admin JWT token."""
     return create_access_token(data={
         "sub": admin_user.email,
-        "role": admin_user.role.value,
+        "role": admin_user.role,
         "tenant_id": admin_user.tenant_id,
         "plan": "enterprise",
     })
@@ -229,7 +229,7 @@ def operator_token(operator_user):
     """Create an operator JWT token."""
     return create_access_token(data={
         "sub": operator_user.email,
-        "role": operator_user.role.value,
+        "role": operator_user.role,
         "tenant_id": operator_user.tenant_id,
         "plan": "enterprise",
     })
@@ -240,7 +240,7 @@ def viewer_token(viewer_user):
     """Create a viewer JWT token."""
     return create_access_token(data={
         "sub": viewer_user.email,
-        "role": viewer_user.role.value,
+        "role": viewer_user.role,
         "tenant_id": viewer_user.tenant_id,
         "plan": "enterprise",
     })

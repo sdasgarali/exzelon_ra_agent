@@ -36,16 +36,37 @@ def role_value(user: "User") -> str:
 BUILTIN_ROLE_VALUES = {r.value for r in UserRole}
 
 
-def effective_base_role(user: "User", rv: Optional[str] = None) -> str:
+def effective_base_role(user: "User", rv: Optional[str] = None, db: Optional[Session] = None) -> str:
     """Resolve a role key to a built-in base role for coarse ``require_role`` checks.
 
     Built-in roles map to themselves. Custom (settings-backed) roles resolve to
-    their declared ``base_role`` via the role registry — wired in Phase 2. Until
-    then this returns the normalized role value unchanged.
+    their declared ``base_role`` via the role registry (needs ``db``); without a
+    session, an unknown key returns unchanged.
     """
     if rv is None:
         rv = role_value(user)
+    if rv in BUILTIN_ROLE_VALUES:
+        return rv
+    if db is not None:
+        try:
+            from app.services.role_registry import resolve_base_role
+            return resolve_base_role(db, getattr(user, "tenant_id", None), rv)
+        except Exception:
+            return rv
     return rv
+
+
+def _role_matrix_config(db: Session, user: "User", role_perms: dict):
+    """Return the permission-matrix row for the user's role.
+
+    A custom role with no explicit row inherits its base_role's row so it is
+    enforceable the moment it is created.
+    """
+    rv = role_value(user)
+    cfg = role_perms.get(rv)
+    if cfg is None and rv not in BUILTIN_ROLE_VALUES:
+        cfg = role_perms.get(effective_base_role(user, rv, db))
+    return cfg if cfg is not None else {}
 
 
 async def get_current_user(
@@ -123,14 +144,15 @@ def require_role(allowed_roles: List[UserRole]):
     Super admins bypass all role checks automatically.
     """
     async def role_checker(
-        current_user: User = Depends(get_current_active_user)
+        current_user: User = Depends(get_current_active_user),
+        db: Session = Depends(get_db),
     ) -> User:
         rv = role_value(current_user)
         # Super admin bypasses all role checks
         if rv == UserRole.SUPER_ADMIN.value:
             return current_user
         # Custom roles are enforced through their base_role for coarse checks.
-        effective = effective_base_role(current_user, rv)
+        effective = effective_base_role(current_user, rv, db)
         allowed = {r.value for r in allowed_roles}
         if effective not in allowed and rv not in allowed:
             raise HTTPException(
@@ -156,7 +178,7 @@ def get_module_tab_access(db: Session, user: User, module_key: str, tab_key: str
     if not role_perms or not isinstance(role_perms, dict):
         return 'no_access'
 
-    role_config = role_perms.get(role_value(user), {})
+    role_config = _role_matrix_config(db, user, role_perms)
     module_perm = role_config.get(module_key)
 
     if module_perm is None:
@@ -196,8 +218,7 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
     if not role_perms or not isinstance(role_perms, dict):
         return {tab: 'no_access' for tab in tabs}
 
-    role_name = role_value(user)
-    role_config = role_perms.get(role_name, {})
+    role_config = _role_matrix_config(db, user, role_perms)
     settings_perm = role_config.get('settings')
 
     if settings_perm is None:
@@ -241,7 +262,7 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
     # Layer 2: Role-based permissions
     role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
     if role_perms and isinstance(role_perms, dict):
-        role_config = role_perms.get(role_value(user), {})
+        role_config = _role_matrix_config(db, user, role_perms)
         if module_key in role_config:
             perm = role_config[module_key]
             # Could be a string or a dict (for modules with independent tabs)
@@ -263,7 +284,7 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
         'bdm': 'read_write',
         'recruiter': 'read',
     }
-    return defaults.get(role_value(user), 'no_access')
+    return defaults.get(effective_base_role(user, role_value(user), db), 'no_access')
 
 
 def require_module_permission(module_key: str, min_level: str):

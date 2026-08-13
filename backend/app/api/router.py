@@ -11,6 +11,7 @@ from app.api.endpoints import (
     reply_macros, notifications, calendar, credits, goals, visitor_tracking,
     sms, objections, dfy, email_preview, deliverability,
     outreach_roles, reports, lob, company_exclusions,
+    roles,
 )
 
 api_router = APIRouter()
@@ -51,6 +52,7 @@ api_router.include_router(spam_check.router)
 api_router.include_router(admin_tenants.router)
 api_router.include_router(billing.router)
 api_router.include_router(activity_log.router)
+api_router.include_router(roles.router)
 api_router.include_router(onboarding.router)
 # Phase 1 Quick Wins
 api_router.include_router(reply_macros.router)
