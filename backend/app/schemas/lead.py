@@ -75,6 +75,9 @@ class LeadResponse(LeadBase):
     mailing_status: Optional[str] = None
     # Lead-level rollup of per-contact inbound reply classifications (Response column).
     response_status: Optional[str] = None
+    # Manual overrides (set via bulk-update for Mailed-Offline leads); win over derived.
+    mailing_status_override: Optional[str] = None
+    response_status_override: Optional[str] = None
     metadata: Optional[dict] = None
     intent_score: Optional[int] = None
     intent_signals: Optional[List[str]] = None

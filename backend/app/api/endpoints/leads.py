@@ -139,6 +139,41 @@ def response_status_label(best_category: Optional[str], has_reply: bool, has_out
     return "Not-Contacted"
 
 
+# Values an RA may set by hand (bulk-update modal) for Mailed-Offline leads — leads
+# with no campaign / inbox reply to derive from. A set override wins over the derived
+# value everywhere (display, export, filter, sort).
+MAILING_STATUS_OVERRIDE_OPTIONS = [
+    "Not-Mailed", "Mailed-Offline", "Follow-Up-Sent", "Bounced", "No-Valid-Email",
+]
+RESPONSE_STATUS_OVERRIDE_OPTIONS = [
+    "Interested", "Referral", "Question", "Not-Interested", "Do-Not-Contact", "OOO", "Other",
+]
+# Sort ordinals over the full Mailing-Status label space (derived + override-only labels).
+_MAILING_SORT_ORDINAL = {
+    "Campaign-Active": 0, "Campaign-Paused": 1, "Campaign-Draft": 2, "Campaign-Closed": 3,
+    "Mailed-Offline": 4, "Follow-Up-Sent": 5, "Bounced": 6, "No-Valid-Email": 7, "Not-Mailed": 8,
+}
+# Response override label -> the same ordinal used for reply categories (0..6).
+_RESPONSE_OVERRIDE_ORDINAL = {
+    "Interested": 0, "Referral": 1, "Question": 2, "Not-Interested": 3,
+    "Do-Not-Contact": 4, "OOO": 5, "Other": 6,
+}
+
+
+def effective_mailing_status(lead, campaign_status) -> str:
+    """Override wins; otherwise the campaign/download-derived Mailing-Status."""
+    return getattr(lead, "mailing_status_override", None) or mailing_status_label(
+        campaign_status, lead.downloaded_at
+    )
+
+
+def effective_response_status(lead, best_category, has_reply, has_outreach) -> str:
+    """Override wins; otherwise the reply-rollup-derived Response."""
+    return getattr(lead, "response_status_override", None) or response_status_label(
+        best_category, has_reply, has_outreach
+    )
+
+
 def _response_rollup_for_leads(db, lead_ids, tenant_id):
     """Batch-derive the Response inputs for a set of lead_ids (no N+1).
 
@@ -293,34 +328,52 @@ def _apply_lead_filters(
                 _Camp.status.in_(statuses),
             ).distinct()
 
+        # Override wins over the derived label: a lead matches L if override==L, or
+        # (override is null AND the derived condition holds). Override-only labels
+        # (Follow-Up-Sent/Bounced/No-Valid-Email) match on the override alone.
+        _ovr = LeadDetails.mailing_status_override
+        _no_ovr = _ovr.is_(None)
         ms = mailing_status
         if ms == "Campaign-Active":
-            query = query.filter(LeadDetails.lead_id.in_(_ids_in("active")))
+            query = query.filter(_no_ovr, LeadDetails.lead_id.in_(_ids_in("active")))
         elif ms == "Campaign-Paused":
             query = query.filter(
+                _no_ovr,
                 LeadDetails.lead_id.in_(_ids_in("paused")),
                 ~LeadDetails.lead_id.in_(_ids_in("active")),
             )
         elif ms == "Campaign-Draft":
             query = query.filter(
+                _no_ovr,
                 LeadDetails.lead_id.in_(_ids_in("draft")),
                 ~LeadDetails.lead_id.in_(_ids_in("active", "paused")),
             )
         elif ms == "Campaign-Closed":
             query = query.filter(
+                _no_ovr,
                 LeadDetails.lead_id.in_(_ids_in("completed")),
                 ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft")),
             )
         elif ms == "Mailed-Offline":
-            query = query.filter(
-                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
-                LeadDetails.downloaded_at.isnot(None),
-            )
+            query = query.filter(or_(
+                _ovr == "Mailed-Offline",
+                and_(
+                    _no_ovr,
+                    ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                    LeadDetails.downloaded_at.isnot(None),
+                ),
+            ))
         elif ms == "Not-Mailed":
-            query = query.filter(
-                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
-                LeadDetails.downloaded_at.is_(None),
-            )
+            query = query.filter(or_(
+                _ovr == "Not-Mailed",
+                and_(
+                    _no_ovr,
+                    ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                    LeadDetails.downloaded_at.is_(None),
+                ),
+            ))
+        elif ms in ("Follow-Up-Sent", "Bounced", "No-Valid-Email"):
+            query = query.filter(_ovr == ms)
 
     # Response filter — mirrors the derived Response column (response_status_label).
     # A classified label (e.g. "Referral") means the lead's *best* reply category is
@@ -357,53 +410,75 @@ def _apply_lead_filters(
                 q = q.filter(OutreachEvent.tenant_id == tenant_id)
             return q.distinct()
 
+        # Override wins over the derived rollup: match override==L, or (override null
+        # AND derived condition). The auto-only labels (Replied/No-Response/Not-Contacted)
+        # only apply when there is no override.
+        _rovr = LeadDetails.response_status_override
+        _rno = _rovr.is_(None)
         rs = response_status
         if rs == "Interested":
-            query = query.filter(LeadDetails.lead_id.in_(_cat_ids("interested")))
+            query = query.filter(or_(
+                _rovr == "Interested",
+                and_(_rno, LeadDetails.lead_id.in_(_cat_ids("interested"))),
+            ))
         elif rs == "Referral":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("referral")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested")),
-            )
+            query = query.filter(or_(
+                _rovr == "Referral",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("referral")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested"))),
+            ))
         elif rs == "Question":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("question")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral")),
-            )
+            query = query.filter(or_(
+                _rovr == "Question",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("question")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral"))),
+            ))
         elif rs == "Not-Interested":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("not_interested")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question")),
-            )
+            query = query.filter(or_(
+                _rovr == "Not-Interested",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("not_interested")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question"))),
+            ))
         elif rs == "Do-Not-Contact":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("do_not_contact")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested")),
-            )
+            query = query.filter(or_(
+                _rovr == "Do-Not-Contact",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("do_not_contact")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested"))),
+            ))
         elif rs == "OOO":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("ooo")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact")),
-            )
+            query = query.filter(or_(
+                _rovr == "OOO",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("ooo")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact"))),
+            ))
         elif rs == "Other":
-            query = query.filter(
-                LeadDetails.lead_id.in_(_cat_ids("other")),
-                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact", "ooo")),
-            )
+            query = query.filter(or_(
+                _rovr == "Other",
+                and_(_rno,
+                     LeadDetails.lead_id.in_(_cat_ids("other")),
+                     ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact", "ooo"))),
+            ))
         elif rs == "Replied":
-            # Reply detected but no usable classification.
+            # Reply detected but no usable classification (and not overridden).
             query = query.filter(
+                _rno,
                 LeadDetails.lead_id.in_(_replied_ids()),
                 ~LeadDetails.lead_id.in_(_cat_ids(*_RESPONSE_ALL_CATEGORIES)),
             )
         elif rs == "No-Response":
             query = query.filter(
+                _rno,
                 LeadDetails.lead_id.in_(_outreach_ids()),
                 ~LeadDetails.lead_id.in_(_replied_ids()),
                 ~LeadDetails.lead_id.in_(_cat_ids(*_RESPONSE_ALL_CATEGORIES)),
             )
         elif rs == "Not-Contacted":
-            query = query.filter(~LeadDetails.lead_id.in_(_outreach_ids()))
+            query = query.filter(_rno, ~LeadDetails.lead_id.in_(_outreach_ids()))
 
     if source:
         query = query.filter(LeadDetails.source == source)
@@ -680,10 +755,16 @@ async def list_leads(
                 _Camp.is_archived == False,
             ).group_by(_CC.lead_id).subquery()
             query = query.outerjoin(camp_pri_sub, LeadDetails.lead_id == camp_pri_sub.c.lead_id)
+            # Override wins (incl. offline-only labels); else campaign(0-3)/offline(4)/not-mailed(8).
             mailing_ord = case(
+                (LeadDetails.mailing_status_override == "Not-Mailed", 8),
+                (LeadDetails.mailing_status_override == "Mailed-Offline", 4),
+                (LeadDetails.mailing_status_override == "Follow-Up-Sent", 5),
+                (LeadDetails.mailing_status_override == "Bounced", 6),
+                (LeadDetails.mailing_status_override == "No-Valid-Email", 7),
                 (camp_pri_sub.c.best_pri.isnot(None), camp_pri_sub.c.best_pri),
                 (LeadDetails.downloaded_at.isnot(None), 4),
-                else_=5,
+                else_=8,
             )
             primary = asc(mailing_ord) if sort_order == "asc" else desc(mailing_ord)
         else:
@@ -731,6 +812,13 @@ async def list_leads(
             resp_cat_sub, LeadDetails.lead_id == resp_cat_sub.c.lead_id
         ).outerjoin(ev_sub, LeadDetails.lead_id == ev_sub.c.lead_id)
         resp_ord = case(
+            (LeadDetails.response_status_override == "Interested", 0),
+            (LeadDetails.response_status_override == "Referral", 1),
+            (LeadDetails.response_status_override == "Question", 2),
+            (LeadDetails.response_status_override == "Not-Interested", 3),
+            (LeadDetails.response_status_override == "Do-Not-Contact", 4),
+            (LeadDetails.response_status_override == "OOO", 5),
+            (LeadDetails.response_status_override == "Other", 6),
             (resp_cat_sub.c.best_cat_ord.isnot(None), resp_cat_sub.c.best_cat_ord),
             (ev_sub.c.has_reply == 1, 7),
             (func.coalesce(ev_sub.c.ev_count, 0) > 0, 8),
@@ -827,8 +915,9 @@ async def list_leads(
         _cstatus = campaign_status_map.get(lead.lead_id)
         lead_dict['campaign_status'] = _cstatus
         lead_dict['campaign_id'] = campaign_id_map.get(lead.lead_id)
-        lead_dict['mailing_status'] = mailing_status_label(_cstatus, lead.downloaded_at)
-        lead_dict['response_status'] = response_status_label(
+        lead_dict['mailing_status'] = effective_mailing_status(lead, _cstatus)
+        lead_dict['response_status'] = effective_response_status(
+            lead,
             response_category_map.get(lead.lead_id),
             lead.lead_id in replied_lead_ids,
             lead.lead_id in outreach_lead_ids,
@@ -1273,8 +1362,9 @@ def _export_leads_stream(db: Session, lead_query):
                     lead.employer_website or "",
                     lead.created_at.isoformat() if lead.created_at else "",
                     lead.downloaded_at.isoformat() if lead.downloaded_at else "",
-                    mailing_status_label(camp_status_map.get(lead.lead_id), lead.downloaded_at),
-                    response_status_label(
+                    effective_mailing_status(lead, camp_status_map.get(lead.lead_id)),
+                    effective_response_status(
+                        lead,
                         resp_category_map.get(lead.lead_id),
                         lead.lead_id in batch_replied_ids,
                         lead.lead_id in batch_outreach_ids,
@@ -2239,7 +2329,11 @@ async def bulk_update_leads(
     """Bulk update multiple leads. Super Admin only.
 
     Body: { "lead_ids": [...], "updates": { "field": "value", ... } }
-    Only non-null fields in updates are applied.
+
+    ``data_type`` applies to every selected lead. The Mailed-Offline fields
+    (``mailing_status_override``, ``response_status_override``, ``enroll_campaign_id``)
+    apply ONLY to selected leads whose current Mailing-Status is Mailed-Offline
+    (downloaded, no campaign); other leads are skipped and reported.
     """
     lead_ids = request.get("lead_ids", [])
     updates = request.get("updates", {})
@@ -2249,29 +2343,129 @@ async def bulk_update_leads(
     if not updates:
         raise HTTPException(status_code=400, detail="No update fields provided")
 
-    ALLOWED_FIELDS = {"data_type"}
-    filtered = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS and v is not None and v != ""}
+    # Global field(s) — applied to every selected lead.
+    global_fields = {k: v for k, v in updates.items() if k == "data_type" and v not in (None, "")}
 
-    if not filtered:
+    # Mailed-Offline-scoped fields.
+    mailing_override = updates.get("mailing_status_override") or None
+    response_override = updates.get("response_status_override") or None
+    enroll_campaign_id = updates.get("enroll_campaign_id") or None
+
+    if mailing_override and mailing_override not in MAILING_STATUS_OVERRIDE_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid Mailing-Status value: {mailing_override}")
+    if response_override and response_override not in RESPONSE_STATUS_OVERRIDE_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid Response value: {response_override}")
+    if enroll_campaign_id is not None:
+        try:
+            enroll_campaign_id = int(enroll_campaign_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="enroll_campaign_id must be an integer")
+
+    offline_fields_requested = bool(mailing_override or response_override or enroll_campaign_id)
+    if not global_fields and not offline_fields_requested:
         raise HTTPException(status_code=400, detail="No valid update fields provided")
 
     query = db.query(LeadDetails).filter(LeadDetails.lead_id.in_(lead_ids))
     query = tenant_filter(query, LeadDetails, tenant_id)
     leads = query.all()
-
     if not leads:
         raise HTTPException(status_code=404, detail="No leads found with provided IDs")
 
+    # If enrolling, validate the campaign belongs to this tenant up front.
+    if enroll_campaign_id is not None:
+        from app.db.models.campaign import Campaign as _Camp
+        camp = db.query(_Camp).filter(_Camp.campaign_id == enroll_campaign_id).first()
+        if not camp or (tenant_id is not None and camp.tenant_id != tenant_id):
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Determine which selected leads are currently Mailed-Offline (downloaded, no
+    # non-archived campaign) — the eligible set for the scoped fields.
+    eligible_ids: set[int] = set()
+    if offline_fields_requested:
+        from app.db.models.campaign import Campaign as _Camp2, CampaignContact as _CC2
+        leads_with_campaign = {
+            r[0] for r in db.query(_CC2.lead_id).join(
+                _Camp2, _CC2.campaign_id == _Camp2.campaign_id
+            ).filter(
+                _CC2.lead_id.in_(lead_ids),
+                _CC2.lead_id.isnot(None),
+                _Camp2.is_archived == False,
+            ).distinct().all()
+        }
+        eligible_ids = {
+            ld.lead_id for ld in leads
+            if ld.downloaded_at is not None and ld.lead_id not in leads_with_campaign
+        }
+
+    enrolled_count = 0
+    changed_ids: set[int] = set()
     try:
+        # Global fields on every selected lead.
         for lead in leads:
-            for field, value in filtered.items():
+            for field, value in global_fields.items():
                 setattr(lead, field, value)
+                changed_ids.add(lead.lead_id)
+
+        # Scoped overrides on eligible leads only.
+        if mailing_override or response_override:
+            for lead in leads:
+                if lead.lead_id not in eligible_ids:
+                    continue
+                if mailing_override:
+                    lead.mailing_status_override = mailing_override
+                if response_override:
+                    lead.response_status_override = response_override
+                changed_ids.add(lead.lead_id)
+                _audit(
+                    db, "lead", lead.lead_id, "bulk_update_offline",
+                    changed_fields={
+                        k: v for k, v in {
+                            "mailing_status_override": mailing_override,
+                            "response_status_override": response_override,
+                        }.items() if v
+                    },
+                    changed_by=getattr(current_user, "email", None),
+                    tenant_id=tenant_id or 1,
+                )
+
+        # Real campaign enrollment for eligible leads' contacts.
+        if enroll_campaign_id is not None and eligible_ids:
+            contact_ids: set[int] = set()
+            for r in db.query(LeadContactAssociation.contact_id).filter(
+                LeadContactAssociation.lead_id.in_(eligible_ids)
+            ).all():
+                contact_ids.add(r[0])
+            for r in db.query(ContactDetails.contact_id).filter(
+                ContactDetails.lead_id.in_(eligible_ids)
+            ).all():
+                contact_ids.add(r[0])
+            if contact_ids:
+                from app.services.campaign_engine import enroll_contacts as _enroll
+                result = _enroll(enroll_campaign_id, list(contact_ids), db)
+                enrolled_count = result.get("enrolled", 0) if isinstance(result, dict) else 0
+                changed_ids.update(eligible_ids)
+
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
 
-    return {"message": f"Updated {len(leads)} lead(s)", "updated_count": len(leads)}
+    skipped_count = (len(leads) - len(eligible_ids)) if offline_fields_requested else 0
+    msg = f"Updated {len(changed_ids)} lead(s)"
+    if offline_fields_requested and skipped_count:
+        msg += f" — {skipped_count} skipped (not Mailed-Offline)"
+    if enroll_campaign_id is not None:
+        msg += f"; enrolled {enrolled_count} contact(s)"
+    return {
+        "message": msg,
+        "updated_count": len(changed_ids),
+        "offline_eligible_count": len(eligible_ids) if offline_fields_requested else 0,
+        "skipped_count": skipped_count,
+        "enrolled_count": enrolled_count,
+    }
 
 
 @router.post("/bulk/enrich/preview")
