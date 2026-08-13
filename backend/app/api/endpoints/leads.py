@@ -23,7 +23,8 @@ from app.db.models.lead import LeadDetails, LeadStatus, CLOSED_STATUSES
 from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
-from app.db.models.outreach import OutreachEvent
+from app.db.models.outreach import OutreachEvent, OutreachStatus
+from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.schemas.lead import LeadCreate, LeadUpdate, LeadResponse, LeadListResponse
 from app.schemas.contact import ContactResponse
 from app.schemas.outreach import OutreachEventResponse
@@ -96,6 +97,99 @@ def mailing_status_label(campaign_status: Optional[str], downloaded_at) -> str:
     return "Not-Mailed"
 
 
+# Response-column rollup: one lead has many contacts, each contact's inbound reply
+# is classified on InboxMessage.category. We roll those up to a single lead-level
+# label using a POSITIVE-FIRST precedence (an "interested" reply from ANY contact
+# makes the whole lead "Interested"), because interested leads are the worklist RAs
+# prioritize for candidate matching. Lower rank wins.
+_RESPONSE_CATEGORY_PRIORITY = {
+    "interested": 0,
+    "referral": 1,
+    "question": 2,
+    "not_interested": 3,
+    "do_not_contact": 4,
+    "ooo": 5,
+    "other": 6,
+}
+_RESPONSE_CATEGORY_LABEL = {
+    "interested": "Interested",
+    "referral": "Referral",
+    "question": "Question",
+    "not_interested": "Not-Interested",
+    "do_not_contact": "Do-Not-Contact",
+    "ooo": "OOO",
+    "other": "Other",
+}
+# All classifiable categories, used by the filter to exclude "usable classification".
+_RESPONSE_ALL_CATEGORIES = tuple(_RESPONSE_CATEGORY_LABEL.keys())
+
+
+def response_status_label(best_category: Optional[str], has_reply: bool, has_outreach: bool) -> str:
+    """Derive the lead-level Response label from its best (highest-precedence)
+    classified reply category plus whether any reply / any outreach exists.
+
+    Falls through classified category -> generic replied -> awaiting -> never contacted.
+    """
+    if best_category in _RESPONSE_CATEGORY_LABEL:
+        return _RESPONSE_CATEGORY_LABEL[best_category]
+    if has_reply:
+        return "Replied"
+    if has_outreach:
+        return "No-Response"
+    return "Not-Contacted"
+
+
+def _response_rollup_for_leads(db, lead_ids, tenant_id):
+    """Batch-derive the Response inputs for a set of lead_ids (no N+1).
+
+    Returns ``(category_map, replied_ids, outreach_ids)`` where ``category_map``
+    holds each lead's best (highest-precedence) classified reply category, and the
+    two sets flag leads with any reply / any outreach. Shared by the list view and
+    the CSV export so both stay WYSIWYG.
+    """
+    category_map: dict[int, str] = {}
+    replied_ids: set[int] = set()
+    outreach_ids: set[int] = set()
+    if not lead_ids:
+        return category_map, replied_ids, outreach_ids
+
+    # (A) Classified replies: RECEIVED InboxMessage.category, attributed to the lead
+    #     the outreach was sent for via outreach_event_id -> OutreachEvent.lead_id.
+    reply_q = db.query(OutreachEvent.lead_id, InboxMessage.category).join(
+        InboxMessage, InboxMessage.outreach_event_id == OutreachEvent.event_id
+    ).filter(
+        OutreachEvent.lead_id.in_(lead_ids),
+        InboxMessage.direction == MessageDirection.RECEIVED,
+        InboxMessage.is_deleted == False,
+        InboxMessage.category.isnot(None),
+    )
+    if tenant_id is not None:
+        reply_q = reply_q.filter(OutreachEvent.tenant_id == tenant_id)
+    for lid, cat in reply_q.all():
+        if lid is None:
+            continue
+        replied_ids.add(lid)
+        existing = category_map.get(lid)
+        if existing is None or _RESPONSE_CATEGORY_PRIORITY.get(cat, 99) < _RESPONSE_CATEGORY_PRIORITY.get(existing, 99):
+            category_map[lid] = cat
+
+    # (B)+(C) Any outreach at all, plus reply-detected (status REPLIED) — one pass.
+    ev_q = db.query(OutreachEvent.lead_id, OutreachEvent.status).filter(
+        OutreachEvent.lead_id.in_(lead_ids)
+    )
+    if tenant_id is not None:
+        ev_q = ev_q.filter(OutreachEvent.tenant_id == tenant_id)
+    for lid, ev_status in ev_q.all():
+        if lid is None:
+            continue
+        outreach_ids.add(lid)
+        status_val = ev_status.value if hasattr(ev_status, 'value') else ev_status
+        if status_val == OutreachStatus.REPLIED.value:
+            replied_ids.add(lid)
+
+    return category_map, replied_ids, outreach_ids
+
+
 def _campaign_fields_for_lead(db, lead):
     """Return (campaign_status, campaign_id, mailing_status) for a single lead.
 
@@ -146,6 +240,8 @@ def _apply_lead_filters(
     extracted_from: Optional[date] = None,
     extracted_to: Optional[date] = None,
     downloaded: Optional[str] = None,
+    mailing_status: Optional[str] = None,
+    response_status: Optional[str] = None,
     lob_id: Optional[int] = None,
     search: Optional[str] = None,
     show_archived: bool = False,
@@ -181,6 +277,134 @@ def _apply_lead_filters(
             query = query.filter(LeadDetails.lead_id.in_(db.query(camp_lead_ids_sq)))
         else:
             query = query.filter(LeadDetails.lead_status == status)
+
+    # Mailing-Status filter — mirrors the derived column (mailing_status_label).
+    # Priority active > paused > draft > completed, so e.g. "Campaign-Paused"
+    # means the lead's *best* campaign status is paused (not also active).
+    if mailing_status:
+        from app.db.models.campaign import Campaign as _Camp, CampaignContact as _CC
+
+        def _ids_in(*statuses):
+            return db.query(_CC.lead_id).join(
+                _Camp, _CC.campaign_id == _Camp.campaign_id
+            ).filter(
+                _CC.lead_id.isnot(None),
+                _Camp.is_archived == False,
+                _Camp.status.in_(statuses),
+            ).distinct()
+
+        ms = mailing_status
+        if ms == "Campaign-Active":
+            query = query.filter(LeadDetails.lead_id.in_(_ids_in("active")))
+        elif ms == "Campaign-Paused":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("paused")),
+                ~LeadDetails.lead_id.in_(_ids_in("active")),
+            )
+        elif ms == "Campaign-Draft":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("draft")),
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused")),
+            )
+        elif ms == "Campaign-Closed":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_ids_in("completed")),
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft")),
+            )
+        elif ms == "Mailed-Offline":
+            query = query.filter(
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                LeadDetails.downloaded_at.isnot(None),
+            )
+        elif ms == "Not-Mailed":
+            query = query.filter(
+                ~LeadDetails.lead_id.in_(_ids_in("active", "paused", "draft", "completed")),
+                LeadDetails.downloaded_at.is_(None),
+            )
+
+    # Response filter — mirrors the derived Response column (response_status_label).
+    # A classified label (e.g. "Referral") means the lead's *best* reply category is
+    # that one, so higher-precedence categories are excluded (positive-first rollup).
+    if response_status:
+        def _cat_ids(*cats):
+            """Lead ids that have >=1 received, classified reply in `cats`."""
+            q = db.query(OutreachEvent.lead_id).join(
+                InboxMessage, InboxMessage.outreach_event_id == OutreachEvent.event_id
+            ).filter(
+                OutreachEvent.lead_id.isnot(None),
+                InboxMessage.direction == MessageDirection.RECEIVED,
+                InboxMessage.is_deleted == False,
+                InboxMessage.category.in_(cats),
+            )
+            if tenant_id is not None:
+                q = q.filter(OutreachEvent.tenant_id == tenant_id)
+            return q.distinct()
+
+        def _replied_ids():
+            """Lead ids with a reply detected (status REPLIED)."""
+            q = db.query(OutreachEvent.lead_id).filter(
+                OutreachEvent.lead_id.isnot(None),
+                OutreachEvent.status == OutreachStatus.REPLIED,
+            )
+            if tenant_id is not None:
+                q = q.filter(OutreachEvent.tenant_id == tenant_id)
+            return q.distinct()
+
+        def _outreach_ids():
+            """Lead ids with any outreach event at all."""
+            q = db.query(OutreachEvent.lead_id).filter(OutreachEvent.lead_id.isnot(None))
+            if tenant_id is not None:
+                q = q.filter(OutreachEvent.tenant_id == tenant_id)
+            return q.distinct()
+
+        rs = response_status
+        if rs == "Interested":
+            query = query.filter(LeadDetails.lead_id.in_(_cat_ids("interested")))
+        elif rs == "Referral":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("referral")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested")),
+            )
+        elif rs == "Question":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("question")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral")),
+            )
+        elif rs == "Not-Interested":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("not_interested")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question")),
+            )
+        elif rs == "Do-Not-Contact":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("do_not_contact")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested")),
+            )
+        elif rs == "OOO":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("ooo")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact")),
+            )
+        elif rs == "Other":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_cat_ids("other")),
+                ~LeadDetails.lead_id.in_(_cat_ids("interested", "referral", "question", "not_interested", "do_not_contact", "ooo")),
+            )
+        elif rs == "Replied":
+            # Reply detected but no usable classification.
+            query = query.filter(
+                LeadDetails.lead_id.in_(_replied_ids()),
+                ~LeadDetails.lead_id.in_(_cat_ids(*_RESPONSE_ALL_CATEGORIES)),
+            )
+        elif rs == "No-Response":
+            query = query.filter(
+                LeadDetails.lead_id.in_(_outreach_ids()),
+                ~LeadDetails.lead_id.in_(_replied_ids()),
+                ~LeadDetails.lead_id.in_(_cat_ids(*_RESPONSE_ALL_CATEGORIES)),
+            )
+        elif rs == "Not-Contacted":
+            query = query.filter(~LeadDetails.lead_id.in_(_outreach_ids()))
+
     if source:
         query = query.filter(LeadDetails.source == source)
     if state:
@@ -290,18 +514,32 @@ def _apply_lead_filters(
     if lob_id is not None:
         query = query.filter(LeadDetails.lob_id == lob_id)
     if search:
-        # Support searching by numeric ID or run ID (e.g. "42", "#42", "R42", "run:42")
+        # Support searching by numeric ID, run ID, or campaign ID
+        # (e.g. "42", "#42", "R42", "run:42", "campaign:42", "c:42").
+        from app.db.models.campaign import CampaignContact as _CCSearch
+        search_l = search.lower().strip()
         search_stripped = search.lstrip('#').strip()
-        run_prefix = search.lower().startswith('r') or search.lower().startswith('run:')
-        run_num = search.lstrip('rRunRUN:').strip() if run_prefix else None
-        if run_num and run_num.isdigit():
+        camp_prefix = search_l.startswith('campaign:') or search_l.startswith('c:')
+        camp_num = search.split(':', 1)[1].strip() if (camp_prefix and ':' in search) else None
+        run_prefix = search_l.startswith('r') or search_l.startswith('run:')
+        run_num = search.lstrip('rRunRUN:').strip() if (run_prefix and not camp_prefix) else None
+
+        def _campaign_lead_ids(cid):
+            return db.query(_CCSearch.lead_id).filter(
+                _CCSearch.campaign_id == cid, _CCSearch.lead_id.isnot(None)
+            ).distinct()
+
+        if camp_num and camp_num.isdigit():
+            query = query.filter(LeadDetails.lead_id.in_(_campaign_lead_ids(int(camp_num))))
+        elif run_num and run_num.isdigit():
             query = query.filter(LeadDetails.run_id == int(run_num))
         elif search_stripped.isdigit():
-            # Could be lead_id or run_id — match either
+            # Plain number — match lead_id, run_id, or the associated campaign_id
             num_val = int(search_stripped)
             query = query.filter(
                 (LeadDetails.lead_id == num_val) |
-                (LeadDetails.run_id == num_val)
+                (LeadDetails.run_id == num_val) |
+                (LeadDetails.lead_id.in_(_campaign_lead_ids(num_val)))
             )
         else:
             # Find lead IDs that have contacts matching the search email
@@ -347,6 +585,8 @@ async def list_leads(
     extracted_from: Optional[date] = Query(None, description="Filter leads extracted (created) on or after this date"),
     extracted_to: Optional[date] = Query(None, description="Filter leads extracted (created) on or before this date"),
     downloaded: Optional[str] = Query(None, description="Filter by downloaded status: 'yes' or 'no'"),
+    mailing_status: Optional[str] = Query(None, description="Filter by Mailing-Status label (e.g. Campaign-Active, Mailed-Offline, Not-Mailed)"),
+    response_status: Optional[str] = Query(None, description="Filter by Response label (e.g. Interested, No-Response, Not-Contacted)"),
     lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     search: Optional[str] = None,
     sort_by: Optional[str] = Query("created_at", description="Column to sort by"),
@@ -377,7 +617,9 @@ async def list_leads(
         exclude_keywords=exclude_keywords, title=title,
         from_date=from_date, to_date=to_date,
         extracted_from=extracted_from, extracted_to=extracted_to,
-        downloaded=downloaded, lob_id=lob_id, search=search,
+        downloaded=downloaded, mailing_status=mailing_status,
+        response_status=response_status,
+        lob_id=lob_id, search=search,
         show_archived=show_archived,
         text_params=request.query_params,
     )
@@ -489,6 +731,11 @@ async def list_leads(
                 campaign_status_map[lid] = cstatus_val
                 campaign_id_map[lid] = cid
 
+    # Batch derive the Response rollup (per-contact replies -> one lead-level label)
+    response_category_map, replied_lead_ids, outreach_lead_ids = _response_rollup_for_leads(
+        db, lead_ids, tenant_id
+    )
+
     lead_responses = []
     for lead in leads:
         lead_dict = LeadResponse.model_validate(lead).model_dump()
@@ -502,6 +749,11 @@ async def list_leads(
         lead_dict['campaign_status'] = _cstatus
         lead_dict['campaign_id'] = campaign_id_map.get(lead.lead_id)
         lead_dict['mailing_status'] = mailing_status_label(_cstatus, lead.downloaded_at)
+        lead_dict['response_status'] = response_status_label(
+            response_category_map.get(lead.lead_id),
+            lead.lead_id in replied_lead_ids,
+            lead.lead_id in outreach_lead_ids,
+        )
         lead_dict['lob_id'] = lead.lob_id
         # Parse metadata_json into dict
         if lead.metadata_json:
@@ -775,6 +1027,8 @@ async def export_leads_csv(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     search: Optional[str] = None,
+    mailing_status: Optional[str] = Query(None, description="Filter by Mailing-Status label"),
+    response_status: Optional[str] = Query(None, description="Filter by Response label"),
     show_archived: bool = Query(False, description="Include archived leads"),
     lob_id: Optional[int] = Query(None, description="Filter by Line of Business ID"),
     lead_ids: Optional[List[int]] = Query(None, description="Export only these lead IDs (selected leads)"),
@@ -806,6 +1060,7 @@ async def export_leads_csv(
             lead_query, db, tenant_id,
             status=lead_status, source=source, state=state,
             from_date=from_date, to_date=to_date, search=search,
+            mailing_status=mailing_status, response_status=response_status,
             lob_id=lob_id, show_archived=show_archived,
             text_params=request.query_params if request is not None else {},
         )
@@ -846,7 +1101,7 @@ def _export_leads_stream(db: Session, lead_query):
             "Position Type", "Posting Date", "Job Link", "Source",
             "Lead Status", "Salary Min", "Salary Max", "Industry",
             "Company Size", "Employer LinkedIn", "Employer Website",
-            "Lead Created At", "Downloaded At", "Mailing Status", "Campaign ID",
+            "Lead Created At", "Downloaded At", "Mailing Status", "Response", "Campaign ID",
             # Contact fields
             "Contact ID", "Contact First Name", "Contact Last Name",
             "Contact Title", "Contact Email", "Contact Phone",
@@ -912,6 +1167,12 @@ def _export_leads_stream(db: Session, lead_query):
                     camp_status_map[_lid] = _cval
                     camp_id_map[_lid] = _cid
 
+            # Response rollup per lead (for the Response column) — tenant scope is
+            # already enforced by lead_query; pass None to avoid re-filtering.
+            resp_category_map, batch_replied_ids, batch_outreach_ids = _response_rollup_for_leads(
+                db, lead_ids, None
+            )
+
             for lead in leads:
                 cids = lead_contact_map.get(lead.lead_id, [])
                 lead_row = [
@@ -934,6 +1195,11 @@ def _export_leads_stream(db: Session, lead_query):
                     lead.created_at.isoformat() if lead.created_at else "",
                     lead.downloaded_at.isoformat() if lead.downloaded_at else "",
                     mailing_status_label(camp_status_map.get(lead.lead_id), lead.downloaded_at),
+                    response_status_label(
+                        resp_category_map.get(lead.lead_id),
+                        lead.lead_id in batch_replied_ids,
+                        lead.lead_id in batch_outreach_ids,
+                    ),
                     camp_id_map.get(lead.lead_id) or "",
                 ]
 
@@ -1012,6 +1278,8 @@ class LeadExportRequest(BaseModel):
     extracted_from: Optional[date] = None
     extracted_to: Optional[date] = None
     downloaded: Optional[str] = None
+    mailing_status: Optional[str] = None
+    response_status: Optional[str] = None
     lob_id: Optional[int] = None
     search: Optional[str] = None
     show_archived: bool = False
@@ -1053,7 +1321,9 @@ async def export_leads_csv_post(
             exclude_keywords=body.exclude_keywords, title=body.title,
             from_date=body.from_date, to_date=body.to_date,
             extracted_from=body.extracted_from, extracted_to=body.extracted_to,
-            downloaded=body.downloaded, lob_id=body.lob_id, search=body.search,
+            downloaded=body.downloaded, mailing_status=body.mailing_status,
+            response_status=body.response_status,
+            lob_id=body.lob_id, search=body.search,
             show_archived=body.show_archived,
             text_params=body.model_dump(),
         )

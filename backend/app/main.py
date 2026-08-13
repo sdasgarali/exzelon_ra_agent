@@ -1769,6 +1769,9 @@ async def lifespan(app: FastAPI):
                     ("idx_cd_tenant_client", "contact_details", "(tenant_id, client_name(191))"),
                     ("idx_ld_tenant_status", "lead_details", "(tenant_id, lead_status)"),
                     ("idx_im_tenant_thread", "inbox_messages", "(tenant_id, thread_id)"),
+                    # Response-column rollup: join InboxMessage->OutreachEvent on
+                    # outreach_event_id, filtered by direction+category (RECEIVED replies).
+                    ("idx_im_outreach_event_cat", "inbox_messages", "(outreach_event_id, direction, category)"),
                     ("idx_oe_contact_sent", "outreach_events", "(contact_id, sent_at)"),
                     ("idx_inv_status_due", "invoices", "(status, due_date)"),
                 ]
