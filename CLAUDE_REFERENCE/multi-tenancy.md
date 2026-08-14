@@ -39,6 +39,20 @@ class Tenant:
 - **Admin panel**: `/admin/tenants` — list, detail, update, deactivate tenants
 - **Cross-tenant visibility**: All queries return all tenants' data when `tenant_id=None`
 
+## User ↔ Tenant Binding (`api/endpoints/users.py`)
+
+Every user is bound to exactly ONE tenant, except `super_admin` (global, `tenant_id=NULL`).
+- **Create**: super_admin picks the target tenant (required for non-super-admin roles;
+  NULL for super_admin role); regular admins are forced to their own tenant (body
+  `tenant_id` ignored). Super_admin-role users are always global.
+- **List/get/update/delete**: tenant-scoped — regular admins only see/manage their own
+  tenant's users (404 across tenants, via `_can_access_user`); super_admin sees all with
+  an optional `tenant_id` filter. A non-super-admin caller with a NULL tenant is rejected
+  (400) so `IS NULL`/`NULL==NULL` can never leak global users (`_caller_tenant_id`).
+- **Reassign tenant**: super_admin only; role→super_admin forces NULL; leaving super_admin
+  (or an explicit `tenant_id=null` on a normal role) requires a valid tenant.
+- Frontend: Users page has a Tenant column + a super-admin-only tenant dropdown/filter.
+
 ## Plan Limits
 
 Enforced at CREATE endpoints via `check_plan_limit()` in `api/deps/plan_limits.py`.
