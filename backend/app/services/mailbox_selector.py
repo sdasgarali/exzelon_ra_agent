@@ -182,9 +182,26 @@ def select_best_mailbox(
     eligible_mailboxes = query.all()
 
     if not eligible_mailboxes:
+        # Diagnostic: on the auto path, count otherwise-eligible mailboxes excluded ONLY
+        # by the role gate (no/non-auto_outbound role) so a stalled run is explainable.
+        role_excluded = None
+        if not campaign_mailbox_ids:
+            role_excluded = (
+                db.query(sa_func.count(SenderMailbox.mailbox_id))
+                .filter(
+                    SenderMailbox.is_active == True,  # noqa: E712
+                    SenderMailbox.warmup_status.in_(ELIGIBLE_WARMUP_STATUSES),
+                    SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
+                    SenderMailbox.connection_status == "successful",
+                    SenderMailbox.is_blacklisted == False,  # noqa: E712
+                )
+                .scalar()
+                or 0
+            )
         logger.warning(
             "no_eligible_mailboxes",
             campaign_mailbox_ids=campaign_mailbox_ids,
+            role_gate_excluded=role_excluded,
         )
         return None
 

@@ -865,6 +865,7 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
             SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
             SenderMailbox.connection_status == "successful",
+            SenderMailbox.is_blacklisted == False,  # noqa: E712 — mirror primary selector safety filter
         )
         if mailbox_ids:
             query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))

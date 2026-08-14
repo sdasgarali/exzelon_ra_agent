@@ -58,6 +58,18 @@ class TestAutoSendGating:
         _mailbox(db_session, test_tenant.tenant_id, "only-bdm@x.com", bdm.role_id)
         assert select_best_mailbox([], db_session) is None
 
+    def test_null_role_mailbox_not_auto_selected(self, db_session, test_tenant):
+        # A healthy mailbox with NO outreach role must not auto-send (INNER JOIN drops it).
+        _mailbox(db_session, test_tenant.tenant_id, "norole@x.com", None)
+        assert select_best_mailbox([], db_session) is None
+
+    def test_explicit_blacklisted_mailbox_excluded(self, db_session, roles_and_mailboxes):
+        # Safety filters still apply on the explicit path — a blacklisted mailbox is skipped.
+        bdm_mb = roles_and_mailboxes["bdm_mb"]
+        bdm_mb.is_blacklisted = True
+        db_session.commit()
+        assert select_best_mailbox([bdm_mb.mailbox_id], db_session) is None
+
 
 class TestOutreachRoleAutoOutboundApi:
     def test_create_and_toggle_auto_outbound(self, client, sa_headers, auth_headers):
