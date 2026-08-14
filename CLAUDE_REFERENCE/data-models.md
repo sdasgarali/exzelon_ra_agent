@@ -21,7 +21,8 @@
 - **SequenceStep** — campaign steps (email/wait/condition/sms/linkedin/call) with delay, A/B variants, stats, optional template_id FK
 - **EmailTemplate** — reusable email templates with category (outreach/followup), status (active/inactive), subject, body_html, body_text, industry/goal targeting, is_system flag; one active per category per tenant
 - **CampaignContact** — contact enrollment tracking with current_step, next_send_at, status
-- **SenderMailbox** — email accounts with daily limits, health scores, warmup status
+- **SenderMailbox** — email accounts with daily limits, health scores, warmup status. `outreach_role_id` FK → `OutreachRole`; `user_id` FK → `User` (personal/non-RA mailboxes link 1:1 to a login user; RA/machine mailboxes have none).
+- **OutreachRole** — tenant-scoped mailbox role (RA/BDM/Recruiter, seeded per tenant). `auto_outbound` (bool): mailboxes with an `auto_outbound` role (RA) are the ONLY ones auto-selected for automated cold outbound AND are machine senders with no login user; non-flag roles are personal mailboxes (manual send, linked to a `User`). See `services/mailbox_user_link.py` + `services/mailbox_selector.py`.
 - **OutreachEvent** — email events (sent/opened/clicked/replied/bounced), with campaign_id/step_id/variant_index. **Required**: `channel` (OutreachChannel enum)
 - **OutreachDraft** — email drafts for preview & approve workflow (contact_id, lead_id, campaign_id, step_id, mailbox_id, subject, body_html, status: pending/approved/rejected/sent/expired, source: campaign/pipeline/broadcast, spam_score, deliverability_score, ai_rewritten, batch_id, variant_index)
 
