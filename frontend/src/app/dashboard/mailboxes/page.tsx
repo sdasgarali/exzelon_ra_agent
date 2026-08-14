@@ -178,11 +178,12 @@ export default function MailboxesPage() {
     description: string | null
     purpose: string | null
     is_system: boolean
+    auto_outbound: boolean
     mailbox_count: number
   }
   const [outreachRoles, setOutreachRoles] = useState<OutreachRole[]>([])
   const [showRolesModal, setShowRolesModal] = useState(false)
-  const [roleFormData, setRoleFormData] = useState({ role_name: '', description: '', purpose: '' })
+  const [roleFormData, setRoleFormData] = useState({ role_name: '', description: '', purpose: '', auto_outbound: false })
   const [editingRole, setEditingRole] = useState<OutreachRole | null>(null)
   const [roleSaving, setRoleSaving] = useState(false)
 
@@ -250,8 +251,16 @@ export default function MailboxesPage() {
     auth_method: 'password' as 'password' | 'oauth2',
     oauth_tenant_id: '',
     outreach_role_id: null as number | null,
+    login_password: '',
   })
   const [oauthConnecting, setOauthConnecting] = useState(false)
+
+  // Whether the currently-selected outreach role auto-sends (RA/machine, no login user).
+  const selectedRoleAutoOutbound = (() => {
+    const r = outreachRoles.find(x => x.role_id === formData.outreach_role_id)
+    // No role chosen yet defaults to the RA/auto behavior (backend defaults to RA).
+    return r ? r.auto_outbound : true
+  })()
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState<WizardStep>('select_provider')
@@ -308,6 +317,21 @@ export default function MailboxesPage() {
   useEffect(() => {
     fetchData()
   }, [statusFilter, showArchived])
+
+  // Deep-link from the Users module: /dashboard/mailboxes?add_email=<email> opens the
+  // add wizard prefilled with that email (the backend links it to the existing user).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const addEmail = new URLSearchParams(window.location.search).get('add_email')
+    if (addEmail) {
+      setEditingMailbox(null)
+      setWizardStep('select_provider')
+      setFormData(prev => ({ ...prev, email: addEmail }))
+      setShowAddModal(true)
+      window.history.replaceState({}, '', '/dashboard/mailboxes')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchData = async () => {
     try {
@@ -529,6 +553,10 @@ export default function MailboxesPage() {
         if (formData.auth_method === 'oauth2' && !createData.password) {
           delete (createData as any).password
         }
+        // login_password only applies to personal (non-auto_outbound) mailboxes.
+        if (selectedRoleAutoOutbound || !createData.login_password) {
+          delete (createData as any).login_password
+        }
         await mailboxesApi.create(createData)
       }
       setShowAddModal(false)
@@ -563,6 +591,7 @@ export default function MailboxesPage() {
       auth_method: (mailbox.auth_method || 'password') as 'password' | 'oauth2',
       oauth_tenant_id: mailbox.oauth_tenant_id || '',
       outreach_role_id: mailbox.outreach_role_id,
+      login_password: '',
     })
     // Populate signature fields from saved JSON, backfill empty fields from tenant
     const displayName = mailbox.display_name || [mailbox.sender_first_name, mailbox.sender_last_name].filter(Boolean).join(' ')
@@ -708,6 +737,7 @@ export default function MailboxesPage() {
       auth_method: 'password',
       oauth_tenant_id: '',
       outreach_role_id: null,
+      login_password: '',
     })
     setSigData(autoPopulateSigData(
       { sender_name: '', title: '', phone: '', email: '', company: '', website: '', address: '', logo_url: '' },
@@ -938,7 +968,7 @@ export default function MailboxesPage() {
         <div className="flex space-x-3">
           {isSuperAdmin && (
             <button
-              onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }}
+              onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '', auto_outbound: false }); setShowRolesModal(true) }}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
             >
               Manage Roles
@@ -1407,9 +1437,16 @@ export default function MailboxesPage() {
                         <option value="">— Select Role —</option>
                         {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
                       </select>
-                      <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                      <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '', auto_outbound: false }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
                     </div>
                   </div>
+                  {!editingMailbox && !selectedRoleAutoOutbound && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Login Password *</label>
+                      <input type="password" value={formData.login_password} onChange={(e) => setFormData({ ...formData, login_password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Password for this person to sign into the system" />
+                      <p className="text-xs text-gray-500 mt-1">Personal (non-RA) mailbox — a login account is created/linked with this email so the person can sign in and send manually. RA mailboxes need no login.</p>
+                    </div>
+                  )}
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile URL</label>
                     <input type="url" value={formData.linkedin_url} onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="https://linkedin.com/in/username" />
@@ -2414,10 +2451,17 @@ export default function MailboxesPage() {
                             <option value="">— Select Role —</option>
                             {outreachRoles.map((r) => (<option key={r.role_id} value={r.role_id}>{r.role_name}</option>))}
                           </select>
-                          <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
+                          <button type="button" onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '', auto_outbound: false }); setShowRolesModal(true) }} className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 text-sm whitespace-nowrap" title="Manage Roles">Manage</button>
                         </div>
                       </div>
                     </div>
+                    {!editingMailbox && !selectedRoleAutoOutbound && (
+                      <div className="mt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Login Password *</label>
+                        <input type="password" value={formData.login_password} onChange={(e) => setFormData({ ...formData, login_password: e.target.value })} className="w-full px-3 py-2 border rounded-lg" placeholder="Password for this person to sign into the system" />
+                        <p className="text-xs text-gray-500 mt-1">Personal (non-RA) mailbox — a login account is created/linked with this email so the person can sign in and send manually. RA mailboxes need no login.</p>
+                      </div>
+                    )}
                     <div className="flex items-center mt-3">
                       <input type="checkbox" id="wizard_is_active" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
                       <label htmlFor="wizard_is_active" className="ml-2 text-sm text-gray-700">Active</label>
@@ -2544,7 +2588,7 @@ export default function MailboxesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => { setEditingRole(role); setRoleFormData({ role_name: role.role_name, description: role.description || '', purpose: role.purpose || '' }) }}
+                      onClick={() => { setEditingRole(role); setRoleFormData({ role_name: role.role_name, description: role.description || '', purpose: role.purpose || '', auto_outbound: role.auto_outbound }) }}
                       className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded"
                     >
                       Edit
@@ -2605,10 +2649,23 @@ export default function MailboxesPage() {
                     placeholder="What this role is used for (e.g. sources candidates for open roles)"
                   />
                 </div>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={roleFormData.auto_outbound}
+                    onChange={(e) => setRoleFormData({ ...roleFormData, auto_outbound: e.target.checked })}
+                    className="mt-0.5"
+                  />
+                  <span className="text-xs text-gray-600">
+                    <span className="font-medium text-gray-800">Auto cold-send (RA)</span> — mailboxes with this role are
+                    automatically used for automated cold outbound, and have no login user. Leave off for personal
+                    mailboxes (manual send only, tied to a login account).
+                  </span>
+                </label>
                 <div className="flex justify-end gap-2">
                   {editingRole && (
                     <button
-                      onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '' }) }}
+                      onClick={() => { setEditingRole(null); setRoleFormData({ role_name: '', description: '', purpose: '', auto_outbound: false }) }}
                       className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border rounded-lg"
                     >
                       Cancel
@@ -2627,7 +2684,7 @@ export default function MailboxesPage() {
                           toast('success', 'Role created')
                         }
                         setEditingRole(null)
-                        setRoleFormData({ role_name: '', description: '', purpose: '' })
+                        setRoleFormData({ role_name: '', description: '', purpose: '', auto_outbound: false })
                         fetchData()
                       } catch (err: any) {
                         toast('error', err.response?.data?.detail || 'Failed to save role')

@@ -1,23 +1,29 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> DONE + DEPLOYED (2026-08-14): RBAC role rename (operator→bdm, viewer→recruiter)
-> + settings-backed CUSTOM roles + "Role Management" tab. PR #81 squash-merged to
-> master (c5d3588) and deployed to prod. Migration verified: users.role
-> enum→varchar(50); operator=7→bdm, viewer=3→recruiter, 0 legacy rows (15 users).
-> Full detail + gotchas in `Plan_Role_Management_And_Rename.md` and memory
-> `role-rename-and-custom-roles.md`. Nothing outstanding for this task.
+> Branch `feature/ra-autosend-mailbox-user`. Feature: (1) only "RA" (auto_outbound)
+> mailboxes auto-send cold outbound; others manual-only; (2) non-RA mailbox add asks a
+> role + login password → creates/links a login User (mailbox↔user interconnected); RA =
+> no login; (3) Users module → "Add as mailbox". Full plan in
+> `Plan_RA_AutoSend_And_Mailbox_User_Link.md`.
+>
+> STATUS (2026-08-14):
+> - Phase 1 (auto_outbound gating) COMMITTED 0df7bb4. Backend 1358 pass.
+> - Phase 2 (SenderMailbox.user_id + create-or-link user) COMMITTED 1c9a7ed.
+> - Phase 3 (frontend) IN PROGRESS: mailboxes wizard login-password (conditional on
+>   non-auto_outbound role) + outreach-role auto_outbound toggle + Users "Add as mailbox"
+>   deep-link (?add_email=). tsc clean, jest 70 pass. Build running → then commit.
+> - Phase 4 (docs + deliverability review + PR + deploy) NOT STARTED.
+>
+> Earlier this session (all SHIPPED to prod): role rename+custom roles (PR #81),
+> user-tenant binding (PR #82), cleaned 7 E2E prod users.
 
-## Completed
-- [x] Phase 1 — backend rename (3dc642e)
-- [x] Phase 2 — ENUM→VARCHAR + role_registry + /roles API (93e3413)
-- [x] Phase 3 — frontend rename + Role Management tab (0cddad0)
-- [x] Phase 4 — tests + docs (3a8c2fa); backend 1334 pass, frontend 70 pass, build OK
-- [x] PR #81 merged (c5d3588) + deployed to prod + migration verified
+## Immediate TODO
+- [x] Phase 1 — auto_outbound gating (0df7bb4)
+- [x] Phase 2 — mailbox↔user link (1c9a7ed)
+- [ ] Phase 3 — frontend (commit after build green)
+- [ ] Phase 4 — docs + deliverability-guardian review + PR + deploy (migration: 2 cols + RA flag)
 
 ## Blockers / Notes
-- Deploy gotcha: `git add backend/` in Phase 1 swept 5 pre-existing untracked
-  helper files into the commit; VPS `git pull` aborted on untracked
-  backfill_lob_configs.py → moved VPS copy to /root/*.vps_untracked_bak_* + redeployed.
-  Next time stage explicit paths when untracked files are present.
-- Pre-migration users backup: VPS `/root/users_backup_pre_rolerename_*.sql`.
+- Deploy migration adds outreach_roles.auto_outbound (RA=1) + sender_mailboxes.user_id.
+- Gate only applies to the AUTOMATED pool; explicit campaign mailbox assignment bypasses.
