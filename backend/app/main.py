@@ -625,8 +625,18 @@ async def lifespan(app: FastAPI):
                     ))
                     conn.commit()
                     logger.info("Migration: added outreach_role_id column to sender_mailboxes")
+                # Linked login user for personal (non-RA) mailboxes
+                if "user_id" not in cols:
+                    conn.execute(sa_text_or(
+                        "ALTER TABLE sender_mailboxes ADD COLUMN user_id INTEGER NULL"
+                    ))
+                    conn.execute(sa_text_or(
+                        "CREATE INDEX ix_sender_mailboxes_user_id ON sender_mailboxes (user_id)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added user_id column to sender_mailboxes")
     except Exception as e:
-        logger.warning(f"Migration check for outreach_role_id: {e}")
+        logger.warning(f"Migration check for outreach_role_id/user_id: {e}")
 
     # Migration: rename roles (operator→bdm, viewer→recruiter) AND convert the
     # users.role column from ENUM to VARCHAR(50) so custom (settings-backed) roles

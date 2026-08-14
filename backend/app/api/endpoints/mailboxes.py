@@ -212,6 +212,7 @@ def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> Sender
         oauth_connected=bool(mailbox.oauth_refresh_token),
         outreach_role_id=mailbox.outreach_role_id,
         outreach_role_name=role_name,
+        user_id=mailbox.user_id,
     )
 
 
@@ -509,16 +510,48 @@ async def create_mailbox(
         imap_host = "imap.gmail.com"
 
     # Resolve outreach_role_id: use provided value or default to "RA" role
+    from app.db.models.outreach_role import OutreachRole
     role_id = mailbox_in.outreach_role_id
-    if role_id is None:
-        from app.db.models.outreach_role import OutreachRole
-        ra_role = db.query(OutreachRole).filter(
+    role = None
+    if role_id is not None:
+        role = db.query(OutreachRole).filter(
+            OutreachRole.role_id == role_id,
+            OutreachRole.is_archived == False,
+        ).first()
+    if role is None:
+        role = db.query(OutreachRole).filter(
             OutreachRole.tenant_id == (tenant_id or 1),
             OutreachRole.role_name == "RA",
             OutreachRole.is_archived == False,
         ).first()
-        if ra_role:
-            role_id = ra_role.role_id
+        role_id = role.role_id if role else None
+
+    # Personal (non-auto_outbound) mailbox → tie to a login User so this person can
+    # sign in. RA / machine mailboxes (auto_outbound) have no login user.
+    linked_user_id = None
+    if role is not None and not role.auto_outbound:
+        from app.services.mailbox_user_link import (
+            create_or_link_user, map_outreach_role_to_rbac, MailboxUserLinkError,
+        )
+        if mailbox_in.user_id is not None:
+            # Explicit link (e.g. "add my email as a mailbox" from the Users module).
+            linked = db.query(User).filter(User.user_id == mailbox_in.user_id).first()
+            if not linked:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Linked user not found")
+            linked_user_id = linked.user_id
+        else:
+            try:
+                linked = create_or_link_user(
+                    db,
+                    email=mailbox_in.email,
+                    full_name=mailbox_in.display_name or mailbox_in.sender_first_name,
+                    login_password=mailbox_in.login_password,
+                    tenant_id=tenant_id or 1,
+                    rbac_role=map_outreach_role_to_rbac(role.role_name),
+                )
+            except MailboxUserLinkError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+            linked_user_id = linked.user_id
 
     mailbox = SenderMailbox(
         email=mailbox_in.email,
@@ -542,6 +575,7 @@ async def create_mailbox(
         email_signature_json=mailbox_in.email_signature_json,
         tenant_id=tenant_id or 1,
         outreach_role_id=role_id,
+        user_id=linked_user_id,
     )
 
     db.add(mailbox)
