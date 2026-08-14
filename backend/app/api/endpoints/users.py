@@ -23,6 +23,27 @@ def _validate_tenant(db: Session, tenant_id: int) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant not found")
 
 
+def _caller_tenant_id(current_user: User) -> int:
+    """Tenant a non-super-admin caller is scoped to. Raises 400 if unset.
+
+    Guards against the NULL==NULL edge case: a non-super-admin with tenant_id=NULL
+    must never resolve to 'all global users'.
+    """
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your account is not assigned to a tenant.",
+        )
+    return current_user.tenant_id
+
+
+def _can_access_user(current_user: User, target: User) -> bool:
+    """Whether the caller may view/modify the target user (tenant isolation)."""
+    if _is_super_admin(current_user):
+        return True
+    return current_user.tenant_id is not None and target.tenant_id == current_user.tenant_id
+
+
 @router.get("", response_model=List[UserResponse])
 async def list_users(
     skip: int = Query(0, ge=0),
@@ -40,7 +61,7 @@ async def list_users(
 
     # Tenant isolation: non-super-admins are restricted to their own tenant.
     if not _is_super_admin(current_user):
-        query = query.filter(User.tenant_id == current_user.tenant_id)
+        query = query.filter(User.tenant_id == _caller_tenant_id(current_user))
     elif tenant_id is not None:
         query = query.filter(User.tenant_id == tenant_id)
 
@@ -65,7 +86,7 @@ async def get_user(
 ):
     """Get user by ID. Admin+ only (own tenant unless super admin)."""
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user or (not _is_super_admin(current_user) and user.tenant_id != current_user.tenant_id):
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse.model_validate(user)
 
@@ -147,7 +168,7 @@ async def update_user(
     Cannot demote the last super_admin.
     """
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user or (not _is_super_admin(current_user) and user.tenant_id != current_user.tenant_id):
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Only super_admin can modify super_admin users
@@ -194,7 +215,9 @@ async def update_user(
         if requested_tenant != "UNSET" and requested_tenant is not None:
             _validate_tenant(db, requested_tenant)
             update_data["tenant_id"] = requested_tenant
-        elif user.tenant_id is None:
+        elif requested_tenant is None or user.tenant_id is None:
+            # Explicit null, or a user leaving super_admin with no tenant yet:
+            # a non-super-admin user must have a tenant.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Select a tenant for this user.",
@@ -242,7 +265,7 @@ async def delete_user(
     Cannot delete the last super_admin.
     """
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user or (not _is_super_admin(current_user) and user.tenant_id != current_user.tenant_id):
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     if user.user_id == current_user.user_id:

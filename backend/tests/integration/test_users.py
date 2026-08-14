@@ -112,6 +112,14 @@ class TestTenantReassignment:
         assert resp.status_code == 200
         assert resp.json()["tenant_id"] == other_tenant.tenant_id
 
+    def test_super_admin_explicit_null_tenant_rejected(self, client, sa_headers, other_tenant):
+        # Clearing the tenant of a non-super-admin user must be rejected, not silently ignored.
+        created = client.post("/api/v1/users", headers=sa_headers,
+                             json=_payload("clr@test.com", role="bdm", tenant_id=other_tenant.tenant_id)).json()
+        resp = client.put(f"/api/v1/users/{created['user_id']}", headers=sa_headers,
+                         json={"tenant_id": None})
+        assert resp.status_code == 400
+
     def test_admin_cannot_reassign_tenant(self, client, auth_headers, sa_headers, admin_user, other_tenant):
         # A user in the admin's own tenant; admin tries to push them to other_tenant → ignored.
         created = client.post("/api/v1/users", headers=auth_headers,

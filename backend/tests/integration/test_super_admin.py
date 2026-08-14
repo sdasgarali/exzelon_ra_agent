@@ -124,21 +124,21 @@ class TestRoleEscalationPrevention:
         assert response.status_code == 403
 
     def test_admin_cannot_modify_super_admin(self, client, auth_headers, super_admin_user):
-        """Admin cannot modify a super_admin user."""
+        """Admin cannot modify a super_admin user (global/cross-tenant → 404, hidden)."""
         response = client.put(
             f"/api/v1/users/{super_admin_user.user_id}",
             headers=auth_headers,
             json={"full_name": "Hacked Name"}
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_admin_cannot_delete_super_admin(self, client, auth_headers, super_admin_user):
-        """Admin cannot delete a super_admin user."""
+        """Admin cannot delete a super_admin user (global/cross-tenant → 404, hidden)."""
         response = client.delete(
             f"/api/v1/users/{super_admin_user.user_id}",
             headers=auth_headers,
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 class TestLastSuperAdminProtection:
@@ -191,7 +191,7 @@ class TestLastSuperAdminProtection:
         db_session.add(admin2)
         db_session.commit()
 
-        # Admin can't delete super_admin at all (separate check)
+        # A regular admin can't reach a super_admin (global/cross-tenant → 404, hidden)
         from app.core.security import create_access_token
         admin2_token = create_access_token(data={"sub": admin2.email, "role": admin2.role})
         admin2_headers = {"Authorization": f"Bearer {admin2_token}"}
@@ -199,10 +199,10 @@ class TestLastSuperAdminProtection:
             f"/api/v1/users/{super_admin_user.user_id}",
             headers=admin2_headers,
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
-    def test_can_demote_super_admin_when_others_exist(self, client, db_session, sa_headers, super_admin_user):
-        """Can demote a super_admin when there are multiple."""
+    def test_can_demote_super_admin_when_others_exist(self, client, db_session, sa_headers, super_admin_user, test_tenant):
+        """Can demote a super_admin when there are multiple (must assign a tenant)."""
         from app.core.security import get_password_hash
         from app.db.models.user import User
         other = User(
@@ -216,11 +216,12 @@ class TestLastSuperAdminProtection:
         db_session.commit()
         db_session.refresh(other)
 
-        # Can demote other when there are 2
+        # Can demote other when there are 2 — a demoted super_admin needs a tenant.
         response = client.put(
             f"/api/v1/users/{other.user_id}",
             headers=sa_headers,
-            json={"role": "admin"}
+            json={"role": "admin", "tenant_id": test_tenant.tenant_id}
         )
         assert response.status_code == 200
+        assert response.json()["tenant_id"] == test_tenant.tenant_id
         assert response.json()["role"] == "admin"
