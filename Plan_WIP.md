@@ -1,35 +1,23 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Branch `feature/role-management-and-rename`. Building: (1) full internal rename
-> of RBAC roles operator→bdm, viewer→recruiter; (2) settings-backed CUSTOM roles
-> with a "Role Management" tab on /dashboard/roles. Full plan +checkboxes in
-> `Plan_Role_Management_And_Rename.md`.
->
-> STATUS (2026-08-13):
-> - Phase 1 (backend rename) COMMITTED (3dc642e). 62 role tests green.
-> - Phase 2 (ENUM→VARCHAR migration + role_registry.py + roles.py CRUD API +
->   auth base_role bridge) IMPLEMENTED. 13 new roles tests green; 57-test role
->   subset green. Full backend suite RUNNING to confirm zero regressions, THEN
->   commit Phase 2.
-> - Phase 3 (frontend rename + Role Management UI) NOT STARTED. Frontend role
->   VALUE refs (layout nav roles:[...], user.role!=='viewer', store.ts type,
->   users/tenants/activity-log dropdowns+color maps) MUST change operator→bdm,
->   viewer→recruiter or BDM/Recruiter users lose nav access. roles/page.tsx to be
->   reworked to load roles from GET /roles + add Role Management CRUD tab.
-> - Phase 4 (tests+docs+deploy) NOT STARTED.
-> NOTE: do NOT touch filter-operator code (excel-text-filter.tsx, size-filter.tsx,
-> query_helpers SIZE_OPERATORS) — "operator" there is a filter op, not a role.
+> DONE + DEPLOYED (2026-08-14): RBAC role rename (operator→bdm, viewer→recruiter)
+> + settings-backed CUSTOM roles + "Role Management" tab. PR #81 squash-merged to
+> master (c5d3588) and deployed to prod. Migration verified: users.role
+> enum→varchar(50); operator=7→bdm, viewer=3→recruiter, 0 legacy rows (15 users).
+> Full detail + gotchas in `Plan_Role_Management_And_Rename.md` and memory
+> `role-rename-and-custom-roles.md`. Nothing outstanding for this task.
 
-## Immediate TODO
+## Completed
 - [x] Phase 1 — backend rename (3dc642e)
 - [x] Phase 2 — ENUM→VARCHAR + role_registry + /roles API (93e3413)
 - [x] Phase 3 — frontend rename + Role Management tab (0cddad0)
-- [x] Phase 4 — tests + docs (3a8c2fa). Backend 1334 pass, frontend 70 pass, build OK.
-- [x] Pushed + PR #81 opened. CI pending.
-- [ ] AWAITING USER: merge + deploy to prod (runs the ENUM→VARCHAR migration on live DB).
+- [x] Phase 4 — tests + docs (3a8c2fa); backend 1334 pass, frontend 70 pass, build OK
+- [x] PR #81 merged (c5d3588) + deployed to prod + migration verified
 
 ## Blockers / Notes
-- Legacy JWT/DB values normalized via LEGACY_ROLE_ALIASES + role_value() in
-  api/deps/auth.py. Custom roles inherit a built-in base_role for coarse
-  require_role checks + matrix fallback.
+- Deploy gotcha: `git add backend/` in Phase 1 swept 5 pre-existing untracked
+  helper files into the commit; VPS `git pull` aborted on untracked
+  backfill_lob_configs.py → moved VPS copy to /root/*.vps_untracked_bak_* + redeployed.
+  Next time stage explicit paths when untracked files are present.
+- Pre-migration users backup: VPS `/root/users_backup_pre_rolerename_*.sql`.

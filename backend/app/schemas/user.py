@@ -36,6 +36,9 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for creating a user (admin-created, within tenant)."""
     password: str
+    # Target tenant. Honored only for super_admin callers; regular admins always
+    # create within their own tenant. Ignored/forced NULL for super_admin-role users.
+    tenant_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -45,6 +48,8 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    # Only a super_admin may reassign a user's tenant; ignored for regular admins.
+    tenant_id: Optional[int] = None
 
     @field_validator("role", mode="before")
     @classmethod

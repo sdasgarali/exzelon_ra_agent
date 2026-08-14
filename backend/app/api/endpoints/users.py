@@ -6,10 +6,42 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_role
 from app.core.security import get_password_hash
 from app.db.models.user import User, UserRole
+from app.db.models.tenant import Tenant
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.services.audit_helper import write_audit_log
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+
+def _is_super_admin(user: User) -> bool:
+    return user.role == UserRole.SUPER_ADMIN
+
+
+def _validate_tenant(db: Session, tenant_id: int) -> None:
+    """Raise 400 if the tenant does not exist."""
+    if not db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant not found")
+
+
+def _caller_tenant_id(current_user: User) -> int:
+    """Tenant a non-super-admin caller is scoped to. Raises 400 if unset.
+
+    Guards against the NULL==NULL edge case: a non-super-admin with tenant_id=NULL
+    must never resolve to 'all global users'.
+    """
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your account is not assigned to a tenant.",
+        )
+    return current_user.tenant_id
+
+
+def _can_access_user(current_user: User, target: User) -> bool:
+    """Whether the caller may view/modify the target user (tenant isolation)."""
+    if _is_super_admin(current_user):
+        return True
+    return current_user.tenant_id is not None and target.tenant_id == current_user.tenant_id
 
 
 @router.get("", response_model=List[UserResponse])
@@ -19,11 +51,19 @@ async def list_users(
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
+    tenant_id: Optional[int] = Query(None, description="Super-admin only: filter by tenant"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """List users. Admin+ only."""
+    """List users. Admin+ only. Regular admins see only their own tenant's users;
+    super admins see all tenants (optionally filtered by `tenant_id`)."""
     query = db.query(User)
+
+    # Tenant isolation: non-super-admins are restricted to their own tenant.
+    if not _is_super_admin(current_user):
+        query = query.filter(User.tenant_id == _caller_tenant_id(current_user))
+    elif tenant_id is not None:
+        query = query.filter(User.tenant_id == tenant_id)
 
     if role:
         query = query.filter(User.role == role)
@@ -44,9 +84,9 @@ async def get_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
-    """Get user by ID. Admin+ only."""
+    """Get user by ID. Admin+ only (own tenant unless super admin)."""
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user:
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse.model_validate(user)
 
@@ -72,12 +112,35 @@ async def create_user(
             detail="Only super admins can assign the super_admin role"
         )
 
+    # Resolve tenant assignment (every user is bound to exactly one tenant, except
+    # super_admins which are global / cross-tenant).
+    if user_in.role == UserRole.SUPER_ADMIN:
+        target_tenant_id = None
+    elif _is_super_admin(current_user):
+        # Super admin explicitly chooses the tenant for the new user.
+        if user_in.tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a tenant for this user.",
+            )
+        _validate_tenant(db, user_in.tenant_id)
+        target_tenant_id = user_in.tenant_id
+    else:
+        # Regular admins can only create users inside their own tenant.
+        target_tenant_id = current_user.tenant_id
+        if target_tenant_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your account is not assigned to a tenant.",
+            )
+
     user = User(
         email=user_in.email,
         password_hash=get_password_hash(user_in.password),
         full_name=user_in.full_name,
         role=user_in.role,
         is_active=user_in.is_active,
+        tenant_id=target_tenant_id,
     )
     db.add(user)
     db.commit()
@@ -105,7 +168,7 @@ async def update_user(
     Cannot demote the last super_admin.
     """
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user:
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Only super_admin can modify super_admin users
@@ -139,6 +202,27 @@ async def update_user(
             )
 
     update_data = user_in.model_dump(exclude_unset=True)
+
+    # ── Tenant reassignment rules ──────────────────────────────────────────────
+    # Only super_admin may move a user between tenants. super_admin-role users are
+    # always global (NULL); a user leaving the super_admin role must get a tenant.
+    requested_tenant = update_data.pop("tenant_id", "UNSET")
+    effective_role = update_data.get("role", user.role)
+    if effective_role == UserRole.SUPER_ADMIN:
+        if user.tenant_id is not None:
+            update_data["tenant_id"] = None
+    elif _is_super_admin(current_user):
+        if requested_tenant != "UNSET" and requested_tenant is not None:
+            _validate_tenant(db, requested_tenant)
+            update_data["tenant_id"] = requested_tenant
+        elif requested_tenant is None or user.tenant_id is None:
+            # Explicit null, or a user leaving super_admin with no tenant yet:
+            # a non-super-admin user must have a tenant.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a tenant for this user.",
+            )
+    # Regular admins: any requested tenant change is dropped (cannot reassign).
 
     # Capture old values for audit
     changed_fields = {}
@@ -181,7 +265,7 @@ async def delete_user(
     Cannot delete the last super_admin.
     """
     user = db.query(User).filter(User.user_id == user_id).first()
-    if not user:
+    if not user or not _can_access_user(current_user, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     if user.user_id == current_user.user_id:

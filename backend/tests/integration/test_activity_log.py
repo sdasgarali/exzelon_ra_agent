@@ -194,13 +194,14 @@ class TestUnlockUserEndpoint:
 class TestUserCRUDAudit:
     """Test that user create/update/delete creates audit log entries."""
 
-    def test_create_user_creates_audit(self, client, db_session, sa_headers, super_admin_user):
+    def test_create_user_creates_audit(self, client, db_session, sa_headers, super_admin_user, test_tenant):
         """Creating a user writes an audit log entry."""
         resp = client.post("/api/v1/users", json={
             "email": "newuser@test.com",
             "password": "password123",
             "full_name": "New User",
             "role": "recruiter",
+            "tenant_id": test_tenant.tenant_id,
         }, headers=sa_headers)
         assert resp.status_code == 201
 
