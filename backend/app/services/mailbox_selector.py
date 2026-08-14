@@ -169,7 +169,15 @@ def select_best_mailbox(
     )
 
     if campaign_mailbox_ids:
+        # Explicit (manual) assignment — send from exactly these mailboxes regardless of role.
         query = query.filter(SenderMailbox.mailbox_id.in_(campaign_mailbox_ids))
+    else:
+        # Automated pool — only mailboxes whose outreach role is flagged auto_outbound
+        # (e.g. "RA"). Personal mailboxes (BDM/Recruiter/…) are manual-only.
+        from app.db.models.outreach_role import OutreachRole
+        query = query.join(
+            OutreachRole, SenderMailbox.outreach_role_id == OutreachRole.role_id
+        ).filter(OutreachRole.auto_outbound == True)  # noqa: E712
 
     eligible_mailboxes = query.all()
 

@@ -868,6 +868,12 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
         )
         if mailbox_ids:
             query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
+        else:
+            # Automated pool: only auto_outbound (e.g. RA) roles — mirror select_best_mailbox.
+            from app.db.models.outreach_role import OutreachRole
+            query = query.join(
+                OutreachRole, SenderMailbox.outreach_role_id == OutreachRole.role_id
+            ).filter(OutreachRole.auto_outbound == True)  # noqa: E712
         return query.order_by(SenderMailbox.emails_sent_today.asc()).first()
 
 

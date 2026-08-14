@@ -23,12 +23,14 @@ class OutreachRoleCreate(BaseModel):
     role_name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
     purpose: Optional[str] = None
+    auto_outbound: bool = False
 
 
 class OutreachRoleUpdate(BaseModel):
     role_name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
     purpose: Optional[str] = None
+    auto_outbound: Optional[bool] = None
 
 
 class OutreachRoleResponse(BaseModel):
@@ -37,6 +39,9 @@ class OutreachRoleResponse(BaseModel):
     description: Optional[str] = None
     purpose: Optional[str] = None
     is_system: bool = False
+    # True → this role's mailboxes are auto-selected for cold outbound (machine sender,
+    # no login user). False → personal/manual mailboxes tied to a login user.
+    auto_outbound: bool = False
     mailbox_count: int = 0
 
     class Config:
@@ -74,6 +79,7 @@ async def list_outreach_roles(
             description=r.description,
             purpose=r.purpose,
             is_system=r.is_system,
+            auto_outbound=r.auto_outbound,
             mailbox_count=count_map.get(r.role_id, 0),
         )
         for r in roles
@@ -110,6 +116,7 @@ async def create_outreach_role(
         description=body.description,
         purpose=body.purpose,
         is_system=False,
+        auto_outbound=body.auto_outbound,
     )
     db.add(role)
     db.commit()
@@ -121,6 +128,7 @@ async def create_outreach_role(
         description=role.description,
         purpose=role.purpose,
         is_system=role.is_system,
+        auto_outbound=role.auto_outbound,
         mailbox_count=0,
     )
 
@@ -166,6 +174,9 @@ async def update_outreach_role(
     if body.purpose is not None:
         role.purpose = body.purpose
 
+    if body.auto_outbound is not None:
+        role.auto_outbound = body.auto_outbound
+
     db.commit()
     db.refresh(role)
 
@@ -182,6 +193,7 @@ async def update_outreach_role(
         description=role.description,
         purpose=role.purpose,
         is_system=role.is_system,
+        auto_outbound=role.auto_outbound,
         mailbox_count=count or 0,
     )
 
