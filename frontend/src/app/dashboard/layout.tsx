@@ -64,11 +64,11 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-sky-400' },
 
   // Step 1: Setup — mailboxes & warmup
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-mailboxes' },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-mailboxes' },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
 
   // Step 2: Source — pipeline execution & lead results
-  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400', tourId: 'nav-leads' },
   { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
 
@@ -77,20 +77,20 @@ const navigation = [
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
 
   // Step 5: Campaign — targeting, templates, sequences, outreach
-  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-campaigns' },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
-  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-campaigns' },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
 
   // Step 6: Engage & Close
-  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-inbox' },
-  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'operator'] as string[], tourId: 'nav-deals' },
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-inbox' },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-deals' },
 
   // Reporting & Monitoring
-  { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
 
@@ -99,7 +99,7 @@ const navigation = [
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] },
   { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
-  { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'operator'] as string[] },
+  { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-red-400', roles: ['super_admin', 'admin'] as string[] },
@@ -305,7 +305,9 @@ export default function DashboardLayout({
 
         <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? 'p-2' : 'p-4'}`} aria-label="Main navigation" data-tour="sidebar">
           {navigation.filter(item => {
-            if (item.roles && !item.roles.includes(user?.role || 'viewer')) return false
+            // Custom roles resolve to their built-in base_role for nav gating.
+            const navRole = user?.base_role || user?.role || 'recruiter'
+            if (item.roles && !item.roles.includes(navRole)) return false
             return true
           }).map((item) => {
             const isActive = item.href === '/dashboard'

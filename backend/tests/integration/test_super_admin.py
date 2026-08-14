@@ -51,7 +51,7 @@ class TestSuperAdminSelfRegisterBlock:
         assert response.status_code == 401
 
     def test_role_injection_ignored(self, client, auth_headers):
-        """Role from request body is ignored — always viewer."""
+        """Role from request body is ignored — always recruiter."""
         response = client.post(
             "/api/v1/auth/register",
             json={
@@ -63,22 +63,22 @@ class TestSuperAdminSelfRegisterBlock:
             headers=auth_headers,
         )
         assert response.status_code == 200
-        assert response.json()["role"] == "viewer"
+        assert response.json()["role"] == "recruiter"
 
-    def test_can_register_as_viewer(self, client, auth_headers):
-        """Authenticated registration assigns viewer role."""
+    def test_can_register_as_recruiter(self, client, auth_headers):
+        """Authenticated registration assigns recruiter role."""
         response = client.post(
             "/api/v1/auth/register",
             json={
                 "email": "newviewer@test.com",
                 "password": "password123",
                 "full_name": "New Viewer",
-                "role": "viewer",
+                "role": "recruiter",
             },
             headers=auth_headers,
         )
         assert response.status_code == 200
-        assert response.json()["role"] == "viewer"
+        assert response.json()["role"] == "recruiter"
 
 
 class TestRoleEscalationPrevention:
@@ -193,7 +193,7 @@ class TestLastSuperAdminProtection:
 
         # Admin can't delete super_admin at all (separate check)
         from app.core.security import create_access_token
-        admin2_token = create_access_token(data={"sub": admin2.email, "role": admin2.role.value})
+        admin2_token = create_access_token(data={"sub": admin2.email, "role": admin2.role})
         admin2_headers = {"Authorization": f"Bearer {admin2_token}"}
         response = client.delete(
             f"/api/v1/users/{super_admin_user.user_id}",

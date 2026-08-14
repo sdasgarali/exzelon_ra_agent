@@ -48,7 +48,7 @@ class OutreachRoleResponse(BaseModel):
 @router.get("")
 async def list_outreach_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR, UserRole.VIEWER])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM, UserRole.RECRUITER])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List outreach roles with mailbox counts."""

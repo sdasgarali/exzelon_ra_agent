@@ -502,7 +502,7 @@ def get_available_leads(
 def create_campaign_from_leads(
     data: CreateFromLeads,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a campaign from selected leads.
@@ -689,7 +689,7 @@ def create_campaign_from_leads(
 def create_campaign(
     data: CampaignCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     check_plan_limit(db, tenant_id, "campaigns")
@@ -803,7 +803,7 @@ def update_campaign(
     campaign_id: int,
     data: CampaignUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -905,7 +905,7 @@ def archive_campaign(
 def activate_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     from app.core.settings_resolver import get_tenant_setting_bool
@@ -971,7 +971,7 @@ def activate_campaign(
 def pause_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1005,7 +1005,7 @@ def pause_campaign(
 def resume_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1028,7 +1028,7 @@ def resume_campaign(
 def complete_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1170,7 +1170,7 @@ def add_step(
     campaign_id: int,
     data: StepCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1217,7 +1217,7 @@ def update_step(
     step_id: int,
     data: StepUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1246,7 +1246,7 @@ def delete_step(
     campaign_id: int,
     step_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1282,7 +1282,7 @@ def reorder_steps(
     campaign_id: int,
     data: StepReorder,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1330,7 +1330,7 @@ def add_schedule(
     campaign_id: int,
     data: ScheduleCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Add a new schedule entry to a campaign."""
@@ -1370,7 +1370,7 @@ def update_schedule(
     schedule_id: int,
     data: ScheduleUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update an existing schedule entry."""
@@ -1413,7 +1413,7 @@ def delete_schedule(
     campaign_id: int,
     schedule_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Delete a schedule entry and reorder remaining entries."""
@@ -1455,7 +1455,7 @@ def enroll_contacts(
     campaign_id: int,
     data: ContactEnroll,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1476,7 +1476,7 @@ def remove_contacts(
     campaign_id: int,
     data: ContactRemove,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     campaign = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -1595,7 +1595,7 @@ def enrollment_preview(
 def trigger_auto_enroll(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger auto-enrollment for one campaign."""
@@ -1846,7 +1846,7 @@ def export_campaign_analytics_csv(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Export campaign analytics as CSV."""
@@ -2020,7 +2020,7 @@ def get_ab_test_stats(
     campaign_id: int,
     step_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR, UserRole.VIEWER])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM, UserRole.RECRUITER])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get A/B test variant statistics for a step."""
@@ -2040,7 +2040,7 @@ def trigger_ab_optimize(
     campaign_id: int,
     step_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger A/B test optimization for a step."""
@@ -2063,7 +2063,7 @@ def duplicate_campaign(
     request: Request,
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     original = db.query(Campaign).filter(Campaign.campaign_id == campaign_id).first()
@@ -2408,7 +2408,7 @@ def get_contact_schedule(
 def ai_enhance_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Use LLM to improve campaign name and description based on lead data."""
@@ -2487,7 +2487,7 @@ def ai_enhance_campaign(
 def ai_suggest_subjects(
     campaign_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Generate AI subject line suggestions for campaign email steps."""

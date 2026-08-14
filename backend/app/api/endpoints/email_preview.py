@@ -76,7 +76,7 @@ def generate_drafts(
     data: GenerateDraftsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Generate preview drafts from campaign, pipeline, or broadcast."""
@@ -193,7 +193,7 @@ def update_draft(
     draft_id: int,
     data: UpdateDraftRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Edit draft content manually."""
@@ -232,7 +232,7 @@ def update_draft(
 def approve_single_draft(
     draft_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Approve a single draft."""
@@ -247,7 +247,7 @@ def approve_single_draft(
 def reject_single_draft(
     draft_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Reject a single draft."""
@@ -262,7 +262,7 @@ def reject_single_draft(
 def approve_all_drafts(
     data: ApproveAllRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Bulk approve all pending drafts in a batch."""
@@ -275,7 +275,7 @@ def approve_all_drafts(
 def bulk_approve_drafts(
     data: BulkDraftIdsRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Approve multiple drafts by ID list."""
@@ -299,7 +299,7 @@ def bulk_approve_drafts(
 @router.post("/drafts/approve-all-pending")
 def approve_all_pending_drafts(
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Approve ALL pending drafts for the tenant (no batch_id required)."""
@@ -322,7 +322,7 @@ def bulk_send_drafts(
     data: BulkDraftIdsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send multiple approved drafts by ID list (runs in background)."""
@@ -350,7 +350,7 @@ def bulk_send_drafts(
 def send_all_approved_drafts(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send ALL approved drafts for the tenant (runs in background)."""
@@ -383,7 +383,7 @@ def send_all_approved_drafts(
 def send_draft(
     draft_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send a single approved draft."""
@@ -406,7 +406,7 @@ def send_batch_drafts(
     data: SendBatchRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Send all approved drafts in a batch (runs in background)."""
@@ -433,7 +433,7 @@ def ai_rewrite(
     request: Request,
     draft_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI-rewrite a single draft."""
@@ -478,7 +478,7 @@ def preview_personalization(
     request: Request,
     data: PreviewPersonalizationRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview AI personalization for a campaign step across multiple contacts."""
@@ -612,7 +612,7 @@ def apply_spam_fixes(
     draft_id: int,
     data: SpamFixRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Apply spam word replacements to a draft."""

@@ -11,6 +11,63 @@ from app.db.models.user import User, UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
+# Roles renamed 2026-08-13: operator→bdm, viewer→recruiter. Normalize defensively
+# so any old DB row (pre-migration) or cached client role still resolves correctly.
+LEGACY_ROLE_ALIASES = {
+    "operator": UserRole.BDM.value,
+    "viewer": UserRole.RECRUITER.value,
+}
+
+
+def role_value(user: "User") -> str:
+    """Return the user's role as a normalized string key.
+
+    Handles both the ``UserRole`` enum (current ENUM column) and a plain ``str``
+    (after the column is migrated to VARCHAR to support custom roles), mapping any
+    legacy value to its new key.
+    """
+    raw = getattr(user, "role", None)
+    if raw is None:
+        return ""
+    val = raw.value if isinstance(raw, UserRole) else str(raw)
+    return LEGACY_ROLE_ALIASES.get(val, val)
+
+
+BUILTIN_ROLE_VALUES = {r.value for r in UserRole}
+
+
+def effective_base_role(user: "User", rv: Optional[str] = None, db: Optional[Session] = None) -> str:
+    """Resolve a role key to a built-in base role for coarse ``require_role`` checks.
+
+    Built-in roles map to themselves. Custom (settings-backed) roles resolve to
+    their declared ``base_role`` via the role registry (needs ``db``); without a
+    session, an unknown key returns unchanged.
+    """
+    if rv is None:
+        rv = role_value(user)
+    if rv in BUILTIN_ROLE_VALUES:
+        return rv
+    if db is not None:
+        try:
+            from app.services.role_registry import resolve_base_role
+            return resolve_base_role(db, getattr(user, "tenant_id", None), rv)
+        except Exception:
+            return rv
+    return rv
+
+
+def _role_matrix_config(db: Session, user: "User", role_perms: dict):
+    """Return the permission-matrix row for the user's role.
+
+    A custom role with no explicit row inherits its base_role's row so it is
+    enforceable the moment it is created.
+    """
+    rv = role_value(user)
+    cfg = role_perms.get(rv)
+    if cfg is None and rv not in BUILTIN_ROLE_VALUES:
+        cfg = role_perms.get(effective_base_role(user, rv, db))
+    return cfg if cfg is not None else {}
+
 
 async def get_current_user(
     request: Request,
@@ -87,12 +144,17 @@ def require_role(allowed_roles: List[UserRole]):
     Super admins bypass all role checks automatically.
     """
     async def role_checker(
-        current_user: User = Depends(get_current_active_user)
+        current_user: User = Depends(get_current_active_user),
+        db: Session = Depends(get_db),
     ) -> User:
+        rv = role_value(current_user)
         # Super admin bypasses all role checks
-        if current_user.role == UserRole.SUPER_ADMIN:
+        if rv == UserRole.SUPER_ADMIN.value:
             return current_user
-        if current_user.role not in allowed_roles:
+        # Custom roles are enforced through their base_role for coarse checks.
+        effective = effective_base_role(current_user, rv, db)
+        allowed = {r.value for r in allowed_roles}
+        if effective not in allowed and rv not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied. Required roles: {[r.value for r in allowed_roles]}"
@@ -116,7 +178,7 @@ def get_module_tab_access(db: Session, user: User, module_key: str, tab_key: str
     if not role_perms or not isinstance(role_perms, dict):
         return 'no_access'
 
-    role_config = role_perms.get(user.role.value, {})
+    role_config = _role_matrix_config(db, user, role_perms)
     module_perm = role_config.get(module_key)
 
     if module_perm is None:
@@ -156,8 +218,7 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
     if not role_perms or not isinstance(role_perms, dict):
         return {tab: 'no_access' for tab in tabs}
 
-    role_name = user.role.value
-    role_config = role_perms.get(role_name, {})
+    role_config = _role_matrix_config(db, user, role_perms)
     settings_perm = role_config.get('settings')
 
     if settings_perm is None:
@@ -181,7 +242,7 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
     Resolves through 3 layers (highest priority wins):
       Layer 3: User-specific overrides
       Layer 2: Role-based permissions (from settings)
-      Layer 1: Defaults (super_admin=full, viewer=no_access, etc.)
+      Layer 1: Defaults (super_admin=full, recruiter=no_access, etc.)
 
     Returns one of: 'full', 'read_write', 'read', 'no_access'.
     """
@@ -201,7 +262,7 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
     # Layer 2: Role-based permissions
     role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
     if role_perms and isinstance(role_perms, dict):
-        role_config = role_perms.get(user.role.value, {})
+        role_config = _role_matrix_config(db, user, role_perms)
         if module_key in role_config:
             perm = role_config[module_key]
             # Could be a string or a dict (for modules with independent tabs)
@@ -216,13 +277,14 @@ def get_module_permission(db: Session, user: User, module_key: str) -> str:
                     ) if any(l in PERMISSION_LEVELS for l in levels) else 0
                     return PERMISSION_LEVELS[max_idx]
 
-    # Layer 1: Safe defaults
+    # Layer 1: Safe defaults (keyed by built-in role; custom roles resolve to
+    # their base_role before reaching here)
     defaults = {
         'admin': 'full',
-        'operator': 'read_write',
-        'viewer': 'read',
+        'bdm': 'read_write',
+        'recruiter': 'read',
     }
-    return defaults.get(user.role.value, 'no_access')
+    return defaults.get(effective_base_role(user, role_value(user), db), 'no_access')
 
 
 def require_module_permission(module_key: str, min_level: str):

@@ -155,7 +155,7 @@ export interface User {
   user_id: number;
   email: string;
   full_name: string;
-  role: "super_admin" | "admin" | "operator" | "viewer";
+  role: string;
   is_active: boolean;
 }
 

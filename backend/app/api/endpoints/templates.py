@@ -54,7 +54,7 @@ class ApplyFixesRequest(BaseModel):
 @router.post("/score")
 async def score_template_endpoint(
     data: TemplateScoreRequest,
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Compute 10-dimension scorecard for template content."""
@@ -65,7 +65,7 @@ async def score_template_endpoint(
 @router.post("/fixes")
 async def get_template_fixes_endpoint(
     data: TemplateScoreRequest,
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get fix suggestions for template content."""
@@ -76,7 +76,7 @@ async def get_template_fixes_endpoint(
 @router.post("/apply-fixes")
 async def apply_template_fixes_endpoint(
     data: ApplyFixesRequest,
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Apply selected fixes and return updated content + before/after scores."""
@@ -94,7 +94,7 @@ async def list_templates(
     sort_by: Optional[str] = Query(None, description="Column to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc or desc"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all email templates. Always scoped to one tenant (super admin defaults to own tenant)."""
@@ -163,7 +163,7 @@ async def list_templates(
 async def get_active_template(
     category: Optional[TemplateCategory] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get the currently active email template. Optionally filter by category."""
@@ -184,7 +184,7 @@ async def get_active_template(
 async def get_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get a single email template by ID."""
@@ -362,7 +362,7 @@ async def activate_template(
 async def preview_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Preview a template with sample data."""
@@ -535,7 +535,7 @@ async def import_template_to_step(
     template_id: int,
     step_id: int = Query(..., description="Target sequence step ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Copy template content to a campaign sequence step."""

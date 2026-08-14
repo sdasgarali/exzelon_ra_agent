@@ -200,7 +200,7 @@ class TestUserCRUDAudit:
             "email": "newuser@test.com",
             "password": "password123",
             "full_name": "New User",
-            "role": "viewer",
+            "role": "recruiter",
         }, headers=sa_headers)
         assert resp.status_code == 201
 
@@ -215,7 +215,7 @@ class TestUserCRUDAudit:
     def test_update_user_role_creates_audit(self, client, db_session, sa_headers, super_admin_user, admin_user, test_tenant):
         """Updating a user's role writes audit with changed_fields."""
         resp = client.put(f"/api/v1/users/{admin_user.user_id}", json={
-            "role": "operator",
+            "role": "bdm",
         }, headers=sa_headers)
         assert resp.status_code == 200
 
@@ -238,7 +238,7 @@ class TestUserCRUDAudit:
             email="todelete@test.com",
             password_hash=get_password_hash("pass"),
             full_name="To Delete",
-            role=UserRole.VIEWER,
+            role=UserRole.RECRUITER,
             is_active=True,
             is_verified=True,
             tenant_id=test_tenant.tenant_id,

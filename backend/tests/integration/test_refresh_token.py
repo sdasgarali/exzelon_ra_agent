@@ -32,7 +32,7 @@ class TestRefreshToken:
         """Access token used as refresh token is rejected (wrong type claim)."""
         access = create_access_token(data={
             "sub": admin_user.email,
-            "role": admin_user.role.value,
+            "role": admin_user.role,
             "tenant_id": admin_user.tenant_id,
             "plan": None,
         })

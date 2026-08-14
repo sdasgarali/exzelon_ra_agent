@@ -51,7 +51,7 @@ def database_search_contacts(
     request: Request,
     data: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Search B2B contact database via Apollo adapter."""

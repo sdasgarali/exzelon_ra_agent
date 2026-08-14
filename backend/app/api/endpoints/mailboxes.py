@@ -222,7 +222,7 @@ async def list_mailboxes(
     provider: Optional[str] = Query(None, description="Filter by provider"),
     show_archived: bool = Query(False, description="Include archived mailboxes"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all sender mailboxes."""
@@ -278,7 +278,7 @@ async def list_mailboxes(
 @router.get("/stats", response_model=SenderMailboxStatsResponse)
 async def get_mailbox_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get mailbox statistics."""
@@ -333,7 +333,7 @@ async def get_mailbox_stats(
 async def get_mailbox(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get a specific mailbox by ID."""
@@ -359,7 +359,7 @@ async def get_mailbox(
 async def get_mailbox_detail(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get detailed mailbox info: stats, campaigns, warmup logs."""
@@ -794,7 +794,7 @@ def _test_imap_sync(imap_host: str, imap_port: int, email: str, password: str = 
 async def test_mailbox_connection(
     mailbox_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Test connection for an existing mailbox."""
@@ -887,7 +887,7 @@ async def test_mailbox_connection(
 async def test_new_mailbox_connection(
     request: TestMailboxConnectionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Test connection for new mailbox credentials (before saving)."""
@@ -985,7 +985,7 @@ async def reset_daily_counts(
 async def get_available_mailboxes_for_sending(
     count: int = Query(1, ge=1, le=10, description="Number of mailboxes needed"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get available mailboxes for sending (cold-ready with remaining quota)."""

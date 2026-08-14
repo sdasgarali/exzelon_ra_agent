@@ -72,14 +72,14 @@ describe('Auth Store', () => {
     expect(useAuthStore.getState().isAdmin()).toBe(true)
   })
 
-  test('isAdmin returns false for viewer role', () => {
-    const viewer = { ...mockUser, role: 'viewer' as const }
+  test('isAdmin returns false for recruiter role', () => {
+    const viewer = { ...mockUser, role: 'recruiter' as const }
     useAuthStore.getState().setAuth('test-token', viewer)
     expect(useAuthStore.getState().isAdmin()).toBe(false)
   })
 
-  test('isAdmin returns false for operator role', () => {
-    const operator = { ...mockUser, role: 'operator' as const }
+  test('isAdmin returns false for bdm role', () => {
+    const operator = { ...mockUser, role: 'bdm' as const }
     useAuthStore.getState().setAuth('test-token', operator)
     expect(useAuthStore.getState().isAdmin()).toBe(false)
   })

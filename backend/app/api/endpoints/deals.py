@@ -304,7 +304,7 @@ def deal_stats(
 def create_deal(
     data: DealCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     from datetime import date as date_type
@@ -391,7 +391,7 @@ def update_deal(
     deal_id: int,
     data: DealUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()
@@ -560,7 +560,7 @@ def add_activity(
     deal_id: int,
     data: ActivityCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN, UserRole.OPERATOR])),
+    user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     deal = db.query(Deal).filter(Deal.deal_id == deal_id).first()

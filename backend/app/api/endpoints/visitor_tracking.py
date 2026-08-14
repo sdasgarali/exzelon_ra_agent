@@ -32,7 +32,7 @@ def list_visitors(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List visitor events with optional filters."""
@@ -81,7 +81,7 @@ def list_visitors(
 def visitor_stats(
     days: int = Query(30, ge=1, le=90),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.OPERATOR])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get visitor statistics."""

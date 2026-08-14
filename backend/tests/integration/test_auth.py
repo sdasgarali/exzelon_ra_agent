@@ -34,7 +34,7 @@ class TestAuthEndpoints:
         data = response.json()
         assert data["email"] == "newuser@test.com"
         assert data["full_name"] == "New User"
-        assert data["role"] == "viewer"
+        assert data["role"] == "recruiter"
         assert "user_id" in data
 
     def test_register_duplicate_email(self, client, admin_user, auth_headers):
