@@ -376,7 +376,7 @@ export default function DealsPage() {
                       <GripVertical className="w-4 h-4 text-gray-300 mt-0.5 flex-shrink-0 cursor-grab" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <ClaimTag claimedBy={deal.claimed_by} />
+                          <ClaimTag claimedBy={deal.claimed_by} owner={deal.owner} />
                           <AgeBadge days={deal.age_days} />
                           {deal.is_auto_created && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-full">Auto</span>}
                         </div>
@@ -419,7 +419,7 @@ export default function DealsPage() {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {deals.map(d => (
                   <tr key={d.deal_id} onClick={() => openDeal(d)} className="hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer">
-                    <td className="px-3 py-2"><ClaimTag claimedBy={d.claimed_by} /></td>
+                    <td className="px-3 py-2"><ClaimTag claimedBy={d.claimed_by} owner={d.owner} /></td>
                     <td className="px-3 py-2"><AgeBadge days={d.age_days} /></td>
                     <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100 max-w-[220px] truncate">
                       {d.name}
@@ -516,7 +516,7 @@ export default function DealsPage() {
               <div className="flex justify-between items-start">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <ClaimTag claimedBy={selectedDeal.claimed_by} size="md" />
+                    <ClaimTag claimedBy={selectedDeal.claimed_by} owner={selectedDeal.owner} size="md" />
                     <AgeBadge days={selectedDeal.age_days} size="md" />
                     {selectedDeal.is_auto_created && <span className="px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-full flex items-center gap-1"><Bot className="w-3 h-3" /> Auto</span>}
                   </div>

@@ -103,7 +103,9 @@ def _deal_to_dict(d: Deal, db: Session = None, users_by_id: Optional[dict] = Non
         "claimed_by_user_id": claimed_by_id,
         "claimed_by": _user_ref(db, claimed_by_id, users_by_id),
         "claimed_at": d.claimed_at.isoformat() if getattr(d, "claimed_at", None) else None,
-        "is_unclaimed": claimed_by_id is None,
+        # Truly "in the open pool" — nobody has claimed it AND nobody is assigned it.
+        # An assigned-but-unclaimed deal is NOT unclaimed (it shows the owner's initials).
+        "is_unclaimed": claimed_by_id is None and d.owner_id is None,
         "age_days": age_days,
         "notes": d.notes,
         "is_auto_created": getattr(d, "is_auto_created", False),
@@ -274,7 +276,8 @@ def list_deals(
         )
     elif claimed_by:
         if claimed_by == "unclaimed":
-            query = query.filter(Deal.claimed_by_user_id.is_(None))
+            # Open pool = neither claimed nor assigned.
+            query = query.filter(Deal.claimed_by_user_id.is_(None), Deal.owner_id.is_(None))
         elif claimed_by == "me":
             query = query.filter(Deal.claimed_by_user_id == user.user_id)
         else:
