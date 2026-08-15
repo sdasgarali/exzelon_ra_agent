@@ -101,6 +101,13 @@ class TestAssign:
         resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=operator_headers, json={"user_id": viewer_user.user_id})
         assert resp.status_code == 403
 
+    def test_assigned_deal_is_not_unclaimed(self, client, db_session, auth_headers, operator_user, test_tenant, stage):
+        # Assigning an owner (but not claiming) → deal is no longer "Unclaimed" (open pool).
+        d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
+        resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=auth_headers, json={"user_id": operator_user.user_id})
+        assert resp.status_code == 200
+        assert resp.json()["is_unclaimed"] is False
+
 
 class TestListFilters:
     def test_numeric_and_claimed_filters(self, client, db_session, auth_headers, operator_user, test_tenant, stage):
@@ -113,12 +120,18 @@ class TestListFilters:
         # probability between 0 and 50
         rows = client.get("/api/v1/deals?probability_op=between&probability_val=0&probability_val2=50", headers=auth_headers).json()["items"]
         assert [r["name"] for r in rows] == ["Cheap"]
-        # unclaimed only
+        # unclaimed only = open pool (no claimer AND no owner)
         rows = client.get("/api/v1/deals?claimed_by=unclaimed", headers=auth_headers).json()["items"]
         assert [r["name"] for r in rows] == ["Cheap"]
         # search
         rows = client.get("/api/v1/deals?search=rich", headers=auth_headers).json()["items"]
         assert [r["name"] for r in rows] == ["Rich"]
+
+    def test_unclaimed_filter_excludes_assigned(self, client, db_session, auth_headers, operator_user, test_tenant, stage):
+        _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id, name="Open")
+        _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id, name="Assigned", owner_id=operator_user.user_id)
+        rows = client.get("/api/v1/deals?claimed_by=unclaimed", headers=auth_headers).json()["items"]
+        assert [r["name"] for r in rows] == ["Open"]  # assigned deal is not in the open pool
 
     def test_mine_returns_claimed_or_owned(self, client, db_session, operator_headers, operator_user, test_tenant, stage):
         _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id, name="Claimed", claimed_by_user_id=operator_user.user_id)
