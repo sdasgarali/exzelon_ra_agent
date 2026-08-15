@@ -35,7 +35,7 @@
 
 ## CRM Models
 
-- **Deal** — CRM deals with value, probability, stage, contact/client associations
+- **Deal** — CRM deals with value, probability, stage, contact/client associations. `owner_id` = admin-ASSIGNED owner; `claimed_by_user_id`+`claimed_at` = the rep who CLAIMED it from the queue (NULL = Unclaimed). Age is derived live from `created_at`. See `services/deal_notifications.py` (forward new unclaimed deals to reps) and the `/deals` claim endpoints.
 - **DealStage** — pipeline stages (New Lead, Contacted, Qualified, Proposal, Negotiation, Won, Lost)
 - **DealTask** — task management within deals (assignee, due date, priority, status)
 - **CRMSyncLog** — bidirectional CRM sync operation logging (direction, entity type, records synced)
