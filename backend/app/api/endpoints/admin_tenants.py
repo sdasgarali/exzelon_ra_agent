@@ -1,5 +1,6 @@
 """Super admin tenant management endpoints."""
 import json as _json_admin
+import structlog
 from datetime import timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,6 +24,7 @@ from app.services.tenant_service import generate_unique_slug
 from app.core.settings_resolver import get_tenant_setting_bool, set_tenant_setting
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin - Tenants"])
+logger = structlog.get_logger()
 
 # All routes require super_admin
 super_admin_dep = require_role([UserRole.SUPER_ADMIN])
@@ -197,6 +199,14 @@ async def create_tenant(
     db.add(tenant)
     db.commit()
     db.refresh(tenant)
+
+    # Seed this tenant's own CRM pipeline stages.
+    try:
+        from app.services.deal_automation import ensure_deal_stages
+        if ensure_deal_stages(db, tenant.tenant_id):
+            db.commit()
+    except Exception as e:
+        logger.warning("Failed to seed deal stages for new tenant", tenant_id=tenant.tenant_id, error=str(e))
 
     write_audit_log(
         db, tenant_id=tenant.tenant_id, entity_type="tenant",

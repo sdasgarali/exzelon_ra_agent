@@ -23,6 +23,46 @@ STAGE_NEW_LEAD = "New Lead"
 STAGE_CONTACTED = "Contacted"
 STAGE_QUALIFIED = "Qualified"
 
+# Default CRM pipeline stages, seeded per tenant. Single source of truth shared by
+# main.py backfill, tenant provisioning, and the auto-create self-heal.
+DEFAULT_DEAL_STAGES = [
+    {"name": "New Lead", "stage_order": 1, "color": "#6366f1"},
+    {"name": "Contacted", "stage_order": 2, "color": "#3b82f6"},
+    {"name": "Qualified", "stage_order": 3, "color": "#0ea5e9"},
+    {"name": "Proposal", "stage_order": 4, "color": "#f59e0b"},
+    {"name": "Negotiation", "stage_order": 5, "color": "#f97316"},
+    {"name": "Won", "stage_order": 6, "color": "#22c55e", "is_won": True},
+    {"name": "Lost", "stage_order": 7, "color": "#ef4444", "is_lost": True},
+]
+
+
+def ensure_deal_stages(db: Session, tenant_id: int) -> int:
+    """Seed the default pipeline stages for a tenant that has none. Idempotent.
+
+    Returns the number of stages created (0 if the tenant already had stages).
+    Caller is responsible for committing.
+    """
+    if tenant_id is None:
+        return 0
+    has_any = db.query(DealStage).filter(
+        DealStage.tenant_id == tenant_id,
+        DealStage.is_archived == False,
+    ).first()
+    if has_any:
+        return 0
+    for s in DEFAULT_DEAL_STAGES:
+        db.add(DealStage(
+            tenant_id=tenant_id,
+            name=s["name"],
+            stage_order=s["stage_order"],
+            color=s["color"],
+            is_won=s.get("is_won", False),
+            is_lost=s.get("is_lost", False),
+        ))
+    db.flush()
+    logger.info("Seeded default deal stages for tenant", tenant_id=tenant_id, count=len(DEFAULT_DEAL_STAGES))
+    return len(DEFAULT_DEAL_STAGES)
+
 
 def _get_deal_setting(db: Session, key: str, default: Any = None) -> Any:
     """Read a deal automation setting from the settings table."""
@@ -42,17 +82,19 @@ def _get_deal_setting(db: Session, key: str, default: Any = None) -> Any:
     return val
 
 
-def _get_stage_by_name(db: Session, name: str) -> Optional[DealStage]:
-    """Get a stage by its name (case-insensitive)."""
+def _get_stage_by_name(db: Session, name: str, tenant_id: int) -> Optional[DealStage]:
+    """Get a stage by its name (case-insensitive) within a tenant."""
     return db.query(DealStage).filter(
+        DealStage.tenant_id == tenant_id,
         func.lower(DealStage.name) == name.lower(),
         DealStage.is_archived == False,
     ).first()
 
 
-def _get_next_stage(db: Session, current_order: int) -> Optional[DealStage]:
-    """Get the next stage in order after the current one (skipping won/lost)."""
+def _get_next_stage(db: Session, current_order: int, tenant_id: int) -> Optional[DealStage]:
+    """Get the next stage in order after the current one (skipping won/lost), per tenant."""
     return db.query(DealStage).filter(
+        DealStage.tenant_id == tenant_id,
         DealStage.stage_order > current_order,
         DealStage.is_won == False,
         DealStage.is_lost == False,
@@ -99,10 +141,17 @@ def auto_create_deal_from_interested_reply(
     company = contact.client_name or "Unknown Company"
     deal_name = f"{contact_name} — {company}"
 
-    # Get "New Lead" stage
-    stage = _get_stage_by_name(db, STAGE_NEW_LEAD)
+    # Tenant of the deal = tenant of the contact.
+    deal_tenant_id = getattr(contact, "tenant_id", None) or 1
+
+    # Self-heal: make sure this tenant has its pipeline stages before we look one up,
+    # so a tenant provisioned without demo data still gets a correct, same-tenant stage.
+    ensure_deal_stages(db, deal_tenant_id)
+
+    # Get this tenant's "New Lead" stage
+    stage = _get_stage_by_name(db, STAGE_NEW_LEAD, deal_tenant_id)
     if not stage:
-        logger.warning("Cannot auto-create deal: 'New Lead' stage not found")
+        logger.warning("Cannot auto-create deal: 'New Lead' stage not found", tenant_id=deal_tenant_id)
         return None
 
     # Determine probability from lead score
@@ -110,21 +159,18 @@ def auto_create_deal_from_interested_reply(
     if hasattr(contact, "lead_score") and contact.lead_score:
         probability = _score_to_probability(contact.lead_score)
 
-    # Find client_id from contact
+    # Find client_id from contact (within the same tenant)
     client_id = None
     if contact.client_name:
         client = db.query(ClientInfo).filter(
-            func.lower(ClientInfo.client_name) == contact.client_name.lower()
+            ClientInfo.tenant_id == deal_tenant_id,
+            func.lower(ClientInfo.client_name) == contact.client_name.lower(),
         ).first()
         if client:
             client_id = client.client_id
 
-    # Derive tenant_id from contact
-    _contact = db.query(ContactDetails).filter(ContactDetails.contact_id == contact_id).first()
-    _deal_tenant_id = getattr(_contact, 'tenant_id', None) or 1 if _contact else 1
-
     deal = Deal(
-        tenant_id=_deal_tenant_id,
+        tenant_id=deal_tenant_id,
         name=deal_name,
         stage_id=stage.stage_id,
         contact_id=contact_id,
@@ -252,12 +298,12 @@ def auto_advance_stage(
     if signal == "email_sent":
         # Only advance from "New Lead" to "Contacted"
         if current_stage.name.lower() == STAGE_NEW_LEAD.lower():
-            target_stage = _get_stage_by_name(db, STAGE_CONTACTED)
+            target_stage = _get_stage_by_name(db, STAGE_CONTACTED, deal.tenant_id)
 
     elif signal == "reply_received":
         # Only advance from "New Lead" or "Contacted" to "Qualified"
         if current_stage.name.lower() in (STAGE_NEW_LEAD.lower(), STAGE_CONTACTED.lower()):
-            target_stage = _get_stage_by_name(db, STAGE_QUALIFIED)
+            target_stage = _get_stage_by_name(db, STAGE_QUALIFIED, deal.tenant_id)
 
     if not target_stage or target_stage.stage_id == deal.stage_id:
         return None
