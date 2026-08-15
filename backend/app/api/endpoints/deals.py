@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, effective_base_role
 from app.db.models.user import User, UserRole
 from app.db.models.deal import Deal, DealStage, DealActivity
 from app.db.models.contact import ContactDetails
 from app.db.models.client import ClientInfo
-from app.db.query_helpers import tenant_filter
+from app.db.query_helpers import tenant_filter, SIZE_OPERATORS, size_operator_clause
 
 router = APIRouter(prefix="/deals", tags=["deals"])
 
@@ -56,7 +56,38 @@ class ActivityCreate(BaseModel):
     metadata_json: Optional[str] = None
 
 
-def _deal_to_dict(d: Deal, db: Session = None) -> dict:
+def _initials(full_name: Optional[str]) -> str:
+    """First+last initials from a name, e.g. 'Ricky Ponting' -> 'RP'."""
+    if not full_name:
+        return "?"
+    parts = [p for p in full_name.strip().split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _user_ref(db: Optional[Session], user_id: Optional[int], users_by_id: Optional[dict] = None) -> Optional[dict]:
+    """Resolve a user id to {id, name, initials}. Uses a cache dict when provided."""
+    if not user_id:
+        return None
+    user = None
+    if users_by_id is not None:
+        user = users_by_id.get(user_id)
+    if user is None and db is not None:
+        user = db.query(User).filter(User.user_id == user_id).first()
+    if user is None:
+        return {"id": user_id, "name": None, "initials": "?"}
+    name = user.full_name or user.email
+    return {"id": user_id, "name": name, "initials": _initials(name)}
+
+
+def _deal_to_dict(d: Deal, db: Session = None, users_by_id: Optional[dict] = None) -> dict:
+    claimed_by_id = getattr(d, "claimed_by_user_id", None)
+    age_days = None
+    if d.created_at:
+        age_days = max(0, (datetime.utcnow() - d.created_at).days)
     result = {
         "deal_id": d.deal_id,
         "name": d.name,
@@ -68,6 +99,12 @@ def _deal_to_dict(d: Deal, db: Session = None) -> dict:
         "probability": d.probability,
         "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
         "owner_id": d.owner_id,
+        "owner": _user_ref(db, d.owner_id, users_by_id),
+        "claimed_by_user_id": claimed_by_id,
+        "claimed_by": _user_ref(db, claimed_by_id, users_by_id),
+        "claimed_at": d.claimed_at.isoformat() if getattr(d, "claimed_at", None) else None,
+        "is_unclaimed": claimed_by_id is None,
+        "age_days": age_days,
         "notes": d.notes,
         "is_auto_created": getattr(d, "is_auto_created", False),
         "probability_manual": getattr(d, "probability_manual", False),
@@ -170,9 +207,34 @@ def update_stage(
 
 # ─── Deals CRUD ────────────────────────────────────────────────────
 
+def _users_by_id_for_deals(db: Session, deals: list) -> dict:
+    """Batch-load the users referenced (claimed_by/owner) by a page of deals."""
+    ids = set()
+    for d in deals:
+        if d.owner_id:
+            ids.add(d.owner_id)
+        if getattr(d, "claimed_by_user_id", None):
+            ids.add(d.claimed_by_user_id)
+    if not ids:
+        return {}
+    rows = db.query(User).filter(User.user_id.in_(ids)).all()
+    return {u.user_id: u for u in rows}
+
+
 @router.get("")
 def list_deals(
     stage_id: Optional[int] = None,
+    value_op: Optional[str] = Query(None, description="Numeric op for value: eq/ne/lt/lte/gt/gte/between"),
+    value_val: Optional[float] = None,
+    value_val2: Optional[float] = None,
+    probability_op: Optional[str] = Query(None, description="Numeric op for probability"),
+    probability_val: Optional[float] = None,
+    probability_val2: Optional[float] = None,
+    created_from: Optional[str] = Query(None, description="ISO date/datetime lower bound"),
+    created_to: Optional[str] = Query(None, description="ISO date/datetime upper bound"),
+    claimed_by: Optional[str] = Query(None, description="user_id | 'unclaimed' | 'me'"),
+    search: Optional[str] = None,
+    mine: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -181,14 +243,56 @@ def list_deals(
 ):
     query = db.query(Deal).filter(Deal.is_archived == False)
     query = tenant_filter(query, Deal, tenant_id)
+
     if stage_id:
         query = query.filter(Deal.stage_id == stage_id)
+
+    # Numeric conditional filters (reuse the shared operator helper)
+    if value_op in SIZE_OPERATORS and value_val is not None:
+        clause = size_operator_clause(Deal.value, value_op, value_val, value_val2)
+        if clause is not None:
+            query = query.filter(clause)
+    if probability_op in SIZE_OPERATORS and probability_val is not None:
+        clause = size_operator_clause(Deal.probability, probability_op, probability_val, probability_val2)
+        if clause is not None:
+            query = query.filter(clause)
+
+    # Date-created range
+    for bound, is_lower in ((created_from, True), (created_to, False)):
+        if bound:
+            try:
+                dt = datetime.fromisoformat(bound.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                dt = None
+            if dt is not None:
+                query = query.filter(Deal.created_at >= dt if is_lower else Deal.created_at <= dt)
+
+    # Claimed-by filter
+    if mine:
+        query = query.filter(
+            (Deal.claimed_by_user_id == user.user_id) | (Deal.owner_id == user.user_id)
+        )
+    elif claimed_by:
+        if claimed_by == "unclaimed":
+            query = query.filter(Deal.claimed_by_user_id.is_(None))
+        elif claimed_by == "me":
+            query = query.filter(Deal.claimed_by_user_id == user.user_id)
+        else:
+            try:
+                query = query.filter(Deal.claimed_by_user_id == int(claimed_by))
+            except (ValueError, TypeError):
+                pass
+
+    if search:
+        query = query.filter(Deal.name.ilike(f"%{search}%"))
+
     total = query.count()
     deals = query.order_by(Deal.created_at.desc()).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
+    users_by_id = _users_by_id_for_deals(db, deals)
     return {
-        "items": [_deal_to_dict(d, db) for d in deals],
+        "items": [_deal_to_dict(d, db, users_by_id) for d in deals],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -224,7 +328,7 @@ def pipeline_view(
             "stage_order": stage.stage_order,
             "is_won": stage.is_won,
             "is_lost": stage.is_lost,
-            "deals": [_deal_to_dict(d, db) for d in deals],
+            "deals": [_deal_to_dict(d, db, _users_by_id_for_deals(db, deals)) for d in deals],
             "total_value": sum(float(d.value or 0) for d in deals),
             "count": len(deals),
         })
@@ -473,6 +577,102 @@ def archive_deal(
     deal.is_archived = True
     db.commit()
     return {"message": "Deal archived"}
+
+
+# ─── Claim queue ──────────────────────────────────────────────────
+
+class AssignRequest(BaseModel):
+    user_id: Optional[int] = None  # None to unassign
+
+
+def _get_deal_scoped(db: Session, deal_id: int, tenant_id: Optional[int]) -> Deal:
+    deal = db.query(Deal).filter(Deal.deal_id == deal_id, Deal.is_archived == False).first()
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    if tenant_id is not None and deal.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    return deal
+
+
+@router.post("/{deal_id}/claim")
+def claim_deal(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """A BDM/Recruiter claims an unclaimed deal (self-pull from the queue)."""
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    if effective_base_role(user, None, db) not in ("bdm", "recruiter"):
+        raise HTTPException(status_code=403, detail="Only BDMs and Recruiters can claim deals")
+    if deal.claimed_by_user_id is not None:
+        if deal.claimed_by_user_id == user.user_id:
+            return _deal_to_dict(deal, db)  # idempotent — already mine
+        raise HTTPException(status_code=400, detail="Deal is already claimed")
+    deal.claimed_by_user_id = user.user_id
+    deal.claimed_at = datetime.utcnow()
+    db.add(DealActivity(
+        deal_id=deal.deal_id, activity_type="claimed",
+        description=f"Claimed by {user.full_name or user.email}", created_by=user.user_id,
+    ))
+    db.commit()
+    db.refresh(deal)
+    return _deal_to_dict(deal, db)
+
+
+@router.post("/{deal_id}/unclaim")
+def unclaim_deal(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Release a claim. Allowed for the claimer or an admin/super_admin."""
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    is_admin = effective_base_role(user, None, db) in ("admin", "super_admin")
+    if deal.claimed_by_user_id != user.user_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Only the claimer or an admin can release this deal")
+    if deal.claimed_by_user_id is None:
+        return _deal_to_dict(deal, db)
+    deal.claimed_by_user_id = None
+    deal.claimed_at = None
+    db.add(DealActivity(
+        deal_id=deal.deal_id, activity_type="unclaimed",
+        description=f"Released by {user.full_name or user.email}", created_by=user.user_id,
+    ))
+    db.commit()
+    db.refresh(deal)
+    return _deal_to_dict(deal, db)
+
+
+@router.post("/{deal_id}/assign")
+def assign_deal(
+    deal_id: int,
+    body: AssignRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Admin assigns/reassigns a deal's owner to a BDM/Recruiter (any stage). None = unassign."""
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    if body.user_id is not None:
+        target = db.query(User).filter(User.user_id == body.user_id).first()
+        if not target:
+            raise HTTPException(status_code=400, detail="User not found")
+        if tenant_id is not None and target.tenant_id != tenant_id:
+            raise HTTPException(status_code=400, detail="User is not in this tenant")
+        if effective_base_role(target, None, db) not in ("bdm", "recruiter"):
+            raise HTTPException(status_code=400, detail="Deals can only be assigned to a BDM or Recruiter")
+        desc = f"Assigned to {target.full_name or target.email} by {user.full_name or user.email}"
+    else:
+        desc = f"Owner cleared by {user.full_name or user.email}"
+    deal.owner_id = body.user_id
+    db.add(DealActivity(
+        deal_id=deal.deal_id, activity_type="assigned", description=desc, created_by=user.user_id,
+    ))
+    db.commit()
+    db.refresh(deal)
+    return _deal_to_dict(deal, db)
 
 
 # ─── Stale & Forecast ─────────────────────────────────────────────
