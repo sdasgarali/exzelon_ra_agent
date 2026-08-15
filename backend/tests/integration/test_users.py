@@ -82,6 +82,20 @@ class TestListScoping:
         filtered = client.get(f"/api/v1/users?tenant_id={other_tenant_user.tenant_id}", headers=sa_headers).json()
         assert {u["tenant_id"] for u in filtered} == {other_tenant_user.tenant_id}
 
+    def test_super_admin_scoped_by_impersonated_tenant(self, client, sa_headers, admin_user, other_tenant, other_tenant_user):
+        # Selecting a tenant in the sidebar sends X-Tenant-ID → list is scoped to it.
+        headers = {**sa_headers, "X-Tenant-ID": str(admin_user.tenant_id)}
+        rows = client.get("/api/v1/users", headers=headers).json()
+        tenant_ids = {u["tenant_id"] for u in rows}
+        assert tenant_ids == {admin_user.tenant_id}
+        assert all(u["email"] != "other@test.com" for u in rows)
+
+    def test_explicit_filter_overrides_impersonation(self, client, sa_headers, admin_user, other_tenant, other_tenant_user):
+        # Impersonating tenant A but explicitly filtering tenant B → shows tenant B.
+        headers = {**sa_headers, "X-Tenant-ID": str(admin_user.tenant_id)}
+        rows = client.get(f"/api/v1/users?tenant_id={other_tenant.tenant_id}", headers=headers).json()
+        assert {u["tenant_id"] for u in rows} == {other_tenant.tenant_id}
+
 
 class TestIsolationGuards:
     def test_admin_cannot_get_other_tenant_user(self, client, auth_headers, other_tenant_user):
