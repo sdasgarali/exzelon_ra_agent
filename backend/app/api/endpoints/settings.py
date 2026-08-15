@@ -142,6 +142,8 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'deal_auto_log_activities': 'business_rules',
     'deal_stale_threshold_days': 'business_rules',
     'deal_score_to_probability': 'business_rules',
+    'deal_notify_reps_on_new': 'business_rules',
+    'deal_notify_reps_email': 'business_rules',
     # Automation Control Center
     'automation_master_enabled': 'automation',
     'automation_chain_enrichment': 'automation',
@@ -675,6 +677,8 @@ DEFAULT_SETTINGS = {
     "deal_auto_create_on_interested": {"value": True, "type": "boolean", "description": "Auto-create deal when inbox reply is classified as interested"},
     "deal_auto_advance_stages": {"value": True, "type": "boolean", "description": "Auto-advance deal stages on email sent/reply received signals"},
     "deal_auto_log_activities": {"value": True, "type": "boolean", "description": "Auto-log email events (sent/received/bounced) as deal activities"},
+    "deal_notify_reps_on_new": {"value": True, "type": "boolean", "description": "Notify all BDMs/Recruiters (in-app) when a new unclaimed deal enters the queue"},
+    "deal_notify_reps_email": {"value": True, "type": "boolean", "description": "Also email BDMs/Recruiters when a new unclaimed deal enters the queue"},
     "deal_stale_threshold_days": {"value": 7, "type": "integer", "description": "Flag deals with no activity for this many days as stale"},
     "deal_score_to_probability": {"value": True, "type": "boolean", "description": "Auto-update deal probability from contact lead score"},
 
