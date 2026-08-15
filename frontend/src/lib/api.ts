@@ -1206,6 +1206,19 @@ export const dealsApi = {
     const response = await api.post(`/deals/${dealId}/activities`, data)
     return response.data
   },
+  // Claim queue
+  claim: async (id: number) => {
+    const response = await api.post(`/deals/${id}/claim`)
+    return response.data
+  },
+  unclaim: async (id: number) => {
+    const response = await api.post(`/deals/${id}/unclaim`)
+    return response.data
+  },
+  assign: async (id: number, userId: number | null) => {
+    const response = await api.post(`/deals/${id}/assign`, { user_id: userId })
+    return response.data
+  },
   // Stages
   listStages: async () => {
     const response = await api.get('/deals/stages')

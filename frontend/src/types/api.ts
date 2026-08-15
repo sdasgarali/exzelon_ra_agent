@@ -351,6 +351,12 @@ export interface Deal {
   probability: number;
   expected_close_date: string | null;
   owner_id: number | null;
+  owner?: DealUserRef | null;
+  claimed_by_user_id?: number | null;
+  claimed_by?: DealUserRef | null;
+  claimed_at?: string | null;
+  is_unclaimed?: boolean;
+  age_days?: number | null;
   notes: string | null;
   is_auto_created: boolean;
   probability_manual: boolean;
@@ -365,6 +371,12 @@ export interface Deal {
   contact_email?: string;
   client_name?: string;
   activities?: DealActivity[];
+}
+
+export interface DealUserRef {
+  id: number;
+  name: string | null;
+  initials: string;
 }
 
 export interface DealActivity {
