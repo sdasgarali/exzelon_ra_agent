@@ -363,7 +363,11 @@ export default function UsersPage() {
             />
           </svg>
           <input
-            type="text"
+            type="search"
+            name="user-search"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
             placeholder="Search by email or name..."
             value={search}
             onChange={(e) => {
