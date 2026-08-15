@@ -67,12 +67,17 @@ class SenderMailboxBase(BaseModel):
 
 class SenderMailboxCreate(SenderMailboxBase):
     """Schema for creating a sender mailbox."""
-    password: Optional[str] = None  # Optional for OAuth2 mailboxes
+    password: Optional[str] = None  # Optional for OAuth2 mailboxes (this is the SEND credential)
     auth_method: str = "password"  # "password" | "oauth2"
     oauth_tenant_id: Optional[str] = None
     warmup_status: WarmupStatusEnum = WarmupStatusEnum.INACTIVE
     is_active: bool = True
     outreach_role_id: Optional[int] = None
+    # For personal (non-auto_outbound) mailboxes: the SYSTEM LOGIN password used to
+    # create/link a User so this person can sign in. Ignored for RA/machine mailboxes.
+    login_password: Optional[str] = None
+    # Link to an existing user instead of creating one (used by "add my email as mailbox").
+    user_id: Optional[int] = None
 
 
 class SenderMailboxUpdate(BaseModel):
@@ -135,6 +140,10 @@ class SenderMailboxResponse(SenderMailboxBase):
     # Outreach role
     outreach_role_id: Optional[int] = None
     outreach_role_name: Optional[str] = None
+
+    # Linked login user (personal mailboxes only)
+    user_id: Optional[int] = None
+    linked_login_email: Optional[str] = None
 
     # Computed fields
     can_send: bool = False

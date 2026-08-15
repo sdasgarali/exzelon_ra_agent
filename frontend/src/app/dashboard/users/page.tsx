@@ -509,6 +509,14 @@ export default function UsersPage() {
                         </button>
                       )}
                       <button
+                        onClick={() => router.push(`/dashboard/mailboxes?add_email=${encodeURIComponent(u.email)}`)}
+                        disabled={u.role === 'super_admin'}
+                        title={u.role === 'super_admin' ? 'Super admins are global' : 'Set up this email as a sending mailbox (test connectivity + warm-up)'}
+                        className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Add as mailbox
+                      </button>
+                      <button
                         onClick={() => openEditModal(u)}
                         disabled={u.role === 'super_admin' && !isSuperAdmin}
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"

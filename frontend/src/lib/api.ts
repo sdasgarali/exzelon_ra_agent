@@ -640,11 +640,11 @@ export const outreachRolesApi = {
     const response = await api.get('/outreach-roles')
     return response.data
   },
-  create: async (data: { role_name: string; description?: string }) => {
+  create: async (data: { role_name: string; description?: string; purpose?: string; auto_outbound?: boolean }) => {
     const response = await api.post('/outreach-roles', data)
     return response.data
   },
-  update: async (id: number, data: { role_name?: string; description?: string }) => {
+  update: async (id: number, data: { role_name?: string; description?: string; purpose?: string; auto_outbound?: boolean }) => {
     const response = await api.put(`/outreach-roles/${id}`, data)
     return response.data
   },

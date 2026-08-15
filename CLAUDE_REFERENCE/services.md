@@ -116,7 +116,8 @@ Domain reputation management subsystem:
 
 | Service | File | Purpose |
 |---------|------|---------|
-| Mailbox Selector | `services/mailbox_selector.py` | Health-aware mailbox selection (score = health*0.4 + quota*0.3 + warmup_age*0.15 + deliverability*0.15) |
+| Mailbox Selector | `services/mailbox_selector.py` | Health-aware mailbox selection (score = health*0.4 + quota*0.3 + warmup_age*0.15 + deliverability*0.15). AUTO pool (no explicit campaign mailboxes) is gated to `OutreachRole.auto_outbound` (RA) mailboxes; explicit campaign assignment bypasses the role gate (manual send). Same gate mirrored in `campaign_engine._select_mailbox` + fallback. |
+| Mailbox↔User Link | `services/mailbox_user_link.py` | For personal (non-auto_outbound) mailboxes: `map_outreach_role_to_rbac` (BDM→bdm, Recruiter→recruiter, Admin→admin, else recruiter) + `create_or_link_user` (link existing User by email, else create with the given login password). Called by `create_mailbox`; RA mailboxes create no user. |
 | AI Lead Search | `services/ai_lead_search.py` | NLP query parsing -> SQL filter dict |
 | Spam Checker | `services/spam_checker.py` | 106 trigger words + 6 regex patterns + link/image ratio detection |
 | AI ICP Wizard | `services/ai_icp_wizard.py` | AI-generated Ideal Customer Profiles with rule-based fallback |

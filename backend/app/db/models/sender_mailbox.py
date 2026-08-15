@@ -88,6 +88,10 @@ class SenderMailbox(Base):
     # Outreach role (RA, BDM, Recruiter, etc.)
     outreach_role_id = Column(Integer, ForeignKey("outreach_roles.role_id"), nullable=True, index=True)
 
+    # Linked login user. Personal (non-auto_outbound) mailboxes are tied 1:1 to a User
+    # account so that person can log in; RA/machine mailboxes have no linked user.
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True, index=True)
+
     # Dedicated IP for sender IP separation/rotation (SISR)
     dedicated_ip = Column(String(45), nullable=True)
 

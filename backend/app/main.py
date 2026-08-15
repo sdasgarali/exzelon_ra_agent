@@ -331,8 +331,18 @@ def _seed_outreach_roles():
                 _conn_rp.execute(_sa_text_rp("ALTER TABLE outreach_roles ADD COLUMN purpose TEXT NULL"))
                 _conn_rp.commit()
                 logger.info("Migration: added purpose column to outreach_roles")
+            # auto_outbound: which roles' mailboxes auto-send cold outbound (RA by default)
+            if "auto_outbound" not in _cols_rp:
+                _conn_rp.execute(_sa_text_rp(
+                    "ALTER TABLE outreach_roles ADD COLUMN auto_outbound BOOLEAN NOT NULL DEFAULT 0"
+                ))
+                _conn_rp.execute(_sa_text_rp(
+                    "UPDATE outreach_roles SET auto_outbound = 1 WHERE role_name = 'RA'"
+                ))
+                _conn_rp.commit()
+                logger.info("Migration: added auto_outbound to outreach_roles (RA=1)")
     except Exception as e:
-        logger.warning(f"Migration check for outreach_roles.purpose: {e}")
+        logger.warning(f"Migration check for outreach_roles.purpose/auto_outbound: {e}")
 
     db = SessionLocal()
     try:
@@ -341,9 +351,9 @@ def _seed_outreach_roles():
             tenants = [(1,)]  # Fallback single-tenant
 
         default_roles = [
-            {"role_name": "RA", "description": "Recruiting Associate — handles sourcing outreach"},
-            {"role_name": "BDM", "description": "Business Development Manager — handles client outreach"},
-            {"role_name": "Recruiter", "description": "Recruiter — handles candidate outreach"},
+            {"role_name": "RA", "description": "Recruiting Associate — handles sourcing outreach", "auto_outbound": True},
+            {"role_name": "BDM", "description": "Business Development Manager — handles client outreach", "auto_outbound": False},
+            {"role_name": "Recruiter", "description": "Recruiter — handles candidate outreach", "auto_outbound": False},
         ]
 
         seeded = 0
@@ -362,6 +372,7 @@ def _seed_outreach_roles():
                         role_name=role_def["role_name"],
                         description=role_def["description"],
                         is_system=True,
+                        auto_outbound=role_def.get("auto_outbound", False),
                     ))
                     seeded += 1
 
@@ -614,8 +625,18 @@ async def lifespan(app: FastAPI):
                     ))
                     conn.commit()
                     logger.info("Migration: added outreach_role_id column to sender_mailboxes")
+                # Linked login user for personal (non-RA) mailboxes
+                if "user_id" not in cols:
+                    conn.execute(sa_text_or(
+                        "ALTER TABLE sender_mailboxes ADD COLUMN user_id INTEGER NULL"
+                    ))
+                    conn.execute(sa_text_or(
+                        "CREATE INDEX ix_sender_mailboxes_user_id ON sender_mailboxes (user_id)"
+                    ))
+                    conn.commit()
+                    logger.info("Migration: added user_id column to sender_mailboxes")
     except Exception as e:
-        logger.warning(f"Migration check for outreach_role_id: {e}")
+        logger.warning(f"Migration check for outreach_role_id/user_id: {e}")
 
     # Migration: rename roles (operator→bdm, viewer→recruiter) AND convert the
     # users.role column from ENUM to VARCHAR(50) so custom (settings-backed) roles
