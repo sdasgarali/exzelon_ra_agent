@@ -9,6 +9,7 @@ import { useToast } from '@/components/toast'
 import { useAuthStore } from '@/lib/store'
 import { useLobStore } from '@/lib/lob-store'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { MyDealsWidget } from '@/components/my-deals-widget'
 import { GettingStarted } from '@/components/getting-started'
 import {
   Building,
@@ -891,6 +892,11 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
         <p className="text-gray-600 mt-1">Overview of your cold-email automation</p>
       </div>
+
+      {/* My Queue — BDMs/Recruiters see their claimed + assigned deals up front */}
+      {['bdm', 'recruiter'].includes(user?.base_role || user?.role || '') && (
+        <MyDealsWidget />
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
