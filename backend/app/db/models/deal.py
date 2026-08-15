@@ -48,8 +48,13 @@ class Deal(Base):
     probability = Column(Integer, default=0, nullable=False)  # 0-100
     expected_close_date = Column(Date, nullable=True)
 
-    # Ownership
+    # Ownership — owner_id is the admin-ASSIGNED owner (rep the deal is assigned to).
     owner_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+
+    # Claim queue — a BDM/Recruiter CLAIMS an unclaimed deal (self-pull). NULL = Unclaimed.
+    # Distinct from owner_id (which an admin assigns). Drives the Unclaimed/initials tag.
+    claimed_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True, index=True)
+    claimed_at = Column(DateTime, nullable=True)
 
     # Notes
     notes = Column(Text, nullable=True)
@@ -68,6 +73,7 @@ class Deal(Base):
         Index("idx_deal_contact", "contact_id"),
         Index("idx_deal_client", "client_id"),
         Index("idx_deal_tenant", "tenant_id"),
+        Index("idx_deal_claimed_by", "claimed_by_user_id"),
     )
 
     def __repr__(self) -> str:

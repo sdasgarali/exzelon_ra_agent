@@ -209,11 +209,26 @@ def sync_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
                 )
                 # If "interested", auto-create deal
                 if reply_msg.category == "interested":
-                    auto_create_deal_from_interested_reply(
+                    _deal_result = auto_create_deal_from_interested_reply(
                         contact_id=event.contact_id,
                         db=db,
                         campaign_id=event.campaign_id,
                     )
+                    # Forward a NEW unclaimed deal to the tenant's BDMs/Recruiters
+                    # (in-app + email). Best-effort; only when a deal was just created.
+                    if _deal_result and _deal_result.get("action") == "created":
+                        try:
+                            from app.db.models.deal import Deal as _Deal
+                            from app.services.deal_notifications import forward_new_deal_to_reps
+                            _new_deal = db.query(_Deal).filter(
+                                _Deal.deal_id == _deal_result["deal_id"]
+                            ).first()
+                            if _new_deal:
+                                forward_new_deal_to_reps(
+                                    db, _new_deal, getattr(_new_deal, "tenant_id", None)
+                                )
+                        except Exception as _e_fwd:
+                            logger.warning("Deal forward-to-reps failed", error=str(_e_fwd))
                     # Hand the lead off to Resource Pool ATS (best-effort, gated
                     # on resourcepool_auto_push_on_reply + integration configured).
                     from app.services.integrations.resource_pool_client import (

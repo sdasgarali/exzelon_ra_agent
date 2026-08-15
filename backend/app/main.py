@@ -991,13 +991,23 @@ async def lifespan(app: FastAPI):
             for col_name, col_def in [
                 ("is_auto_created", "BOOLEAN DEFAULT 0 NOT NULL"),
                 ("probability_manual", "BOOLEAN DEFAULT 0 NOT NULL"),
+                ("claimed_by_user_id", "INTEGER NULL"),
+                ("claimed_at", "DATETIME NULL"),
             ]:
                 if col_name not in deal_cols:
                     conn.execute(sa_text_deal(f"ALTER TABLE deals ADD COLUMN {col_name} {col_def}"))
                     conn.commit()
                     logger.info(f"Migration: added {col_name} column to deals")
+            if "claimed_by_user_id" not in deal_cols:
+                try:
+                    conn.execute(sa_text_deal(
+                        "CREATE INDEX idx_deal_claimed_by ON deals (claimed_by_user_id)"
+                    ))
+                    conn.commit()
+                except Exception:
+                    pass  # index may already exist
     except Exception as e:
-        logger.warning(f"Migration check for deal automation columns: {e}")
+        logger.warning(f"Migration check for deal claim/automation columns: {e}")
 
     # Migration: add auto-enrollment columns to campaigns
     try:
