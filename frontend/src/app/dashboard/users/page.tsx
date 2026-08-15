@@ -46,7 +46,7 @@ const DEFAULT_FORM: UserFormData = {
 
 export default function UsersPage() {
   const router = useRouter();
-  const { user: currentUser } = useAuthStore();
+  const { user: currentUser, impersonation } = useAuthStore();
   const isSuperAdmin = currentUser?.role === 'super_admin';
   const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
 
@@ -378,7 +378,9 @@ export default function UsersPage() {
           />
         </div>
 
-        {isSuperAdmin && (
+        {/* Page-level tenant filter — only when NOT impersonating; while a tenant is
+            selected in the sidebar, the list is already scoped to it. */}
+        {isSuperAdmin && !impersonation && (
           <select
             value={tenantFilter}
             onChange={(e) => { setTenantFilter(e.target.value); setPage(1); }}

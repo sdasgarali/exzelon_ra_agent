@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role
+from app.api.deps import get_db, require_role, get_current_tenant_id
 from app.core.security import get_password_hash
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
@@ -52,18 +52,24 @@ async def list_users(
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
     tenant_id: Optional[int] = Query(None, description="Super-admin only: filter by tenant"),
+    impersonated_tenant_id: Optional[int] = Depends(get_current_tenant_id),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN]))
 ):
     """List users. Admin+ only. Regular admins see only their own tenant's users;
-    super admins see all tenants (optionally filtered by `tenant_id`)."""
+    super admins see all tenants, scoped to the selected/impersonated tenant when one
+    is active (X-Tenant-ID header) and overridable by an explicit `tenant_id` filter."""
     query = db.query(User)
 
     # Tenant isolation: non-super-admins are restricted to their own tenant.
     if not _is_super_admin(current_user):
         query = query.filter(User.tenant_id == _caller_tenant_id(current_user))
-    elif tenant_id is not None:
-        query = query.filter(User.tenant_id == tenant_id)
+    else:
+        # Super admin: explicit ?tenant_id filter wins; otherwise honor the selected
+        # (impersonated) tenant from X-Tenant-ID so "select a tenant" scopes the list.
+        effective_tenant_id = tenant_id if tenant_id is not None else impersonated_tenant_id
+        if effective_tenant_id is not None:
+            query = query.filter(User.tenant_id == effective_tenant_id)
 
     if role:
         query = query.filter(User.role == role)
