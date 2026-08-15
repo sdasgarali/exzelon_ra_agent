@@ -60,5 +60,13 @@ def create_tenant_for_signup(company_name: str, db: Session) -> Tenant:
     db.commit()
     db.refresh(tenant)
 
+    # Every tenant gets its own CRM pipeline stages up front.
+    try:
+        from app.services.deal_automation import ensure_deal_stages
+        if ensure_deal_stages(db, tenant.tenant_id):
+            db.commit()
+    except Exception as e:
+        logger.warning("Failed to seed deal stages for new tenant", tenant_id=tenant.tenant_id, error=str(e))
+
     logger.info("Created tenant", tenant_id=tenant.tenant_id, name=company_name, slug=slug)
     return tenant

@@ -280,36 +280,47 @@ def _seed_default_followup_template(db):
 
 
 def _seed_deal_stages():
-    """Seed default CRM deal pipeline stages if none exist."""
+    """Ensure EVERY tenant has its own CRM deal pipeline stages, and repair any deal
+    that references another tenant's stage (legacy cross-tenant rows)."""
     from app.db.base import SessionLocal
-    from app.db.models.deal import DealStage
+    from app.db.models.deal import DealStage, Deal
+    from app.db.models.tenant import Tenant
+    from app.services.deal_automation import ensure_deal_stages
+    from sqlalchemy import func
     db = SessionLocal()
     try:
-        existing = db.query(DealStage).count()
-        if existing > 0:
-            return
-        stages = [
-            {"name": "New Lead", "stage_order": 1, "color": "#6366f1"},
-            {"name": "Contacted", "stage_order": 2, "color": "#3b82f6"},
-            {"name": "Qualified", "stage_order": 3, "color": "#0ea5e9"},
-            {"name": "Proposal", "stage_order": 4, "color": "#f59e0b"},
-            {"name": "Negotiation", "stage_order": 5, "color": "#f97316"},
-            {"name": "Won", "stage_order": 6, "color": "#22c55e", "is_won": True},
-            {"name": "Lost", "stage_order": 7, "color": "#ef4444", "is_lost": True},
-        ]
-        for s in stages:
-            db.add(DealStage(
-                tenant_id=1,
-                name=s["name"],
-                stage_order=s["stage_order"],
-                color=s["color"],
-                is_won=s.get("is_won", False),
-                is_lost=s.get("is_lost", False),
-            ))
-        db.commit()
-        logger.info("Seeded 7 default deal pipeline stages")
+        # 1) Backfill stages for every tenant that lacks them.
+        tenant_ids = [t[0] for t in db.query(Tenant.tenant_id).all()] or [1]
+        seeded_total = 0
+        for tid in tenant_ids:
+            seeded_total += ensure_deal_stages(db, tid)
+        if seeded_total:
+            db.commit()
+            logger.info("Backfilled deal pipeline stages", stages_created=seeded_total)
+
+        # 2) Repair deals whose stage belongs to a different tenant: repoint to the
+        #    same-named stage in the deal's own tenant.
+        mismatched = (
+            db.query(Deal, DealStage)
+            .join(DealStage, Deal.stage_id == DealStage.stage_id)
+            .filter(Deal.tenant_id != DealStage.tenant_id)
+            .all()
+        )
+        repaired = 0
+        for deal, wrong_stage in mismatched:
+            correct = db.query(DealStage).filter(
+                DealStage.tenant_id == deal.tenant_id,
+                func.lower(DealStage.name) == (wrong_stage.name or "").lower(),
+                DealStage.is_archived == False,
+            ).first()
+            if correct:
+                deal.stage_id = correct.stage_id
+                repaired += 1
+        if repaired:
+            db.commit()
+            logger.info("Repaired deals referencing a cross-tenant stage", count=repaired)
     except Exception as e:
-        logger.error("Failed to seed deal stages", error=str(e))
+        logger.error("Failed to seed/repair deal stages", error=str(e))
     finally:
         db.close()
 

@@ -8,6 +8,7 @@ from app.db.models.client import ClientInfo
 from app.db.models.settings import Settings
 from app.services.deal_automation import (
     _get_deal_setting,
+    _get_stage_by_name,
     _score_to_probability,
     _build_activity_description,
     auto_create_deal_from_interested_reply,
@@ -16,6 +17,7 @@ from app.services.deal_automation import (
     update_deal_probability_from_score,
     detect_stale_deals,
     calculate_pipeline_forecast,
+    ensure_deal_stages,
 )
 
 
@@ -188,12 +190,70 @@ class TestAutoCreateDeal:
         result = auto_create_deal_from_interested_reply(99999, db_session)
         assert result is None
 
-    def test_returns_none_when_no_new_lead_stage(self, db_session, test_tenant):
-        # Don't seed any stages
+    def test_self_heals_stages_when_tenant_has_none(self, db_session, test_tenant):
+        # No stages seeded for this tenant → auto-create should self-heal (ensure_deal_stages)
+        # and create the deal in this tenant's own "New Lead" stage.
         contact = _create_contact(db_session, test_tenant.tenant_id)
         db_session.commit()
         result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
-        assert result is None
+        assert result is not None
+        assert result["action"] == "created"
+        deal = db_session.query(Deal).filter(Deal.contact_id == contact.contact_id).first()
+        stage = db_session.query(DealStage).filter(DealStage.stage_id == deal.stage_id).first()
+        assert stage.tenant_id == test_tenant.tenant_id
+        assert stage.name == "New Lead"
+
+
+# ─── per-tenant stage seeding + lookup ────────────────────────────
+
+
+@pytest.mark.unit
+class TestPerTenantStages:
+    def _make_tenant(self, db):
+        from app.db.models.tenant import Tenant, TenantPlan
+        t = Tenant(name="T2", slug=f"t2-{db.query(Tenant).count()}", plan=TenantPlan.ENTERPRISE,
+                   max_users=99, max_mailboxes=99, max_contacts=999, max_campaigns=99, max_leads=999)
+        db.add(t)
+        db.commit()
+        db.refresh(t)
+        return t
+
+    def test_ensure_seeds_and_is_idempotent(self, db_session, test_tenant):
+        n1 = ensure_deal_stages(db_session, test_tenant.tenant_id)
+        db_session.commit()
+        assert n1 == 7
+        assert db_session.query(DealStage).filter(DealStage.tenant_id == test_tenant.tenant_id).count() == 7
+        # second call is a no-op
+        n2 = ensure_deal_stages(db_session, test_tenant.tenant_id)
+        assert n2 == 0
+        assert db_session.query(DealStage).filter(DealStage.tenant_id == test_tenant.tenant_id).count() == 7
+
+    def test_get_stage_by_name_is_tenant_scoped(self, db_session, test_tenant):
+        t2 = self._make_tenant(db_session)
+        _seed_stages(db_session, test_tenant.tenant_id)
+        _seed_stages(db_session, t2.tenant_id)
+        db_session.commit()
+        s1 = _get_stage_by_name(db_session, "New Lead", test_tenant.tenant_id)
+        s2 = _get_stage_by_name(db_session, "New Lead", t2.tenant_id)
+        assert s1 is not None and s2 is not None
+        assert s1.stage_id != s2.stage_id
+        assert s1.tenant_id == test_tenant.tenant_id
+        assert s2.tenant_id == t2.tenant_id
+
+    def test_auto_create_uses_contacts_own_tenant_stage(self, db_session, test_tenant):
+        # tenant-1 stages exist; a tenant-2 contact must NOT borrow tenant-1's stage.
+        _seed_stages(db_session, test_tenant.tenant_id)
+        t2 = self._make_tenant(db_session)
+        _seed_stages(db_session, t2.tenant_id)
+        contact = _create_contact(db_session, t2.tenant_id, email="t2@example.com")
+        db_session.commit()
+
+        result = auto_create_deal_from_interested_reply(contact.contact_id, db_session)
+        assert result["action"] == "created"
+        deal = db_session.query(Deal).filter(Deal.contact_id == contact.contact_id).first()
+        stage = db_session.query(DealStage).filter(DealStage.stage_id == deal.stage_id).first()
+        assert deal.tenant_id == t2.tenant_id
+        assert stage.tenant_id == t2.tenant_id  # not tenant-1's stage
 
 
 # ─── auto_log_email_activity ──────────────────────────────────────
