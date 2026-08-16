@@ -20,7 +20,7 @@ from app.db.models.email_template import EmailTemplate, TemplateStatus, Template
 from app.db.models.campaign import Campaign, CampaignSchedule, SequenceStep, CampaignContact, CampaignStatus, StepType, CampaignContactStatus
 from app.db.models.inbox_message import InboxMessage, MessageDirection
 from app.db.models.webhook import Webhook, WebhookDelivery
-from app.db.models.deal import Deal, DealStage, DealActivity
+from app.db.models.deal import Deal, DealStage, DealActivity, DealCandidate
 from app.db.models.api_key import ApiKey
 from app.db.models.seed_test import SeedTestAccount, SeedTestResult
 from app.db.models.tenant import Tenant
@@ -92,6 +92,7 @@ __all__ = [
     "Deal",
     "DealStage",
     "DealActivity",
+    "DealCandidate",
     "ApiKey",
     "SeedTestAccount",
     "SeedTestResult",

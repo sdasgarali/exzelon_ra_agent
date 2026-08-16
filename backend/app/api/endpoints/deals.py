@@ -10,8 +10,12 @@ from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, effective_base_role
 from app.db.models.user import User, UserRole
 from app.db.models.deal import Deal, DealStage, DealActivity
+from app.db.models.deal import DealCandidate
 from app.db.models.contact import ContactDetails
 from app.db.models.client import ClientInfo
+from app.db.models.lead import LeadDetails
+from app.db.models.outreach import OutreachEvent
+from app.db.models.inbox_message import InboxMessage
 from app.db.query_helpers import tenant_filter, SIZE_OPERATORS, size_operator_clause
 
 router = APIRouter(prefix="/deals", tags=["deals"])
@@ -54,6 +58,46 @@ class ActivityCreate(BaseModel):
     activity_type: str  # note/stage_change/email_sent/email_received/call
     description: Optional[str] = None
     metadata_json: Optional[str] = None
+
+
+CANDIDATE_STATUSES = ["submitted", "reviewed", "sent_to_client", "placed", "rejected"]
+
+
+class CandidateCreate(BaseModel):
+    name: str = Field(..., max_length=255)
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    resume_url: Optional[str] = None
+    status: str = "submitted"
+    notes: Optional[str] = None
+
+
+class CandidateUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    resume_url: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+def _candidate_to_dict(c: DealCandidate, users_by_id: Optional[dict] = None) -> dict:
+    return {
+        "candidate_id": c.candidate_id,
+        "deal_id": c.deal_id,
+        "name": c.name,
+        "email": c.email,
+        "phone": c.phone,
+        "linkedin_url": c.linkedin_url,
+        "resume_url": c.resume_url,
+        "status": c.status,
+        "notes": c.notes,
+        "submitted_by": _user_ref(None, c.submitted_by_user_id, users_by_id),
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+    }
 
 
 def _initials(full_name: Optional[str]) -> str:
@@ -518,6 +562,42 @@ def get_deal(
         }
         for a in activities
     ]
+
+    # Job details — via the deal's contact → lead (a lead = a job posting).
+    result["job"] = None
+    lead = None
+    if deal.contact_id:
+        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == deal.contact_id).first()
+        if contact and contact.lead_id:
+            lead = db.query(LeadDetails).filter(LeadDetails.lead_id == contact.lead_id).first()
+    if lead:
+        result["job"] = {
+            "lead_id": lead.lead_id,
+            "job_title": lead.job_title,
+            "job_link": lead.job_link,
+            "company": lead.client_name,
+            "company_size": lead.company_size,
+            "salary_min": float(lead.salary_min) if lead.salary_min else None,
+            "salary_max": float(lead.salary_max) if lead.salary_max else None,
+            "posting_date": str(lead.posting_date) if lead.posting_date else None,
+            "location": getattr(lead, "state", None) or getattr(lead, "city", None),
+        }
+        # Resource Pool ATS deep link for this job.
+        try:
+            from app.services.integrations.resource_pool_client import build_external_ref
+            from app.core.settings_resolver import get_tenant_setting
+            ext = build_external_ref(lead.lead_id, deal.tenant_id)
+            base = get_tenant_setting(db, "resourcepool_base_url", tenant_id=deal.tenant_id, default=None)
+            result["resource_pool"] = {
+                "external_ref": ext,
+                "ats_url": (f"{base.rstrip('/')}/jobs/by-code/{ext}" if base else None),
+            }
+        except Exception:
+            result["resource_pool"] = None
+
+    result["candidate_count"] = db.query(func.count(DealCandidate.candidate_id)).filter(
+        DealCandidate.deal_id == deal_id, DealCandidate.is_archived == False
+    ).scalar() or 0
     return result
 
 
@@ -720,6 +800,156 @@ def assign_deal(
     db.commit()
     db.refresh(deal)
     return _deal_to_dict(deal, db)
+
+
+# ─── Candidates submitted against a deal ──────────────────────────
+
+def _require_rep_or_admin(db: Session, user: User):
+    if effective_base_role(user, None, db) not in ("bdm", "recruiter", "admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+
+@router.get("/{deal_id}/candidates")
+def list_candidates(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    _get_deal_scoped(db, deal_id, tenant_id)
+    rows = db.query(DealCandidate).filter(
+        DealCandidate.deal_id == deal_id, DealCandidate.is_archived == False
+    ).order_by(DealCandidate.created_at.desc()).all()
+    ids = {c.submitted_by_user_id for c in rows if c.submitted_by_user_id}
+    users_by_id = {u.user_id: u for u in db.query(User).filter(User.user_id.in_(ids)).all()} if ids else {}
+    return [_candidate_to_dict(c, users_by_id) for c in rows]
+
+
+@router.post("/{deal_id}/candidates", status_code=201)
+def add_candidate(
+    deal_id: int,
+    body: CandidateCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Submit a candidate against a deal (recruiter/BDM/admin)."""
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    _require_rep_or_admin(db, user)
+    status = body.status if body.status in CANDIDATE_STATUSES else "submitted"
+    c = DealCandidate(
+        tenant_id=deal.tenant_id, deal_id=deal_id, name=body.name, email=body.email,
+        phone=body.phone, linkedin_url=body.linkedin_url, resume_url=body.resume_url,
+        status=status, notes=body.notes, submitted_by_user_id=user.user_id,
+    )
+    db.add(c)
+    db.add(DealActivity(
+        deal_id=deal_id, activity_type="candidate_submitted",
+        description=f"Candidate '{body.name}' submitted by {user.full_name or user.email}",
+        created_by=user.user_id,
+    ))
+    db.commit()
+    db.refresh(c)
+    return _candidate_to_dict(c, {user.user_id: user})
+
+
+@router.put("/{deal_id}/candidates/{candidate_id}")
+def update_candidate(
+    deal_id: int,
+    candidate_id: int,
+    body: CandidateUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    _get_deal_scoped(db, deal_id, tenant_id)
+    _require_rep_or_admin(db, user)
+    c = db.query(DealCandidate).filter(
+        DealCandidate.candidate_id == candidate_id, DealCandidate.deal_id == deal_id,
+        DealCandidate.is_archived == False,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    data = body.model_dump(exclude_unset=True)
+    if "status" in data and data["status"] not in CANDIDATE_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Allowed: {CANDIDATE_STATUSES}")
+    old_status = c.status
+    for k, v in data.items():
+        setattr(c, k, v)
+    if "status" in data and data["status"] != old_status:
+        db.add(DealActivity(
+            deal_id=deal_id, activity_type="candidate_status",
+            description=f"Candidate '{c.name}' → {data['status']} (by {user.full_name or user.email})",
+            created_by=user.user_id,
+        ))
+    db.commit()
+    db.refresh(c)
+    return _candidate_to_dict(c)
+
+
+@router.delete("/{deal_id}/candidates/{candidate_id}", status_code=204)
+def delete_candidate(
+    deal_id: int,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    _get_deal_scoped(db, deal_id, tenant_id)
+    _require_rep_or_admin(db, user)
+    c = db.query(DealCandidate).filter(
+        DealCandidate.candidate_id == candidate_id, DealCandidate.deal_id == deal_id,
+    ).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    c.is_archived = True
+    db.commit()
+
+
+# ─── Deal conversation (mail chain) ───────────────────────────────
+
+def _clip(txt: Optional[str], n: int = 4000) -> Optional[str]:
+    if not txt:
+        return txt
+    return txt if len(txt) <= n else txt[:n] + "…"
+
+
+@router.get("/{deal_id}/messages")
+def deal_messages(
+    deal_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """The email conversation for the deal's contact, from the beginning — outbound
+    sends (OutreachEvent) merged with the threaded inbox messages, chronological."""
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    if not deal.contact_id:
+        return {"contact_id": None, "messages": []}
+
+    msgs = []
+    for ev in db.query(OutreachEvent).filter(OutreachEvent.contact_id == deal.contact_id).all():
+        msgs.append({
+            "source": "outreach", "direction": "sent",
+            "subject": ev.subject, "body": _clip(ev.body_text or ev.body_html),
+            "at": ev.sent_at.isoformat() if ev.sent_at else None,
+        })
+        if getattr(ev, "reply_body", None):
+            msgs.append({
+                "source": "outreach", "direction": "received",
+                "subject": getattr(ev, "reply_subject", None), "body": _clip(ev.reply_body),
+                "at": ev.sent_at.isoformat() if ev.sent_at else None,
+            })
+    for im in db.query(InboxMessage).filter(InboxMessage.contact_id == deal.contact_id).all():
+        msgs.append({
+            "source": "inbox",
+            "direction": im.direction.value if hasattr(im.direction, "value") else str(im.direction),
+            "subject": im.subject, "body": _clip(im.body_text or im.body_html),
+            "from": im.from_email, "to": im.to_email, "category": im.category,
+            "at": im.received_at.isoformat() if im.received_at else None,
+        })
+    msgs.sort(key=lambda m: (m["at"] or ""))
+    return {"contact_id": deal.contact_id, "messages": msgs}
 
 
 # ─── Stale & Forecast ─────────────────────────────────────────────
