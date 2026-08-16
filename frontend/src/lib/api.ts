@@ -1223,6 +1223,27 @@ export const dealsApi = {
     const response = await api.get('/deals/assignees')
     return response.data
   },
+  // Candidates submitted against a deal
+  listCandidates: async (dealId: number) => {
+    const response = await api.get(`/deals/${dealId}/candidates`)
+    return response.data
+  },
+  addCandidate: async (dealId: number, data: Record<string, unknown>) => {
+    const response = await api.post(`/deals/${dealId}/candidates`, data)
+    return response.data
+  },
+  updateCandidate: async (dealId: number, candidateId: number, data: Record<string, unknown>) => {
+    const response = await api.put(`/deals/${dealId}/candidates/${candidateId}`, data)
+    return response.data
+  },
+  deleteCandidate: async (dealId: number, candidateId: number) => {
+    await api.delete(`/deals/${dealId}/candidates/${candidateId}`)
+  },
+  // Mail chain (conversation) for the deal's contact
+  messages: async (dealId: number) => {
+    const response = await api.get(`/deals/${dealId}/messages`)
+    return response.data
+  },
   // Stages
   listStages: async () => {
     const response = await api.get('/deals/stages')
