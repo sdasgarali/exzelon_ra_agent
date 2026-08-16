@@ -1,4 +1,5 @@
 """Authentication endpoints."""
+from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from fastapi.security import OAuth2PasswordRequestForm
@@ -271,6 +272,33 @@ async def get_me(
     db: Session = Depends(get_db),
 ):
     """Get current authenticated user."""
+    from app.api.deps.auth import effective_base_role
+    current_user.base_role = effective_base_role(current_user, None, db)
+    return UserResponse.model_validate(current_user)
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    """Self-service notification master toggles. Only fields provided are changed."""
+    notify_inapp_enabled: Optional[bool] = None
+    notify_email_enabled: Optional[bool] = None
+
+
+@router.patch("/me/notification-preferences", response_model=UserResponse)
+async def update_my_notification_preferences(
+    body: NotificationPreferencesUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update the CURRENT user's own notification preferences (in-app bell / email).
+
+    Self-service: any active user may toggle only their own two master switches.
+    """
+    if body.notify_inapp_enabled is not None:
+        current_user.notify_inapp_enabled = body.notify_inapp_enabled
+    if body.notify_email_enabled is not None:
+        current_user.notify_email_enabled = body.notify_email_enabled
+    db.commit()
+    db.refresh(current_user)
     from app.api.deps.auth import effective_base_role
     current_user.base_role = effective_base_role(current_user, None, db)
     return UserResponse.model_validate(current_user)

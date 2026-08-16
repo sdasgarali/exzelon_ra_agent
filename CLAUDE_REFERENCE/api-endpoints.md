@@ -15,7 +15,7 @@ All endpoints are mounted under `/api/v1`.
 | `/mailboxes` | `mailboxes.py` | Mailbox CRUD, health check |
 | `/campaigns` | `campaigns.py` | Campaign CRUD, sequence steps, enrollment, schedules |
 | `/inbox` | `inbox.py` | Unified inbox, threads, reply, mark-read |
-| `/deals` | `deals.py` | Deal CRUD, pipeline (Kanban) view, stats. **Claim queue**: `POST /{id}/claim` (BDM/Recruiter self-pull of an unclaimed deal), `/{id}/unclaim` (claimer or admin), `/{id}/assign` (admin → owner=a BDM/Recruiter). `GET /deals` filters: `stage_id`, `value_op/value_val[/2]`, `probability_op/probability_val[/2]`, `created_from/to`, `claimed_by` (id\|unclaimed\|me), `search`, `mine`. Deal dict adds `claimed_by{name,initials}`, `owner`, `is_unclaimed`, `age_days`. New unclaimed deals are forwarded to reps via `services/deal_notifications.py`. **Deal detail 360**: `GET /{id}` also returns `job` (via contact→lead), `resource_pool` {external_ref, ats_url}, `candidate_count`; `GET/POST/PUT/DELETE /{id}/candidates[/{cid}]` (DealCandidate submissions: submitted→reviewed→sent_to_client→placed/rejected); `GET /{id}/messages` (mail chain: OutreachEvent+InboxMessage merged, chronological). |
+| `/deals` | `deals.py` | Deal CRUD, pipeline (Kanban) view, stats. **Claim queue**: `POST /{id}/claim` (BDM/Recruiter self-pull of an unclaimed deal), `/{id}/unclaim` (claimer or admin), `/{id}/assign` (admin → owner=a BDM/Recruiter). `GET /deals` filters: `stage_id`, `value_op/value_val[/2]`, `probability_op/probability_val[/2]`, `created_from/to`, `claimed_by` (id\|unclaimed\|me), `search`, `mine`. Deal dict adds `claimed_by{name,initials}`, `owner`, `is_unclaimed`, `age_days`. New unclaimed deals are forwarded to reps via `services/deal_notifications.py`; assigning a deal to a user notifies that assignee (in-app + email) via `notify_deal_assigned`, gated by the assignee's `notify_inapp_enabled` / `notify_email_enabled` toggles. **Deal detail 360**: `GET /{id}` also returns `job` (via contact→lead), `resource_pool` {external_ref, ats_url}, `candidate_count`; `GET/POST/PUT/DELETE /{id}/candidates[/{cid}]` (DealCandidate submissions: submitted→reviewed→sent_to_client→placed/rejected); `GET /{id}/messages` (mail chain: OutreachEvent+InboxMessage merged, chronological). |
 | `/settings` | `settings.py` | App settings, role permissions |
 | `/users` | `users.py` | User management, role assignment |
 | `/roles` | `roles.py` | Role management (super admin). GET list (built-in + custom); POST/PUT/DELETE custom roles. Per-tenant; writes require an impersonated tenant. Built-ins protected. |
@@ -29,6 +29,7 @@ All endpoints are mounted under `/api/v1`.
 | Prefix | File | Purpose |
 |--------|------|---------|
 | `/auth/signup` | `auth.py` | Self-service signup (creates tenant + admin user, sends verification email) |
+| `/auth/me/notification-preferences` | `auth.py` | **Self-service** (any active user) `PATCH` of own notification master toggles `notify_inapp_enabled` / `notify_email_enabled` (partial — only provided fields change). Surfaced on `/dashboard/profile`. |
 | `/auth/verify` | `auth.py` | Email verification via JWT token |
 | `/auth/resend-verification` | `auth.py` | Resend verification email (200 always, prevents enumeration) |
 | `/analytics` | `analytics.py` | Team leaderboard, campaign comparison, revenue metrics, cost tracking |

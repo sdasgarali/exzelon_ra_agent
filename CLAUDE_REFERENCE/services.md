@@ -59,6 +59,10 @@ Kanban-style deal tracking:
 - Deal stats: win rate, avg deal size, pipeline value
 - Activity timeline per deal
 
+### Deal Notifications (`services/deal_notifications.py`)
+- `forward_new_deal_to_reps(db, deal, tenant_id)` — fans a new **unclaimed** deal out to every BDM/Recruiter (in-app + best-effort email), gated by settings `deal_notify_reps_on_new` / `deal_notify_reps_email`, and per-rep master toggles.
+- `notify_deal_assigned(db, deal, assignee, actor, tenant_id)` — on `POST /deals/{id}/assign`, notifies the assignee (in-app + email), gated by the assignee's `notify_inapp_enabled` / `notify_email_enabled`. Skips self-assignment. Best-effort; never raises.
+
 ---
 
 ## Billing & Invoicing (`services/billing/`)

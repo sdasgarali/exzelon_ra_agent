@@ -1658,6 +1658,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for onboarding_dismissed_at: {e}")
 
+    # Migration: add per-user notification preference columns (global master toggles)
+    try:
+        from sqlalchemy import text as sa_text_notif, inspect as sa_inspect_notif
+        with engine.connect() as conn:
+            inspector_notif = sa_inspect_notif(engine)
+            user_cols_notif = [c["name"] for c in inspector_notif.get_columns("users")]
+            for col_name in ("notify_inapp_enabled", "notify_email_enabled"):
+                if col_name not in user_cols_notif:
+                    try:
+                        conn.execute(sa_text_notif(
+                            f"ALTER TABLE users ADD COLUMN {col_name} BOOLEAN NOT NULL DEFAULT 1"
+                        ))
+                        conn.commit()
+                        logger.info(f"Migration: added {col_name} to users")
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.warning(f"Migration check for notification preference columns: {e}")
+
     # ── Migration: Phase 5 — Roadmap features (campaigns, users, leads, mailboxes, tenants) ──
     try:
         from sqlalchemy import text as sa_text_p5, inspect as sa_inspect_p5

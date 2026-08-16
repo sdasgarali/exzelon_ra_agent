@@ -22,6 +22,8 @@ interface User {
   tenant_id: number | null
   tenant: Tenant | null
   is_verified: boolean
+  notify_inapp_enabled?: boolean
+  notify_email_enabled?: boolean
 }
 
 interface Impersonation {

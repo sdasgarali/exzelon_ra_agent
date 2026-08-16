@@ -163,6 +163,10 @@ export const authApi = {
     const response = await api.get('/auth/me')
     return response.data
   },
+  updateNotificationPreferences: async (data: { notify_inapp_enabled?: boolean; notify_email_enabled?: boolean }) => {
+    const response = await api.patch('/auth/me/notification-preferences', data)
+    return response.data
+  },
   signup: async (data: { email: string; password: string; full_name: string; company_name: string }) => {
     const response = await api.post('/auth/signup', data)
     return response.data

@@ -24,6 +24,8 @@ interface User {
   updated_at: string;
   locked_until: string | null;
   failed_login_count: number | null;
+  notify_inapp_enabled?: boolean;
+  notify_email_enabled?: boolean;
 }
 
 interface UserFormData {
@@ -33,6 +35,8 @@ interface UserFormData {
   role: string;
   is_active: boolean;
   tenant_id: number | null;
+  notify_inapp_enabled: boolean;
+  notify_email_enabled: boolean;
 }
 
 const DEFAULT_FORM: UserFormData = {
@@ -42,6 +46,8 @@ const DEFAULT_FORM: UserFormData = {
   role: 'bdm',
   is_active: true,
   tenant_id: null,
+  notify_inapp_enabled: true,
+  notify_email_enabled: true,
 };
 
 export default function UsersPage() {
@@ -180,6 +186,8 @@ export default function UsersPage() {
       role: user.role,
       is_active: user.is_active,
       tenant_id: user.tenant_id,
+      notify_inapp_enabled: user.notify_inapp_enabled ?? true,
+      notify_email_enabled: user.notify_email_enabled ?? true,
     });
     setFormError(null);
     setShowModal(true);
@@ -216,6 +224,8 @@ export default function UsersPage() {
         full_name: formData.full_name.trim() || null,
         role: formData.role,
         is_active: formData.is_active,
+        notify_inapp_enabled: formData.notify_inapp_enabled,
+        notify_email_enabled: formData.notify_email_enabled,
       };
       // Only a super_admin assigns tenants; super_admin-role users are global (null).
       if (isSuperAdmin) {
@@ -707,6 +717,46 @@ export default function UsersPage() {
                     }`}
                   />
                 </button>
+              </div>
+
+              {/* Notification preferences */}
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notifications</p>
+                <p className="text-xs text-gray-400 mb-3">Choose how this user is notified (e.g. when a deal is assigned to them).</p>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm text-gray-700 dark:text-gray-300">In-app (bell icon)</label>
+                  <button
+                    type="button"
+                    aria-label="Toggle in-app notifications"
+                    onClick={() => setFormData({ ...formData, notify_inapp_enabled: !formData.notify_inapp_enabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      formData.notify_inapp_enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        formData.notify_inapp_enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-gray-700 dark:text-gray-300">Email</label>
+                  <button
+                    type="button"
+                    aria-label="Toggle email notifications"
+                    onClick={() => setFormData({ ...formData, notify_email_enabled: !formData.notify_email_enabled })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      formData.notify_email_enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        formData.notify_email_enabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
 
