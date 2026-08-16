@@ -4,13 +4,23 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { dealsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { ClaimTag, AgeBadge, OwnerChip } from '@/components/deal-badges'
-import type { Deal, DealStage, DealStats, DealActivity, DealContactSearch, DealClientSearch, DealForecast, StaleDeal } from '@/types/api'
+import type { Deal, DealStage, DealStats, DealActivity, DealContactSearch, DealClientSearch, DealForecast, StaleDeal, DealCandidate, DealMessage } from '@/types/api'
 import {
   Plus, X, DollarSign, Award, BarChart3, GripVertical,
   Trash2, Bot, Mail, MailOpen, Reply, AlertTriangle,
   MessageSquare, ArrowRight, Search, User, Building2, Target,
   LayoutGrid, List as ListIcon, Hand, UserPlus, RotateCcw,
+  Briefcase, Users as UsersIcon, ExternalLink, Link2, FileText, Inbox as InboxIcon,
 } from 'lucide-react'
+
+const CAND_STATUSES = [
+  { value: 'submitted', label: 'Submitted', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' },
+  { value: 'reviewed', label: 'BDM Reviewed', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  { value: 'sent_to_client', label: 'Sent to Client', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+  { value: 'placed', label: 'Placed', color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+  { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+]
+const candStatusMeta = (s: string) => CAND_STATUSES.find(x => x.value === s) || CAND_STATUSES[0]
 
 const formatCurrency = (v: number) => {
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
@@ -101,6 +111,13 @@ export default function DealsPage() {
   const [newNote, setNewNote] = useState('')
   const [addingNote, setAddingNote] = useState(false)
 
+  // Detail drawer: tabs + loaded candidates / conversation
+  const [detailTab, setDetailTab] = useState<'overview' | 'candidates' | 'conversation'>('overview')
+  const [candidates, setCandidates] = useState<DealCandidate[]>([])
+  const [messages, setMessages] = useState<DealMessage[]>([])
+  const [candForm, setCandForm] = useState({ name: '', email: '', linkedin_url: '', resume_url: '', notes: '' })
+  const [candSaving, setCandSaving] = useState(false)
+
   const buildParams = useCallback(() => {
     const p: Record<string, unknown> = { page_size: 200 }
     if (fStage) p.stage_id = Number(fStage)
@@ -135,6 +152,17 @@ export default function DealsPage() {
   }, [buildParams])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Deep-link from My Queue / elsewhere: /dashboard/deals?deal=<id> opens that deal's detail.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const id = new URLSearchParams(window.location.search).get('deal')
+    if (id && /^\d+$/.test(id)) {
+      openDeal({ deal_id: Number(id) } as Deal)
+      window.history.replaceState({}, '', '/dashboard/deals')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load assignable reps: admins → any rep; recruiters → BDMs (workflow hand-off).
   const canAssign = isAdmin || effectiveRole === 'recruiter'
@@ -209,15 +237,47 @@ export default function DealsPage() {
     setSaving(false)
   }
 
+  const loadCandidatesAndMessages = async (dealId: number) => {
+    const [cands, msgs] = await Promise.all([
+      dealsApi.listCandidates(dealId).catch(() => []),
+      dealsApi.messages(dealId).catch(() => ({ messages: [] })),
+    ])
+    setCandidates(Array.isArray(cands) ? cands : [])
+    setMessages(msgs?.messages || [])
+  }
+
   const openDeal = async (deal: Deal) => {
-    try { setSelectedDeal(await dealsApi.get(deal.deal_id)); setShowDetailDrawer(true) }
-    catch { setSelectedDeal(deal); setShowDetailDrawer(true) }
+    setDetailTab('overview')
+    setCandidates([]); setMessages([])
+    try { setSelectedDeal(await dealsApi.get(deal.deal_id)) } catch { setSelectedDeal(deal) }
+    setShowDetailDrawer(true)
+    loadCandidatesAndMessages(deal.deal_id)
   }
 
   const refreshSelected = async (dealId: number) => {
     if (selectedDeal?.deal_id === dealId) {
       try { setSelectedDeal(await dealsApi.get(dealId)) } catch { /* ignore */ }
     }
+  }
+
+  const addCandidate = async () => {
+    if (!selectedDeal || !candForm.name.trim()) return
+    setCandSaving(true)
+    try {
+      await dealsApi.addCandidate(selectedDeal.deal_id, { ...candForm, name: candForm.name.trim() })
+      setCandForm({ name: '', email: '', linkedin_url: '', resume_url: '', notes: '' })
+      await loadCandidatesAndMessages(selectedDeal.deal_id)
+      await refreshSelected(selectedDeal.deal_id)
+    } catch { /* ignore */ }
+    setCandSaving(false)
+  }
+  const setCandidateStatus = async (candidateId: number, status: string) => {
+    if (!selectedDeal) return
+    try { await dealsApi.updateCandidate(selectedDeal.deal_id, candidateId, { status }); await loadCandidatesAndMessages(selectedDeal.deal_id) } catch { /* ignore */ }
+  }
+  const removeCandidate = async (candidateId: number) => {
+    if (!selectedDeal) return
+    try { await dealsApi.deleteCandidate(selectedDeal.deal_id, candidateId); await loadCandidatesAndMessages(selectedDeal.deal_id); await refreshSelected(selectedDeal.deal_id) } catch { /* ignore */ }
   }
 
   const handleUpdateDeal = async (dealId: number, data: Record<string, unknown>) => {
@@ -506,8 +566,9 @@ export default function DealsPage() {
       {showDetailDrawer && selectedDeal && (
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowDetailDrawer(false)} />
-          <div className="fixed right-0 top-0 h-full w-[440px] max-w-[90vw] bg-white dark:bg-gray-800 z-50 shadow-xl overflow-y-auto">
-            <div className="p-6 space-y-6">
+          <div className="fixed right-0 top-0 h-full w-[540px] max-w-[95vw] bg-white dark:bg-gray-800 z-50 shadow-xl overflow-y-auto">
+            <div className="p-6 space-y-5">
+              {/* Header */}
               <div className="flex justify-between items-start">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -524,57 +585,155 @@ export default function DealsPage() {
               {/* Claim / Assign actions */}
               <div className="flex items-center gap-2 flex-wrap"><ClaimControls d={selectedDeal} /></div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Value" value={formatCurrency(selectedDeal.value)} />
-                <Field label="Probability" value={`${selectedDeal.probability}%`} />
-                <Field label="Claimed By" value={selectedDeal.claimed_by?.name || 'Unclaimed'} />
-                <Field label="Assigned Owner" value={selectedDeal.owner?.name || 'Unassigned'} />
-                <Field label="Age" value={`${selectedDeal.age_days ?? 0} days`} />
-                <Field label="Created" value={new Date(selectedDeal.created_at).toLocaleDateString()} />
+              {/* Tabs */}
+              <div className="border-b border-gray-200 dark:border-gray-700 flex gap-1 -mb-px text-sm">
+                {([['overview', 'Overview', null], ['candidates', 'Candidates', candidates.length], ['conversation', 'Conversation', messages.length]] as const).map(([key, label, count]) => (
+                  <button key={key} onClick={() => setDetailTab(key)}
+                    className={`px-3 py-2 border-b-2 font-medium transition-colors ${detailTab === key ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+                    {label}{count ? <span className="ml-1 text-xs text-gray-400">({count})</span> : ''}
+                  </button>
+                ))}
               </div>
 
-              <div>
-                <span className="text-xs text-gray-400 uppercase">Stage</span>
-                <select value={selectedDeal.stage_id} onChange={e => handleUpdateDeal(selectedDeal.deal_id, { stage_id: parseInt(e.target.value) })} className="w-full mt-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
-                  {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
-                </select>
-              </div>
+              {/* ── Overview ── */}
+              {detailTab === 'overview' && (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Value" value={formatCurrency(selectedDeal.value)} />
+                    <Field label="Probability" value={`${selectedDeal.probability}%`} />
+                    <Field label="Claimed By" value={selectedDeal.claimed_by?.name || 'Unclaimed'} />
+                    <Field label="Assigned Owner" value={selectedDeal.owner?.name || 'Unassigned'} />
+                    <Field label="Age" value={`${selectedDeal.age_days ?? 0} days`} />
+                    <Field label="Created" value={new Date(selectedDeal.created_at).toLocaleDateString()} />
+                  </div>
 
-              {selectedDeal.contact_name && (
-                <div>
-                  <span className="text-xs text-gray-400 uppercase">Contact</span>
-                  <p className="text-sm flex items-center gap-1"><User className="w-3.5 h-3.5 text-gray-400" /> {selectedDeal.contact_name}</p>
-                  {selectedDeal.contact_email && <p className="text-xs text-gray-500 ml-5">{selectedDeal.contact_email}</p>}
-                </div>
-              )}
-              {selectedDeal.notes && (
-                <div><span className="text-xs text-gray-400 uppercase">Notes</span><p className="text-sm whitespace-pre-wrap text-gray-700 dark:text-gray-300">{selectedDeal.notes}</p></div>
-              )}
+                  {/* Status (stage) */}
+                  <div>
+                    <span className="text-xs text-gray-400 uppercase">Status</span>
+                    <select value={selectedDeal.stage_id} onChange={e => handleUpdateDeal(selectedDeal.deal_id, { stage_id: parseInt(e.target.value) })} className="w-full mt-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                      {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
+                    </select>
+                  </div>
 
-              {/* Activity Timeline */}
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Activity Timeline</h3>
-                <div className="flex gap-2 mb-4">
-                  <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote() } }} placeholder="Add a note..." className="flex-1 px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
-                  <button onClick={handleAddNote} disabled={!newNote.trim() || addingNote} className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{addingNote ? '...' : 'Add'}</button>
-                </div>
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {(selectedDeal.activities || []).map((a: DealActivity) => (
-                    <div key={a.activity_id} className="flex gap-2 items-start">
-                      <div className="mt-0.5">{activityIcon(a.activity_type)}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-700 dark:text-gray-300">{a.description || a.activity_type}</p>
-                        {a.created_at && <p className="text-[10px] text-gray-400 mt-0.5">{new Date(a.created_at).toLocaleString()}</p>}
+                  {/* Job details */}
+                  {selectedDeal.job && (
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100"><Briefcase className="w-4 h-4 text-primary-600" /> Job</div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedDeal.job.job_title}</p>
+                      <p className="text-xs text-gray-500">{[selectedDeal.job.company, selectedDeal.job.company_size, selectedDeal.job.location].filter(Boolean).join(' · ')}</p>
+                      {(selectedDeal.job.salary_min || selectedDeal.job.salary_max) && (
+                        <p className="text-xs text-gray-500 mt-0.5">Salary: {formatCurrency(selectedDeal.job.salary_min || 0)}{selectedDeal.job.salary_max ? ` – ${formatCurrency(selectedDeal.job.salary_max)}` : ''}</p>
+                      )}
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {selectedDeal.job.job_link && <a href={selectedDeal.job.job_link} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Job posting</a>}
+                        {selectedDeal.resource_pool?.ats_url && <a href={selectedDeal.resource_pool.ats_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><Link2 className="w-3 h-3" /> Open in ATS</a>}
                       </div>
                     </div>
-                  ))}
-                  {(!selectedDeal.activities || selectedDeal.activities.length === 0) && <p className="text-xs text-gray-400 text-center py-2">No activities yet</p>}
-                </div>
-              </div>
+                  )}
 
-              <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button onClick={() => handleDeleteDeal(selectedDeal.deal_id)} className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"><Trash2 className="w-4 h-4" /> Delete</button>
-              </div>
+                  {selectedDeal.contact_name && (
+                    <div>
+                      <span className="text-xs text-gray-400 uppercase">Contact</span>
+                      <p className="text-sm flex items-center gap-1"><User className="w-3.5 h-3.5 text-gray-400" /> {selectedDeal.contact_name}</p>
+                      {selectedDeal.contact_email && <p className="text-xs text-gray-500 ml-5">{selectedDeal.contact_email}</p>}
+                    </div>
+                  )}
+
+                  {/* Notes + Activity Timeline */}
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Notes &amp; Activity</h3>
+                    <div className="flex gap-2 mb-4">
+                      <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote() } }} placeholder="Add a note..." className="flex-1 px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                      <button onClick={handleAddNote} disabled={!newNote.trim() || addingNote} className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{addingNote ? '...' : 'Add'}</button>
+                    </div>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {(selectedDeal.activities || []).map((a: DealActivity) => (
+                        <div key={a.activity_id} className="flex gap-2 items-start">
+                          <div className="mt-0.5">{activityIcon(a.activity_type)}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-700 dark:text-gray-300">{a.description || a.activity_type}</p>
+                            {a.created_at && <p className="text-[10px] text-gray-400 mt-0.5">{new Date(a.created_at).toLocaleString()}</p>}
+                          </div>
+                        </div>
+                      ))}
+                      {(!selectedDeal.activities || selectedDeal.activities.length === 0) && <p className="text-xs text-gray-400 text-center py-2">No activities yet</p>}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <button onClick={() => handleDeleteDeal(selectedDeal.deal_id)} className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"><Trash2 className="w-4 h-4" /> Delete</button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Candidates ── */}
+              {detailTab === 'candidates' && (
+                <div className="space-y-4">
+                  {/* Add candidate */}
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100"><UsersIcon className="w-4 h-4 text-primary-600" /> Submit a candidate</div>
+                    <input value={candForm.name} onChange={e => setCandForm(f => ({ ...f, name: e.target.value }))} placeholder="Candidate name *" className="w-full px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={candForm.email} onChange={e => setCandForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" className="px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                      <input value={candForm.linkedin_url} onChange={e => setCandForm(f => ({ ...f, linkedin_url: e.target.value }))} placeholder="LinkedIn URL" className="px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    </div>
+                    <input value={candForm.resume_url} onChange={e => setCandForm(f => ({ ...f, resume_url: e.target.value }))} placeholder="Resume URL" className="w-full px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    <textarea value={candForm.notes} onChange={e => setCandForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" rows={2} className="w-full px-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                    <button onClick={addCandidate} disabled={!candForm.name.trim() || candSaving} className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50">{candSaving ? 'Adding…' : 'Submit candidate'}</button>
+                  </div>
+
+                  {/* Candidate list */}
+                  <div className="space-y-2">
+                    {candidates.map(c => (
+                      <div key={c.candidate_id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{c.name}</p>
+                            <div className="flex flex-wrap gap-3 mt-1">
+                              {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><Link2 className="w-3 h-3" /> LinkedIn</a>}
+                              {c.resume_url && <a href={c.resume_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" /> Resume</a>}
+                              {c.email && <span className="text-xs text-gray-400">{c.email}</span>}
+                            </div>
+                            {c.submitted_by?.name && <p className="text-[11px] text-gray-400 mt-1">Submitted by {c.submitted_by.name}</p>}
+                            {c.notes && <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{c.notes}</p>}
+                          </div>
+                          <button onClick={() => removeCandidate(c.candidate_id)} className="text-gray-300 hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                        <div className="mt-2">
+                          <select value={c.status} onChange={e => setCandidateStatus(c.candidate_id, e.target.value)}
+                            className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer ${candStatusMeta(c.status).color}`}>
+                            {CAND_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                    {candidates.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No candidates submitted yet.</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Conversation ── */}
+              {detailTab === 'conversation' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100"><Mail className="w-4 h-4 text-primary-600" /> Conversation</div>
+                    <a href="/dashboard/inbox" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><InboxIcon className="w-3 h-3" /> Open in Inbox</a>
+                  </div>
+                  <div className="space-y-2 max-h-[70vh] overflow-y-auto">
+                    {messages.map((m, i) => (
+                      <div key={i} className={`rounded-lg p-3 text-sm ${m.direction === 'sent' ? 'bg-blue-50 dark:bg-blue-900/20 ml-6' : 'bg-gray-50 dark:bg-gray-700/40 mr-6'}`}>
+                        <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+                          <span className="font-medium uppercase">{m.direction === 'sent' ? 'Sent' : 'Received'}</span>
+                          <span>{m.at ? new Date(m.at).toLocaleString() : ''}</span>
+                        </div>
+                        {m.subject && <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">{m.subject}</p>}
+                        <p className="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap mt-0.5">{m.body || ''}</p>
+                      </div>
+                    ))}
+                    {messages.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No email history for this deal&apos;s contact.</p>}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>

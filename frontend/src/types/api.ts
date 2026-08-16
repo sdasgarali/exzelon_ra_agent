@@ -371,12 +371,58 @@ export interface Deal {
   contact_email?: string;
   client_name?: string;
   activities?: DealActivity[];
+  job?: DealJob | null;
+  resource_pool?: DealResourcePool | null;
+  candidate_count?: number;
 }
 
 export interface DealUserRef {
   id: number;
   name: string | null;
   initials: string;
+}
+
+export interface DealJob {
+  lead_id: number;
+  job_title: string;
+  job_link: string | null;
+  company: string | null;
+  company_size: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  posting_date: string | null;
+  location: string | null;
+}
+
+export interface DealResourcePool {
+  external_ref: string;
+  ats_url: string | null;
+}
+
+export interface DealCandidate {
+  candidate_id: number;
+  deal_id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+  resume_url: string | null;
+  status: string; // submitted | reviewed | sent_to_client | placed | rejected
+  notes: string | null;
+  submitted_by: DealUserRef | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DealMessage {
+  source: string;
+  direction: string; // sent | received
+  subject: string | null;
+  body: string | null;
+  from?: string | null;
+  to?: string | null;
+  category?: string | null;
+  at: string | null;
 }
 
 export interface DealActivity {
