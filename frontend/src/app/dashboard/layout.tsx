@@ -57,6 +57,7 @@ import {
   Layers,
   Ban,
   CircleDollarSign,
+  Bell,
 } from 'lucide-react'
 
 const navigation = [
@@ -417,6 +418,13 @@ export default function DashboardLayout({
               </div>
               {/* Actions */}
               <div className="p-2">
+                <button
+                  onClick={() => { router.push('/dashboard/profile'); setProfileOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+                >
+                  <Bell className="w-4 h-4" />
+                  Notification settings
+                </button>
                 <button
                   onClick={() => { toggleTheme(); setProfileOpen(false); }}
                   className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"

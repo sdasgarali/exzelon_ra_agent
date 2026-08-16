@@ -26,6 +26,9 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
     role: str = UserRole.RECRUITER.value
     is_active: bool = True
+    # Notification preferences (global master toggles; opt-out — both default ON).
+    notify_inapp_enabled: bool = True
+    notify_email_enabled: bool = True
 
     @field_validator("role", mode="before")
     @classmethod
@@ -50,6 +53,9 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     # Only a super_admin may reassign a user's tenant; ignored for regular admins.
     tenant_id: Optional[int] = None
+    # Notification preferences (global master toggles).
+    notify_inapp_enabled: Optional[bool] = None
+    notify_email_enabled: Optional[bool] = None
 
     @field_validator("role", mode="before")
     @classmethod

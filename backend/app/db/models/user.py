@@ -61,6 +61,12 @@ class User(Base):
     # Calendar link (Calendly/Cal.com)
     calendar_link = Column(String(500), nullable=True)
 
+    # Notification preferences — GLOBAL master toggles. `notify_inapp_enabled`
+    # gates every in-app (bell) notification for this user; `notify_email_enabled`
+    # gates every notification email. Opt-out model: both default ON.
+    notify_inapp_enabled = Column(Boolean, default=True, nullable=False)
+    notify_email_enabled = Column(Boolean, default=True, nullable=False)
+
     # Relationship
     tenant = relationship("Tenant", backref="users")
 

@@ -777,6 +777,7 @@ def assign_deal(
     if not (is_admin or is_recruiter):
         raise HTTPException(status_code=403, detail="Only admins or recruiters can assign deals")
 
+    target = None
     if body.user_id is not None:
         target = db.query(User).filter(User.user_id == body.user_id).first()
         if not target:
@@ -799,6 +800,14 @@ def assign_deal(
     ))
     db.commit()
     db.refresh(deal)
+
+    # Notify the assignee (in-app + email), respecting their notification prefs.
+    # Skip self-assignment — no point pinging yourself.
+    if target is not None and target.user_id != user.user_id:
+        from app.services.deal_notifications import notify_deal_assigned
+        notify_deal_assigned(db, deal, target, user, tenant_id)
+        db.commit()
+
     return _deal_to_dict(deal, db)
 
 
