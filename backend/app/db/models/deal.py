@@ -80,6 +80,39 @@ class Deal(Base):
         return f"<Deal(deal_id={self.deal_id}, name='{self.name}', stage={self.stage_id})>"
 
 
+class DealCandidate(Base):
+    """A candidate a recruiter submits against a deal (the recruiting hand-off).
+
+    Distinct from the Resource Pool ATS candidate records — this is the in-app
+    submission tracked through the recruiter → BDM → client pipeline.
+    """
+
+    __tablename__ = "deal_candidates"
+
+    candidate_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.deal_id", ondelete="CASCADE"), nullable=False, index=True)
+
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(64), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    resume_url = Column(String(500), nullable=True)
+
+    # submitted → reviewed (by BDM) → sent_to_client → placed / rejected
+    status = Column(String(30), default="submitted", nullable=False)
+    notes = Column(Text, nullable=True)
+    submitted_by_user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+
+    __table_args__ = (
+        Index("idx_deal_candidate_deal", "deal_id"),
+        Index("idx_deal_candidate_tenant", "tenant_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DealCandidate(candidate_id={self.candidate_id}, deal={self.deal_id}, name='{self.name}', status='{self.status}')>"
+
+
 class DealActivity(Base):
     """Activity log entry for a deal."""
 
