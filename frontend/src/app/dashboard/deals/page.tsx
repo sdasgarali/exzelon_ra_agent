@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { dealsApi, usersApi } from '@/lib/api'
+import { dealsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { ClaimTag, AgeBadge, OwnerChip } from '@/components/deal-badges'
 import type { Deal, DealStage, DealStats, DealActivity, DealContactSearch, DealClientSearch, DealForecast, StaleDeal } from '@/types/api'
@@ -136,19 +136,14 @@ export default function DealsPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Load reps for the assign dropdown (admins)
+  // Load assignable reps: admins → any rep; recruiters → BDMs (workflow hand-off).
+  const canAssign = isAdmin || effectiveRole === 'recruiter'
   useEffect(() => {
-    if (!isAdmin) return
-    usersApi.list({ limit: 200 })
-      .then((res) => {
-        const arr = Array.isArray(res) ? res : (res?.items ?? [])
-        const r = arr
-          .filter((u: { role?: string; base_role?: string | null }) => ['bdm', 'recruiter'].includes((u.base_role || u.role || '')))
-          .map((u: { user_id: number; full_name?: string | null; email: string }) => ({ user_id: u.user_id, label: u.full_name || u.email }))
-        setReps(r)
-      })
+    if (!canAssign) return
+    dealsApi.assignees()
+      .then((arr) => setReps(Array.isArray(arr) ? arr.map((u: { user_id: number; label: string }) => ({ user_id: u.user_id, label: u.label })) : []))
       .catch(() => setReps([]))
-  }, [isAdmin])
+  }, [canAssign])
 
   // Distinct claimers present in the loaded deals (for the Claimed By filter)
   const claimerOptions = useMemo(() => {
@@ -269,15 +264,15 @@ export default function DealsPage() {
           <RotateCcw className="w-3 h-3" /> Release
         </button>
       )}
-      {isAdmin && (
+      {canAssign && reps.length > 0 && (
         <select
           value={d.owner?.id ?? ''}
           onChange={e => doAssign(d.deal_id, e.target.value ? Number(e.target.value) : null)}
           disabled={actioning === d.deal_id}
-          title="Assign owner"
+          title={effectiveRole === 'recruiter' ? 'Hand off to a BDM' : 'Assign owner'}
           className="text-[11px] px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
         >
-          <option value="">Assign…</option>
+          <option value="">{effectiveRole === 'recruiter' ? 'Hand to BDM…' : 'Assign…'}</option>
           {reps.map(r => <option key={r.user_id} value={r.user_id}>{r.label}</option>)}
         </select>
       )}

@@ -1219,6 +1219,10 @@ export const dealsApi = {
     const response = await api.post(`/deals/${id}/assign`, { user_id: userId })
     return response.data
   },
+  assignees: async () => {
+    const response = await api.get('/deals/assignees')
+    return response.data
+  },
   // Stages
   listStages: async () => {
     const response = await api.get('/deals/stages')

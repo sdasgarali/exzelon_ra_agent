@@ -96,10 +96,41 @@ class TestAssign:
         resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=auth_headers, json={"user_id": admin_user.user_id})
         assert resp.status_code == 400
 
-    def test_rep_cannot_assign(self, client, db_session, operator_headers, viewer_user, test_tenant, stage):
+    def test_recruiter_can_hand_off_to_bdm(self, client, db_session, viewer_headers, operator_user, test_tenant, stage):
+        # viewer_headers = a Recruiter; operator_user = a BDM. Recruiter hands the deal to the BDM.
+        d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
+        resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=viewer_headers, json={"user_id": operator_user.user_id})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["owner"]["id"] == operator_user.user_id
+
+    def test_recruiter_cannot_assign_to_recruiter(self, client, db_session, viewer_headers, viewer_user, test_tenant, stage):
+        # A recruiter can only hand off to a BDM, not another recruiter.
+        d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
+        resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=viewer_headers, json={"user_id": viewer_user.user_id})
+        assert resp.status_code == 400
+
+    def test_bdm_cannot_assign(self, client, db_session, operator_headers, viewer_user, test_tenant, stage):
+        # BDMs receive assignments; they don't assign.
         d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
         resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=operator_headers, json={"user_id": viewer_user.user_id})
         assert resp.status_code == 403
+
+
+class TestAssignees:
+    def test_admin_sees_all_reps(self, client, auth_headers, operator_user, viewer_user):
+        rows = client.get("/api/v1/deals/assignees", headers=auth_headers).json()
+        ids = {r["user_id"] for r in rows}
+        assert operator_user.user_id in ids and viewer_user.user_id in ids
+
+    def test_recruiter_sees_only_bdms(self, client, viewer_headers, operator_user, viewer_user):
+        rows = client.get("/api/v1/deals/assignees", headers=viewer_headers).json()
+        bases = {r["base_role"] for r in rows}
+        assert bases == {"bdm"}
+        assert viewer_user.user_id not in {r["user_id"] for r in rows}
+
+    def test_bdm_sees_none(self, client, operator_headers):
+        rows = client.get("/api/v1/deals/assignees", headers=operator_headers).json()
+        assert rows == []
 
     def test_assigned_deal_is_not_unclaimed(self, client, db_session, auth_headers, operator_user, test_tenant, stage):
         # Assigning an owner (but not claiming) → deal is no longer "Unclaimed" (open pool).

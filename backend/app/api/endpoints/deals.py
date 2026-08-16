@@ -302,6 +302,34 @@ def list_deals(
     }
 
 
+@router.get("/assignees")
+def list_assignees(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Reps a deal can be assigned to, scoped to the caller.
+
+    - Admin/super-admin: all BDMs + Recruiters in the tenant.
+    - Recruiter: BDMs only (the workflow hand-off target).
+    - BDM/others: none (they receive assignments, they don't assign).
+    """
+    base = effective_base_role(user, None, db)
+    if base not in ("admin", "super_admin", "recruiter"):
+        return []
+    target_role = "bdm" if base == "recruiter" else None  # recruiter → BDM only
+    q = db.query(User).filter(User.is_active == True)  # noqa: E712
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    out = []
+    for u in q.all():
+        b = effective_base_role(u, None, db)
+        if b in ("bdm", "recruiter") and (target_role is None or b == target_role):
+            out.append({"user_id": u.user_id, "label": u.full_name or u.email, "base_role": b})
+    out.sort(key=lambda x: x["label"].lower())
+    return out
+
+
 @router.get("/pipeline")
 def pipeline_view(
     db: Session = Depends(get_db),
@@ -653,21 +681,37 @@ def assign_deal(
     deal_id: int,
     body: AssignRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role([UserRole.ADMIN])),
+    user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Admin assigns/reassigns a deal's owner to a BDM/Recruiter (any stage). None = unassign."""
+    """Assign/reassign a deal's owner.
+
+    - Admin/super-admin: assign to any BDM/Recruiter, or unassign (None).
+    - Recruiter: hand the deal off to a BDM (workflow: recruiter → BDM). Cannot unassign.
+    - BDM/others: not allowed (they receive assignments).
+    """
     deal = _get_deal_scoped(db, deal_id, tenant_id)
+    base = effective_base_role(user, None, db)
+    is_admin = base in ("admin", "super_admin")
+    is_recruiter = base == "recruiter"
+    if not (is_admin or is_recruiter):
+        raise HTTPException(status_code=403, detail="Only admins or recruiters can assign deals")
+
     if body.user_id is not None:
         target = db.query(User).filter(User.user_id == body.user_id).first()
         if not target:
             raise HTTPException(status_code=400, detail="User not found")
         if tenant_id is not None and target.tenant_id != tenant_id:
             raise HTTPException(status_code=400, detail="User is not in this tenant")
-        if effective_base_role(target, None, db) not in ("bdm", "recruiter"):
+        target_base = effective_base_role(target, None, db)
+        if is_recruiter and target_base != "bdm":
+            raise HTTPException(status_code=400, detail="Recruiters can only assign a deal to a BDM")
+        if target_base not in ("bdm", "recruiter"):
             raise HTTPException(status_code=400, detail="Deals can only be assigned to a BDM or Recruiter")
         desc = f"Assigned to {target.full_name or target.email} by {user.full_name or user.email}"
     else:
+        if not is_admin:
+            raise HTTPException(status_code=400, detail="Select a BDM to assign this deal to")
         desc = f"Owner cleared by {user.full_name or user.email}"
     deal.owner_id = body.user_id
     db.add(DealActivity(
