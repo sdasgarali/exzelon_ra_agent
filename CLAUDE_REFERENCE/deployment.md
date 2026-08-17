@@ -110,12 +110,21 @@ systemctl restart exzelon-api exzelon-web
 
 ## Nginx Config
 
-Template in `deploy/nginx.conf`. To update on VPS:
+Template in `deploy/nginx.conf` (live file: `/etc/nginx/sites-enabled/ra-app`). To update on VPS:
 ```bash
 cp /opt/exzelon-ra-agent/deploy/nginx.conf /etc/nginx/sites-available/ra-app
 sed -i 's/YOUR_DOMAIN/ra.partnerwithus.tech/g' /etc/nginx/sites-available/ra-app
 nginx -t && systemctl reload nginx
 ```
+
+**Caching (2026-08-17):** `location /` sends `Cache-Control: no-cache` on the HTML shell
+(via `proxy_hide_header Cache-Control` + `add_header`) so a new frontend deploy is picked
+up on the next normal reload — no hard refresh needed. Hashed assets under `/_next/static/`
+stay `public, immutable`. Because any `add_header` in a location cancels inheritance of the
+server-level `add_header`s, the 5 security headers are re-declared inside `location /`.
+**Gotcha:** never leave config backups in `sites-enabled/` — nginx `include`s `*`, so a
+`ra-app.bak` there causes `duplicate upstream` and `nginx -t` fails. Keep backups in
+`/root/nginx-backups/`.
 
 ## Viewing Logs
 
