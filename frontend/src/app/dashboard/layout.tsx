@@ -480,9 +480,10 @@ export default function DashboardLayout({
 
         {/* Desktop top bar — search, notifications, and profile pinned to the top-right. */}
         <div className="hidden lg:flex items-center justify-end gap-3 sticky top-0 z-30 px-8 py-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
-          {/* Search (opens the command palette) */}
+          {/* Search (opens the command palette). bubbles:true so the synthetic event
+              reaches CommandPalette's window-level keydown listener (real Ctrl+K bubbles). */}
           <button
-            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
+            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
             className="flex items-center gap-2 w-56 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600"
             title="Command Palette"
           >
