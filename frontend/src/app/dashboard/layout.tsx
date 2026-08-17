@@ -123,14 +123,18 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const profileRef = useRef<HTMLDivElement>(null)
+  const profileRef = useRef<HTMLDivElement>(null)       // mobile drawer profile menu
+  const topbarProfileRef = useRef<HTMLDivElement>(null) // desktop top-bar profile menu
   const [tenantList, setTenantList] = useState<TenantSummary[]>([])
   const [tenantLoading, setTenantLoading] = useState(false)
 
   useEffect(() => {
     if (!profileOpen) return
     const handleClickOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const inSidebar = profileRef.current?.contains(target)
+      const inTopbar = topbarProfileRef.current?.contains(target)
+      if (!inSidebar && !inTopbar) {
         setProfileOpen(false)
       }
     }
@@ -348,112 +352,84 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        <div ref={profileRef} className={`border-t border-gray-700 relative ${collapsed ? 'p-2' : 'p-4'}`}>
-          {/* Notification bell + Cmd+K hint (desktop, expanded only) */}
-          {!collapsed && (
-            <div className="hidden lg:flex items-center gap-2 mb-3 px-2">
-              <div className="[&_button]:text-gray-400 [&_button]:hover:text-white [&_button:hover]:bg-gray-700">
-                <NotificationCenter />
-              </div>
-              <button
-                onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
-                className="flex items-center gap-2 flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
-                title="Command Palette"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span>Search...</span>
-                <kbd className="ml-auto text-[10px] font-mono bg-gray-700 px-1 py-0.5 rounded">Ctrl+K</kbd>
-              </button>
+        {/* Profile — mobile drawer only; on desktop it lives in the top bar. */}
+        <div ref={profileRef} className="border-t border-gray-700 relative p-4 lg:hidden">
+          <button
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              {user?.email?.[0]?.toUpperCase() || 'U'}
             </div>
-          )}
-
-          {/* Collapsed: just show avatar with tooltip */}
-          {collapsed ? (
-            <div className="relative group">
-              <button
-                onClick={() => setProfileOpen(!profileOpen)}
-                className="w-full flex justify-center p-1 rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                  {user?.email?.[0]?.toUpperCase() || 'U'}
-                </div>
-              </button>
-              <span className="absolute left-full ml-2 bottom-0 px-2 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-[60]">
-                {user?.full_name || user?.email}
-              </span>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
+              <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
             </div>
-          ) : (
-            <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                {user?.email?.[0]?.toUpperCase() || 'U'}
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-                <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
-              </div>
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-            </button>
-          )}
+            <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+          </button>
 
-          {/* Profile dropdown popover */}
           {profileOpen && (
-            <div className={`absolute bottom-full mb-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden ${collapsed ? 'left-full ml-2 w-56 bottom-0' : 'left-4 right-4'}`}>
-              {/* User details */}
-              <div className="p-4 border-b border-gray-700">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-lg font-semibold" aria-hidden="true">
-                    {user?.email?.[0]?.toUpperCase() || 'U'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-                    <p className="text-xs text-gray-400 truncate">{user?.email}</p>
-                    <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
-                      {user?.role?.replace('_', ' ')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              {/* Actions */}
-              <div className="p-2">
-                <button
-                  onClick={() => { router.push('/dashboard/profile'); setProfileOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
-                >
-                  <Bell className="w-4 h-4" />
-                  Notification settings
-                </button>
-                <button
-                  onClick={() => { toggleTheme(); setProfileOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
-                >
-                  {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-                  {theme === 'light' ? 'Dark mode' : 'Light mode'}
-                </button>
-                <button
-                  onClick={() => { setHelpOpen(true); setProfileOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
-                >
-                  <Keyboard className="w-4 h-4" />
-                  Keyboard shortcuts
-                </button>
-                <div className="border-t border-gray-700 my-1" />
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-lg transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Sign out
-                </button>
-              </div>
+            <div className="absolute bottom-full mb-2 left-4 right-4 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+              {profileMenuBody}
             </div>
           )}
         </div>
       </>
     )
   }
+
+  // Shared profile-menu body — reused by the mobile drawer and the desktop top bar.
+  const profileMenuBody = (
+    <>
+      {/* User details */}
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-primary-600 flex items-center justify-center text-lg font-semibold text-white" aria-hidden="true">
+            {user?.email?.[0]?.toUpperCase() || 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
+            <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+            <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
+              {user?.role?.replace('_', ' ')}
+            </span>
+          </div>
+        </div>
+      </div>
+      {/* Actions */}
+      <div className="p-2">
+        <button
+          onClick={() => { router.push('/dashboard/profile'); setProfileOpen(false); }}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+        >
+          <Bell className="w-4 h-4" />
+          Notification settings
+        </button>
+        <button
+          onClick={() => { toggleTheme(); setProfileOpen(false); }}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+        >
+          {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          {theme === 'light' ? 'Dark mode' : 'Light mode'}
+        </button>
+        <button
+          onClick={() => { setHelpOpen(true); setProfileOpen(false); }}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+        >
+          <Keyboard className="w-4 h-4" />
+          Keyboard shortcuts
+        </button>
+        <div className="border-t border-gray-700 my-1" />
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 rounded-lg transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </button>
+      </div>
+    </>
+  )
 
   return (
     <div className="min-h-screen flex">
@@ -501,6 +477,48 @@ export default function DashboardLayout({
           <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex-1">NeuraLeads</h1>
           <NotificationCenter />
         </div>
+
+        {/* Desktop top bar — search, notifications, and profile pinned to the top-right. */}
+        <div className="hidden lg:flex items-center justify-end gap-3 sticky top-0 z-30 px-8 py-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
+          {/* Search (opens the command palette) */}
+          <button
+            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
+            className="flex items-center gap-2 w-56 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600"
+            title="Command Palette"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>Search...</span>
+            <kbd className="ml-auto text-[10px] font-mono bg-gray-200 dark:bg-gray-600 px-1 py-0.5 rounded">Ctrl+K</kbd>
+          </button>
+
+          {/* Notifications */}
+          <NotificationCenter />
+
+          {/* Profile */}
+          <div ref={topbarProfileRef} className="relative">
+            <button
+              onClick={() => setProfileOpen(!profileOpen)}
+              className="flex items-center gap-2 p-1.5 pr-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              aria-label="Open profile menu"
+            >
+              <div className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center flex-shrink-0 text-sm font-semibold" aria-hidden="true">
+                {user?.email?.[0]?.toUpperCase() || 'U'}
+              </div>
+              <div className="hidden xl:block min-w-0 text-left max-w-[10rem]">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{user?.full_name || user?.email}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 capitalize truncate">{user?.role?.replace('_', ' ')}</p>
+              </div>
+              <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                {profileMenuBody}
+              </div>
+            )}
+          </div>
+        </div>
+
         <main className="p-4 lg:p-8 dark:text-gray-100"><ErrorBoundary>{children}</ErrorBoundary></main>
       </div>
 
