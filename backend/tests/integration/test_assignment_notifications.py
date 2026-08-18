@@ -38,7 +38,7 @@ class TestAssignmentNotification:
         self, client, db_session, auth_headers, operator_user, test_tenant, stage, monkeypatch
     ):
         sent = []
-        monkeypatch.setattr("app.services.email_verification._send_email",
+        monkeypatch.setattr("app.services.system_mailer.send_system_email",
                             lambda *a, **k: sent.append(a) or True)
         d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
         resp = client.post(f"/api/v1/deals/{d.deal_id}/assign", headers=auth_headers,
@@ -58,7 +58,7 @@ class TestAssignmentNotification:
     def test_inapp_toggle_off_suppresses_notification(
         self, client, db_session, auth_headers, operator_user, test_tenant, stage, monkeypatch
     ):
-        monkeypatch.setattr("app.services.email_verification._send_email", lambda *a, **k: True)
+        monkeypatch.setattr("app.services.system_mailer.send_system_email", lambda *a, **k: True)
         operator_user.notify_inapp_enabled = False
         db_session.commit()
         d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id)
@@ -71,7 +71,7 @@ class TestAssignmentNotification:
         self, client, db_session, auth_headers, operator_user, test_tenant, stage, monkeypatch
     ):
         sent = []
-        monkeypatch.setattr("app.services.email_verification._send_email",
+        monkeypatch.setattr("app.services.system_mailer.send_system_email",
                             lambda *a, **k: sent.append(a) or True)
         operator_user.notify_email_enabled = False
         db_session.commit()
@@ -86,7 +86,7 @@ class TestAssignmentNotification:
     def test_unassign_creates_no_notification(
         self, client, db_session, auth_headers, operator_user, test_tenant, stage, monkeypatch
     ):
-        monkeypatch.setattr("app.services.email_verification._send_email", lambda *a, **k: True)
+        monkeypatch.setattr("app.services.system_mailer.send_system_email", lambda *a, **k: True)
         d = _mk_deal(db_session, test_tenant.tenant_id, stage.stage_id, name="ToClear")
         d.owner_id = operator_user.user_id
         db_session.commit()

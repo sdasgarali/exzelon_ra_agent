@@ -59,6 +59,10 @@ Kanban-style deal tracking:
 - Deal stats: win rate, avg deal size, pipeline value
 - Activity timeline per deal
 
+### System / Notification Mailer (`services/system_mailer.py`)
+- `send_system_email(db, tenant_id, to, subject, html)` — the tenant-aware transactional sender for ALL system mail (deal notifications, email verification, password resets). Resolves a **per-tenant** sender from `tenant_settings` (keys `notification_sender_email`/`_name`, `notification_smtp_host`/`_port`/`_user`, `notification_smtp_password_enc` (Fernet), `notification_smtp_security` = starttls|ssl); falls back to global `settings.SMTP_*`; skips (returns False) if neither is set. `_smtp_send()` handles STARTTLS (587) and implicit SSL (465). `send_test_email()` powers the Settings "Send test" button. Configured via `PUT /settings/notifications/sender`.
+- NOTE: M365 mailboxes need **Authenticated SMTP** enabled to use basic SMTP here (e.g. Hr@exzelon.com works; support@exzelon.com returns 535). Otherwise use OAuth (campaign path) or a cPanel SMTP box.
+
 ### Deal Notifications (`services/deal_notifications.py`)
 - `forward_new_deal_to_reps(db, deal, tenant_id)` — fans a new **unclaimed** deal out to every BDM/Recruiter (in-app + best-effort email), gated by settings `deal_notify_reps_on_new` / `deal_notify_reps_email`, and per-rep master toggles.
 - `notify_deal_assigned(db, deal, assignee, actor, tenant_id)` — on `POST /deals/{id}/assign`, notifies the assignee (in-app + email), gated by the assignee's `notify_inapp_enabled` / `notify_email_enabled`. Skips self-assignment. Best-effort; never raises.

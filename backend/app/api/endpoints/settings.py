@@ -1563,3 +1563,92 @@ async def test_provider_connection(
 
     except Exception as e:
         return {"status": "error", "message": str(e), "provider": provider}
+
+
+# ── Tenant-configurable notification sender ───────────────────────────────────
+# Per-tenant SMTP "from" for system/notification email (deal assignments, email
+# verification, password resets). Password is Fernet-encrypted at rest and never
+# returned. Falls back to the global settings.SMTP_* env config when unset.
+from app.api.deps.auth import require_tenant_id  # noqa: E402
+from app.core.encryption import encrypt_field  # noqa: E402
+from app.services.system_mailer import (  # noqa: E402
+    get_notification_sender,
+    send_test_email,
+    K_EMAIL, K_NAME, K_HOST, K_PORT, K_USER, K_PASSWORD_ENC, K_SECURITY,
+)
+
+
+class NotificationSenderConfig(PydanticBaseModel):
+    sender_email: Optional[str] = None
+    sender_name: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = 587
+    smtp_user: Optional[str] = None
+    smtp_security: Optional[str] = "starttls"  # "starttls" | "ssl"
+
+
+class NotificationSenderUpdate(NotificationSenderConfig):
+    # Write-only. Omit or send blank to keep the existing stored password.
+    smtp_password: Optional[str] = None
+
+
+class NotificationSenderTest(PydanticBaseModel):
+    to_email: str
+
+
+@router.get("/notifications/sender")
+async def get_notification_sender_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Return the current tenant's notification-sender config (password never included)."""
+    cfg = get_notification_sender(db, tenant_id)
+    return {
+        "configured": get_tenant_setting(db, K_HOST, tenant_id=tenant_id) is not None,
+        "effective_source": cfg.get("source"),  # 'tenant' | 'global' | 'none'
+        "sender_email": get_tenant_setting(db, K_EMAIL, tenant_id=tenant_id),
+        "sender_name": get_tenant_setting(db, K_NAME, tenant_id=tenant_id),
+        "smtp_host": get_tenant_setting(db, K_HOST, tenant_id=tenant_id),
+        "smtp_port": get_tenant_setting(db, K_PORT, tenant_id=tenant_id, default=587),
+        "smtp_user": get_tenant_setting(db, K_USER, tenant_id=tenant_id),
+        "smtp_security": get_tenant_setting(db, K_SECURITY, tenant_id=tenant_id, default="starttls"),
+        "password_set": get_tenant_setting(db, K_PASSWORD_ENC, tenant_id=tenant_id) is not None,
+    }
+
+
+@router.put("/notifications/sender")
+async def update_notification_sender_config(
+    body: NotificationSenderUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(require_tenant_id),
+):
+    """Upsert the tenant's notification-sender config. Blank password keeps the stored one."""
+    by = current_user.email
+    set_tenant_setting(db, K_EMAIL, (body.sender_email or "").strip() or None, tenant_id=tenant_id, updated_by=by)
+    set_tenant_setting(db, K_NAME, (body.sender_name or "").strip() or None, tenant_id=tenant_id, updated_by=by)
+    set_tenant_setting(db, K_HOST, (body.smtp_host or "").strip() or None, tenant_id=tenant_id, updated_by=by)
+    set_tenant_setting(db, K_PORT, int(body.smtp_port or 587), tenant_id=tenant_id, updated_by=by)
+    set_tenant_setting(db, K_USER, (body.smtp_user or "").strip() or None, tenant_id=tenant_id, updated_by=by)
+    sec = (body.smtp_security or "starttls").lower()
+    set_tenant_setting(db, K_SECURITY, "ssl" if sec == "ssl" else "starttls", tenant_id=tenant_id, updated_by=by)
+    if body.smtp_password:  # only overwrite when a non-empty password is supplied
+        set_tenant_setting(db, K_PASSWORD_ENC, encrypt_field(body.smtp_password), tenant_id=tenant_id, updated_by=by)
+    db.commit()
+    return await get_notification_sender_config(db=db, current_user=current_user, tenant_id=tenant_id)
+
+
+@router.post("/notifications/sender/test")
+async def test_notification_sender(
+    body: NotificationSenderTest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(require_tenant_id),
+):
+    """Send a test email using the tenant's saved sender (or global fallback)."""
+    to = (body.to_email or current_user.email or "").strip()
+    if not to:
+        raise HTTPException(status_code=400, detail="Provide a recipient email for the test.")
+    ok, detail = send_test_email(db, tenant_id, to)
+    return {"ok": ok, "detail": detail, "to": to}

@@ -65,7 +65,7 @@ def forward_new_deal_to_reps(db: Session, deal: Deal, tenant_id: Optional[int]) 
         # Best-effort email fan-out (separately mutable). Honor each rep's email toggle.
         if _get_deal_setting(db, "deal_notify_reps_email", True):
             email_reps = [r for r in reps if getattr(r, "notify_email_enabled", True)]
-            _email_reps(email_reps, deal)
+            _email_reps(db, tid, email_reps, deal)
 
         logger.info("Forwarded new deal to reps", deal_id=deal.deal_id, tenant_id=tid, reps=len(reps))
         return len(reps)
@@ -105,7 +105,7 @@ def notify_deal_assigned(db: Session, deal: Deal, assignee, actor, tenant_id: Op
             fired = True
 
         if getattr(assignee, "notify_email_enabled", True):
-            _email_assignee(assignee, deal, actor_name, link)
+            _email_assignee(db, tid, assignee, deal, actor_name, link)
             fired = True
 
         logger.info("Notified assignee of deal", deal_id=deal.deal_id, tenant_id=tid,
@@ -116,11 +116,11 @@ def notify_deal_assigned(db: Session, deal: Deal, assignee, actor, tenant_id: Op
         return False
 
 
-def _email_assignee(assignee, deal: Deal, actor_name: str, link_path: str) -> None:
+def _email_assignee(db, tenant_id, assignee, deal: Deal, actor_name: str, link_path: str) -> None:
     try:
         if not getattr(assignee, "email", None):
             return
-        from app.services.email_verification import _send_email
+        from app.services.system_mailer import send_system_email
         from app.core.config import settings
         base = settings.EFFECTIVE_BASE_URL
         frontend = "https://ra.partnerwithus.tech" if "ra.partnerwithus.tech" in base \
@@ -138,14 +138,14 @@ def _email_assignee(assignee, deal: Deal, actor_name: str, link_path: str) -> No
           <p style="color:#666;font-size:13px;">You're receiving this because the deal was assigned to you.
              You can turn these emails off in your profile's notification settings.</p>
         </div>"""
-        _send_email(assignee.email, "A deal was assigned to you — NeuraLeads", html)
+        send_system_email(db, tenant_id, assignee.email, "A deal was assigned to you — NeuraLeads", html)
     except Exception as e:
         logger.warning("Deal assignment email failed", error=str(e))
 
 
-def _email_reps(reps: list, deal: Deal) -> None:
+def _email_reps(db, tenant_id, reps: list, deal: Deal) -> None:
     try:
-        from app.services.email_verification import _send_email
+        from app.services.system_mailer import send_system_email
         from app.core.config import settings
         base = settings.EFFECTIVE_BASE_URL
         frontend = "https://ra.partnerwithus.tech" if "ra.partnerwithus.tech" in base \
@@ -164,6 +164,6 @@ def _email_reps(reps: list, deal: Deal) -> None:
         </div>"""
         for rep in reps:
             if rep.email:
-                _send_email(rep.email, "New lead to claim — NeuraLeads", html)
+                send_system_email(db, tenant_id, rep.email, "New lead to claim — NeuraLeads", html)
     except Exception as e:
         logger.warning("Deal email fan-out failed", error=str(e))

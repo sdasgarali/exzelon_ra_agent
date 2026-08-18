@@ -544,6 +544,18 @@ export const settingsApi = {
     const response = await api.post(`/settings/test-connection/${provider}`)
     return response.data
   },
+  getNotificationSender: async () => {
+    const response = await api.get('/settings/notifications/sender')
+    return response.data
+  },
+  updateNotificationSender: async (data: Record<string, unknown>) => {
+    const response = await api.put('/settings/notifications/sender', data)
+    return response.data
+  },
+  testNotificationSender: async (to_email: string) => {
+    const response = await api.post('/settings/notifications/sender/test', { to_email })
+    return response.data
+  },
   getMySettingsTabPermissions: async (): Promise<Record<string, string>> => {
     const response = await api.get('/settings/my-permissions/settings-tabs')
     return response.data
