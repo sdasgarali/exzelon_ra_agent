@@ -574,6 +574,18 @@ export default function SettingsPage() {
   const [companyProfileLoaded, setCompanyProfileLoaded] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
 
+  // Notification sender (per-tenant system-email "from")
+  const [notifSender, setNotifSender] = useState({
+    sender_email: '', sender_name: '', smtp_host: '', smtp_port: 587, smtp_user: '',
+    smtp_security: 'starttls', smtp_password: '',
+  })
+  const [notifSenderMeta, setNotifSenderMeta] = useState<{ configured: boolean; password_set: boolean; effective_source: string }>({ configured: false, password_set: false, effective_source: 'none' })
+  const [notifSenderLoaded, setNotifSenderLoaded] = useState(false)
+  const [savingNotifSender, setSavingNotifSender] = useState(false)
+  const [testingNotifSender, setTestingNotifSender] = useState(false)
+  const [notifTestTo, setNotifTestTo] = useState('')
+  const [notifTestResult, setNotifTestResult] = useState<{ ok: boolean; detail: string } | null>(null)
+
   useEffect(() => {
     loadTabPermissions()
   }, [])
@@ -581,6 +593,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab === 'business' && !companyProfileLoaded) {
       loadCompanyProfile()
+    }
+    if (activeTab === 'notifications' && !notifSenderLoaded) {
+      loadNotifSender()
     }
   }, [activeTab])
 
@@ -866,6 +881,55 @@ export default function SettingsPage() {
     }
   }
 
+  const loadNotifSender = async () => {
+    try {
+      const d = await settingsApi.getNotificationSender()
+      setNotifSender({
+        sender_email: d.sender_email || '', sender_name: d.sender_name || '',
+        smtp_host: d.smtp_host || '', smtp_port: d.smtp_port || 587,
+        smtp_user: d.smtp_user || '', smtp_security: d.smtp_security || 'starttls',
+        smtp_password: '',
+      })
+      setNotifSenderMeta({ configured: !!d.configured, password_set: !!d.password_set, effective_source: d.effective_source || 'none' })
+      setNotifSenderLoaded(true)
+    } catch {
+      // non-admin / no tenant — leave defaults
+    }
+  }
+
+  const saveNotifSender = async () => {
+    try {
+      setSavingNotifSender(true)
+      setError('')
+      const payload: Record<string, unknown> = { ...notifSender }
+      if (!notifSender.smtp_password) delete payload.smtp_password // blank keeps existing
+      const d = await settingsApi.updateNotificationSender(payload)
+      setNotifSenderMeta({ configured: !!d.configured, password_set: !!d.password_set, effective_source: d.effective_source || 'none' })
+      setNotifSender(s => ({ ...s, smtp_password: '' }))
+      setSuccess('Notification sender saved!')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to save notification sender')
+    } finally {
+      setSavingNotifSender(false)
+    }
+  }
+
+  const testNotifSender = async () => {
+    const to = (notifTestTo || user?.email || '').trim()
+    if (!to) { setNotifTestResult({ ok: false, detail: 'Enter a recipient email.' }); return }
+    try {
+      setTestingNotifSender(true)
+      setNotifTestResult(null)
+      const d = await settingsApi.testNotificationSender(to)
+      setNotifTestResult({ ok: !!d.ok, detail: d.detail || (d.ok ? 'Sent.' : 'Failed.') })
+    } catch (err: any) {
+      setNotifTestResult({ ok: false, detail: err?.response?.data?.detail || 'Test failed.' })
+    } finally {
+      setTestingNotifSender(false)
+    }
+  }
+
   const saveSetting = async (key: string, value: any, type: string = 'string') => {
     await settingsApi.update(key, {
       value_json: JSON.stringify(value),
@@ -1133,6 +1197,7 @@ export default function SettingsPage() {
             { id: 'deliverability', label: '8. Deliverability', color: 'teal' },
             { id: 'lobleadsources', label: '9. LOB Lead Sources', color: 'emerald' },
             { id: 'sourcetuning', label: '10. Source Tuning', color: 'amber' },
+            { id: 'notifications', label: '11. Notifications', color: 'blue' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -4869,7 +4934,112 @@ export default function SettingsPage() {
         </fieldset>
       )}
 
-      {/* Tab 11: All Settings */}
+      {/* Tab 11: Notifications */}
+      {activeTab === 'notifications' && (
+        <fieldset disabled={!canWriteTab('notifications')} className="space-y-6">
+          <div className="card p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2 flex items-center">
+              <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+              Notification Sender
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              The email account used to send this tenant&apos;s <strong>system notifications</strong> (deal
+              assignments, email verification, password resets). Uses basic SMTP auth. If left blank, the
+              global server SMTP is used.
+            </p>
+
+            <div className={`mb-4 px-3 py-2 rounded-lg text-sm ${
+              notifSenderMeta.effective_source === 'tenant' ? 'bg-green-50 text-green-800 border border-green-200'
+                : notifSenderMeta.effective_source === 'global' ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                : 'bg-yellow-50 text-yellow-800 border border-yellow-200'}`}>
+              {notifSenderMeta.effective_source === 'tenant' && 'Active: this tenant’s configured sender below.'}
+              {notifSenderMeta.effective_source === 'global' && 'Active: global server SMTP (no tenant sender set).'}
+              {notifSenderMeta.effective_source === 'none' && 'No sender configured — notification emails are currently NOT sent. Configure below.'}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From email</label>
+                <input type="email" className="input w-full" placeholder="Hr@exzelon.com"
+                  value={notifSender.sender_email}
+                  onChange={e => setNotifSender(s => ({ ...s, sender_email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From name (optional)</label>
+                <input type="text" className="input w-full" placeholder="Exzelon Notifications"
+                  value={notifSender.sender_name}
+                  onChange={e => setNotifSender(s => ({ ...s, sender_name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">SMTP host</label>
+                <input type="text" className="input w-full" placeholder="smtp.office365.com"
+                  value={notifSender.smtp_host}
+                  onChange={e => setNotifSender(s => ({ ...s, smtp_host: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                  <input type="number" className="input w-full" placeholder="587"
+                    value={notifSender.smtp_port}
+                    onChange={e => setNotifSender(s => ({ ...s, smtp_port: Number(e.target.value) || 587 }))} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Security</label>
+                  <select className="input w-full" value={notifSender.smtp_security}
+                    onChange={e => setNotifSender(s => ({ ...s, smtp_security: e.target.value }))}>
+                    <option value="starttls">STARTTLS (587)</option>
+                    <option value="ssl">SSL (465)</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">SMTP username</label>
+                <input type="text" className="input w-full" placeholder="Hr@exzelon.com" autoComplete="off"
+                  value={notifSender.smtp_user}
+                  onChange={e => setNotifSender(s => ({ ...s, smtp_user: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  SMTP password {notifSenderMeta.password_set && <span className="text-xs text-green-600">(set — leave blank to keep)</span>}
+                </label>
+                <input type="password" className="input w-full" autoComplete="new-password"
+                  placeholder={notifSenderMeta.password_set ? '•••••••• (unchanged)' : 'Enter password'}
+                  value={notifSender.smtp_password}
+                  onChange={e => setNotifSender(s => ({ ...s, smtp_password: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button onClick={saveNotifSender} disabled={savingNotifSender || !canWriteTab('notifications')} className="btn btn-primary">
+                {savingNotifSender ? 'Saving...' : 'Save Sender'}
+              </button>
+            </div>
+          </div>
+
+          {/* Send test */}
+          <div className="card p-6">
+            <h3 className="text-md font-semibold text-gray-800 mb-2">Send a test email</h3>
+            <p className="text-sm text-gray-500 mb-3">Verify the sender works end-to-end. Uses the saved config above.</p>
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
+                <input type="email" className="input w-full" placeholder={user?.email || 'you@example.com'}
+                  value={notifTestTo} onChange={e => setNotifTestTo(e.target.value)} />
+              </div>
+              <button onClick={testNotifSender} disabled={testingNotifSender} className="btn btn-secondary">
+                {testingNotifSender ? 'Sending...' : 'Send test email'}
+              </button>
+            </div>
+            {notifTestResult && (
+              <div className={`mt-3 px-3 py-2 rounded-lg text-sm ${notifTestResult.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                {notifTestResult.detail}
+              </div>
+            )}
+          </div>
+        </fieldset>
+      )}
+
+      {/* Tab: All Settings */}
       {activeTab === 'all' && (
         <div className="card overflow-hidden">
           {!isSuperAdmin && (

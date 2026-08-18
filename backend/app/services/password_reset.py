@@ -87,7 +87,8 @@ def generate_and_send_reset(email: str, db: Session) -> bool:
     </div>
     """
 
-    _send_email(user.email, "Reset your NeuraLeads password", html_body)
+    from app.services.system_mailer import send_system_email
+    send_system_email(db, getattr(user, "tenant_id", None), user.email, "Reset your NeuraLeads password", html_body)
     return True
 
 

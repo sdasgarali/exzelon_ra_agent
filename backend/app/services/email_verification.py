@@ -81,7 +81,8 @@ def send_verification_email(user: User, db: Session) -> bool:
     </div>
     """
 
-    sent = _send_email(user.email, "Verify your NeuraLeads email", html_body)
+    from app.services.system_mailer import send_system_email
+    sent = send_system_email(db, getattr(user, "tenant_id", None), user.email, "Verify your NeuraLeads email", html_body)
 
     if not sent and settings.DEBUG:
         # In dev mode without SMTP, auto-verify for convenience

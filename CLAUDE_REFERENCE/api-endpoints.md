@@ -30,6 +30,7 @@ All endpoints are mounted under `/api/v1`.
 |--------|------|---------|
 | `/auth/signup` | `auth.py` | Self-service signup (creates tenant + admin user, sends verification email) |
 | `/auth/me/notification-preferences` | `auth.py` | **Self-service** (any active user) `PATCH` of own notification master toggles `notify_inapp_enabled` / `notify_email_enabled` (partial — only provided fields change). Surfaced on `/dashboard/profile`. |
+| `/settings/notifications/sender` | `settings.py` | Per-tenant notification **sender** config (admin). `GET` returns email/name/host/port/user/security + `password_set` + `effective_source` (tenant\|global\|none) — never the password. `PUT` upserts (password Fernet-encrypted; blank keeps existing; requires tenant). `POST /settings/notifications/sender/test` sends a test email. Two-segment path avoids the `/settings/{key}` catch-all. Backed by `services/system_mailer.py`. Settings UI tab "11. Notifications". |
 | `/auth/verify` | `auth.py` | Email verification via JWT token |
 | `/auth/resend-verification` | `auth.py` | Resend verification email (200 always, prevents enumeration) |
 | `/analytics` | `analytics.py` | Team leaderboard, campaign comparison, revenue metrics, cost tracking |
