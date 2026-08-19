@@ -8,7 +8,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // Do not cap zoom — capping fails WCAG 2.2 AA 1.4.4 (Resize Text). Allow up to 5x.
+  maximumScale: 5,
+  userScalable: true,
 }
 
 export const metadata: Metadata = {

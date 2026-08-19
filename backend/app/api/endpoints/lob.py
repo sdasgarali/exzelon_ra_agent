@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, get_current_tenant_id
-from app.db.models.user import User
+from app.api.deps.auth import get_current_active_user, get_current_tenant_id, require_role
+from app.db.models.user import User, UserRole
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.db.query_helpers import tenant_filter
@@ -236,7 +236,10 @@ def _get_assigned_lob_types(db: Session, tenant_id: Optional[int]) -> Optional[s
 # ── Endpoints ──────────────────────────────────────────────────
 
 @router.get("/column-config/{lob_type}")
-async def get_column_config(lob_type: str):
+async def get_column_config(
+    lob_type: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """Return per-LOB column configuration for the leads table UI."""
     config = LOB_COLUMN_CONFIG.get(lob_type)
     if config is None:
@@ -302,7 +305,7 @@ async def list_lobs(
 async def create_lob(
     payload: LOBCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new Line of Business."""
@@ -391,7 +394,7 @@ async def update_lob(
     lob_id: int,
     payload: LOBUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update an existing LOB."""
@@ -440,7 +443,7 @@ async def update_lob(
 async def delete_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete (archive) an LOB. Cannot delete the default LOB."""
@@ -516,7 +519,7 @@ async def get_lob_intent_signals(
 async def run_lob_intent_signals(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger intent engine for a specific LOB."""
@@ -544,7 +547,7 @@ async def run_lob_intent_signals(
 async def set_default_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Set an LOB as the default for the tenant."""

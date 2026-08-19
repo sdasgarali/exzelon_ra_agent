@@ -126,7 +126,9 @@ def check_domain_throttle(
 
     limit = _get_limit_for_domain(domain, db, tenant_id=tenant_id)
 
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    # sent_at is stored in UTC; use the UTC date so the daily window is correct
+    # regardless of the server's local timezone.
+    today_start = datetime.combine(datetime.utcnow().date(), datetime.min.time())
 
     # Count SENT outreach events today whose contact email ends with
     # @<domain>.  We join ContactDetails to inspect the email column.
@@ -182,7 +184,9 @@ def get_domain_send_counts(
         outreach events for that date.
     """
     if target_date is None:
-        target_date = date.today()
+        # sent_at is stored in UTC (datetime.utcnow); default the window to the
+        # UTC calendar date so it stays consistent regardless of server timezone.
+        target_date = datetime.utcnow().date()
 
     day_start = datetime.combine(target_date, datetime.min.time())
     day_end = datetime.combine(target_date, datetime.max.time())
