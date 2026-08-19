@@ -1674,7 +1674,7 @@ export default function CampaignsPage() {
         {/* Filters */}
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search campaigns..." className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm" />
           </div>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm">
@@ -1786,12 +1786,12 @@ export default function CampaignsPage() {
                             {c.health_score >= 80 ? 'Excellent' : c.health_score >= 50 ? 'Fair' : 'Poor'} {c.health_score}
                           </span>
                         ) : (
-                          <span className="text-gray-400 text-xs">N/A</span>
+                          <span className="text-gray-500 dark:text-gray-400 text-xs">N/A</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="relative inline-block">
-                          <button onClick={() => setActionMenu(actionMenu === c.campaign_id ? null : c.campaign_id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded">
+                          <button onClick={() => setActionMenu(actionMenu === c.campaign_id ? null : c.campaign_id)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" aria-label={`Actions for ${c.name}`}>
                             <MoreVertical className="w-4 h-4" />
                           </button>
                           {actionMenu === c.campaign_id && (
@@ -1964,7 +1964,7 @@ export default function CampaignsPage() {
                       </button>
                       <button
                         onClick={handleStartPipeline}
-                        className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:underline"
+                        className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:underline"
                       >
                         Run pipeline anyway to find more leads
                       </button>
@@ -2051,7 +2051,7 @@ export default function CampaignsPage() {
                     {csvUploading ? (
                       <Loader2 className="w-12 h-12 text-green-500 animate-spin mx-auto mb-3" />
                     ) : (
-                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                      <Upload className="w-12 h-12 text-gray-500 dark:text-gray-400 mx-auto mb-3" />
                     )}
                     <p className="text-gray-700 dark:text-gray-300 font-medium mb-1">
                       {csvUploading ? 'Analyzing file...' : 'Drop your CSV file here or click to browse'}
@@ -2126,8 +2126,8 @@ export default function CampaignsPage() {
                             <td className="px-2 py-1.5 text-gray-500">{row.row_number}</td>
                             <td className="px-2 py-1.5 max-w-[120px] truncate">{row.company_name}</td>
                             <td className="px-2 py-1.5 max-w-[120px] truncate">{row.job_title}</td>
-                            <td className="px-2 py-1.5 max-w-[100px] truncate">{row.contact_name || <span className="text-gray-400">—</span>}</td>
-                            <td className="px-2 py-1.5 max-w-[130px] truncate">{row.email || <span className="text-gray-400">—</span>}</td>
+                            <td className="px-2 py-1.5 max-w-[100px] truncate">{row.contact_name || <span className="text-gray-500 dark:text-gray-400">—</span>}</td>
+                            <td className="px-2 py-1.5 max-w-[130px] truncate">{row.email || <span className="text-gray-500 dark:text-gray-400">—</span>}</td>
                             <td className="px-2 py-1.5">
                               {row.is_duplicate ? (
                                 <span className="text-yellow-600 text-xs">Duplicate</span>
@@ -2224,7 +2224,7 @@ export default function CampaignsPage() {
               {createStep === 'google_sheet' && (
                 <div>
                   <div className="relative mb-4">
-                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
                     <input
                       value={googleSheetUrl}
                       onChange={e => setGoogleSheetUrl(e.target.value)}
@@ -2298,8 +2298,8 @@ export default function CampaignsPage() {
                             <td className="px-2 py-1.5 text-gray-500">{row.row_number}</td>
                             <td className="px-2 py-1.5 max-w-[120px] truncate">{row.company_name}</td>
                             <td className="px-2 py-1.5 max-w-[120px] truncate">{row.job_title}</td>
-                            <td className="px-2 py-1.5 max-w-[100px] truncate">{row.contact_name || <span className="text-gray-400">—</span>}</td>
-                            <td className="px-2 py-1.5 max-w-[130px] truncate">{row.email || <span className="text-gray-400">—</span>}</td>
+                            <td className="px-2 py-1.5 max-w-[100px] truncate">{row.contact_name || <span className="text-gray-500 dark:text-gray-400">—</span>}</td>
+                            <td className="px-2 py-1.5 max-w-[130px] truncate">{row.email || <span className="text-gray-500 dark:text-gray-400">—</span>}</td>
                             <td className="px-2 py-1.5">
                               {row.is_duplicate ? (
                                 <span className="text-yellow-600 text-xs">Duplicate</span>
@@ -2344,7 +2344,7 @@ export default function CampaignsPage() {
                   {/* Search, Days Filter & Stats */}
                   <div className="flex items-center gap-3 mb-2">
                     <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
                       <input
                         value={availableLeadsSearch}
                         onChange={e => { setAvailableLeadsSearch(e.target.value); setAvailableLeadsPage(1) }}
@@ -2442,7 +2442,7 @@ export default function CampaignsPage() {
                             <div ref={ref} className="relative">
                               <button type="button" onClick={() => setOpen(!open)} className={`w-full px-2 py-1.5 border rounded-lg text-sm text-left flex items-center justify-between dark:bg-gray-700 dark:border-gray-600 ${selected.length > 0 ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}>
                                 <span className="truncate">{selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}</span>
-                                <span className="text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
+                                <span className="text-gray-500 dark:text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
                               </button>
                               {open && (
                                 <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -2456,7 +2456,7 @@ export default function CampaignsPage() {
                                       {opt}
                                     </label>
                                   ))}
-                                  {options.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No options</div>}
+                                  {options.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-500 dark:text-gray-400">No options</div>}
                                 </div>
                               )}
                             </div>
@@ -2480,7 +2480,7 @@ export default function CampaignsPage() {
                             <div ref={ref} className="relative">
                               <button type="button" onClick={() => setOpen(!open)} className={`w-full px-2 py-1.5 border rounded-lg text-sm text-left flex items-center justify-between dark:bg-gray-700 dark:border-gray-600 ${selected.length > 0 ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}>
                                 <span className="truncate">{selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}</span>
-                                <span className="text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
+                                <span className="text-gray-500 dark:text-gray-400 ml-1 text-xs">{open ? '▲' : '▼'}</span>
                               </button>
                               {open && (
                                 <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto min-w-0 sm:min-w-[220px]">
@@ -2515,8 +2515,8 @@ export default function CampaignsPage() {
                                       </label>
                                     ))
                                   )}
-                                  {allItems.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No options</div>}
-                                  {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-2 py-1.5 text-xs text-gray-400">No matches</div>}
+                                  {allItems.length === 0 && <div className="px-2 py-1.5 text-xs text-gray-500 dark:text-gray-400">No options</div>}
+                                  {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-2 py-1.5 text-xs text-gray-500 dark:text-gray-400">No matches</div>}
                                 </div>
                               )}
                             </div>
@@ -2675,7 +2675,7 @@ export default function CampaignsPage() {
                                     lead.employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
                                     'bg-gray-100 text-gray-700'
                                   }`}>{lead.employment_type}</span>
-                                ) : <span className="text-gray-400">-</span>}
+                                ) : <span className="text-gray-500 dark:text-gray-400">-</span>}
                               </td>
                               <td className="px-3 py-2 text-gray-500">{lead.posting_date ? new Date(lead.posting_date).toLocaleDateString() : '-'}</td>
                               <td className="px-3 py-2 text-gray-500 text-xs">{lead.source || '-'}</td>
@@ -2728,20 +2728,20 @@ export default function CampaignsPage() {
                       className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
                     >
                       <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-gray-400" />
+                        <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                         <span>Configure Schedule</span>
-                        <span className="text-xs text-gray-400 font-normal">
+                        <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">
                           {campaignForm.send_days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}, {campaignForm.send_window_start}-{campaignForm.send_window_end}, {TIMEZONE_OPTIONS.find(t => t.value === campaignForm.timezone)?.label || campaignForm.timezone}
                         </span>
                       </div>
-                      {createScheduleExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                      {createScheduleExpanded ? <ChevronUp className="w-4 h-4 text-gray-500 dark:text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />}
                     </button>
                     {createScheduleExpanded && (
                       <div className="px-3 pb-3 space-y-3 border-t dark:border-gray-700 pt-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
-                            <input
+                            <input aria-label="Start Time"
                               type="time"
                               value={campaignForm.send_window_start}
                               onChange={e => setCampaignForm(f => ({ ...f, send_window_start: e.target.value }))}
@@ -2750,7 +2750,7 @@ export default function CampaignsPage() {
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
-                            <input
+                            <input aria-label="End Time"
                               type="time"
                               value={campaignForm.send_window_end}
                               onChange={e => setCampaignForm(f => ({ ...f, send_window_end: e.target.value }))}
@@ -2788,7 +2788,7 @@ export default function CampaignsPage() {
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500 mb-1">Timezone</label>
-                          <select
+                          <select aria-label="Timezone"
                             value={campaignForm.timezone}
                             onChange={e => setCampaignForm(f => ({ ...f, timezone: e.target.value }))}
                             className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
@@ -3312,7 +3312,7 @@ export default function CampaignsPage() {
           </div>
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
             <input
               type="text"
               value={mailboxSearch}
@@ -3322,7 +3322,7 @@ export default function CampaignsPage() {
             />
             {mailboxSearch && (
               <button onClick={() => setMailboxSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+                <X className="w-4 h-4 text-gray-500 dark:text-gray-400 hover:text-gray-600" />
               </button>
             )}
           </div>
@@ -3385,7 +3385,7 @@ export default function CampaignsPage() {
                               {score} ({grade})
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400">...</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">...</span>
                           )
                         })()}
                       </td>
@@ -3397,19 +3397,19 @@ export default function CampaignsPage() {
                       <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-100 font-medium">{sent}</td>
                       <td className="px-3 py-2 text-right">
                         <span className="text-gray-900 dark:text-gray-100">{opened}</span>
-                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.open_rate || 0}%)</span>}
+                        {sent > 0 && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({m.open_rate || 0}%)</span>}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className="text-gray-900 dark:text-gray-100">{clicked}</span>
-                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.click_rate || 0}%)</span>}
+                        {sent > 0 && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({m.click_rate || 0}%)</span>}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className="text-green-600">{replied}</span>
-                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.reply_rate || 0}%)</span>}
+                        {sent > 0 && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({m.reply_rate || 0}%)</span>}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={bounced > 0 ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'}>{bounced}</span>
-                        {sent > 0 && <span className="text-xs text-gray-400 ml-1">({m.bounce_rate || 0}%)</span>}
+                        {sent > 0 && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({m.bounce_rate || 0}%)</span>}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <span className={unsub > 0 ? 'text-orange-600' : 'text-gray-900 dark:text-gray-100'}>{unsub}</span>
@@ -3426,10 +3426,10 @@ export default function CampaignsPage() {
                     <tr>
                       <td className="px-3 py-2" colSpan={4}><span className="text-xs uppercase text-gray-500">Total (assigned)</span></td>
                       <td className="px-3 py-2 text-right">{totals.sent}</td>
-                      <td className="px-3 py-2 text-right">{totals.opened} <span className="text-xs text-gray-400">({(totals.opened/totals.sent*100).toFixed(1)}%)</span></td>
-                      <td className="px-3 py-2 text-right">{totals.clicked} <span className="text-xs text-gray-400">({(totals.clicked/totals.sent*100).toFixed(1)}%)</span></td>
-                      <td className="px-3 py-2 text-right text-green-600">{totals.replied} <span className="text-xs text-gray-400">({(totals.replied/totals.sent*100).toFixed(1)}%)</span></td>
-                      <td className="px-3 py-2 text-right text-red-600">{totals.bounced} <span className="text-xs text-gray-400">({(totals.bounced/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right">{totals.opened} <span className="text-xs text-gray-500 dark:text-gray-400">({(totals.opened/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right">{totals.clicked} <span className="text-xs text-gray-500 dark:text-gray-400">({(totals.clicked/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right text-green-600">{totals.replied} <span className="text-xs text-gray-500 dark:text-gray-400">({(totals.replied/totals.sent*100).toFixed(1)}%)</span></td>
+                      <td className="px-3 py-2 text-right text-red-600">{totals.bounced} <span className="text-xs text-gray-500 dark:text-gray-400">({(totals.bounced/totals.sent*100).toFixed(1)}%)</span></td>
                       <td className="px-3 py-2 text-right text-orange-600">{totals.unsub}</td>
                     </tr>
                   </tfoot>
@@ -3592,7 +3592,7 @@ export default function CampaignsPage() {
                 {/* Label */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Label (optional)</label>
-                  <input
+                  <input aria-label="Label (optional)"
                     type="text"
                     placeholder="e.g. Morning shift, Weekend promo"
                     value={scheduleFormData.label}
@@ -3605,7 +3605,7 @@ export default function CampaignsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
-                    <input
+                    <input aria-label="Start Date"
                       type="date"
                       value={scheduleFormData.start_date}
                       onChange={e => setScheduleFormData(f => ({ ...f, start_date: e.target.value }))}
@@ -3614,7 +3614,7 @@ export default function CampaignsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
-                    <input
+                    <input aria-label="End Date"
                       type="date"
                       value={scheduleFormData.no_end_date ? '' : scheduleFormData.end_date}
                       disabled={scheduleFormData.no_end_date}
@@ -3637,7 +3637,7 @@ export default function CampaignsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
-                    <input
+                    <input aria-label="Start Time"
                       type="time"
                       value={scheduleFormData.send_window_start}
                       onChange={e => setScheduleFormData(f => ({ ...f, send_window_start: e.target.value }))}
@@ -3646,7 +3646,7 @@ export default function CampaignsPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
-                    <input
+                    <input aria-label="End Time"
                       type="time"
                       value={scheduleFormData.send_window_end}
                       onChange={e => setScheduleFormData(f => ({ ...f, send_window_end: e.target.value }))}
@@ -3688,7 +3688,7 @@ export default function CampaignsPage() {
                 {/* Timezone */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Timezone</label>
-                  <select
+                  <select aria-label="Timezone"
                     value={scheduleFormData.timezone}
                     onChange={e => setScheduleFormData(f => ({ ...f, timezone: e.target.value }))}
                     className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
@@ -3809,7 +3809,7 @@ export default function CampaignsPage() {
                       {step.step_type === 'linkedin' && <Linkedin className="w-4 h-4 text-sky-600" />}
                       <span className="font-medium capitalize">{step.step_type}</span>
                       {step.step_type === 'email' && step.subject && <span className="text-sm text-gray-500">— {step.subject}</span>}
-                      {step.delay_days > 0 && <span className="text-xs text-gray-400 ml-2">Wait {step.delay_days}d {step.delay_hours}h</span>}
+                      {step.delay_days > 0 && <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">Wait {step.delay_days}d {step.delay_hours}h</span>}
                       {step.step_type === 'email' && stepSpamScores[step.step_id] && (() => {
                         const ss = stepSpamScores[step.step_id]
                         const colors: Record<string, string> = { clean: 'bg-green-100 text-green-700', low_risk: 'bg-yellow-100 text-yellow-700', medium_risk: 'bg-orange-100 text-orange-700', high_risk: 'bg-red-100 text-red-700', spam: 'bg-red-200 text-red-800' }
@@ -3835,7 +3835,7 @@ export default function CampaignsPage() {
                       <div className="mt-2 border-t border-gray-100 dark:border-gray-700 pt-2">
                         <table className="w-full text-xs">
                           <thead>
-                            <tr className="text-gray-400">
+                            <tr className="text-gray-500 dark:text-gray-400">
                               <th className="text-left py-1">Variant</th>
                               <th className="text-right py-1">Sent</th>
                               <th className="text-right py-1">Open%</th>
@@ -3926,7 +3926,7 @@ export default function CampaignsPage() {
                       </>
                     )}
                     <button onClick={() => openStepModal(step)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                      <Eye className="w-4 h-4 text-gray-400" />
+                      <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     </button>
                     <button onClick={() => handleDeleteStep(step.step_id)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                       <Trash2 className="w-4 h-4 text-red-400" />
@@ -4044,7 +4044,7 @@ export default function CampaignsPage() {
                             onClick={() => toggleLead(group.key)}
                           >
                             <td className="px-3 py-2.5">
-                              {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                              {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />}
                             </td>
                             <td className="px-3 py-2.5 text-gray-500">{group.lead_id || '—'}</td>
                             <td className="px-3 py-2.5">
@@ -4077,7 +4077,7 @@ export default function CampaignsPage() {
                                   f.lead_employment_type === 'Temporary' ? 'bg-yellow-100 text-yellow-700' :
                                   'bg-gray-100 text-gray-700'
                                 }`}>{f.lead_employment_type}</span>
-                              ) : <span className="text-gray-400">—</span>}
+                              ) : <span className="text-gray-500 dark:text-gray-400">—</span>}
                             </td>
                             <td className="px-3 py-2.5 text-gray-500 max-w-[100px] truncate">{f.lead_industry || '—'}</td>
                             <td className="px-3 py-2.5 text-gray-500">{f.lead_company_size || '—'}</td>
@@ -4236,7 +4236,7 @@ export default function CampaignsPage() {
               onChange={e => setAnalyticsDateFrom(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600"
             />
-            <span className="text-gray-400 text-sm">to</span>
+            <span className="text-gray-500 dark:text-gray-400 text-sm">to</span>
             <input
               type="date"
               value={analyticsDateTo}
@@ -4317,7 +4317,7 @@ export default function CampaignsPage() {
                               <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-1">
                                 <div className={`h-full rounded-full ${val >= 70 ? 'bg-green-500' : val >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${val}%` }} />
                               </div>
-                              <p className="text-[10px] text-gray-400 mt-0.5">{Math.round(val * weight / 100)}/{weight} pts</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">{Math.round(val * weight / 100)}/{weight} pts</p>
                             </div>
                           )
                         })}
@@ -4361,7 +4361,7 @@ export default function CampaignsPage() {
                   <div key={s.label} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                     <p className="text-xs text-gray-500">{s.label}</p>
                     <p className={`text-xl font-bold mt-0.5 ${s.color}`}>{s.value}</p>
-                    {s.sub && <p className="text-xs text-gray-400 mt-0.5">{s.sub}</p>}
+                    {s.sub && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{s.sub}</p>}
                   </div>
                 ))}
               </div>
@@ -4412,7 +4412,7 @@ export default function CampaignsPage() {
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="text-gray-400">
+                              <tr className="text-gray-500 dark:text-gray-400">
                                 <th className="text-left py-1 px-2">Variant</th>
                                 <th className="text-right py-1 px-2">Sent</th>
                                 <th className="text-right py-1 px-2">Open%</th>
@@ -4468,7 +4468,7 @@ export default function CampaignsPage() {
                             style={{ height: `${height}%` }}
                             title={`Step ${f.step_order}: ${f.contacts_at_step} contacts`}
                           />
-                          <span className="text-xs text-gray-400">S{f.step_order}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">S{f.step_order}</span>
                         </div>
                       )
                     })}
@@ -4502,7 +4502,7 @@ export default function CampaignsPage() {
             >
               <Activity className="w-3 h-3" /> Refresh
             </button>
-            <span className="text-xs text-gray-400">Auto-refreshes every 10s</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Auto-refreshes every 10s</span>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -4529,7 +4529,7 @@ export default function CampaignsPage() {
                   }
                   return (
                     <div key={ev.event_id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      {iconMap[ev.event_type] || <Mail className="w-4 h-4 text-gray-400" />}
+                      {iconMap[ev.event_type] || <Mail className="w-4 h-4 text-gray-500 dark:text-gray-400" />}
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{ev.contact_name}</span>
                         <span className="text-xs text-gray-500 ml-2">{ev.contact_email}</span>
@@ -4537,8 +4537,8 @@ export default function CampaignsPage() {
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${colorMap[ev.event_type] || 'bg-gray-100 text-gray-600'}`}>
                         {ev.event_type}
                       </span>
-                      {ev.step_order && <span className="text-xs text-gray-400">Step {ev.step_order}</span>}
-                      <span className="text-xs text-gray-400 whitespace-nowrap">
+                      {ev.step_order && <span className="text-xs text-gray-500 dark:text-gray-400">Step {ev.step_order}</span>}
+                      <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                         {ev.timestamp ? new Date(ev.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
                       </span>
                     </div>
@@ -4556,7 +4556,7 @@ export default function CampaignsPage() {
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-3xl max-h-[80vh] overflow-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Compare Campaigns</h2>
-              <button onClick={() => { setShowCompareModal(false); setCompareData(null); setCompareIds([]) }} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => { setShowCompareModal(false); setCompareData(null); setCompareIds([]) }} className="text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
 
             {/* Select campaigns */}
@@ -4657,7 +4657,7 @@ export default function CampaignsPage() {
 
             {/* Priority Levels */}
             <div>
-              <label className="block text-sm font-medium mb-2">Priority Levels <span className="text-gray-400 font-normal">(empty = all)</span></label>
+              <label className="block text-sm font-medium mb-2">Priority Levels <span className="text-gray-500 dark:text-gray-400 font-normal">(empty = all)</span></label>
               <div className="flex flex-wrap gap-3">
                 {[
                   { value: 'p1_job_poster', label: 'P1 - Job Poster' },
@@ -4676,7 +4676,7 @@ export default function CampaignsPage() {
 
             {/* States */}
             <div>
-              <label className="block text-sm font-medium mb-1">States <span className="text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
+              <label className="block text-sm font-medium mb-1">States <span className="text-gray-500 dark:text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
               <input
                 value={enrollmentRules.states.join(', ')}
                 onChange={e => setEnrollmentRules(r => ({ ...r, states: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
@@ -4687,7 +4687,7 @@ export default function CampaignsPage() {
 
             {/* Job Title Keywords */}
             <div>
-              <label className="block text-sm font-medium mb-1">Job Title Keywords <span className="text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
+              <label className="block text-sm font-medium mb-1">Job Title Keywords <span className="text-gray-500 dark:text-gray-400 font-normal">(comma-separated, empty = all)</span></label>
               <input
                 value={enrollmentRules.job_title_keywords.join(', ')}
                 onChange={e => setEnrollmentRules(r => ({ ...r, job_title_keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
@@ -4698,7 +4698,7 @@ export default function CampaignsPage() {
 
             {/* Contact Sources */}
             <div>
-              <label className="block text-sm font-medium mb-2">Contact Sources <span className="text-gray-400 font-normal">(empty = all)</span></label>
+              <label className="block text-sm font-medium mb-2">Contact Sources <span className="text-gray-500 dark:text-gray-400 font-normal">(empty = all)</span></label>
               <div className="flex flex-wrap gap-3">
                 {['apollo', 'seamless', 'hunter', 'snovio', 'rocketreach', 'pdl', 'proxycurl'].map(s => (
                   <label key={s} className="flex items-center gap-2 text-sm capitalize">
@@ -4713,7 +4713,7 @@ export default function CampaignsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Min Lead Score</label>
-                <input
+                <input aria-label="Min Lead Score"
                   type="number"
                   value={enrollmentRules.min_lead_score ?? ''}
                   onChange={e => setEnrollmentRules(r => ({ ...r, min_lead_score: e.target.value ? parseInt(e.target.value) : null }))}
@@ -4724,7 +4724,7 @@ export default function CampaignsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Max Per Run</label>
-                <input
+                <input aria-label="Max Per Run"
                   type="number"
                   value={enrollmentRules.max_per_run}
                   onChange={e => setEnrollmentRules(r => ({ ...r, max_per_run: parseInt(e.target.value) || 50 }))}
@@ -4734,7 +4734,7 @@ export default function CampaignsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Daily Cap</label>
-                <input
+                <input aria-label="Daily Cap"
                   type="number"
                   value={enrollmentRules.daily_cap}
                   onChange={e => setEnrollmentRules(r => ({ ...r, daily_cap: parseInt(e.target.value) || 200 }))}
@@ -4783,7 +4783,7 @@ export default function CampaignsPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <h2 className="text-lg font-bold dark:text-gray-100">{editingStep ? 'Edit Step' : 'Add Step'}</h2>
-              <button onClick={() => setShowStepModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowStepModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><X className="w-5 h-5" /></button>
             </div>
 
             {/* Body */}
@@ -4845,7 +4845,7 @@ export default function CampaignsPage() {
                     {stepIntelTab === 'scorecard' && (
                       <div>
                         {stepScorecardLoading ? (
-                          <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                          <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400" /></div>
                         ) : stepScorecardResult ? (
                           <>
                             <div className="flex justify-center py-4">
@@ -4945,7 +4945,7 @@ export default function CampaignsPage() {
                                 <div className="text-lg font-bold" style={{ color: stepScoreColor(stepApplyResult.before_score) }}>{stepApplyResult.before_score}</div>
                                 <div className="text-[10px] text-gray-500">Before</div>
                               </div>
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                              <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               <div className="text-center">
                                 <div className="text-lg font-bold" style={{ color: stepScoreColor(stepApplyResult.after_score) }}>{stepApplyResult.after_score}</div>
                                 <div className="text-[10px] text-gray-500">After</div>
@@ -4966,9 +4966,9 @@ export default function CampaignsPage() {
                               {stepFixesLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wrench className="w-3 h-3" />} Get Fix Suggestions
                             </button>
                           ) : stepFixesLoading ? (
-                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400" /></div>
                           ) : stepFixesResult.fixes.length === 0 ? (
-                            <div className="text-center py-4 text-gray-400">
+                            <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                               <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
                               <p className="text-sm font-medium text-green-600">No fixes needed</p>
                               <p className="text-xs mt-1">This email looks great!</p>
@@ -5005,14 +5005,14 @@ export default function CampaignsPage() {
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5 mb-1">
                                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fix.severity === 'high' ? 'bg-red-100 text-red-800' : fix.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}>{fix.severity.toUpperCase()}</span>
-                                          <span className="text-[10px] text-gray-400">{STEP_DIMENSION_LABELS[fix.dimension] || fix.dimension}</span>
-                                          {!canToggle && <span className="text-[10px] text-gray-400 italic">manual</span>}
+                                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{STEP_DIMENSION_LABELS[fix.dimension] || fix.dimension}</span>
+                                          {!canToggle && <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">manual</span>}
                                         </div>
                                         <p className="text-xs text-gray-700 dark:text-gray-300">{fix.message}</p>
                                         {fix.original && fix.replacement && fix.auto_fixable && (
                                           <div className="flex items-center gap-1.5 mt-1">
                                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 line-through">{fix.original}</span>
-                                            <ChevronRight className="w-2.5 h-2.5 text-gray-400" />
+                                            <ChevronRight className="w-2.5 h-2.5 text-gray-500 dark:text-gray-400" />
                                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700">{fix.replacement}</span>
                                           </div>
                                         )}
@@ -5046,7 +5046,7 @@ export default function CampaignsPage() {
                                 <div className={`text-lg font-bold ${stepSpamBadgeColor(stepSpamReduceResult.before_grade).split(' ')[1]}`}>{stepSpamReduceResult.before_score}</div>
                                 <div className="text-[10px] text-gray-500">{stepSpamReduceResult.before_grade}</div>
                               </div>
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                              <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                               <div className="text-center">
                                 <div className={`text-lg font-bold ${stepSpamBadgeColor(stepSpamReduceResult.after_grade).split(' ')[1]}`}>{stepSpamReduceResult.after_score}</div>
                                 <div className="text-[10px] text-gray-500">{stepSpamReduceResult.after_grade}</div>
@@ -5061,7 +5061,7 @@ export default function CampaignsPage() {
                               {stepSpamLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />} Check Spam Score
                             </button>
                           ) : stepSpamLoading ? (
-                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                            <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400" /></div>
                           ) : (
                             <>
                               <div className="flex items-center justify-between mb-2">
@@ -5069,7 +5069,7 @@ export default function CampaignsPage() {
                                 <span className="text-xs text-gray-500">Score: {stepSpamResult.score}</span>
                               </div>
                               {stepSpamResult.flagged_words?.length === 0 && stepSpamResult.suggestions?.length === 0 ? (
-                                <div className="text-center py-4 text-gray-400">
+                                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                                   <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
                                   <p className="text-sm font-medium text-green-600">No spam words detected</p>
                                   <p className="text-xs mt-1">This email looks clean</p>
@@ -5085,7 +5085,7 @@ export default function CampaignsPage() {
                                     <button key={idx} onClick={() => handleStepSingleSpamFix(s.original, s.replacement)} className="w-full text-left p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
                                       <div className="flex items-center gap-2">
                                         <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 line-through">{s.original}</span>
-                                        <ChevronRight className="w-3 h-3 text-gray-400 group-hover:text-blue-500" />
+                                        <ChevronRight className="w-3 h-3 text-gray-500 dark:text-gray-400 group-hover:text-blue-500" />
                                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">{s.replacement}</span>
                                       </div>
                                     </button>
@@ -5094,7 +5094,7 @@ export default function CampaignsPage() {
                                     <div key={`fw-${idx}`} className="p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg opacity-70">
                                       <div className="flex items-center justify-between">
                                         <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800">{fw.word}</span>
-                                        <span className="text-[10px] text-gray-400">{fw.severity} | {fw.location} | {fw.points}pts</span>
+                                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{fw.severity} | {fw.location} | {fw.points}pts</span>
                                       </div>
                                     </div>
                                   ))}
@@ -5116,7 +5116,7 @@ export default function CampaignsPage() {
                           <Monitor className="w-4 h-4 text-blue-500" /> Rendering Check
                         </h3>
                         {stepRenderingLoading ? (
-                          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+                          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400" /></div>
                         ) : stepRenderingResult ? (
                           <>
                             <div className="flex items-center gap-3 mb-3">
@@ -5140,7 +5140,7 @@ export default function CampaignsPage() {
                                       <AlertTriangle className={`w-3 h-3 mt-0.5 flex-shrink-0 ${w.severity === 'high' ? 'text-red-500' : w.severity === 'medium' ? 'text-yellow-500' : 'text-blue-500'}`} />
                                       <div>
                                         <p className="text-gray-700">{w.message}</p>
-                                        <span className="text-[10px] text-gray-400 mt-0.5 inline-block">{w.client}</span>
+                                        <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 inline-block">{w.client}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -5149,9 +5149,9 @@ export default function CampaignsPage() {
                             )}
                             {stepRenderingResult.stats && (
                               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
-                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-400">Images</div></div>
-                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-400">Links</div></div>
-                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-400">HTML Size</div></div>
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.images || 0}</div><div className="text-[10px] text-gray-500 dark:text-gray-400">Images</div></div>
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.links || 0}</div><div className="text-[10px] text-gray-500 dark:text-gray-400">Links</div></div>
+                                <div className="text-center"><div className="text-xs font-medium">{stepRenderingResult.stats.html_length || 0}</div><div className="text-[10px] text-gray-500 dark:text-gray-400">HTML Size</div></div>
                               </div>
                             )}
                             <button onClick={() => { setStepRenderingResult(null); handleStepRenderingCheck() }} className="w-full text-xs py-1.5 text-blue-600 hover:underline flex items-center justify-center gap-1 mt-2">
@@ -5185,12 +5185,12 @@ export default function CampaignsPage() {
                               <div className="flex items-center gap-3">
                                 <div className="text-center">
                                   <div className={`text-sm font-bold ${stepHumanizeResult.burstiness_before < 0.4 ? 'text-red-500' : 'text-green-500'}`}>{stepHumanizeResult.burstiness_before}</div>
-                                  <div className="text-[10px] text-gray-400">Before</div>
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400">Before</div>
                                 </div>
-                                <ChevronRight className="w-3 h-3 text-gray-400" />
+                                <ChevronRight className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                                 <div className="text-center">
                                   <div className={`text-sm font-bold ${stepHumanizeResult.burstiness_after < 0.4 ? 'text-red-500' : 'text-green-500'}`}>{stepHumanizeResult.burstiness_after}</div>
-                                  <div className="text-[10px] text-gray-400">After</div>
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400">After</div>
                                 </div>
                               </div>
                               <div className="mt-1.5 flex gap-2 text-[10px]">
@@ -5232,7 +5232,7 @@ export default function CampaignsPage() {
                               {stepSpintaxResult.errors?.length > 0 && <span className="text-[10px] text-red-500">{stepSpintaxResult.errors.length} errors</span>}
                             </div>
                             {stepSpintaxResult.total_variants <= 1 ? (
-                              <div className="text-center py-4 text-gray-400">
+                              <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                                 <p className="text-xs">No spintax patterns found</p>
                                 <p className="text-[10px] mt-1">Use {'{option1|option2}'} syntax for variations</p>
                               </div>
@@ -5240,7 +5240,7 @@ export default function CampaignsPage() {
                               <div className="space-y-2">
                                 {stepSpintaxResult.variants.map((v: string, i: number) => (
                                   <div key={i} className="p-2.5 border border-gray-200 dark:border-gray-700 rounded-lg">
-                                    <div className="text-[10px] text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
                                     <div className="text-xs text-gray-700 dark:text-gray-300 max-h-24 overflow-y-auto" dangerouslySetInnerHTML={{ __html: v }} />
                                   </div>
                                 ))}
@@ -5264,7 +5264,7 @@ export default function CampaignsPage() {
                   {/* Step Type */}
                   <div>
                     <label className="block text-sm font-medium mb-1 dark:text-gray-200">Step Type</label>
-                    <select value={stepForm.step_type} onChange={e => setStepForm(f => ({ ...f, step_type: e.target.value as any }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                    <select aria-label="Step Type" value={stepForm.step_type} onChange={e => setStepForm(f => ({ ...f, step_type: e.target.value as any }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
                       <option value="email">Email</option>
                       <option value="wait">Wait</option>
                       <option value="condition">Condition</option>
@@ -5351,23 +5351,23 @@ export default function CampaignsPage() {
                       {/* Email Headers Display */}
                       <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-2.5 space-y-1.5">
                         <div className="flex items-center text-xs">
-                          <span className="text-gray-400 w-10 shrink-0">To:</span>
+                          <span className="text-gray-500 dark:text-gray-400 w-10 shrink-0">To:</span>
                           <span className="text-gray-600 dark:text-gray-400 font-mono text-[11px]">{'{{contact_email}}'}</span>
                         </div>
                         <div className="flex items-center text-xs">
-                          <span className="text-gray-400 w-10 shrink-0">CC:</span>
-                          <span className="text-gray-400 italic text-[11px]">None</span>
+                          <span className="text-gray-500 dark:text-gray-400 w-10 shrink-0">CC:</span>
+                          <span className="text-gray-500 dark:text-gray-400 italic text-[11px]">None</span>
                         </div>
                         <div className="flex items-center text-xs">
-                          <span className="text-gray-400 w-10 shrink-0">BCC:</span>
-                          <span className="text-gray-400 italic text-[11px]">None</span>
+                          <span className="text-gray-500 dark:text-gray-400 w-10 shrink-0">BCC:</span>
+                          <span className="text-gray-500 dark:text-gray-400 italic text-[11px]">None</span>
                         </div>
                       </div>
 
                       {/* Subject */}
                       <div>
                         <label className="block text-sm font-medium mb-1 dark:text-gray-200">Subject</label>
-                        <input ref={stepSubjectRef} value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} onDrop={handleDropOnSubject} onDragOver={handleDragOver} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
+                        <input aria-label="Subject" ref={stepSubjectRef} value={stepForm.subject} onChange={e => setStepForm(f => ({ ...f, subject: e.target.value }))} onDrop={handleDropOnSubject} onDragOver={handleDragOver} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="Email subject (supports {spintax|options})" />
                       </div>
 
                       {/* Formatting Toolbar */}
@@ -5410,7 +5410,7 @@ export default function CampaignsPage() {
                       </div>
 
                       {/* Attachment info */}
-                      <p className="text-[11px] text-gray-400 italic flex items-center gap-1.5">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 italic flex items-center gap-1.5">
                         <Info className="w-3 h-3" /> Attachments not supported in cold email (improves deliverability)
                       </p>
 
@@ -5427,7 +5427,7 @@ export default function CampaignsPage() {
                     <>
                       <div>
                         <label className="block text-sm font-medium mb-1 dark:text-gray-200">Condition</label>
-                        <select value={stepForm.condition_type} onChange={e => setStepForm(f => ({ ...f, condition_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                        <select aria-label="Condition" value={stepForm.condition_type} onChange={e => setStepForm(f => ({ ...f, condition_type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
                           <option value="">Select condition...</option>
                           <option value="opened">Email Opened</option>
                           <option value="clicked">Link Clicked</option>
@@ -5437,7 +5437,7 @@ export default function CampaignsPage() {
                       </div>
                       <div>
                         <label className="block text-sm font-medium mb-1 dark:text-gray-200">Window (hours)</label>
-                        <input type="number" value={stepForm.condition_window_hours} onChange={e => setStepForm(f => ({ ...f, condition_window_hours: parseInt(e.target.value) || 24 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                        <input aria-label="Window (hours)" type="number" value={stepForm.condition_window_hours} onChange={e => setStepForm(f => ({ ...f, condition_window_hours: parseInt(e.target.value) || 24 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                       </div>
                     </>
                   )}
@@ -5445,14 +5445,14 @@ export default function CampaignsPage() {
                     <div>
                       <label className="block text-sm font-medium mb-1 dark:text-gray-200">SMS Body</label>
                       <textarea value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" rows={4} placeholder="Hi {{first_name}}, ..." />
-                      <p className="text-xs text-gray-400 mt-1">Max 160 chars recommended. Supports {'{{first_name}}'}, {'{{company}}'} placeholders and {'{'} spintax {'}'}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Max 160 chars recommended. Supports {'{{first_name}}'}, {'{{company}}'} placeholders and {'{'} spintax {'}'}</p>
                     </div>
                   )}
                   {stepForm.step_type === 'call' && (
                     <div>
                       <label className="block text-sm font-medium mb-1 dark:text-gray-200">TwiML URL or Script</label>
-                      <input value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="https://your-domain.com/twiml/script" />
-                      <p className="text-xs text-gray-400 mt-1">URL to TwiML instructions for the call, or leave empty for a simple dial</p>
+                      <input aria-label="TwiML URL or Script" value={stepForm.body_text} onChange={e => setStepForm(f => ({ ...f, body_text: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="https://your-domain.com/twiml/script" />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">URL to TwiML instructions for the call, or leave empty for a simple dial</p>
                     </div>
                   )}
                   {stepForm.step_type === 'linkedin' && (
@@ -5468,11 +5468,11 @@ export default function CampaignsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1 dark:text-gray-200">Delay (days)</label>
-                      <input type="number" value={stepForm.delay_days} onChange={e => setStepForm(f => ({ ...f, delay_days: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                      <input aria-label="Delay (days)" type="number" value={stepForm.delay_days} onChange={e => setStepForm(f => ({ ...f, delay_days: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1 dark:text-gray-200">Delay (hours)</label>
-                      <input type="number" value={stepForm.delay_hours} onChange={e => setStepForm(f => ({ ...f, delay_hours: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+                      <input aria-label="Delay (hours)" type="number" value={stepForm.delay_hours} onChange={e => setStepForm(f => ({ ...f, delay_hours: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
                     </div>
                   </div>
                 </div>
@@ -5520,7 +5520,7 @@ export default function CampaignsPage() {
 
             {/* Search leads */}
             <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
               <input
                 value={enrollLeadSearch}
                 onChange={e => {
@@ -5566,13 +5566,13 @@ export default function CampaignsPage() {
                             className="flex items-center gap-2 flex-1 min-w-0 text-left"
                             onClick={() => toggleLeadExpand(lead.lead_id)}
                           >
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />}
                             <div className="flex-1 min-w-0">
                               <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{lead.client_name}</div>
                               <div className="text-xs text-gray-500 truncate">{lead.job_title}{lead.state ? ` — ${lead.state}` : ''}</div>
                             </div>
                           </button>
-                          <span className="text-xs text-gray-400 shrink-0 flex items-center gap-1">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0 flex items-center gap-1">
                             <Users className="w-3 h-3" /> {lead.contact_count}
                           </span>
                         </div>
@@ -5679,10 +5679,10 @@ export default function CampaignsPage() {
                 <h3 className="font-semibold text-lg">Email Thread Preview</h3>
                 {threadPreview && <p className="text-sm text-gray-500">{threadPreview.contact_name}</p>}
               </div>
-              <button onClick={() => setShowThreadPreviewModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowThreadPreviewModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             {threadPreviewLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+              <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-500 dark:text-gray-400" /></div>
             ) : !threadPreview?.steps?.length ? (
               <p className="text-sm text-gray-500 text-center py-8">No steps to preview</p>
             ) : (
@@ -5702,7 +5702,7 @@ export default function CampaignsPage() {
                       </div>
                     ) : step.step_type === 'wait' ? (
                       <div className="flex items-center justify-center py-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full">
                           <Clock className="w-3 h-3" />
                           Wait {step.delay_days}d {step.delay_hours}h
                         </div>
@@ -5716,7 +5716,7 @@ export default function CampaignsPage() {
                       </div>
                     ) : (
                       <div className="flex items-center justify-center py-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full capitalize">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/30 px-3 py-1.5 rounded-full capitalize">
                           {step.step_type} step
                         </div>
                       </div>
@@ -5739,17 +5739,17 @@ export default function CampaignsPage() {
                 <Shuffle className="w-4 h-4 text-orange-500" />
                 Spintax Preview
               </h3>
-              <button onClick={() => setSpintaxModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => setSpintaxModal(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
             {loadingSpintax ? (
-              <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+              <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-gray-500 dark:text-gray-400" /></div>
             ) : spintaxVariants.length <= 1 ? (
               <p className="text-sm text-gray-500 text-center py-4">No spintax patterns found in this step</p>
             ) : (
               <div className="space-y-3">
                 {spintaxVariants.map((v, i) => (
                   <div key={i} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <div className="text-xs text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1 font-medium">Variant #{i + 1}</div>
                     <div className="text-sm text-gray-700 dark:text-gray-300" dangerouslySetInnerHTML={{ __html: v }} />
                   </div>
                 ))}
@@ -5769,7 +5769,7 @@ export default function CampaignsPage() {
                 <Sparkles className="w-4 h-4 text-purple-500" />
                 AI Personalization Preview
               </h3>
-              <button onClick={() => setShowAIPreviewModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => setShowAIPreviewModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
             {aiPreviewLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
@@ -5799,7 +5799,7 @@ export default function CampaignsPage() {
                     )}
                     <div className="grid grid-cols-2 divide-x divide-gray-200 dark:divide-gray-700">
                       <div className="p-4">
-                        <div className="text-xs font-medium text-gray-400 uppercase mb-2">Original</div>
+                        <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Original</div>
                         <div className="text-xs text-gray-500 mb-1">Subject: <span className="text-gray-800 dark:text-gray-200">{r.original.subject}</span></div>
                         <div className="text-sm text-gray-700 dark:text-gray-300 mt-2 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: r.original.body_html }} />
                       </div>

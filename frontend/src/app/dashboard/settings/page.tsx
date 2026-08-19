@@ -1385,7 +1385,7 @@ export default function SettingsPage() {
                                 if (next.has(category)) next.delete(category); else next.add(category)
                                 setExpandedCategories(next)
                               }}>
-                              <span className="text-xs text-gray-400 w-4 flex-shrink-0">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 w-4 flex-shrink-0">{isExpanded ? '\u25BC' : '\u25B6'}</span>
                               <input
                                 type="checkbox"
                                 checked={selectedInCat === totalInCat && totalInCat > 0}
@@ -1454,7 +1454,7 @@ export default function SettingsPage() {
                           <span className={newJobTitleCategory ? 'text-gray-800' : 'text-gray-400'}>
                             {newJobTitleCategory || 'Category...'}
                           </span>
-                          <span className="text-gray-400 text-xs">{categoryDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                          <span className="text-gray-500 dark:text-gray-400 text-xs">{categoryDropdownOpen ? '\u25B2' : '\u25BC'}</span>
                         </button>
                         {categoryDropdownOpen && (
                           <div className="absolute z-20 mt-1 w-56 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -1619,12 +1619,12 @@ export default function SettingsPage() {
                                   }
                                   setEditingCategory(null)
                                 }} className="text-green-600 hover:text-green-800">Save</button>
-                                <button onClick={() => setEditingCategory(null)} className="text-gray-400 hover:text-gray-600">Cancel</button>
+                                <button onClick={() => setEditingCategory(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600">Cancel</button>
                               </>
                             ) : (
                               <>
                                 <span className="flex-1 text-gray-700">{cat}</span>
-                                <span className="text-gray-400">({titles.length})</span>
+                                <span className="text-gray-500 dark:text-gray-400">({titles.length})</span>
                                 <button onClick={() => { setEditingCategory(cat); setEditingCategoryName(cat) }}
                                   className="text-blue-500 hover:text-blue-700 opacity-0 group-hover:opacity-100">Rename</button>
                                 <button onClick={() => {
@@ -1751,7 +1751,7 @@ export default function SettingsPage() {
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <h4 className="font-medium text-green-700 mb-2">Priority 1 (Preferred)</h4>
                 <label className="label text-sm">Max Employees</label>
-                <input
+                <input aria-label="Max Employees"
                   type="number"
                   value={jobSourceConfig.company_size_priority_1_max}
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_1_max: parseInt(e.target.value) || 50 })}
@@ -1764,7 +1764,7 @@ export default function SettingsPage() {
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <h4 className="font-medium text-yellow-700 mb-2">Priority 2 (Secondary)</h4>
                 <label className="label text-sm">Min Employees</label>
-                <input
+                <input aria-label="Min Employees"
                   type="number"
                   value={jobSourceConfig.company_size_priority_2_min}
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_2_min: parseInt(e.target.value) || 51 })}
@@ -1773,7 +1773,7 @@ export default function SettingsPage() {
                   disabled={jobSourceConfig.company_size_no_preference}
                 />
                 <label className="label text-sm">Max Employees</label>
-                <input
+                <input aria-label="Max Employees"
                   type="number"
                   value={jobSourceConfig.company_size_priority_2_max}
                   onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, company_size_priority_2_max: parseInt(e.target.value) || 500 })}
@@ -1933,7 +1933,7 @@ export default function SettingsPage() {
                     Add
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Checked = excluded from results. Uncheck to allow.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Checked = excluded from results. Uncheck to allow.</p>
               </div>
 
               {/* Staffing/Agency Keywords */}
@@ -2056,7 +2056,7 @@ export default function SettingsPage() {
                     Add
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Checked = excluded from results. Uncheck to allow.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Checked = excluded from results. Uncheck to allow.</p>
               </div>
 
               {/* Company Name Exclusions */}
@@ -2116,7 +2116,7 @@ export default function SettingsPage() {
                             }
                           }}
                         >
-                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" aria-label="Permission enabled" readOnly />
                           <span>{keyword}</span>
                           {!isDefault && (
                             <button
@@ -2174,7 +2174,7 @@ export default function SettingsPage() {
                     Add
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Matched only against company name. Use for staffing agencies and similar.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Matched only against company name. Use for staffing agencies and similar.</p>
               </div>
 
               {/* Job Title Exclusions */}
@@ -2234,7 +2234,7 @@ export default function SettingsPage() {
                             }
                           }}
                         >
-                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" aria-label="Permission enabled" readOnly />
                           <span>{keyword}</span>
                           {!isDefault && (
                             <button
@@ -2292,7 +2292,7 @@ export default function SettingsPage() {
                     Add
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Matched only against job title. Use for intern, entry-level roles, etc.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Matched only against job title. Use for intern, entry-level roles, etc.</p>
               </div>
 
               {/* Job Type Exclusions */}
@@ -2352,7 +2352,7 @@ export default function SettingsPage() {
                             }
                           }}
                         >
-                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" />
+                          <input type="checkbox" checked={isActive} onChange={() => {}} className="w-3 h-3 cursor-pointer" aria-label="Permission enabled" readOnly />
                           <span>{jobType}</span>
                           {!isDefault && (
                             <button
@@ -2410,7 +2410,7 @@ export default function SettingsPage() {
                     Add
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Active types are dropped by employment type (e.g. Part-time, Internship, Contract). Leads with an unknown/blank job type are never dropped.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Active types are dropped by employment type (e.g. Part-time, Internship, Contract). Leads with an unknown/blank job type are never dropped.</p>
               </div>
 
               {/* Keyword Matching Mode */}
@@ -2478,7 +2478,7 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label className="label">Job Source Provider</label>
-                  <select
+                  <select aria-label="Job Source Provider"
                     value={jobSourceConfig.job_source_provider}
                     onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, job_source_provider: e.target.value })}
                     className="input"
@@ -2567,25 +2567,25 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jsearch')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">JSearch (LinkedIn, Indeed, Glassdoor)</span>
-                        <span className="text-xs text-gray-400">Free: 500 req/mo | Paid: from $50/mo</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Free: 500 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
-                        <span className="text-xs text-gray-400">Free: 100 req/mo | Paid: from $49/mo</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Free: 100 req/mo | Paid: from $49/mo</span>
                         {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('serpapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
-                        <span className="text-xs text-gray-400">Free: 100 req/mo | Paid: from $50/mo</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Free: 100 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('adzuna')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
-                        <span className="text-xs text-gray-400">Free: 250 req/mo | Paid: from $99/mo</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Free: 250 req/mo | Paid: from $99/mo</span>
                         {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -2615,7 +2615,7 @@ export default function SettingsPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('coresignal')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') }) } }} className="w-4 h-4" />
                         <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
-                        <span className="text-xs text-gray-400">Contact-based pricing</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Contact-based pricing</span>
                         <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
                         {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
@@ -2668,7 +2668,7 @@ export default function SettingsPage() {
                   {jobSourceConfig.lead_sources.includes('adzuna') && (
                     <div>
                       <label className="label">Adzuna App ID</label>
-                      <input type="text" value={jobSourceConfig.adzuna_app_id} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_app_id: e.target.value })} placeholder="Enter Adzuna App ID" className="input w-full mb-2" />
+                      <input aria-label="Adzuna App ID" type="text" value={jobSourceConfig.adzuna_app_id} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_app_id: e.target.value })} placeholder="Enter Adzuna App ID" className="input w-full mb-2" />
                       <label className="label">Adzuna API Key</label>
                       <div className="flex gap-2">
                         <input type="password" value={jobSourceConfig.adzuna_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, adzuna_api_key: e.target.value })} placeholder="Enter Adzuna API key" className="input flex-1" />
@@ -2696,7 +2696,7 @@ export default function SettingsPage() {
                   {jobSourceConfig.lead_sources.includes('usajobs') && (
                     <div>
                       <label className="label">USAJOBS API Key</label>
-                      <input type="password" value={jobSourceConfig.usajobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_api_key: e.target.value })} placeholder="Enter USAJOBS API key" className="input w-full mb-2" />
+                      <input aria-label="USAJOBS API Key" type="password" value={jobSourceConfig.usajobs_api_key} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_api_key: e.target.value })} placeholder="Enter USAJOBS API key" className="input w-full mb-2" />
                       <label className="label">USAJOBS Email (User-Agent)</label>
                       <div className="flex gap-2">
                         <input type="text" value={jobSourceConfig.usajobs_email} onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, usajobs_email: e.target.value })} placeholder="your-email@example.com" className="input flex-1" />
@@ -2777,7 +2777,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Frequency</label>
-                      <select
+                      <select aria-label="Frequency"
                         value={jobSourceConfig.lead_sourcing_frequency}
                         onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, lead_sourcing_frequency: e.target.value as '2x' | '4x' | '6x' })}
                         className="input"
@@ -2879,7 +2879,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">AI Provider</label>
-                <select
+                <select aria-label="AI Provider"
                   value={aiConfig.ai_provider}
                   onChange={(e) => {
                     const provider = e.target.value
@@ -2907,7 +2907,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Model</label>
-                <select
+                <select aria-label="Model"
                   value={aiConfig.ai_model}
                   onChange={(e) => setAIConfig({ ...aiConfig, ai_model: e.target.value })}
                   className="input"
@@ -3062,7 +3062,7 @@ export default function SettingsPage() {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Enable AI Personalization</label>
-                <select
+                <select aria-label="Enable AI Personalization"
                   className="input-field w-48"
                   value={aiConfig.ai_personalize_emails}
                   onChange={(e) => setAIConfig({ ...aiConfig, ai_personalize_emails: e.target.value })}
@@ -3400,7 +3400,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <label className="label">Provider</label>
-                <select
+                <select aria-label="Provider"
                   value={validationConfig.email_validation_provider}
                   onChange={(e) => setValidationConfig({ ...validationConfig, email_validation_provider: e.target.value })}
                   className="input"
@@ -3587,14 +3587,14 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="label">Reacher Base URL</label>
-                    <input
+                    <input aria-label="Reacher Base URL"
                       type="text"
                       value={validationConfig.reacher_base_url}
                       onChange={(e) => setValidationConfig({ ...validationConfig, reacher_base_url: e.target.value })}
                       placeholder="https://api.reacher.email"
                       className="input"
                     />
-                    <p className="text-xs text-gray-400 mt-1">Use default for cloud, or enter your self-hosted URL</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Use default for cloud, or enter your self-hosted URL</p>
                   </div>
                 </div>
               )}
@@ -3632,7 +3632,7 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
                   <label className="label">Send Mode</label>
-                  <select
+                  <select aria-label="Send Mode"
                     value={outreachConfig.email_send_mode}
                     onChange={(e) => {
                       const mode = e.target.value
@@ -3681,7 +3681,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">M365 Admin Email</label>
-                      <input
+                      <input aria-label="M365 Admin Email"
                         type="email"
                         value={outreachConfig.m365_admin_email}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, m365_admin_email: e.target.value })}
@@ -3692,7 +3692,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">M365 Password</label>
-                      <input
+                      <input aria-label="M365 Password"
                         type="password"
                         value={outreachConfig.m365_admin_password}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, m365_admin_password: e.target.value })}
@@ -3703,7 +3703,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">SMTP Host</label>
-                      <input
+                      <input aria-label="SMTP Host"
                         type="text"
                         value={outreachConfig.smtp_host}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_host: e.target.value })}
@@ -3713,7 +3713,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">SMTP Port</label>
-                      <input
+                      <input aria-label="SMTP Port"
                         type="text"
                         value={outreachConfig.smtp_port}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_port: e.target.value })}
@@ -3746,7 +3746,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">SMTP Host</label>
-                      <input
+                      <input aria-label="SMTP Host"
                         type="text"
                         value={outreachConfig.smtp_host}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_host: e.target.value })}
@@ -3756,7 +3756,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">SMTP Port</label>
-                      <input
+                      <input aria-label="SMTP Port"
                         type="text"
                         value={outreachConfig.smtp_port}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_port: e.target.value })}
@@ -3766,7 +3766,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">Username</label>
-                      <input
+                      <input aria-label="Username"
                         type="text"
                         value={outreachConfig.smtp_user}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_user: e.target.value })}
@@ -3776,7 +3776,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">Password</label>
-                      <input
+                      <input aria-label="Password"
                         type="password"
                         value={outreachConfig.smtp_password}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_password: e.target.value })}
@@ -3786,7 +3786,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">From Email</label>
-                      <input
+                      <input aria-label="From Email"
                         type="email"
                         value={outreachConfig.smtp_from_email}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_from_email: e.target.value })}
@@ -3796,7 +3796,7 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">From Name</label>
-                      <input
+                      <input aria-label="From Name"
                         type="text"
                         value={outreachConfig.smtp_from_name}
                         onChange={(e) => setOutreachConfig({ ...outreachConfig, smtp_from_name: e.target.value })}
@@ -3861,7 +3861,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="label">Company Name</label>
-                <input
+                <input aria-label="Company Name"
                   type="text"
                   value={companyProfile.name}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, name: e.target.value })}
@@ -3871,7 +3871,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Website</label>
-                <input
+                <input aria-label="Website"
                   type="text"
                   value={companyProfile.website}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, website: e.target.value })}
@@ -3881,7 +3881,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Industry</label>
-                <input
+                <input aria-label="Industry"
                   type="text"
                   value={companyProfile.industry}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, industry: e.target.value })}
@@ -3891,7 +3891,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Company Address</label>
-                <input
+                <input aria-label="Company Address"
                   type="text"
                   value={companyProfile.company_address}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, company_address: e.target.value })}
@@ -3914,7 +3914,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">Daily Send Limit</label>
-                <input
+                <input aria-label="Daily Send Limit"
                   type="number"
                   value={businessRules.daily_send_limit}
                   onChange={(e) => setBusinessRules({ ...businessRules, daily_send_limit: parseInt(e.target.value) || 0 })}
@@ -3924,7 +3924,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Cooldown Period (Days)</label>
-                <input
+                <input aria-label="Cooldown Period (Days)"
                   type="number"
                   value={businessRules.cooldown_days}
                   onChange={(e) => setBusinessRules({ ...businessRules, cooldown_days: parseInt(e.target.value) || 0 })}
@@ -3933,7 +3933,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Max Contacts per Company/Job</label>
-                <input
+                <input aria-label="Max Contacts per Company/Job"
                   type="number"
                   value={businessRules.max_contacts_per_company_job}
                   onChange={(e) => setBusinessRules({ ...businessRules, max_contacts_per_company_job: parseInt(e.target.value) || 0 })}
@@ -3942,7 +3942,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Min Salary Threshold ($)</label>
-                <input
+                <input aria-label="Min Salary Threshold ($)"
                   type="number"
                   value={businessRules.min_salary_threshold}
                   onChange={(e) => setBusinessRules({ ...businessRules, min_salary_threshold: parseInt(e.target.value) || 0 })}
@@ -3958,7 +3958,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="label">Catch-All Email Policy</label>
-                <select
+                <select aria-label="Catch-All Email Policy"
                   value={businessRules.catch_all_policy}
                   onChange={(e) => setBusinessRules({ ...businessRules, catch_all_policy: e.target.value })}
                   className="input"
@@ -3991,7 +3991,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div>
                 <label className="label">Lookback Window (Days)</label>
-                <input
+                <input aria-label="Lookback Window (Days)"
                   type="number"
                   value={businessRules.category_window_days}
                   onChange={(e) => setBusinessRules({ ...businessRules, category_window_days: parseInt(e.target.value) || 0 })}
@@ -4002,7 +4002,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Regular Threshold</label>
-                <input
+                <input aria-label="Regular Threshold"
                   type="number"
                   value={businessRules.category_regular_threshold}
                   onChange={(e) => setBusinessRules({ ...businessRules, category_regular_threshold: parseInt(e.target.value) || 0 })}
@@ -4013,7 +4013,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Occasional Threshold</label>
-                <input
+                <input aria-label="Occasional Threshold"
                   type="number"
                   value={businessRules.category_occasional_threshold}
                   onChange={(e) => setBusinessRules({ ...businessRules, category_occasional_threshold: parseInt(e.target.value) || 0 })}
@@ -4040,7 +4040,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <div>
                 <label className="label">Domain Daily Limit (General)</label>
-                <input
+                <input aria-label="Domain Daily Limit (General)"
                   type="number"
                   value={businessRules.domain_daily_limit_default}
                   onChange={(e) => setBusinessRules({ ...businessRules, domain_daily_limit_default: parseInt(e.target.value) || 0 })}
@@ -4051,7 +4051,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Domain Daily Limit (Major Providers)</label>
-                <input
+                <input aria-label="Domain Daily Limit (Major Providers)"
                   type="number"
                   value={businessRules.domain_daily_limit_major_providers}
                   onChange={(e) => setBusinessRules({ ...businessRules, domain_daily_limit_major_providers: parseInt(e.target.value) || 0 })}
@@ -4062,7 +4062,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Max Contacts/Company (All Campaigns)</label>
-                <input
+                <input aria-label="Max Contacts/Company (All Campaigns)"
                   type="number"
                   value={businessRules.max_contacts_per_company_all_campaigns}
                   onChange={(e) => setBusinessRules({ ...businessRules, max_contacts_per_company_all_campaigns: parseInt(e.target.value) || 0 })}
@@ -4075,7 +4075,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-4">
               <div>
                 <label className="label">Send Delay Min (seconds)</label>
-                <input
+                <input aria-label="Send Delay Min (seconds)"
                   type="number"
                   value={businessRules.send_delay_min_sec}
                   onChange={(e) => setBusinessRules({ ...businessRules, send_delay_min_sec: parseInt(e.target.value) || 0 })}
@@ -4086,7 +4086,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Send Delay Max (seconds)</label>
-                <input
+                <input aria-label="Send Delay Max (seconds)"
                   type="number"
                   value={businessRules.send_delay_max_sec}
                   onChange={(e) => setBusinessRules({ ...businessRules, send_delay_max_sec: parseInt(e.target.value) || 0 })}
@@ -4097,7 +4097,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="label">Data Retention (days)</label>
-                <input
+                <input aria-label="Data Retention (days)"
                   type="number"
                   value={businessRules.data_retention_days}
                   onChange={(e) => setBusinessRules({ ...businessRules, data_retention_days: parseInt(e.target.value) || 0 })}
@@ -4137,7 +4137,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="label">Complaint Rate Threshold</label>
-                <input
+                <input aria-label="Complaint Rate Threshold"
                   type="number"
                   value={delivConfig.complaint_rate_threshold}
                   onChange={(e) => setDelivConfig({ ...delivConfig, complaint_rate_threshold: parseFloat(e.target.value) || 0 })}
@@ -4151,7 +4151,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Domain Daily Limit (General)</label>
-                <input
+                <input aria-label="Domain Daily Limit (General)"
                   type="number"
                   value={delivConfig.domain_daily_limit_default}
                   onChange={(e) => setDelivConfig({ ...delivConfig, domain_daily_limit_default: parseInt(e.target.value) || 0 })}
@@ -4164,7 +4164,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Domain Daily Limit (Major Providers)</label>
-                <input
+                <input aria-label="Domain Daily Limit (Major Providers)"
                   type="number"
                   value={delivConfig.domain_daily_limit_major_providers}
                   onChange={(e) => setDelivConfig({ ...delivConfig, domain_daily_limit_major_providers: parseInt(e.target.value) || 0 })}
@@ -4177,7 +4177,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Send Cooldown Days</label>
-                <input
+                <input aria-label="Send Cooldown Days"
                   type="number"
                   value={delivConfig.cooldown_days}
                   onChange={(e) => setDelivConfig({ ...delivConfig, cooldown_days: parseInt(e.target.value) || 0 })}
@@ -4190,7 +4190,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Company Contact Cap</label>
-                <input
+                <input aria-label="Company Contact Cap"
                   type="number"
                   value={delivConfig.max_contacts_per_company_all_campaigns}
                   onChange={(e) => setDelivConfig({ ...delivConfig, max_contacts_per_company_all_campaigns: parseInt(e.target.value) || 0 })}
@@ -4203,7 +4203,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Sequence Fatigue Window (Days)</label>
-                <input
+                <input aria-label="Sequence Fatigue Window (Days)"
                   type="number"
                   value={delivConfig.sequence_fatigue_window_days}
                   onChange={(e) => setDelivConfig({ ...delivConfig, sequence_fatigue_window_days: parseInt(e.target.value) || 0 })}
@@ -4216,7 +4216,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="label">Sequence Fatigue Max Unanswered</label>
-                <input
+                <input aria-label="Sequence Fatigue Max Unanswered"
                   type="number"
                   value={delivConfig.sequence_fatigue_max_unanswered}
                   onChange={(e) => setDelivConfig({ ...delivConfig, sequence_fatigue_max_unanswered: parseInt(e.target.value) || 0 })}
@@ -4589,7 +4589,7 @@ export default function SettingsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Max AI Enrichment Lookups / Run
                   </label>
-                  <input
+                  <input aria-label="Max AI Enrichment Lookups / Run"
                     type="number"
                     min={0}
                     max={5000}
@@ -4663,7 +4663,7 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Max Applicants</label>
-                    <input
+                    <input aria-label="Max Applicants"
                       type="number"
                       min={0}
                       max={100000}
@@ -4676,7 +4676,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Max Applicant Lookups / Run</label>
-                    <input
+                    <input aria-label="Max Applicant Lookups / Run"
                       type="number"
                       min={0}
                       max={2000}
@@ -4693,7 +4693,7 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Excluded Industries
-                  <span className="ml-2 text-xs font-normal text-gray-400">one per line — empty falls back to defaults</span>
+                  <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">one per line — empty falls back to defaults</span>
                 </label>
                 <textarea
                   rows={5}
@@ -4909,7 +4909,7 @@ export default function SettingsPage() {
                               }}
                               className="input w-full text-sm"
                             />
-                            <p className="text-[11px] text-gray-400 mt-0.5">{field.impact}</p>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{field.impact}</p>
                           </div>
                         )
                       })}
@@ -4960,32 +4960,32 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From email</label>
-                <input type="email" className="input w-full" placeholder="Hr@exzelon.com"
+                <input aria-label="From email" type="email" className="input w-full" placeholder="Hr@exzelon.com"
                   value={notifSender.sender_email}
                   onChange={e => setNotifSender(s => ({ ...s, sender_email: e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From name (optional)</label>
-                <input type="text" className="input w-full" placeholder="Exzelon Notifications"
+                <input aria-label="From name (optional)" type="text" className="input w-full" placeholder="Exzelon Notifications"
                   value={notifSender.sender_name}
                   onChange={e => setNotifSender(s => ({ ...s, sender_name: e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">SMTP host</label>
-                <input type="text" className="input w-full" placeholder="smtp.office365.com"
+                <input aria-label="SMTP host" type="text" className="input w-full" placeholder="smtp.office365.com"
                   value={notifSender.smtp_host}
                   onChange={e => setNotifSender(s => ({ ...s, smtp_host: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
-                  <input type="number" className="input w-full" placeholder="587"
+                  <input aria-label="Port" type="number" className="input w-full" placeholder="587"
                     value={notifSender.smtp_port}
                     onChange={e => setNotifSender(s => ({ ...s, smtp_port: Number(e.target.value) || 587 }))} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Security</label>
-                  <select className="input w-full" value={notifSender.smtp_security}
+                  <select aria-label="Security" className="input w-full" value={notifSender.smtp_security}
                     onChange={e => setNotifSender(s => ({ ...s, smtp_security: e.target.value }))}>
                     <option value="starttls">STARTTLS (587)</option>
                     <option value="ssl">SSL (465)</option>
@@ -4994,7 +4994,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">SMTP username</label>
-                <input type="text" className="input w-full" placeholder="Hr@exzelon.com" autoComplete="off"
+                <input aria-label="SMTP username" type="text" className="input w-full" placeholder="Hr@exzelon.com" autoComplete="off"
                   value={notifSender.smtp_user}
                   onChange={e => setNotifSender(s => ({ ...s, smtp_user: e.target.value }))} />
               </div>
@@ -5023,7 +5023,7 @@ export default function SettingsPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Recipient</label>
-                <input type="email" className="input w-full" placeholder={user?.email || 'you@example.com'}
+                <input aria-label="Recipient" type="email" className="input w-full" placeholder={user?.email || 'you@example.com'}
                   value={notifTestTo} onChange={e => setNotifTestTo(e.target.value)} />
               </div>
               <button onClick={testNotifSender} disabled={testingNotifSender} className="btn btn-secondary">
@@ -5059,7 +5059,7 @@ export default function SettingsPage() {
               <div key={setting.key} className="py-3 px-4 flex justify-between items-center text-sm">
                 <div>
                   <span className="font-mono text-gray-900">{setting.key}</span>
-                  <span className="text-gray-400 ml-2">({setting.type})</span>
+                  <span className="text-gray-500 dark:text-gray-400 ml-2">({setting.type})</span>
                 </div>
                 <span className="font-mono bg-gray-100 px-2 py-1 rounded text-xs max-w-xs truncate">
                   {setting.key.includes('api_key') || setting.key.includes('password')

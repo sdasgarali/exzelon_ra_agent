@@ -267,7 +267,7 @@ export default function DashboardLayout({
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors group relative"
+              className="hidden lg:flex items-center justify-center w-7 h-7 text-gray-500 dark:text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors group relative"
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
@@ -278,7 +278,7 @@ export default function DashboardLayout({
             {/* Mobile close button */}
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-gray-400 hover:text-white"
+              className="lg:hidden text-gray-500 dark:text-gray-400 hover:text-white"
               aria-label="Close sidebar"
             >
               <X className="w-5 h-5" />
@@ -299,7 +299,7 @@ export default function DashboardLayout({
               ))}
             </select>
           ) : !collapsed ? (
-            <p className="text-gray-400 text-sm mt-1 truncate">
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 truncate">
               {user?.tenant?.name || 'Admin Panel'}
             </p>
           ) : null}
@@ -363,7 +363,7 @@ export default function DashboardLayout({
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-              <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
             </div>
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
           </button>
@@ -389,7 +389,7 @@ export default function DashboardLayout({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-            <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
             <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
               {user?.role?.replace('_', ' ')}
             </span>
@@ -484,12 +484,13 @@ export default function DashboardLayout({
               reaches CommandPalette's window-level keydown listener (real Ctrl+K bubbles). */}
           <button
             onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
-            className="flex items-center gap-2 w-56 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600"
+            className="flex items-center gap-2 w-56 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors border border-gray-200 dark:border-gray-600"
             title="Command Palette"
+            aria-label="Open command palette (search)"
           >
             <Search className="w-3.5 h-3.5" />
             <span>Search...</span>
-            <kbd className="ml-auto text-[10px] font-mono bg-gray-200 dark:bg-gray-600 px-1 py-0.5 rounded">Ctrl+K</kbd>
+            <kbd className="ml-auto text-[10px] font-mono text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-600 px-1 py-0.5 rounded">Ctrl+K</kbd>
           </button>
 
           {/* Notifications */}
@@ -546,7 +547,7 @@ export default function DashboardLayout({
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[61] bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-96 max-w-[90vw]">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold dark:text-gray-100">Keyboard Shortcuts</h2>
-              <button onClick={() => setHelpOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+              <button onClick={() => setHelpOpen(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
                 <X className="w-5 h-5" />
               </button>
             </div>

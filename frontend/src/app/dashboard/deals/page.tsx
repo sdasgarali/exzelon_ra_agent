@@ -48,9 +48,9 @@ const activityIcon = (type: string) => {
     case 'stage_change': return <ArrowRight className="w-3.5 h-3.5 text-orange-500" />
     case 'auto_created': return <Bot className="w-3.5 h-3.5 text-indigo-500" />
     case 'claimed': return <Hand className="w-3.5 h-3.5 text-green-600" />
-    case 'unclaimed': return <RotateCcw className="w-3.5 h-3.5 text-gray-400" />
+    case 'unclaimed': return <RotateCcw className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
     case 'assigned': return <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-    default: return <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+    default: return <MessageSquare className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
   }
 }
 
@@ -384,9 +384,9 @@ export default function DealsPage() {
         {/* Filters */}
         <div className="p-3 flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[180px]">
-            <label className="block text-[11px] text-gray-400 mb-0.5">Search</label>
+            <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Search</label>
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-gray-400" />
+              <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-gray-500 dark:text-gray-400" />
               <input value={fSearch} onChange={e => setFSearch(e.target.value)} placeholder="Deal name…"
                 className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
             </div>
@@ -396,12 +396,12 @@ export default function DealsPage() {
           <NumericFilter label="Value" op={fValueOp} setOp={setFValueOp} v={fValueVal} setV={setFValueVal} v2={fValueVal2} setV2={setFValueVal2} />
           <NumericFilter label="Probability" op={fProbOp} setOp={setFProbOp} v={fProbVal} setV={setFProbVal} v2={fProbVal2} setV2={setFProbVal2} />
           <div>
-            <label className="block text-[11px] text-gray-400 mb-0.5">Created from</label>
-            <input type="date" value={fCreatedFrom} onChange={e => setFCreatedFrom(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+            <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">Created from</label>
+            <input aria-label="Created from" type="date" value={fCreatedFrom} onChange={e => setFCreatedFrom(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
           </div>
           <div>
-            <label className="block text-[11px] text-gray-400 mb-0.5">to</label>
-            <input type="date" value={fCreatedTo} onChange={e => setFCreatedTo(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
+            <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">to</label>
+            <input aria-label="to" type="date" value={fCreatedTo} onChange={e => setFCreatedTo(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />
           </div>
           <FilterSelect label="Claimed By" value={fClaimedBy} onChange={setFClaimedBy}
             options={[{ value: '', label: 'Anyone' }, { value: 'unclaimed', label: 'Unclaimed' }, { value: 'me', label: 'Me' }, ...claimerOptions.map(c => ({ value: String(c.id), label: c.name }))]} />
@@ -419,8 +419,8 @@ export default function DealsPage() {
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color || '#6B7280' }} />
                 <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100">{stage.name}</h3>
-                <span className="text-xs text-gray-400 ml-auto">{stage.count}</span>
-                <span className="text-xs text-gray-400">{formatCurrency(stage.total_value)}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{stage.count}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{formatCurrency(stage.total_value)}</span>
               </div>
               <div className="space-y-2 min-h-[100px] bg-gray-50 dark:bg-gray-900/30 rounded-lg p-2">
                 {stage.deals.map(deal => (
@@ -439,14 +439,14 @@ export default function DealsPage() {
                         {deal.client_name && <p className="text-xs text-gray-500 truncate">{deal.client_name}</p>}
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCurrency(deal.value)}</span>
-                          <span className="text-xs text-gray-400">{deal.probability}%</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{deal.probability}%</span>
                         </div>
                         <div className="mt-2"><ClaimControls d={deal} compact /></div>
                       </div>
                     </div>
                   </div>
                 ))}
-                {stage.deals.length === 0 && <div className="text-center py-4 text-xs text-gray-400">No deals</div>}
+                {stage.deals.length === 0 && <div className="text-center py-4 text-xs text-gray-500 dark:text-gray-400">No deals</div>}
               </div>
             </div>
           ))}
@@ -478,18 +478,18 @@ export default function DealsPage() {
                     <td className="px-3 py-2"><AgeBadge days={d.age_days} /></td>
                     <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100 max-w-[220px] truncate">
                       {d.name}
-                      {d.client_name && <span className="block text-xs text-gray-400 truncate">{d.client_name}</span>}
+                      {d.client_name && <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">{d.client_name}</span>}
                     </td>
                     <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.stage_color || '#6b7280' }} />{d.stage_name}</span></td>
                     <td className="px-3 py-2 font-semibold">{formatCurrency(d.value)}</td>
                     <td className="px-3 py-2 text-gray-500">{d.probability}%</td>
                     <td className="px-3 py-2">{d.owner ? <OwnerChip owner={d.owner} /> : <span className="text-gray-300">—</span>}</td>
-                    <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{new Date(d.created_at).toLocaleDateString()}</td>
+                    <td className="px-3 py-2 text-gray-500 dark:text-gray-400 whitespace-nowrap">{new Date(d.created_at).toLocaleDateString()}</td>
                     <td className="px-3 py-2"><ClaimControls d={d} /></td>
                   </tr>
                 ))}
                 {deals.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-10 text-center text-gray-400">No deals match these filters.</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-10 text-center text-gray-500 dark:text-gray-400">No deals match these filters.</td></tr>
                 )}
               </tbody>
             </table>
@@ -509,14 +509,14 @@ export default function DealsPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Deal Name *</label>
-                <input value={dealForm.name} onChange={e => setDealForm(f => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="e.g., Acme Corp — Q2 Campaign" />
+                <input aria-label="Deal Name" value={dealForm.name} onChange={e => setDealForm(f => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" placeholder="e.g., Acme Corp — Q2 Campaign" />
               </div>
               <div className="relative">
                 <label className="block text-sm font-medium mb-1"><User className="w-3.5 h-3.5 inline mr-1" /> Contact</label>
                 <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-500 dark:text-gray-400" />
                   <input value={contactSearch} onChange={e => { setContactSearch(e.target.value); setShowContactDropdown(true); setSelectedContact(null); setDealForm(f => ({ ...f, contact_id: null })) }} onFocus={() => setShowContactDropdown(true)} className="w-full pl-9 pr-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="Search by name, email, or company..." />
-                  {selectedContact && <button onClick={() => { setSelectedContact(null); setContactSearch(''); setDealForm(f => ({ ...f, contact_id: null })) }} className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
+                  {selectedContact && <button onClick={() => { setSelectedContact(null); setContactSearch(''); setDealForm(f => ({ ...f, contact_id: null })) }} className="absolute right-2 top-2 text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
                 </div>
                 {showContactDropdown && contactResults.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -532,9 +532,9 @@ export default function DealsPage() {
               <div className="relative">
                 <label className="block text-sm font-medium mb-1"><Building2 className="w-3.5 h-3.5 inline mr-1" /> Company</label>
                 <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-500 dark:text-gray-400" />
                   <input value={clientSearch} onChange={e => { setClientSearch(e.target.value); setShowClientDropdown(true); setSelectedClient(null); setDealForm(f => ({ ...f, client_id: null })) }} onFocus={() => setShowClientDropdown(true)} className="w-full pl-9 pr-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" placeholder="Search companies..." />
-                  {selectedClient && <button onClick={() => { setSelectedClient(null); setClientSearch(''); setDealForm(f => ({ ...f, client_id: null })) }} className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
+                  {selectedClient && <button onClick={() => { setSelectedClient(null); setClientSearch(''); setDealForm(f => ({ ...f, client_id: null })) }} className="absolute right-2 top-2 text-gray-500 dark:text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>}
                 </div>
                 {showClientDropdown && clientResults.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -544,13 +544,13 @@ export default function DealsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Stage</label>
-                <select value={dealForm.stage_id} onChange={e => setDealForm(f => ({ ...f, stage_id: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                <select aria-label="Stage" value={dealForm.stage_id} onChange={e => setDealForm(f => ({ ...f, stage_id: parseInt(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
                   {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium mb-1">Value ($)</label><input type="number" value={dealForm.value} onChange={e => setDealForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
-                <div><label className="block text-sm font-medium mb-1">Probability (%)</label><input type="number" min={0} max={100} value={dealForm.probability} onChange={e => setDealForm(f => ({ ...f, probability: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+                <div><label className="block text-sm font-medium mb-1">Value ($)</label><input aria-label="Value ($)" type="number" value={dealForm.value} onChange={e => setDealForm(f => ({ ...f, value: parseFloat(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
+                <div><label className="block text-sm font-medium mb-1">Probability (%)</label><input aria-label="Probability (%)" type="number" min={0} max={100} value={dealForm.probability} onChange={e => setDealForm(f => ({ ...f, probability: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" /></div>
               </div>
               <div><label className="block text-sm font-medium mb-1">Notes</label><textarea value={dealForm.notes} onChange={e => setDealForm(f => ({ ...f, notes: e.target.value }))} className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600" rows={3} /></div>
               <div className="flex gap-3 pt-2">
@@ -590,7 +590,7 @@ export default function DealsPage() {
                 {([['overview', 'Overview', null], ['candidates', 'Candidates', candidates.length], ['conversation', 'Conversation', messages.length]] as const).map(([key, label, count]) => (
                   <button key={key} onClick={() => setDetailTab(key)}
                     className={`px-3 py-2 border-b-2 font-medium transition-colors ${detailTab === key ? 'border-primary-600 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'}`}>
-                    {label}{count ? <span className="ml-1 text-xs text-gray-400">({count})</span> : ''}
+                    {label}{count ? <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">({count})</span> : ''}
                   </button>
                 ))}
               </div>
@@ -609,7 +609,7 @@ export default function DealsPage() {
 
                   {/* Status (stage) */}
                   <div>
-                    <span className="text-xs text-gray-400 uppercase">Status</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Status</span>
                     <select value={selectedDeal.stage_id} onChange={e => handleUpdateDeal(selectedDeal.deal_id, { stage_id: parseInt(e.target.value) })} className="w-full mt-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
                       {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
                     </select>
@@ -633,8 +633,8 @@ export default function DealsPage() {
 
                   {selectedDeal.contact_name && (
                     <div>
-                      <span className="text-xs text-gray-400 uppercase">Contact</span>
-                      <p className="text-sm flex items-center gap-1"><User className="w-3.5 h-3.5 text-gray-400" /> {selectedDeal.contact_name}</p>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Contact</span>
+                      <p className="text-sm flex items-center gap-1"><User className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" /> {selectedDeal.contact_name}</p>
                       {selectedDeal.contact_email && <p className="text-xs text-gray-500 ml-5">{selectedDeal.contact_email}</p>}
                     </div>
                   )}
@@ -652,11 +652,11 @@ export default function DealsPage() {
                           <div className="mt-0.5">{activityIcon(a.activity_type)}</div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-gray-700 dark:text-gray-300">{a.description || a.activity_type}</p>
-                            {a.created_at && <p className="text-[10px] text-gray-400 mt-0.5">{new Date(a.created_at).toLocaleString()}</p>}
+                            {a.created_at && <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">{new Date(a.created_at).toLocaleString()}</p>}
                           </div>
                         </div>
                       ))}
-                      {(!selectedDeal.activities || selectedDeal.activities.length === 0) && <p className="text-xs text-gray-400 text-center py-2">No activities yet</p>}
+                      {(!selectedDeal.activities || selectedDeal.activities.length === 0) && <p className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">No activities yet</p>}
                     </div>
                   </div>
 
@@ -692,9 +692,9 @@ export default function DealsPage() {
                             <div className="flex flex-wrap gap-3 mt-1">
                               {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><Link2 className="w-3 h-3" /> LinkedIn</a>}
                               {c.resume_url && <a href={c.resume_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline flex items-center gap-1"><FileText className="w-3 h-3" /> Resume</a>}
-                              {c.email && <span className="text-xs text-gray-400">{c.email}</span>}
+                              {c.email && <span className="text-xs text-gray-500 dark:text-gray-400">{c.email}</span>}
                             </div>
-                            {c.submitted_by?.name && <p className="text-[11px] text-gray-400 mt-1">Submitted by {c.submitted_by.name}</p>}
+                            {c.submitted_by?.name && <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">Submitted by {c.submitted_by.name}</p>}
                             {c.notes && <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{c.notes}</p>}
                           </div>
                           <button onClick={() => removeCandidate(c.candidate_id)} className="text-gray-300 hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
@@ -707,7 +707,7 @@ export default function DealsPage() {
                         </div>
                       </div>
                     ))}
-                    {candidates.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No candidates submitted yet.</p>}
+                    {candidates.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">No candidates submitted yet.</p>}
                   </div>
                 </div>
               )}
@@ -722,7 +722,7 @@ export default function DealsPage() {
                   <div className="space-y-2 max-h-[70vh] overflow-y-auto">
                     {messages.map((m, i) => (
                       <div key={i} className={`rounded-lg p-3 text-sm ${m.direction === 'sent' ? 'bg-blue-50 dark:bg-blue-900/20 ml-6' : 'bg-gray-50 dark:bg-gray-700/40 mr-6'}`}>
-                        <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+                        <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 mb-1">
                           <span className="font-medium uppercase">{m.direction === 'sent' ? 'Sent' : 'Received'}</span>
                           <span>{m.at ? new Date(m.at).toLocaleString() : ''}</span>
                         </div>
@@ -730,7 +730,7 @@ export default function DealsPage() {
                         <p className="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap mt-0.5">{m.body || ''}</p>
                       </div>
                     ))}
-                    {messages.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No email history for this deal&apos;s contact.</p>}
+                    {messages.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">No email history for this deal&apos;s contact.</p>}
                   </div>
                 </div>
               )}
@@ -755,14 +755,14 @@ function StatCard({ icon, label, value, accent }: { icon: React.ReactNode; label
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div><span className="text-xs text-gray-400 uppercase">{label}</span><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</p></div>
+    <div><span className="text-xs text-gray-500 dark:text-gray-400 uppercase">{label}</span><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</p></div>
   )
 }
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <div>
-      <label className="block text-[11px] text-gray-400 mb-0.5">{label}</label>
+      <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -773,7 +773,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 function NumericFilter({ label, op, setOp, v, setV, v2, setV2 }: { label: string; op: string; setOp: (s: string) => void; v: string; setV: (s: string) => void; v2: string; setV2: (s: string) => void }) {
   return (
     <div>
-      <label className="block text-[11px] text-gray-400 mb-0.5">{label}</label>
+      <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
       <div className="flex items-center gap-1">
         <select value={op} onChange={e => setOp(e.target.value)} className="px-1.5 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
           {NUMERIC_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

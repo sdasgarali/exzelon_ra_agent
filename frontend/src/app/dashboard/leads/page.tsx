@@ -864,7 +864,7 @@ export default function LeadsPage() {
           <span className="truncate text-sm">
             {selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}
           </span>
-          <span className="text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
+          <span className="text-gray-500 dark:text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
         </button>
         {open && (
           <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -883,7 +883,7 @@ export default function LeadsPage() {
                 {labelMap?.[opt] || opt}
               </label>
             ))}
-            {options.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No options available</div>}
+            {options.length === 0 && <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No options available</div>}
           </div>
         )}
       </div>
@@ -943,7 +943,7 @@ export default function LeadsPage() {
           <span className="truncate text-sm">
             {selected.length === 0 ? `All ${label}` : `${label} (${selected.length})`}
           </span>
-          <span className="text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
+          <span className="text-gray-500 dark:text-gray-400 ml-1">{open ? '\u25B2' : '\u25BC'}</span>
         </button>
         {open && (
           <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto min-w-0 sm:min-w-[220px]">
@@ -977,7 +977,7 @@ export default function LeadsPage() {
                         className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600"
                       />
                       <span className="text-xs font-semibold text-gray-600 uppercase">{group.category}</span>
-                      <span className="text-xs text-gray-400 ml-auto">{group.items.filter(i => selected.includes(i)).length}/{group.items.length}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{group.items.filter(i => selected.includes(i)).length}/{group.items.length}</span>
                     </label>
                     {filtered.map(opt => (
                       <label key={opt} className="flex items-center gap-2 px-3 py-1.5 pl-7 hover:bg-gray-50 cursor-pointer text-sm">
@@ -1006,8 +1006,8 @@ export default function LeadsPage() {
                 </label>
               ))
             )}
-            {allItems.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No options available</div>}
-            {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No matches for &ldquo;{searchText}&rdquo;</div>}
+            {allItems.length === 0 && <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No options available</div>}
+            {allItems.length > 0 && filterBySearch(allItems).length === 0 && <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No matches for &ldquo;{searchText}&rdquo;</div>}
           </div>
         )}
       </div>
@@ -1031,7 +1031,7 @@ export default function LeadsPage() {
 
   // Helper: render a metadata value by type
   const renderMetaValue = (value: any, type: string) => {
-    if (value === null || value === undefined) return <span className="text-gray-400">-</span>
+    if (value === null || value === undefined) return <span className="text-gray-500 dark:text-gray-400">-</span>
     switch (type) {
       case 'number':
         return <span className="text-sm text-gray-700">{typeof value === 'number' ? value.toLocaleString() : value}</span>
@@ -1045,7 +1045,7 @@ export default function LeadsPage() {
         const items = Array.isArray(value) ? value : String(value).split(',').map((s: string) => s.trim())
         return <div className="flex flex-wrap gap-1">{items.slice(0, 3).map((t: string, i: number) => (
           <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{t}</span>
-        ))}{items.length > 3 && <span className="text-[10px] text-gray-400">+{items.length - 3}</span>}</div>
+        ))}{items.length > 3 && <span className="text-[10px] text-gray-500 dark:text-gray-400">+{items.length - 3}</span>}</div>
       }
       case 'score': {
         const score = typeof value === 'number' ? value : parseFloat(value)
@@ -1240,14 +1240,14 @@ export default function LeadsPage() {
                     onClick={() => handleExport('all')}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2"
                   >
-                    <span>&#128196;</span> All Leads {total > 0 && <span className="text-gray-400 text-xs">({total})</span>}
+                    <span>&#128196;</span> All Leads {total > 0 && <span className="text-gray-500 dark:text-gray-400 text-xs">({total})</span>}
                   </button>
                   <button
                     onClick={() => handleExport('selected')}
                     disabled={selectedIds.size === 0}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    <span>&#9745;</span> Selected Only {selectedIds.size > 0 && <span className="text-gray-400 text-xs">({selectedIds.size})</span>}
+                    <span>&#9745;</span> Selected Only {selectedIds.size > 0 && <span className="text-gray-500 dark:text-gray-400 text-xs">({selectedIds.size})</span>}
                   </button>
                 </div>
                 <div className="border-t px-2 py-1.5">
@@ -1307,7 +1307,7 @@ export default function LeadsPage() {
                 <span className={`inline-block w-2.5 h-2.5 rounded-full ${opt.color.split(' ')[0]}`} />
                 <span>{opt.label}</span>
                 <span className="font-bold">{count}</span>
-                <span className="text-gray-400 font-normal">/ {leadStats.total}</span>
+                <span className="text-gray-500 dark:text-gray-400 font-normal">/ {leadStats.total}</span>
               </button>
             )
           })}
@@ -1331,7 +1331,7 @@ export default function LeadsPage() {
                     <span className={`inline-block w-2.5 h-2.5 rounded-full ${opt.color.split(' ')[0]}`} />
                     <span>{opt.label}</span>
                     <span className="font-bold">{count}</span>
-                    <span className="text-gray-400 font-normal">/ {leadStats.total}</span>
+                    <span className="text-gray-500 dark:text-gray-400 font-normal">/ {leadStats.total}</span>
                   </button>
                 )
               })}
@@ -1447,7 +1447,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Data Type</label>
-              <select
+              <select aria-label="Data Type"
                 value={filterDataType}
                 onChange={(e) => { setFilterDataType(e.target.value); setPage(1); }}
                 className="input w-full"
@@ -1512,7 +1512,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Posted From</label>
-              <input
+              <input aria-label="Posted From"
                 type="date"
                 value={filterFromDate}
                 onChange={(e) => { setFilterFromDate(e.target.value); setPage(1); }}
@@ -1521,7 +1521,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Posted To</label>
-              <input
+              <input aria-label="Posted To"
                 type="date"
                 value={filterToDate}
                 onChange={(e) => { setFilterToDate(e.target.value); setPage(1); }}
@@ -1530,7 +1530,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Extracted From</label>
-              <input
+              <input aria-label="Extracted From"
                 type="date"
                 value={filterExtractedFrom}
                 onChange={(e) => { setFilterExtractedFrom(e.target.value); setPage(1); }}
@@ -1539,7 +1539,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Extracted To</label>
-              <input
+              <input aria-label="Extracted To"
                 type="date"
                 value={filterExtractedTo}
                 onChange={(e) => { setFilterExtractedTo(e.target.value); setPage(1); }}
@@ -1548,7 +1548,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Downloaded</label>
-              <select
+              <select aria-label="Downloaded"
                 value={filterDownloaded}
                 onChange={(e) => { setFilterDownloaded(e.target.value); setPage(1); }}
                 className="input w-full"
@@ -1560,7 +1560,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Mailing-Status</label>
-              <select
+              <select aria-label="Mailing-Status"
                 value={filterMailingStatus}
                 onChange={(e) => { setFilterMailingStatus(e.target.value); setPage(1); }}
                 className="input w-full"
@@ -1573,7 +1573,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Response</label>
-              <select
+              <select aria-label="Response"
                 value={filterResponseStatus}
                 onChange={(e) => { setFilterResponseStatus(e.target.value); setPage(1); }}
                 className="input w-full"
@@ -1586,7 +1586,7 @@ export default function LeadsPage() {
             </div>
             <div>
               <label className="label text-sm">Page Size</label>
-              <select
+              <select aria-label="Page Size"
                 value={pageSize}
                 onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
                 className="input w-full"
@@ -1648,6 +1648,7 @@ export default function LeadsPage() {
                     checked={allCurrentPageSelected}
                     onChange={toggleSelectAll}
                     className="w-4 h-4"
+                    aria-label="Select all leads on this page"
                   />
                 </th>
                 <th
@@ -1795,6 +1796,7 @@ export default function LeadsPage() {
                         checked={selectedIds.has(lead.lead_id)}
                         onChange={() => toggleSelect(lead.lead_id)}
                         className="w-4 h-4"
+                        aria-label={`Select lead ${lead.lead_id}`}
                       />
                     </td>
                     <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -1833,7 +1835,7 @@ export default function LeadsPage() {
                           {new Date(lead.downloaded_at).toLocaleDateString()}
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -1854,7 +1856,7 @@ export default function LeadsPage() {
                             {lead.employment_type}
                           </span>
                         ) : (
-                          <span className="text-gray-400 text-sm">-</span>
+                          <span className="text-gray-500 dark:text-gray-400 text-sm">-</span>
                         )}
                       </td>
                     )}
@@ -1874,7 +1876,7 @@ export default function LeadsPage() {
                           {truncateUrl(lead.employer_website.replace(/^https?:\/\//i, ''), 25)}
                         </a>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
@@ -1893,7 +1895,7 @@ export default function LeadsPage() {
                           {truncateUrl(lead.job_link, 25)}
                         </a>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                     {/* LOB metadata column values */}
@@ -1927,6 +1929,7 @@ export default function LeadsPage() {
                           value={lead.lead_status}
                           onChange={(e) => updateLeadStatus(lead.lead_id, e.target.value)}
                           disabled={updating === lead.lead_id}
+                          aria-label={`Lead ${lead.lead_id} status`}
                           className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer ${getStatusBadge(lead.lead_status)} ${updating === lead.lead_id ? 'opacity-50' : ''}`}
                         >
                           {PIPELINE_STATUS_OPTIONS.map((status) => (
@@ -1946,7 +1949,7 @@ export default function LeadsPage() {
                           {lead.mailing_status}
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                     {/* Response (lead-level rollup of contacts' inbound-reply classifications) */}
@@ -1958,7 +1961,7 @@ export default function LeadsPage() {
                           {lead.response_status}
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                     {/* Campaign-ID */}
@@ -1972,7 +1975,7 @@ export default function LeadsPage() {
                           #{lead.campaign_id}
                         </a>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-gray-500 dark:text-gray-400">-</span>
                       )}
                     </td>
                   </tr>
@@ -1984,7 +1987,7 @@ export default function LeadsPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                           {Object.entries(lead.metadata).map(([key, value]) => (
                             <div key={key} className="bg-white rounded-lg border border-gray-200 px-3 py-2">
-                              <div className="text-[10px] font-medium text-gray-400 uppercase">{key.replace(/_/g, ' ')}</div>
+                              <div className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase">{key.replace(/_/g, ' ')}</div>
                               <div className="text-sm text-gray-800 mt-0.5 break-words">
                                 {value === null || value === undefined
                                   ? '-'
@@ -2150,7 +2153,7 @@ export default function LeadsPage() {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
-                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Data Type" value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="test">Test</option>
                   <option value="prod">Prod</option>
@@ -2160,29 +2163,29 @@ export default function LeadsPage() {
               {/* Mailed-Offline fields — applied only to selected leads that are Mailed-Offline */}
               <div className="pt-3 mt-1 border-t">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mailed-Offline fields</p>
-                <p className="text-xs text-gray-400 mb-3">Applied only to selected leads whose Mailing-Status is <span className="font-medium">Mailed-Offline</span>; others are skipped.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Applied only to selected leads whose Mailing-Status is <span className="font-medium">Mailed-Offline</span>; others are skipped.</p>
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Mailing-Status</label>
-                    <select value={bulkUpdateForm.mailing_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, mailing_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                    <select aria-label="Mailing-Status" value={bulkUpdateForm.mailing_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, mailing_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                       <option value="">— No change —</option>
                       {MAILING_STATUS_OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Response</label>
-                    <select value={bulkUpdateForm.response_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, response_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                    <select aria-label="Response" value={bulkUpdateForm.response_status_override} onChange={e => setBulkUpdateForm(f => ({ ...f, response_status_override: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                       <option value="">— No change —</option>
                       {RESPONSE_STATUS_OVERRIDE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Enroll in Campaign</label>
-                    <select value={bulkUpdateForm.enroll_campaign_id} onChange={e => setBulkUpdateForm(f => ({ ...f, enroll_campaign_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                    <select aria-label="Enroll in Campaign" value={bulkUpdateForm.enroll_campaign_id} onChange={e => setBulkUpdateForm(f => ({ ...f, enroll_campaign_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                       <option value="">— No change —</option>
                       {campaignOptions.map(c => <option key={c.campaign_id} value={c.campaign_id}>{c.name} (#{c.campaign_id})</option>)}
                     </select>
-                    <p className="text-xs text-gray-400 mt-1">Enrolls the lead&apos;s contacts — the lead will become Campaign-Active.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Enrolls the lead&apos;s contacts — the lead will become Campaign-Active.</p>
                   </div>
                 </div>
               </div>
@@ -2268,7 +2271,7 @@ export default function LeadsPage() {
                               <div key={c.contact_id} className="px-3 py-1.5 flex justify-between items-center text-xs">
                                 <div>
                                   <span className="text-gray-800">{c.name}</span>
-                                  <span className="text-gray-400 ml-2">{c.email}</span>
+                                  <span className="text-gray-500 dark:text-gray-400 ml-2">{c.email}</span>
                                 </div>
                                 {c.eligible ? (
                                   <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700">Eligible</span>
@@ -2340,7 +2343,7 @@ export default function LeadsPage() {
               </div>
               <button
                 onClick={() => { setShowResultsModal(false); setOutreachResults(null) }}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                className="text-gray-500 dark:text-gray-400 hover:text-gray-600 text-2xl leading-none"
               >
                 &times;
               </button>
@@ -2556,7 +2559,7 @@ export default function LeadsPage() {
               </div>
               <button
                 onClick={() => { setShowEnrichResultsModal(false); setEnrichLeadResults(null); setEnrichRunId(null) }}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                className="text-gray-500 dark:text-gray-400 hover:text-gray-600 text-2xl leading-none"
               >
                 &times;
               </button>
