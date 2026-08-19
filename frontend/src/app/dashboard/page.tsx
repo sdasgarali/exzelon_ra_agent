@@ -1300,26 +1300,33 @@ export default function DashboardPage() {
         {validationData.length > 0 && (
           <div className="card">
             <h3 className="text-lg font-semibold mb-4">Contact Validation Breakdown</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart role="img" aria-label="Contact validation breakdown pie chart" title="Contact validation breakdown" desc="Proportion of contacts by email validation status">
-                <Pie
-                  data={validationData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                >
-                  {validationData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {/* Decorative chart: the h3 heading + validation KPIs convey the data;
+                hide the SVG internals from AT (recharts marks each sector role="img"
+                with no accessible name, which fails axe svg-img-alt). */}
+            <div role="img" aria-label="Contact validation breakdown pie chart">
+              <div aria-hidden="true">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={validationData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {validationData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         )}
       </div>
