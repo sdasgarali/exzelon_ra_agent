@@ -393,48 +393,48 @@ export default function ContactsPage() {
           <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-800">Create Contact</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-                  <input value={createForm.first_name} onChange={e => setCreateForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" placeholder="John" />
+                  <input aria-label="First Name" value={createForm.first_name} onChange={e => setCreateForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" placeholder="John" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-                  <input value={createForm.last_name} onChange={e => setCreateForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" placeholder="Doe" />
+                  <input aria-label="Last Name" value={createForm.last_name} onChange={e => setCreateForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" placeholder="Doe" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="john.doe@company.com" />
+                <input aria-label="Email" type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} className="input w-full" placeholder="john.doe@company.com" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Company / Client Name *</label>
-                <input value={createForm.client_name} onChange={e => setCreateForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" placeholder="Acme Corp" />
+                <input aria-label="Company / Client Name" value={createForm.client_name} onChange={e => setCreateForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" placeholder="Acme Corp" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                <input value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} className="input w-full" placeholder="HR Manager" />
+                <input aria-label="Job Title" value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} className="input w-full" placeholder="HR Manager" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+1 555-0123" />
+                  <input aria-label="Phone" value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" placeholder="+1 555-0123" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                  <input value={createForm.location_state} onChange={e => setCreateForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" placeholder="CA" />
+                  <input aria-label="State" value={createForm.location_state} onChange={e => setCreateForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" placeholder="CA" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile</label>
-                <input value={createForm.linkedin_url} onChange={e => setCreateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
+                <input aria-label="LinkedIn Profile" value={createForm.linkedin_url} onChange={e => setCreateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
-                <select value={createForm.priority_level} onChange={e => setCreateForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
+                <select aria-label="Priority Level" value={createForm.priority_level} onChange={e => setCreateForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
                   <option value="">-- Select --</option>
                   <option value="p1_job_poster">P1 - Job Poster</option>
                   <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
@@ -451,7 +451,7 @@ export default function ContactsPage() {
                   className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
                 />
                 <span className="text-sm font-medium text-gray-700">Test Contact</span>
-                <span className="text-xs text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
               </label>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -473,48 +473,48 @@ export default function ContactsPage() {
           <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-800">Edit Contact</h3>
-              <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="text-gray-500 dark:text-gray-400 hover:text-gray-600 text-xl">&times;</button>
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-                  <input value={editForm.first_name} onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" />
+                  <input aria-label="First Name" value={editForm.first_name} onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-                  <input value={editForm.last_name} onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" />
+                  <input aria-label="Last Name" value={editForm.last_name} onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))} className="input w-full" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className="input w-full" />
+                <input aria-label="Email" type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className="input w-full" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Company / Client Name</label>
-                <input value={editForm.client_name} onChange={e => setEditForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" />
+                <input aria-label="Company / Client Name" value={editForm.client_name} onChange={e => setEditForm(f => ({ ...f, client_name: e.target.value }))} className="input w-full" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
-                <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className="input w-full" />
+                <input aria-label="Job Title" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} className="input w-full" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" />
+                  <input aria-label="Phone" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                  <input value={editForm.location_state} onChange={e => setEditForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" />
+                  <input aria-label="State" value={editForm.location_state} onChange={e => setEditForm(f => ({ ...f, location_state: e.target.value }))} className="input w-full" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn Profile</label>
-                <input value={editForm.linkedin_url} onChange={e => setEditForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
+                <input aria-label="LinkedIn Profile" value={editForm.linkedin_url} onChange={e => setEditForm(f => ({ ...f, linkedin_url: e.target.value }))} className="input w-full" placeholder="https://linkedin.com/in/johndoe" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
-                <select value={editForm.priority_level} onChange={e => setEditForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
+                <select aria-label="Priority Level" value={editForm.priority_level} onChange={e => setEditForm(f => ({ ...f, priority_level: e.target.value }))} className="input w-full">
                   <option value="">-- Select --</option>
                   <option value="p1_job_poster">P1 - Job Poster</option>
                   <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
@@ -531,7 +531,7 @@ export default function ContactsPage() {
                   className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
                 />
                 <span className="text-sm font-medium text-gray-700">Test Contact</span>
-                <span className="text-xs text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">(bypasses cooldown &amp; fatigue checks)</span>
               </label>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => { setShowEditModal(false); setEditingContactId(null) }} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -710,7 +710,7 @@ export default function ContactsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 w-10">
-                  <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <input type="checkbox" checked={isAllSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" aria-label="Select all contacts on this page" />
                 </th>
                 {[
                   { key: 'name', label: 'Name' },
@@ -742,7 +742,7 @@ export default function ContactsPage() {
                 contacts.map((contact) => (
                   <tr key={contact.contact_id} className={"hover:bg-gray-50" + (selectedIds.has(contact.contact_id) ? ' bg-blue-50' : '')}>
                     <td className="px-4 py-3">
-                      <input type="checkbox" checked={selectedIds.has(contact.contact_id)} onChange={() => toggleSelect(contact.contact_id)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                      <input type="checkbox" checked={selectedIds.has(contact.contact_id)} onChange={() => toggleSelect(contact.contact_id)} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" aria-label={`Select contact ${contact.contact_id}`} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-sm font-medium text-gray-900">
@@ -795,7 +795,7 @@ export default function ContactsPage() {
                         <Link href={`/dashboard/leads/${contact.lead_id}`} className="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 font-mono hover:bg-purple-100 cursor-pointer">
                           #{contact.lead_id}
                         </Link>
-                      ) : <span className="text-gray-400">-</span>}
+                      ) : <span className="text-gray-500 dark:text-gray-400">-</span>}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{contact.source || '-'}</td>
                     <td className="px-4 py-3">
@@ -869,7 +869,7 @@ export default function ContactsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
-                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Data Type" value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="enriched">Enriched</option>
                   <option value="test">Test</option>
@@ -877,35 +877,35 @@ export default function ContactsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                <input type="text" value={bulkUpdateForm.first_name} onChange={e => setBulkUpdateForm(f => ({ ...f, first_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="First Name" type="text" value={bulkUpdateForm.first_name} onChange={e => setBulkUpdateForm(f => ({ ...f, first_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                <input type="text" value={bulkUpdateForm.last_name} onChange={e => setBulkUpdateForm(f => ({ ...f, last_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Last Name" type="text" value={bulkUpdateForm.last_name} onChange={e => setBulkUpdateForm(f => ({ ...f, last_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
-                <input type="text" value={bulkUpdateForm.client_name} onChange={e => setBulkUpdateForm(f => ({ ...f, client_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Client Name" type="text" value={bulkUpdateForm.client_name} onChange={e => setBulkUpdateForm(f => ({ ...f, client_name: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input type="text" value={bulkUpdateForm.email} onChange={e => setBulkUpdateForm(f => ({ ...f, email: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Email" type="text" value={bulkUpdateForm.email} onChange={e => setBulkUpdateForm(f => ({ ...f, email: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input type="text" value={bulkUpdateForm.phone} onChange={e => setBulkUpdateForm(f => ({ ...f, phone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Phone" type="text" value={bulkUpdateForm.phone} onChange={e => setBulkUpdateForm(f => ({ ...f, phone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                <input type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Timezone" type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Lead ID</label>
-                <input type="number" value={bulkUpdateForm.lead_id} onChange={e => setBulkUpdateForm(f => ({ ...f, lead_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Lead ID" type="number" value={bulkUpdateForm.lead_id} onChange={e => setBulkUpdateForm(f => ({ ...f, lead_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Outreach Status</label>
-                <select value={bulkUpdateForm.outreach_status} onChange={e => setBulkUpdateForm(f => ({ ...f, outreach_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Outreach Status" value={bulkUpdateForm.outreach_status} onChange={e => setBulkUpdateForm(f => ({ ...f, outreach_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -914,7 +914,7 @@ export default function ContactsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Validation Status</label>
-                <select value={bulkUpdateForm.validation_status} onChange={e => setBulkUpdateForm(f => ({ ...f, validation_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Validation Status" value={bulkUpdateForm.validation_status} onChange={e => setBulkUpdateForm(f => ({ ...f, validation_status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="valid">Valid</option>
                   <option value="invalid">Invalid</option>
@@ -923,7 +923,7 @@ export default function ContactsPage() {
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Priority Level</label>
-                <select value={bulkUpdateForm.priority_level} onChange={e => setBulkUpdateForm(f => ({ ...f, priority_level: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Priority Level" value={bulkUpdateForm.priority_level} onChange={e => setBulkUpdateForm(f => ({ ...f, priority_level: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="P1">P1 - Job Poster</option>
                   <option value="P2">P2 - Direct Report</option>

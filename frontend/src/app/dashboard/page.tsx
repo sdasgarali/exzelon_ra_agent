@@ -1217,7 +1217,7 @@ export default function DashboardPage() {
               <div key={step.label} className="flex items-center">
                 {i > 0 && (
                   <div className="flex flex-col items-center mx-3">
-                    <ArrowRight className="w-5 h-5 text-gray-400" />
+                    <ArrowRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                     {convRate && (
                       <span className="text-xs text-gray-500 mt-1">{convRate}%</span>
                     )}
@@ -1334,7 +1334,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Ready to Send</p>
-                <p className="text-lg font-bold">{stats.mailboxes?.ready_to_send || 0}<span className="text-sm font-normal text-gray-400">/{stats.mailboxes?.total || 0}</span></p>
+                <p className="text-lg font-bold">{stats.mailboxes?.ready_to_send || 0}<span className="text-sm font-normal text-gray-500 dark:text-gray-400">/{stats.mailboxes?.total || 0}</span></p>
               </div>
             </div>
             <div className="card flex items-center gap-3">
@@ -1352,7 +1352,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-xs text-gray-500">Active Templates</p>
-                <p className="text-lg font-bold">{stats.templates?.active_count || 0}<span className="text-sm font-normal text-gray-400">/{stats.templates?.total || 0}</span></p>
+                <p className="text-lg font-bold">{stats.templates?.active_count || 0}<span className="text-sm font-normal text-gray-500 dark:text-gray-400">/{stats.templates?.total || 0}</span></p>
               </div>
             </div>
             <div className="card flex items-center gap-3">

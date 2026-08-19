@@ -919,7 +919,7 @@ export default function ClientsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Data Type</label>
-                <select value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Data Type" value={bulkUpdateForm.data_type} onChange={e => setBulkUpdateForm(f => ({ ...f, data_type: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="enriched">Enriched</option>
                   <option value="test">Test</option>
@@ -927,7 +927,7 @@ export default function ClientsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select value={bulkUpdateForm.status} onChange={e => setBulkUpdateForm(f => ({ ...f, status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
+                <select aria-label="Status" value={bulkUpdateForm.status} onChange={e => setBulkUpdateForm(f => ({ ...f, status: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">— No change —</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -935,23 +935,23 @@ export default function ClientsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                <input type="text" value={bulkUpdateForm.industry} onChange={e => setBulkUpdateForm(f => ({ ...f, industry: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Industry" type="text" value={bulkUpdateForm.industry} onChange={e => setBulkUpdateForm(f => ({ ...f, industry: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Company Size</label>
-                <input type="text" value={bulkUpdateForm.company_size} onChange={e => setBulkUpdateForm(f => ({ ...f, company_size: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Company Size" type="text" value={bulkUpdateForm.company_size} onChange={e => setBulkUpdateForm(f => ({ ...f, company_size: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                <input type="text" value={bulkUpdateForm.website} onChange={e => setBulkUpdateForm(f => ({ ...f, website: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Website" type="text" value={bulkUpdateForm.website} onChange={e => setBulkUpdateForm(f => ({ ...f, website: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn URL</label>
-                <input type="text" value={bulkUpdateForm.linkedin_url} onChange={e => setBulkUpdateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="LinkedIn URL" type="text" value={bulkUpdateForm.linkedin_url} onChange={e => setBulkUpdateForm(f => ({ ...f, linkedin_url: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                <input type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
+                <input aria-label="Timezone" type="text" value={bulkUpdateForm.timezone} onChange={e => setBulkUpdateForm(f => ({ ...f, timezone: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Leave blank to skip" />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
