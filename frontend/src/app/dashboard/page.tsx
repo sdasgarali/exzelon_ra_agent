@@ -821,11 +821,11 @@ export default function DashboardPage() {
   })()
 
   const funnelSteps = [
-    { label: 'Leads', value: kpis?.total_leads || 0, color: 'bg-indigo-500' },
-    { label: 'Contacts', value: kpis?.total_contacts || 0, color: 'bg-purple-500' },
-    { label: 'Valid Emails', value: kpis?.total_valid_emails || 0, color: 'bg-cyan-500' },
-    { label: 'Emails Sent', value: kpis?.emails_sent || 0, color: 'bg-orange-500' },
-    { label: 'Replied', value: kpis?.total_replied || 0, color: 'bg-green-500' },
+    { label: 'Leads', value: kpis?.total_leads || 0, color: 'bg-indigo-600' },
+    { label: 'Contacts', value: kpis?.total_contacts || 0, color: 'bg-purple-700' },
+    { label: 'Valid Emails', value: kpis?.total_valid_emails || 0, color: 'bg-cyan-700' },
+    { label: 'Emails Sent', value: kpis?.emails_sent || 0, color: 'bg-orange-700' },
+    { label: 'Replied', value: kpis?.total_replied || 0, color: 'bg-green-700' },
   ]
 
   const leadStatusData = stats?.leads?.by_status
@@ -1261,7 +1261,7 @@ export default function DashboardPage() {
               <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-green-500 rounded-full" style={{ width: `${Math.min(stats?.outreach?.reply_rate || 0, 100)}%` }} />
               </div>
-              <span className="text-sm font-bold text-green-600">{stats?.outreach?.reply_rate || 0}%</span>
+              <span className="text-sm font-bold text-green-700">{stats?.outreach?.reply_rate || 0}%</span>
             </div>
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
               <span className="text-sm text-gray-600">Bounce Rate</span>
@@ -1301,7 +1301,7 @@ export default function DashboardPage() {
           <div className="card">
             <h3 className="text-lg font-semibold mb-4">Contact Validation Breakdown</h3>
             <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
+              <PieChart role="img" aria-label="Contact validation breakdown pie chart" title="Contact validation breakdown" desc="Proportion of contacts by email validation status">
                 <Pie
                   data={validationData}
                   cx="50%"

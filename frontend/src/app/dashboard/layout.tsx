@@ -267,7 +267,7 @@ export default function DashboardLayout({
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebarCollapse}
-              className="hidden lg:flex items-center justify-center w-7 h-7 text-gray-500 dark:text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors group relative"
+              className="hidden lg:flex items-center justify-center w-7 h-7 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md transition-colors group relative"
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
@@ -278,7 +278,7 @@ export default function DashboardLayout({
             {/* Mobile close button */}
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-gray-500 dark:text-gray-400 hover:text-white"
+              className="lg:hidden text-gray-400 hover:text-white"
               aria-label="Close sidebar"
             >
               <X className="w-5 h-5" />
@@ -299,7 +299,7 @@ export default function DashboardLayout({
               ))}
             </select>
           ) : !collapsed ? (
-            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 truncate">
+            <p className="text-gray-400 text-sm mt-1 truncate">
               {user?.tenant?.name || 'Admin Panel'}
             </p>
           ) : null}
@@ -363,7 +363,7 @@ export default function DashboardLayout({
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium truncate">{user?.full_name || user?.email}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
+              <p className="text-xs text-gray-400 capitalize">{user?.role?.replace('_', ' ')}</p>
             </div>
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
           </button>
@@ -389,7 +389,7 @@ export default function DashboardLayout({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-white truncate">{user?.full_name || 'User'}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+            <p className="text-xs text-gray-400 truncate">{user?.email}</p>
             <span className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10px] font-medium bg-primary-600/20 text-primary-400 capitalize">
               {user?.role?.replace('_', ' ')}
             </span>

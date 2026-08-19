@@ -2056,10 +2056,10 @@ export default function LeadsPage() {
       {/* Import Help */}
       <div className="mt-4 p-4 bg-gray-50 rounded-lg">
         <h4 className="text-sm font-medium text-gray-700 mb-2">Import CSV Format:</h4>
-        <p className="text-xs text-gray-500 mb-2">
+        <p className="text-xs text-gray-700 mb-2">
           Required columns: <span className="font-mono bg-gray-200 px-1">Company Name</span>, <span className="font-mono bg-gray-200 px-1">Job Title</span>
         </p>
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-gray-700">
           Optional: <span className="font-mono bg-gray-200 px-1">State</span>, <span className="font-mono bg-gray-200 px-1">Posting Date</span> (YYYY-MM-DD), <span className="font-mono bg-gray-200 px-1">Job Link</span>, <span className="font-mono bg-gray-200 px-1">Source</span>, <span className="font-mono bg-gray-200 px-1">Status</span> (open/hunting/closed_hired/closed_not_hired), <span className="font-mono bg-gray-200 px-1">Salary Min</span>, <span className="font-mono bg-gray-200 px-1">Salary Max</span>
         </p>
       </div>

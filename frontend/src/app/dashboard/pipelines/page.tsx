@@ -699,13 +699,13 @@ export default function PipelinesPage() {
         <h3 className="font-semibold text-blue-800 mb-4">Complete Data Pipeline Workflow</h3>
         <div className="flex items-center justify-between text-sm">
           <div className="flex flex-col items-center">
-            <div className="w-12 h-12 bg-indigo-500 rounded-full flex items-center justify-center text-white font-bold mb-2">1</div>
+            <div className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold mb-2">1</div>
             <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded font-medium">Lead Sourcing</span>
             <span className="text-xs text-gray-500 mt-1">{stats?.leads_sourced || 0} leads</span>
           </div>
           <div className="flex-1 h-1 bg-indigo-200 mx-2"></div>
           <div className="flex flex-col items-center">
-            <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center text-white font-bold mb-2">2</div>
+            <div className="w-12 h-12 bg-purple-700 rounded-full flex items-center justify-center text-white font-bold mb-2">2</div>
             <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded font-medium">Contact Enrichment</span>
             <span className="text-xs text-gray-500 mt-1">{stats?.contacts_enriched || 0} contacts</span>
           </div>
