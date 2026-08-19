@@ -16,10 +16,13 @@ module.exports = {
           300: '#7dd3fc',
           400: '#38bdf8',
           500: '#0ea5e9',
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
+          // Darkened 600/700 for WCAG AA: white-on-primary-600 and text-primary-600
+          // on white now meet 4.5:1 (was #0284c7 ≈ 3.8:1). Scale shifted to keep
+          // hover (700) darker than base (600).
+          600: '#0369a1',
+          700: '#075985',
+          800: '#0c4a6e',
+          900: '#082f45',
         },
         navy: {
           900: '#0a0e27',

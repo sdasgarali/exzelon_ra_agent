@@ -1406,7 +1406,7 @@ export default function SettingsPage() {
                                 className="w-4 h-4"
                               />
                               <span className="text-sm font-medium text-gray-700 flex-1">{category}</span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedInCat === totalInCat ? 'bg-blue-100 text-blue-700' : selectedInCat > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedInCat === totalInCat ? 'bg-blue-100 text-blue-700' : selectedInCat > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>
                                 {selectedInCat}/{totalInCat}
                               </span>
                             </div>
@@ -2567,68 +2567,68 @@ export default function SettingsPage() {
                     <label className="label">Enabled Lead Sources</label>
                     <div className="space-y-2 border rounded-lg p-3 bg-gray-50">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jsearch')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jsearch')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jsearch'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'jsearch') }) } }} className="w-4 h-4"  aria-label="Toggle source jsearch" />
                         <span className="text-sm font-medium">JSearch (LinkedIn, Indeed, Glassdoor)</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Free: 500 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.jsearch_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('theirstack')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'theirstack'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'theirstack') }) } }} className="w-4 h-4"  aria-label="Toggle source theirstack" />
                         <span className="text-sm font-medium">TheirStack (Tech Stack Jobs)</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Free: 100 req/mo | Paid: from $49/mo</span>
                         {jobSourceConfig.theirstack_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('serpapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('serpapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'serpapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'serpapi') }) } }} className="w-4 h-4"  aria-label="Toggle source serpapi" />
                         <span className="text-sm font-medium">SerpAPI (Google Jobs)</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Free: 100 req/mo | Paid: from $50/mo</span>
                         {jobSourceConfig.serpapi_api_key && <span className="text-xs text-green-600">API key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('adzuna')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('adzuna')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'adzuna'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'adzuna') }) } }} className="w-4 h-4"  aria-label="Toggle source adzuna" />
                         <span className="text-sm font-medium">Adzuna (Job Aggregator)</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Free: 250 req/mo | Paid: from $99/mo</span>
                         {jobSourceConfig.adzuna_app_id && jobSourceConfig.adzuna_api_key && <span className="text-xs text-green-600">Credentials configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('searchapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'searchapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'searchapi') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('searchapi')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'searchapi'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'searchapi') }) } }} className="w-4 h-4"  aria-label="Toggle source searchapi" />
                         <span className="text-sm font-medium">SearchAPI.io (Google Jobs)</span>
                         <span className="text-xs text-gray-500">$40/mo</span>
                         {jobSourceConfig.searchapi_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('usajobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'usajobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'usajobs') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('usajobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'usajobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'usajobs') }) } }} className="w-4 h-4"  aria-label="Toggle source usajobs" />
                         <span className="text-sm font-medium">USAJOBS (Federal)</span>
                         <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
                         {jobSourceConfig.usajobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jooble')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jooble'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jooble') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jooble')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jooble'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jooble') }) } }} className="w-4 h-4"  aria-label="Toggle source jooble" />
                         <span className="text-sm font-medium">Jooble (71 Countries)</span>
                         <span className="text-xs text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Free</span>
                         {jobSourceConfig.jooble_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jobdatafeeds')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jobdatafeeds'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jobdatafeeds') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('jobdatafeeds')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'jobdatafeeds'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'jobdatafeeds') }) } }} className="w-4 h-4"  aria-label="Toggle source jobdatafeeds" />
                         <span className="text-sm font-medium">JobDataFeeds (Bulk US)</span>
                         <span className="text-xs text-gray-500">$200-400/mo</span>
                         {jobSourceConfig.jobdatafeeds_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('coresignal')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('coresignal')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'coresignal'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'coresignal') }) } }} className="w-4 h-4"  aria-label="Toggle source coresignal" />
                         <span className="text-sm font-medium">Coresignal (Jobs + Contacts)</span>
                         <span className="text-xs text-gray-500 dark:text-gray-400">Contact-based pricing</span>
                         <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">Premium</span>
                         {jobSourceConfig.coresignal_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('fantastic_jobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'fantastic_jobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'fantastic_jobs') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('fantastic_jobs')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'fantastic_jobs'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter((s: string) => s !== 'fantastic_jobs') }) } }} className="w-4 h-4"  aria-label="Toggle source fantastic_jobs" />
                         <span className="text-sm font-medium">Fantastic.jobs (LinkedIn + Firmographics)</span>
                         <span className="text-xs text-gray-500">from $95/mo</span>
                         {jobSourceConfig.fantastic_jobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('mock')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') }) } }} className="w-4 h-4" />
+                        <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('mock')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') }) } }} className="w-4 h-4"  aria-label="Toggle source mock" />
                         <span className="text-sm font-medium">Mock (Test Data)</span>
                         {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
                       </label>
@@ -3137,42 +3137,42 @@ export default function SettingsPage() {
                 <label className="label">Enabled Providers</label>
                 <div className="space-y-2 border rounded-lg p-3 bg-gray-50">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('mock')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'mock'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'mock') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('mock')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'mock'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'mock') }) } }} className="w-4 h-4"  aria-label="Toggle source mock" />
                     <span className="text-sm font-medium">Mock (Test Data)</span>
                     {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('apollo')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'apollo'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'apollo') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('apollo')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'apollo'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'apollo') }) } }} className="w-4 h-4"  aria-label="Toggle source apollo" />
                     <span className="text-sm font-medium">Apollo.io</span>
                     {contactConfig.apollo_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('seamless')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'seamless'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'seamless') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('seamless')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'seamless'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'seamless') }) } }} className="w-4 h-4"  aria-label="Toggle source seamless" />
                     <span className="text-sm font-medium">Seamless.ai</span>
                     {contactConfig.seamless_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('hunter_contact')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'hunter_contact'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'hunter_contact') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('hunter_contact')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'hunter_contact'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'hunter_contact') }) } }} className="w-4 h-4"  aria-label="Toggle source hunter_contact" />
                     <span className="text-sm font-medium">Hunter.io (Contact Finder)</span>
                     {contactConfig.hunter_contact_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('snovio')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'snovio'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'snovio') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('snovio')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'snovio'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'snovio') }) } }} className="w-4 h-4"  aria-label="Toggle source snovio" />
                     <span className="text-sm font-medium">Snov.io</span>
                     {contactConfig.snovio_client_id && contactConfig.snovio_client_secret && <span className="text-xs text-green-600">Credentials configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('rocketreach')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'rocketreach'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'rocketreach') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('rocketreach')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'rocketreach'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'rocketreach') }) } }} className="w-4 h-4"  aria-label="Toggle source rocketreach" />
                     <span className="text-sm font-medium">RocketReach</span>
                     {contactConfig.rocketreach_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('pdl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'pdl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'pdl') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('pdl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'pdl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'pdl') }) } }} className="w-4 h-4"  aria-label="Toggle source pdl" />
                     <span className="text-sm font-medium">People Data Labs</span>
                     {contactConfig.pdl_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={contactConfig.contact_providers.includes('proxycurl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'proxycurl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'proxycurl') }) } }} className="w-4 h-4" />
+                    <input type="checkbox" checked={contactConfig.contact_providers.includes('proxycurl')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, contact_providers: [...contactConfig.contact_providers, 'proxycurl'] }) } else { setContactConfig({ ...contactConfig, contact_providers: contactConfig.contact_providers.filter(s => s !== 'proxycurl') }) } }} className="w-4 h-4"  aria-label="Toggle source proxycurl" />
                     <span className="text-sm font-medium">Proxycurl (LinkedIn)</span>
                     {contactConfig.proxycurl_api_key && <span className="text-xs text-green-600">API key configured</span>}
                   </label>
@@ -3315,12 +3315,12 @@ export default function SettingsPage() {
               <p className="text-xs text-gray-500 mb-3">Enrich company data with firmographics, tech stack, and corporate records. These providers supplement your lead data.</p>
               <div className="space-y-2 border rounded-lg p-3 bg-gray-50 mb-4">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('clearbit')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'clearbit'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'clearbit') }) } }} className="w-4 h-4" />
+                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('clearbit')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'clearbit'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'clearbit') }) } }} className="w-4 h-4"  aria-label="Toggle source clearbit" />
                   <span className="text-sm font-medium">Clearbit (Breeze)</span>
                   {contactConfig.clearbit_api_key && <span className="text-xs text-green-600">API key configured</span>}
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('opencorporates')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'opencorporates'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'opencorporates') }) } }} className="w-4 h-4" />
+                  <input type="checkbox" checked={contactConfig.company_enrichment_providers.includes('opencorporates')} onChange={(e) => { if (e.target.checked) { setContactConfig({ ...contactConfig, company_enrichment_providers: [...contactConfig.company_enrichment_providers, 'opencorporates'] }) } else { setContactConfig({ ...contactConfig, company_enrichment_providers: contactConfig.company_enrichment_providers.filter(s => s !== 'opencorporates') }) } }} className="w-4 h-4"  aria-label="Toggle source opencorporates" />
                   <span className="text-sm font-medium">OpenCorporates</span>
                   {contactConfig.opencorporates_api_key && <span className="text-xs text-green-600">API key configured</span>}
                 </label>
@@ -3977,6 +3977,7 @@ export default function SettingsPage() {
                     type="checkbox"
                     checked={businessRules.unsubscribe_footer}
                     onChange={(e) => setBusinessRules({ ...businessRules, unsubscribe_footer: e.target.checked })}
+                    aria-label="Toggle option"
                     className="w-4 h-4"
                   />
                   <span className="text-sm">Include unsubscribe link (CAN-SPAM compliance)</span>
@@ -4625,6 +4626,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={sourceTuningConfig.lead_sourcing_drop_expired_postings}
                   onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_drop_expired_postings: e.target.checked })}
+                  aria-label="Toggle option"
                   className="w-4 h-4"
                 />
                 <span className="text-sm font-medium">Drop expired postings (source-provided expiration date in the past)</span>
@@ -4635,6 +4637,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={sourceTuningConfig.lead_sourcing_drop_confidential}
                   onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_drop_confidential: e.target.checked })}
+                  aria-label="Toggle option"
                   className="w-4 h-4"
                 />
                 <span className="text-sm font-medium">Drop confidential / blank employer postings</span>
@@ -4644,6 +4647,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={sourceTuningConfig.lead_sourcing_enrich_company_at_source}
                   onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_enrich_company_at_source: e.target.checked })}
+                  aria-label="Toggle option"
                   className="w-4 h-4"
                 />
                 <span className="text-sm font-medium">Fill missing industry/size via AI at sourcing (cached)</span>
@@ -4656,6 +4660,7 @@ export default function SettingsPage() {
                     type="checkbox"
                     checked={sourceTuningConfig.lead_sourcing_scrape_applicants}
                     onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_scrape_applicants: e.target.checked })}
+                    aria-label="Toggle option"
                     className="w-4 h-4"
                   />
                   <span className="text-sm font-medium">Drop over-competed jobs (scrape LinkedIn/Indeed applicant counts)</span>
@@ -4737,6 +4742,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={sourceTuningConfig.location_diversification}
                   onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, location_diversification: e.target.checked })}
+                  aria-label="Toggle option"
                   className="w-4 h-4"
                 />
                 <span className="text-sm font-medium">Search per state instead of nationwide</span>
@@ -4878,7 +4884,7 @@ export default function SettingsPage() {
                       {isEnabled ? (
                         <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Enabled</span>
                       ) : (
-                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Disabled</span>
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">Disabled</span>
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mb-3">{adapter.desc}</p>
