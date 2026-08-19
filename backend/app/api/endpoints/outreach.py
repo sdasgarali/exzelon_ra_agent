@@ -205,7 +205,7 @@ async def delete_outreach_event(
 async def run_mailmerge_export(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(require_tenant_id)
 ):
     """Generate mail merge export package."""
@@ -229,7 +229,7 @@ async def send_emails(
     limit: int = Query(30, description="Max emails to send"),
     preview_mode: bool = Query(False, description="If true, generate drafts instead of sending"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(require_tenant_id)
 ):
     """Send emails programmatically (respects daily limits and cooldown)."""
@@ -254,7 +254,7 @@ async def send_emails(
 async def check_replies(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(require_tenant_id)
 ):
     """Manually trigger reply checking for all mailboxes."""

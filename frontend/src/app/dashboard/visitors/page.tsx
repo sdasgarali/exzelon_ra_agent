@@ -72,7 +72,16 @@ export default function VisitorsPage() {
     setStatsLoading(true)
     try {
       const { data } = await api.get('/visitors/stats')
-      setStats(data)
+      // Map the API shape (total_events/unique_visitors/top_companies/...) onto the
+      // fields this page renders. Guards prevent a crash if any field is missing.
+      setStats({
+        total_visitors: data?.unique_visitors ?? data?.total_visitors ?? 0,
+        unique_companies: Array.isArray(data?.top_companies)
+          ? data.top_companies.length
+          : (data?.unique_companies ?? 0),
+        page_views: data?.total_events ?? data?.page_views ?? 0,
+        conversion_rate: data?.conversion_rate ?? 0,
+      })
     } catch {
       // Endpoint may not exist yet - use defaults
       setStats({ total_visitors: 0, unique_companies: 0, page_views: 0, conversion_rate: 0 })
@@ -136,25 +145,25 @@ export default function VisitorsPage() {
               <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
                 <Eye className="w-4 h-4 text-pink-500" /> Total Visitors
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.total_visitors.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(stats.total_visitors ?? 0).toLocaleString()}</p>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
                 <Building className="w-4 h-4 text-blue-500" /> Unique Companies
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.unique_companies.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(stats.unique_companies ?? 0).toLocaleString()}</p>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
                 <FileText className="w-4 h-4 text-indigo-500" /> Page Views
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.page_views.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(stats.page_views ?? 0).toLocaleString()}</p>
             </div>
             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-sm mb-1">
                 <TrendingUp className="w-4 h-4 text-green-500" /> Conversion Rate
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.conversion_rate.toFixed(1)}%</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(stats.conversion_rate ?? 0).toFixed(1)}%</p>
             </div>
           </>
         )}

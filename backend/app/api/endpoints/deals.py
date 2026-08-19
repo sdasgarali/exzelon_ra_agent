@@ -531,7 +531,7 @@ def create_deal(
     return _deal_to_dict(deal, db)
 
 
-@router.get("/{deal_id}")
+@router.get("/{deal_id:int}")
 def get_deal(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -601,7 +601,7 @@ def get_deal(
     return result
 
 
-@router.put("/{deal_id}")
+@router.put("/{deal_id:int}")
 def update_deal(
     deal_id: int,
     data: DealUpdate,
@@ -673,7 +673,7 @@ def update_deal(
     return _deal_to_dict(deal, db)
 
 
-@router.delete("/{deal_id}")
+@router.delete("/{deal_id:int}")
 def archive_deal(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -705,7 +705,7 @@ def _get_deal_scoped(db: Session, deal_id: int, tenant_id: Optional[int]) -> Dea
     return deal
 
 
-@router.post("/{deal_id}/claim")
+@router.post("/{deal_id:int}/claim")
 def claim_deal(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -713,9 +713,10 @@ def claim_deal(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """A BDM/Recruiter claims an unclaimed deal (self-pull from the queue)."""
-    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    # Authorize before loading the deal (no existence oracle for unauthorized roles).
     if effective_base_role(user, None, db) not in ("bdm", "recruiter"):
         raise HTTPException(status_code=403, detail="Only BDMs and Recruiters can claim deals")
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
     if deal.claimed_by_user_id is not None:
         if deal.claimed_by_user_id == user.user_id:
             return _deal_to_dict(deal, db)  # idempotent — already mine
@@ -731,7 +732,7 @@ def claim_deal(
     return _deal_to_dict(deal, db)
 
 
-@router.post("/{deal_id}/unclaim")
+@router.post("/{deal_id:int}/unclaim")
 def unclaim_deal(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -756,7 +757,7 @@ def unclaim_deal(
     return _deal_to_dict(deal, db)
 
 
-@router.post("/{deal_id}/assign")
+@router.post("/{deal_id:int}/assign")
 def assign_deal(
     deal_id: int,
     body: AssignRequest,
@@ -770,12 +771,13 @@ def assign_deal(
     - Recruiter: hand the deal off to a BDM (workflow: recruiter → BDM). Cannot unassign.
     - BDM/others: not allowed (they receive assignments).
     """
-    deal = _get_deal_scoped(db, deal_id, tenant_id)
+    # Authorize before loading the deal (no existence oracle for unauthorized roles).
     base = effective_base_role(user, None, db)
     is_admin = base in ("admin", "super_admin")
     is_recruiter = base == "recruiter"
     if not (is_admin or is_recruiter):
         raise HTTPException(status_code=403, detail="Only admins or recruiters can assign deals")
+    deal = _get_deal_scoped(db, deal_id, tenant_id)
 
     target = None
     if body.user_id is not None:
@@ -818,7 +820,7 @@ def _require_rep_or_admin(db: Session, user: User):
         raise HTTPException(status_code=403, detail="Not allowed")
 
 
-@router.get("/{deal_id}/candidates")
+@router.get("/{deal_id:int}/candidates")
 def list_candidates(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -834,7 +836,7 @@ def list_candidates(
     return [_candidate_to_dict(c, users_by_id) for c in rows]
 
 
-@router.post("/{deal_id}/candidates", status_code=201)
+@router.post("/{deal_id:int}/candidates", status_code=201)
 def add_candidate(
     deal_id: int,
     body: CandidateCreate,
@@ -862,7 +864,7 @@ def add_candidate(
     return _candidate_to_dict(c, {user.user_id: user})
 
 
-@router.put("/{deal_id}/candidates/{candidate_id}")
+@router.put("/{deal_id:int}/candidates/{candidate_id:int}")
 def update_candidate(
     deal_id: int,
     candidate_id: int,
@@ -896,7 +898,7 @@ def update_candidate(
     return _candidate_to_dict(c)
 
 
-@router.delete("/{deal_id}/candidates/{candidate_id}", status_code=204)
+@router.delete("/{deal_id:int}/candidates/{candidate_id:int}", status_code=204)
 def delete_candidate(
     deal_id: int,
     candidate_id: int,
@@ -923,7 +925,7 @@ def _clip(txt: Optional[str], n: int = 4000) -> Optional[str]:
     return txt if len(txt) <= n else txt[:n] + "…"
 
 
-@router.get("/{deal_id}/messages")
+@router.get("/{deal_id:int}/messages")
 def deal_messages(
     deal_id: int,
     db: Session = Depends(get_db),
@@ -1041,7 +1043,7 @@ def search_clients_for_deal(
 
 # ─── Activities ────────────────────────────────────────────────────
 
-@router.post("/{deal_id}/activities")
+@router.post("/{deal_id:int}/activities")
 def add_activity(
     deal_id: int,
     data: ActivityCreate,

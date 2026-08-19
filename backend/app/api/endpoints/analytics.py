@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+from sqlalchemy import func
 from typing import Optional
 from pydantic import BaseModel, field_validator
 
@@ -501,47 +501,37 @@ def engagement_heatmap(
     """Aggregate opens/replies by hour-of-day and day-of-week for heatmap visualization."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    # Query OutreachEvent for sent emails within the period
-    base_q = db.query(OutreachEvent).filter(
-        OutreachEvent.status == OutreachStatus.SENT,
-        OutreachEvent.sent_at >= cutoff,
-    )
-    base_q = tenant_filter(base_q, OutreachEvent, tenant_id)
+    # Bucket reply/send events by (day-of-week, hour) in Python for cross-dialect
+    # safety. EXTRACT('dow', ...) is PostgreSQL-only; MySQL (prod) and SQLite (tests)
+    # do not support it and previously raised a 500 on this endpoint.
+    def _dow(dt):
+        # datetime.weekday(): Mon=0..Sun=6  ->  Sun=0..Sat=6 (matches matrix below)
+        return (dt.weekday() + 1) % 7
 
-    # Group by day-of-week (0=Sunday) and hour for replies
-    reply_rows = db.query(
-        extract('dow', OutreachEvent.reply_detected_at).label("dow"),
-        extract('hour', OutreachEvent.reply_detected_at).label("hour"),
-        func.count(OutreachEvent.event_id).label("count"),
-    ).filter(
+    reply_q = db.query(OutreachEvent.reply_detected_at).filter(
         OutreachEvent.reply_detected_at.isnot(None),
         OutreachEvent.reply_detected_at >= cutoff,
     )
-    reply_rows = tenant_filter(reply_rows, OutreachEvent, tenant_id)
-    reply_rows = reply_rows.group_by("dow", "hour").all()
+    reply_q = tenant_filter(reply_q, OutreachEvent, tenant_id)
+    reply_map = {}
+    for (ts,) in reply_q.all():
+        if ts is None:
+            continue
+        key = (_dow(ts), ts.hour)
+        reply_map[key] = reply_map.get(key, 0) + 1
 
-    # Group by day-of-week and hour for sends (proxy for opens without dedicated tracking)
-    send_rows = db.query(
-        extract('dow', OutreachEvent.sent_at).label("dow"),
-        extract('hour', OutreachEvent.sent_at).label("hour"),
-        func.count(OutreachEvent.event_id).label("count"),
-    ).filter(
+    # Sends are a proxy for opens (no dedicated open tracking).
+    send_q = db.query(OutreachEvent.sent_at).filter(
         OutreachEvent.status == OutreachStatus.SENT,
         OutreachEvent.sent_at >= cutoff,
     )
-    send_rows = tenant_filter(send_rows, OutreachEvent, tenant_id)
-    send_rows = send_rows.group_by("dow", "hour").all()
-
-    # Build lookup dicts
-    reply_map = {}
-    for row in reply_rows:
-        key = (int(row.dow or 0), int(row.hour or 0))
-        reply_map[key] = int(row.count or 0)
-
+    send_q = tenant_filter(send_q, OutreachEvent, tenant_id)
     send_map = {}
-    for row in send_rows:
-        key = (int(row.dow or 0), int(row.hour or 0))
-        send_map[key] = int(row.count or 0)
+    for (ts,) in send_q.all():
+        if ts is None:
+            continue
+        key = (_dow(ts), ts.hour)
+        send_map[key] = send_map.get(key, 0) + 1
 
     # Build full matrix: day 0-6 (Sun-Sat), hour 0-23
     matrix = []

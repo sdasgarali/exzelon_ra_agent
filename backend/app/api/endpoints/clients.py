@@ -397,7 +397,7 @@ async def bulk_delete_clients(
 async def bulk_enrich(
     request: BulkClientIdsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Enrich multiple clients with data aggregated from leads."""
@@ -471,7 +471,7 @@ async def bulk_update_clients(
 async def enrich_single_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Enrich a single client with data aggregated from leads."""
@@ -511,7 +511,7 @@ async def get_client(
 async def create_client(
     client_in: ClientCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new client."""
@@ -543,7 +543,7 @@ async def update_client(
     client_id: int,
     client_in: ClientUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update client."""
@@ -575,7 +575,7 @@ async def update_client(
 async def delete_client(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive client (soft delete)."""
@@ -602,7 +602,7 @@ async def delete_client(
 async def refresh_client_category(
     client_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Refresh client category based on current posting data."""

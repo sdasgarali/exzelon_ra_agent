@@ -565,7 +565,7 @@ async def get_contact(
 async def create_contact(
     contact_in: ContactCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new contact."""
@@ -616,7 +616,7 @@ async def update_contact(
     contact_id: int,
     contact_in: ContactUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update contact."""
@@ -647,7 +647,7 @@ async def update_contact(
 async def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Archive contact (soft delete)."""

@@ -63,7 +63,9 @@ class TestEmailVerificationService:
         db_session.add(user)
         db_session.commit()
 
-        with patch("app.services.email_verification._send_email") as mock_send:
+        # send_verification_email now dispatches via system_mailer.send_system_email
+        # (imported at call-time inside the function), so patch it at the source.
+        with patch("app.services.system_mailer.send_system_email") as mock_send:
             mock_send.return_value = True
             result = send_verification_email(user, db_session)
             assert result is True

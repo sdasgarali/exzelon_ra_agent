@@ -150,7 +150,13 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                     results["processed"] += 1
                     continue
             except Exception as e_idem:
-                logger.warning("Idempotency check failed, proceeding", error=str(e_idem))
+                # Fail CLOSED: if we cannot verify this contact wasn't already
+                # processed, skip it this cycle rather than risk a duplicate send.
+                # It will be retried on the next run once the DB is healthy.
+                logger.warning("Idempotency check failed; skipping to avoid duplicate send", error=str(e_idem))
+                results["skipped"] += 1
+                results["processed"] += 1
+                continue
 
             # --- Safety: smart pause on reply ---
             try:
