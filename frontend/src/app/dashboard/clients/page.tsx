@@ -384,7 +384,7 @@ export default function ClientsPage() {
         <div className="text-sm text-gray-500">
           Showing {clients.length > 0 ? ((page - 1) * pageSize) + 1 : 0} to {Math.min(page * pageSize, total)} of {total} results
         </div>
-        <select
+        <select aria-label="Filter by option"
           value={pageSize}
           onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
           className="text-sm border rounded px-2 py-1"
@@ -516,7 +516,7 @@ export default function ClientsPage() {
             />
           </div>
 
-          <select
+          <select aria-label="Filter by Statuses"
             value={filterStatus}
             onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
             className="input w-full sm:w-40"
@@ -527,7 +527,7 @@ export default function ClientsPage() {
             ))}
           </select>
 
-          <select
+          <select aria-label="Filter by Categories"
             value={filterCategory}
             onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
             className="input w-full sm:w-40"
@@ -560,7 +560,7 @@ export default function ClientsPage() {
           <SizeFilter value={sizeFilter} onChange={(v) => { setSizeFilter(v); setPage(1); }} />
 
           {filterOptions.location_states.length > 0 && (
-            <select
+            <select aria-label="Filter by States"
               value={filterState}
               onChange={(e) => { setFilterState(e.target.value); setPage(1); }}
               className="input w-36"
@@ -572,7 +572,7 @@ export default function ClientsPage() {
             </select>
           )}
 
-          <select
+          <select aria-label="Filter by Enrichment"
             value={filterEnrichment}
             onChange={(e) => { setFilterEnrichment(e.target.value); setPage(1); }}
             className="input w-full sm:w-44"

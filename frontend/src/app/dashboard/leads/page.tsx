@@ -1355,7 +1355,7 @@ export default function LeadsPage() {
           </div>
 
           {/* Quick Filters */}
-          <select
+          <select aria-label="Filter by Statuses"
             value={filterStatus}
             onChange={(e) => { setFilterStatus(e.target.value); setPage(1); }}
             className="input w-full sm:w-40"
@@ -1366,7 +1366,7 @@ export default function LeadsPage() {
             ))}
           </select>
 
-          <select
+          <select aria-label="Filter by Sources"
             value={filterSource}
             onChange={(e) => { setFilterSource(e.target.value); setPage(1); }}
             className="input w-36"
@@ -2073,7 +2073,7 @@ export default function LeadsPage() {
             </div>
             <div className="px-6 py-4">
               <p className="text-gray-700 mb-3">Select the new status for all selected leads:</p>
-              <select
+              <select aria-label="Filter by option"
                 value={bulkStatusValue}
                 onChange={(e) => setBulkStatusValue(e.target.value)}
                 className="input w-full"
