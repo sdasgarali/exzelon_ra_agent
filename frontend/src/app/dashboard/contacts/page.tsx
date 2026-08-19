@@ -620,7 +620,7 @@ export default function ContactsPage() {
           <div className="flex-1 min-w-64">
             <input type="text" placeholder="Search name, email, or company..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="input w-full" />
           </div>
-          <select value={filterPriority} onChange={(e) => { setFilterPriority(e.target.value); setPage(1); }} className="input w-full sm:w-44">
+          <select aria-label="Filter by Priorities" value={filterPriority} onChange={(e) => { setFilterPriority(e.target.value); setPage(1); }} className="input w-full sm:w-44">
             <option value="">All Priorities</option>
             <option value="p1_job_poster">P1 - Job Poster</option>
             <option value="p2_hr_ta_recruiter">P2 - HR/Recruiter</option>
@@ -628,14 +628,14 @@ export default function ContactsPage() {
             <option value="p4_ops_leader">P4 - Ops Leader</option>
             <option value="p5_functional_manager">P5 - Func. Mgr</option>
           </select>
-          <select value={filterValidation} onChange={(e) => { setFilterValidation(e.target.value); setPage(1); }} className="input w-full sm:w-40">
+          <select aria-label="Filter by Validation" value={filterValidation} onChange={(e) => { setFilterValidation(e.target.value); setPage(1); }} className="input w-full sm:w-40">
             <option value="">All Validation</option>
             <option value="valid">Valid</option>
             <option value="invalid">Invalid</option>
             <option value="pending">Pending</option>
             <option value="unknown">Unknown</option>
           </select>
-          <select value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-full sm:w-44">
+          <select aria-label="Filter by Sources" value={filterSource} onChange={(e) => { setFilterSource(e.target.value); setPage(1); }} className="input w-full sm:w-44">
             <option value="">All Sources</option>
             <option value="mock">Mock</option>
             <option value="apollo">Apollo</option>
@@ -646,13 +646,13 @@ export default function ContactsPage() {
             <option value="pdl">People Data Labs</option>
             <option value="proxycurl">Proxycurl</option>
           </select>
-          <select value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-full sm:w-40">
+          <select aria-label="Filter by Status" value={filterOutreachStatus} onChange={(e) => { setFilterOutreachStatus(e.target.value); setPage(1); }} className="input w-full sm:w-40">
             <option value="">All Status</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="unsubscribed">Unsubscribed</option>
           </select>
-          <select value={filterDataType} onChange={(e) => { setFilterDataType(e.target.value); setPage(1); }} className="input w-full sm:w-40">
+          <select aria-label="Filter by Data Types" value={filterDataType} onChange={(e) => { setFilterDataType(e.target.value); setPage(1); }} className="input w-full sm:w-40">
             <option value="">All Data Types</option>
             <option value="enriched">Enriched</option>
             <option value="test">Test</option>
@@ -677,7 +677,7 @@ export default function ContactsPage() {
               onAfterChange={() => setPage(1)}
             />
           </div>
-          <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="input w-36">
+          <select aria-label="Filter by option" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="input w-36">
             <option value="10">10 per page</option>
             <option value="25">25 per page</option>
             <option value="50">50 per page</option>

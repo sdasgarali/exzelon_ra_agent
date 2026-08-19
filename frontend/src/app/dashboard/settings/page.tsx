@@ -1874,6 +1874,7 @@ export default function SettingsPage() {
                             type="checkbox"
                             checked={isActive}
                             onChange={() => {}}
+                            aria-label="Toggle option"
                             className="w-3 h-3 cursor-pointer"
                           />
                           <span>{keyword}</span>
@@ -1997,6 +1998,7 @@ export default function SettingsPage() {
                             type="checkbox"
                             checked={isActive}
                             onChange={() => {}}
+                            aria-label="Toggle option"
                             className="w-3 h-3 cursor-pointer"
                           />
                           <span>{keyword}</span>

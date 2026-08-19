@@ -1677,7 +1677,7 @@ export default function CampaignsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search campaigns..." className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm" />
           </div>
-          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm">
+          <select aria-label="Filter by Status" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm">
             <option value="">All Status</option>
             <option value="draft">Draft</option>
             <option value="active">Active</option>
@@ -2352,7 +2352,7 @@ export default function CampaignsPage() {
                         placeholder="Search by job title, company, or contact email..."
                       />
                     </div>
-                    <select
+                    <select aria-label="Filter by option"
                       value={availableLeadsDays}
                       onChange={e => { setAvailableLeadsDays(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
                       className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
@@ -2365,7 +2365,7 @@ export default function CampaignsPage() {
                       <option value={180}>Last 6 months</option>
                       <option value={365}>Last year</option>
                     </select>
-                    <select
+                    <select aria-label="Filter by option"
                       value={availableLeadsPageSize}
                       onChange={e => { setAvailableLeadsPageSize(Number(e.target.value)); setAvailableLeadsPage(1); setSelectedCreateLeadIds(new Set()) }}
                       className="px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
@@ -2382,7 +2382,7 @@ export default function CampaignsPage() {
 
                   {/* Filters Row */}
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <select
+                    <select aria-label="Filter by Statuses"
                       value={alFilterStatus}
                       onChange={e => { setAlFilterStatus(e.target.value); setAvailableLeadsPage(1) }}
                       className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterStatus ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
@@ -2390,7 +2390,7 @@ export default function CampaignsPage() {
                       <option value="">All Statuses</option>
                       {LEAD_STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
-                    <select
+                    <select aria-label="Filter by Sources"
                       value={alFilterSource}
                       onChange={e => { setAlFilterSource(e.target.value); setAvailableLeadsPage(1) }}
                       className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterSource ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
@@ -2398,7 +2398,7 @@ export default function CampaignsPage() {
                       <option value="">All Sources</option>
                       {LEAD_SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <select
+                    <select aria-label="Filter by Types"
                       value={alFilterEmploymentType}
                       onChange={e => { setAlFilterEmploymentType(e.target.value); setAvailableLeadsPage(1) }}
                       className={`px-2 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 ${alFilterEmploymentType ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/30' : ''}`}
@@ -3020,7 +3020,7 @@ export default function CampaignsPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Sending Speed</label>
                 {overviewEditing ? (
-                  <select
+                  <select aria-label="Filter by option"
                     value={overviewForm.sending_speed}
                     onChange={e => setOverviewForm(f => ({ ...f, sending_speed: e.target.value }))}
                     className="w-full px-3 py-1.5 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 capitalize"
@@ -4484,7 +4484,7 @@ export default function CampaignsPage() {
       {detailTab === 'activity' && (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <select
+            <select aria-label="Filter by option"
               value={activityFilter}
               onChange={e => { setActivityFilter(e.target.value); selectedCampaign && fetchActivity(selectedCampaign.campaign_id, e.target.value) }}
               className="px-3 py-1.5 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600"
@@ -5280,7 +5280,7 @@ export default function CampaignsPage() {
                       <div>
                         <label className="block text-sm font-medium mb-1 dark:text-gray-200">Template</label>
                         <div className="flex gap-2">
-                          <select
+                          <select aria-label="Filter by option"
                             value={selectedTemplateId || ''}
                             onChange={e => {
                               const id = e.target.value ? Number(e.target.value) : null

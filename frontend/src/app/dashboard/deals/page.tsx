@@ -325,7 +325,7 @@ export default function DealsPage() {
         </button>
       )}
       {canAssign && reps.length > 0 && (
-        <select
+        <select aria-label="Filter by option"
           value={d.owner?.id ?? ''}
           onChange={e => doAssign(d.deal_id, e.target.value ? Number(e.target.value) : null)}
           disabled={actioning === d.deal_id}
@@ -610,7 +610,7 @@ export default function DealsPage() {
                   {/* Status (stage) */}
                   <div>
                     <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">Status</span>
-                    <select value={selectedDeal.stage_id} onChange={e => handleUpdateDeal(selectedDeal.deal_id, { stage_id: parseInt(e.target.value) })} className="w-full mt-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                    <select aria-label="Filter by option" value={selectedDeal.stage_id} onChange={e => handleUpdateDeal(selectedDeal.deal_id, { stage_id: parseInt(e.target.value) })} className="w-full mt-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
                       {stages.map(s => <option key={s.stage_id} value={s.stage_id}>{s.name}</option>)}
                     </select>
                   </div>
@@ -700,7 +700,7 @@ export default function DealsPage() {
                           <button onClick={() => removeCandidate(c.candidate_id)} className="text-gray-300 hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
                         </div>
                         <div className="mt-2">
-                          <select value={c.status} onChange={e => setCandidateStatus(c.candidate_id, e.target.value)}
+                          <select aria-label="Filter by option" value={c.status} onChange={e => setCandidateStatus(c.candidate_id, e.target.value)}
                             className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer ${candStatusMeta(c.status).color}`}>
                             {CAND_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                           </select>
@@ -763,7 +763,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   return (
     <div>
       <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+      <select aria-label="Filter by option" value={value} onChange={e => onChange(e.target.value)} className="px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
@@ -775,7 +775,7 @@ function NumericFilter({ label, op, setOp, v, setV, v2, setV2 }: { label: string
     <div>
       <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
       <div className="flex items-center gap-1">
-        <select value={op} onChange={e => setOp(e.target.value)} className="px-1.5 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+        <select aria-label="Filter by option" value={op} onChange={e => setOp(e.target.value)} className="px-1.5 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600">
           {NUMERIC_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         {op && <input type="number" value={v} onChange={e => setV(e.target.value)} placeholder="0" className="w-20 px-2 py-1.5 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600" />}
