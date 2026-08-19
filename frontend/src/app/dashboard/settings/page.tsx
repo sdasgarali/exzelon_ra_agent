@@ -1404,6 +1404,7 @@ export default function SettingsPage() {
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 className="w-4 h-4"
+                                aria-label={`Select all ${category} job titles`}
                               />
                               <span className="text-sm font-medium text-gray-700 flex-1">{category}</span>
                               <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedInCat === totalInCat ? 'bg-blue-100 text-blue-700' : selectedInCat > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>
@@ -1759,7 +1760,7 @@ export default function SettingsPage() {
                   min="1"
                   disabled={jobSourceConfig.company_size_no_preference}
                 />
-                <p className="text-xs text-green-600 mt-1">Companies with up to {jobSourceConfig.company_size_priority_1_max} employees</p>
+                <p className="text-xs text-green-700 mt-1">Companies with up to {jobSourceConfig.company_size_priority_1_max} employees</p>
               </div>
               <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <h4 className="font-medium text-yellow-700 mb-2">Priority 2 (Secondary)</h4>
@@ -1781,7 +1782,7 @@ export default function SettingsPage() {
                   min="1"
                   disabled={jobSourceConfig.company_size_no_preference}
                 />
-                <p className="text-xs text-yellow-600 mt-1">{jobSourceConfig.company_size_priority_2_min} - {jobSourceConfig.company_size_priority_2_max} employees</p>
+                <p className="text-xs text-yellow-700 mt-1">{jobSourceConfig.company_size_priority_2_min} - {jobSourceConfig.company_size_priority_2_max} employees</p>
               </div>
               <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
                 <h4 className="font-medium text-gray-700 mb-2">Priority 3 (Low)</h4>
@@ -5128,11 +5129,11 @@ export default function SettingsPage() {
             <div className="text-gray-600 mt-1">{contactConfig.contact_providers.join(", ") || "none"}</div>
           </div>
           <div className="bg-white p-3 rounded-lg border-l-4 border-cyan-500">
-            <div className="font-semibold text-cyan-600">4. Validation</div>
+            <div className="font-semibold text-cyan-700">4. Validation</div>
             <div className="text-gray-600 mt-1">{validationConfig.email_validation_provider}</div>
           </div>
           <div className="bg-white p-3 rounded-lg border-l-4 border-orange-500">
-            <div className="font-semibold text-orange-600">5. Outreach</div>
+            <div className="font-semibold text-orange-700">5. Outreach</div>
             <div className="text-gray-600 mt-1">{outreachConfig.email_send_mode}</div>
           </div>
         </div>
