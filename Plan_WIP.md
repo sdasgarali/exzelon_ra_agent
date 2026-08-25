@@ -18,12 +18,18 @@
 > (isolation regression suite) → fix leaks ELR-001..006 → billing safety ELR-008..010 →
 > email compliance ELR-012/014/013 → Sentry+DR ELR-017/018 → ELR-019 cleanup.
 
-## Immediate TODO
-- [ ] Get user sign-off on `Master_Plan_Enterprise_Launch.md` ticket scope/priorities
-- [ ] ELR-011 — billing/plan-limit test scaffold + conftest starter/professional fixtures
-- [ ] ELR-007 — tests/security/test_tenant_isolation.py (two-tenant fixture)
-- [ ] ELR-001..006 — fix 4 confirmed cross-tenant leaks + require_tenant_id on writes
-- [ ] ELR-008..010 — Stripe webhook idempotency, credit enforcement, invoice seq integrity
+## Phase 1 progress (branch feature/elr-phase1-launch-blockers)
+- [x] ELR-007 — tests/security/test_tenant_isolation.py (5 two-tenant tests) — commit f511bc1
+- [x] ELR-001..004,006 — cross-tenant read leaks fixed + regression tests — f511bc1
+- [x] ELR-005a — ensure_tenant() write-guard on 17 CRUD files (28 sites) — f511bc1
+- [x] conftest dual get_db override fix; 2 tests updated for impersonation — f511bc1
+- [x] Docs: readiness report + master plan — commit a95790a
+- [ ] ELR-005b — email_preview/integrations/leads (webhook/pipeline `tenant_id or 1`, per-site review)
+- [ ] ELR-011 — billing/plan-limit test scaffold + conftest starter/professional fixtures (do BEFORE 008-010)
+- [ ] ELR-008 — Stripe webhook idempotency (processed_stripe_events table) + amount/tenant verify
+- [ ] ELR-009 — atomic credit-budget enforcement at paid choke-points (behind per-tenant flag)
+- [ ] ELR-010 — invoice-number sequence integrity (per-year seq + SELECT FOR UPDATE)
+- [ ] ELR-012..016 (email compliance), ELR-017/018 (Sentry + backups/DR), ELR-019 cleanup
 
 ## Blockers / Notes
 - ELR-013 (DKIM signing) is blocked on publishing the 10 pending GoDaddy DKIM DNS records
