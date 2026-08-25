@@ -37,6 +37,10 @@ def send_sms(
     if not getattr(settings, "TWILIO_ACCOUNT_SID", None):
         raise HTTPException(status_code=400, detail="Twilio is not configured")
 
+    # Pre-flight credit budget guard (no-op unless enforcement is enabled). (ELR-009)
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, ensure_tenant(tenant_id), credits_needed=1.0)
+
     try:
         from app.services.adapters.communications.twilio_adapter import TwilioAdapter
 

@@ -651,30 +651,73 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    from app.db.models.invoice import (
+        Invoice, InvoiceStatus, PaymentRecord, PaymentMethod, PaymentStatus,
+        ProcessedStripeEvent,
+    )
+    from app.db.models.tenant import Tenant
+    from app.db.models.audit_log import AuditLog
+    from sqlalchemy.exc import IntegrityError
+
+    # Idempotency: Stripe delivers at-least-once and retries. If we've already
+    # processed this event id, do nothing (never double-record a payment). (ELR-008)
+    event_id = event.get("id")
+    if event_id and db.query(ProcessedStripeEvent).filter(
+        ProcessedStripeEvent.event_id == event_id
+    ).first():
+        return {"received": True, "duplicate": True}
+
+    def _mark_processed_and_commit():
+        """Record the event id and commit in one transaction. On a concurrent
+        duplicate the UNIQUE pk raises IntegrityError → treat as already-processed."""
+        if event_id:
+            db.add(ProcessedStripeEvent(event_id=event_id, event_type=event.get("type")))
+        try:
+            db.commit()
+            return True
+        except IntegrityError:
+            db.rollback()
+            return False
+
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         invoice_id = session.get("metadata", {}).get("invoice_id")
         if not invoice_id:
             logger.warning("Stripe webhook: no invoice_id in metadata")
+            _mark_processed_and_commit()
             return {"received": True}
-
-        from app.db.models.invoice import Invoice, InvoiceStatus, PaymentRecord, PaymentMethod, PaymentStatus
-        from app.db.models.tenant import Tenant
-        from app.db.models.audit_log import AuditLog
 
         invoice = db.query(Invoice).filter(Invoice.invoice_id == int(invoice_id)).first()
         if not invoice:
             logger.warning("Stripe webhook: invoice not found", invoice_id=invoice_id)
+            _mark_processed_and_commit()
             return {"received": True}
 
         if invoice.status == InvoiceStatus.PAID:
+            _mark_processed_and_commit()
             return {"received": True}
 
-        # Create payment record
+        # Verify the payment matches the invoice before marking paid: the amount
+        # Stripe charged must equal what we billed, and the metadata tenant (if
+        # present) must match the invoice's tenant. A mismatch is refused (400 →
+        # Stripe retries) rather than silently accepted. (ELR-008)
+        amount_total = session.get("amount_total")
+        if amount_total is not None and int(amount_total) != invoice.total_cents:
+            logger.warning("Stripe webhook: amount mismatch",
+                           invoice_id=invoice.invoice_id,
+                           charged=amount_total, billed=invoice.total_cents)
+            raise HTTPException(status_code=400, detail="Amount does not match invoice total")
+        meta_tenant = session.get("metadata", {}).get("tenant_id")
+        if meta_tenant is not None and int(meta_tenant) != invoice.tenant_id:
+            logger.warning("Stripe webhook: tenant mismatch",
+                           invoice_id=invoice.invoice_id,
+                           meta_tenant=meta_tenant, invoice_tenant=invoice.tenant_id)
+            raise HTTPException(status_code=400, detail="Tenant does not match invoice")
+
         payment = PaymentRecord(
             tenant_id=invoice.tenant_id,
             invoice_id=invoice.invoice_id,
-            amount_cents=session.get("amount_total", invoice.total_cents),
+            amount_cents=amount_total if amount_total is not None else invoice.total_cents,
             currency=invoice.currency,
             payment_method=PaymentMethod.STRIPE,
             stripe_payment_id=session.get("payment_intent", ""),
@@ -683,7 +726,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         )
         db.add(payment)
 
-        # Update invoice
         invoice.status = InvoiceStatus.PAID
         invoice.paid_at = datetime.utcnow()
         invoice.paid_via = PaymentMethod.STRIPE
@@ -702,7 +744,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except Exception as e_audit:
             logger.warning("Audit log failed for stripe invoice_paid", error=str(e_audit))
 
-        db.commit()
+        # Record the event id in the SAME transaction as the payment/invoice update
+        # so processing and de-dup are all-or-nothing.
+        if not _mark_processed_and_commit():
+            return {"received": True, "duplicate": True}
 
         # Send acknowledgement email
         try:
@@ -714,6 +759,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             logger.warning("Post-payment email failed", error=str(e))
 
         logger.info("Stripe payment processed", invoice_number=invoice.invoice_number,
-                    amount=session.get("amount_total"))
+                    amount=amount_total)
+    else:
+        # Unhandled event type — record it so retries of the same id are no-ops.
+        _mark_processed_and_commit()
 
     return {"received": True}

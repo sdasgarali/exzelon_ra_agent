@@ -9,17 +9,37 @@ logger = structlog.get_logger()
 
 
 def _generate_invoice_number(db: Session) -> str:
-    """Generate next invoice number INV-YYYY-NNNN (sequential per year)."""
-    from app.db.models.invoice import Invoice
+    """Generate the next invoice number INV-YYYY-NNNN, gapless and race-safe.
+
+    Uses the ``invoice_sequences`` counter with a row lock (SELECT ... FOR UPDATE
+    on MySQL; a no-op but still correct single-threaded on SQLite) so concurrent
+    generation can't produce duplicate numbers or abort a batch. On first use for
+    a year, the counter is seeded from any pre-existing invoices so we never
+    collide with numbers issued before this table existed. (ELR-010)
+    """
+    from app.db.models.invoice import Invoice, InvoiceSequence
     current_year = date.today().year
-    # Get max invoice number for current year
-    last = db.query(func.max(Invoice.invoice_number)).filter(
-        Invoice.invoice_number.like(f"INV-{current_year}-%")
-    ).scalar()
-    if last:
-        seq = int(last.split("-")[-1]) + 1
+
+    row = (
+        db.query(InvoiceSequence)
+        .filter(InvoiceSequence.year == current_year)
+        .with_for_update()
+        .first()
+    )
+    if row is None:
+        # Seed from legacy invoices for this year (all fixed-width, so string MAX is safe here).
+        last = db.query(func.max(Invoice.invoice_number)).filter(
+            Invoice.invoice_number.like(f"INV-{current_year}-%")
+        ).scalar()
+        start = int(last.split("-")[-1]) if last else 0
+        row = InvoiceSequence(year=current_year, last_seq=start + 1)
+        db.add(row)
+        db.flush()
+        seq = row.last_seq
     else:
-        seq = 1
+        row.last_seq += 1
+        db.flush()
+        seq = row.last_seq
     return f"INV-{current_year}-{seq:04d}"
 
 
