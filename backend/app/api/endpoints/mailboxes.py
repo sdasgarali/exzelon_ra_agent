@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps import get_db, require_role, get_current_tenant_id, ensure_tenant
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus, EmailProvider
@@ -520,7 +520,7 @@ async def create_mailbox(
         ).first()
     if role is None:
         role = db.query(OutreachRole).filter(
-            OutreachRole.tenant_id == (tenant_id or 1),
+            OutreachRole.tenant_id == (ensure_tenant(tenant_id)),
             OutreachRole.role_name == "RA",
             OutreachRole.is_archived == False,
         ).first()
@@ -546,7 +546,7 @@ async def create_mailbox(
                     email=mailbox_in.email,
                     full_name=mailbox_in.display_name or mailbox_in.sender_first_name,
                     login_password=mailbox_in.login_password,
-                    tenant_id=tenant_id or 1,
+                    tenant_id=ensure_tenant(tenant_id),
                     rbac_role=map_outreach_role_to_rbac(role.role_name),
                 )
             except MailboxUserLinkError as e:
@@ -573,7 +573,7 @@ async def create_mailbox(
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
         email_signature_json=mailbox_in.email_signature_json,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         outreach_role_id=role_id,
         user_id=linked_user_id,
     )

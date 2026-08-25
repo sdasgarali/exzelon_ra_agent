@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps import get_db, require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.email_template import EmailTemplate, TemplateStatus, TemplateCategory
 from app.schemas.email_template import (
@@ -213,7 +213,7 @@ async def create_template(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new email template."""
-    effective_tenant = tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id)
 
     # Auto-derive category from goal
     template_in.category = _derive_category(template_in.goal, template_in.category)
@@ -445,7 +445,7 @@ async def duplicate_template(
         category=template.category,
         is_default=False,
         description=template.description,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(new_template)
     db.commit()
@@ -460,7 +460,7 @@ async def seed_template_library(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Seed 12 system templates into the library (super_admin only)."""
-    effective_tenant = tenant_id or current_user.tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id)  # ELR-005: no silent tenant-1 write
 
     # Check if system templates already exist for this tenant
     existing_system = db.query(EmailTemplate).filter(

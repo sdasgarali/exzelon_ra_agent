@@ -9,7 +9,9 @@ from pydantic import BaseModel
 
 from app.db.base import get_db
 from app.api.deps.auth import require_role, get_current_tenant_id
+from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
+from app.db.models.tenant import Tenant
 from app.db.models.visitor import VisitorEvent
 
 router = APIRouter(prefix="/visitors", tags=["Visitor Tracking"])
@@ -22,6 +24,9 @@ class TrackVisitRequest(BaseModel):
     company_name: Optional[str] = None
     company_domain: Optional[str] = None
     metadata_json: Optional[str] = None
+    # Site token = the owning tenant's slug, embedded in the pixel (?t=<slug>).
+    # Resolves which tenant an anonymous page-view belongs to (ELR-004).
+    site: Optional[str] = None
 
 
 @router.get("")
@@ -41,9 +46,8 @@ def list_visitors(
         VisitorEvent.is_archived == False,
         VisitorEvent.visited_at >= cutoff,
     )
-    # VisitorEvent does not have tenant_id in the existing model,
-    # so we skip tenant_filter for visitor events
-    # (they are public page-view events tracked by a JS pixel)
+    # Tenant-scoped: a tenant only sees its own visitor events (ELR-004).
+    q = tenant_filter(q, VisitorEvent, tenant_id)
 
     if visitor_id:
         q = q.filter(VisitorEvent.visitor_id == visitor_id)
@@ -90,6 +94,8 @@ def visitor_stats(
         VisitorEvent.is_archived == False,
         VisitorEvent.visited_at >= cutoff,
     )
+    # Tenant-scoped stats (ELR-004).
+    base_q = tenant_filter(base_q, VisitorEvent, tenant_id)
 
     total_events = base_q.count()
     unique_visitors = base_q.with_entities(
@@ -151,7 +157,16 @@ def track_visit(
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent", "")[:500]
 
+    # Resolve owning tenant from the site token (tenant slug) so the event is
+    # tenant-scoped. Unknown/absent token → NULL (super-admin-only). (ELR-004)
+    resolved_tenant_id = None
+    if body.site:
+        t = db.query(Tenant).filter(Tenant.slug == body.site).first()
+        if t:
+            resolved_tenant_id = t.tenant_id
+
     event = VisitorEvent(
+        tenant_id=resolved_tenant_id,
         visitor_id=body.visitor_id,
         page_url=body.page_url[:1000],
         referrer=body.referrer[:1000] if body.referrer else None,
@@ -169,8 +184,17 @@ def track_visit(
 
 
 @router.get("/pixel.js")
-def serve_tracking_pixel():
-    """Serve the tracking pixel JavaScript snippet."""
+def serve_tracking_pixel(t: Optional[str] = Query(None, description="Site token = tenant slug")):
+    """Serve the tracking pixel JavaScript snippet.
+
+    Install with the tenant's site token so page-views are attributed to the
+    correct tenant, e.g. `<script src=".../visitors/pixel.js?t=<your-slug>">` (ELR-004).
+    """
+    # Sanitise the token for safe embedding (slugs are [a-z0-9-]).
+    site_token = ""
+    if t:
+        import re
+        site_token = re.sub(r"[^a-zA-Z0-9_-]", "", t)[:100]
     js_content = """
 (function() {
     var visitorId = localStorage.getItem('_nl_vid');
@@ -181,7 +205,8 @@ def serve_tracking_pixel():
     var data = {
         visitor_id: visitorId,
         page_url: window.location.href,
-        referrer: document.referrer || null
+        referrer: document.referrer || null,
+        site: "%s" || null
     };
     fetch('/api/v1/visitors/track', {
         method: 'POST',
@@ -189,7 +214,7 @@ def serve_tracking_pixel():
         body: JSON.stringify(data)
     }).catch(function() {});
 })();
-"""
+""" % site_token
     return Response(
         content=js_content.strip(),
         media_type="application/javascript",

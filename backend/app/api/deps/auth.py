@@ -390,3 +390,19 @@ async def require_tenant_id(
             detail="Select a tenant first — impersonate the tenant you want to run this for before starting a pipeline.",
         )
     return tenant_id
+
+
+def ensure_tenant(tenant_id: Optional[int]) -> int:
+    """Non-dependency guard for write sites that previously did ``tenant_id or 1``.
+
+    That fallback silently wrote a super-admin's (un-impersonated) data into
+    tenant 1. This raises 400 instead, forcing an explicit tenant selection so no
+    row is ever mis-attributed. Use inline at the point of write:
+    ``obj = Model(tenant_id=ensure_tenant(tenant_id), ...)``  (ELR-005)
+    """
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select a tenant first — impersonate the tenant you want to write to before creating data.",
+        )
+    return tenant_id

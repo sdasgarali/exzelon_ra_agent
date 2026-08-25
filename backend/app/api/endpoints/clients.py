@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc, or_
 from pydantic import BaseModel
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.client import ClientInfo, ClientStatus, ClientCategory
 from app.db.models.lead import LeadDetails
@@ -526,7 +526,7 @@ async def create_client(
         )
 
     client = ClientInfo(**client_in.model_dump())
-    client.tenant_id = tenant_id or 1
+    client.tenant_id = ensure_tenant(tenant_id)
     client.client_category = compute_client_category(db, client_in.client_name, tenant_id=tenant_id)
     # Auto-resolve timezone from location_state
     if client.location_state and not client.timezone:

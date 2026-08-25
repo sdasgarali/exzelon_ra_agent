@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from typing import List
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps import get_db, require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.webhook import Webhook, WebhookDelivery
 from app.db.query_helpers import tenant_filter
@@ -82,7 +82,7 @@ def create_webhook(
         events_json=json.dumps(data.events),
         is_active=data.is_active,
         created_by=user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(webhook)
     db.commit()

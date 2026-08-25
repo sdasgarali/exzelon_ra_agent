@@ -1,29 +1,34 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Branch `feature/ra-autosend-mailbox-user`. Feature: (1) only "RA" (auto_outbound)
-> mailboxes auto-send cold outbound; others manual-only; (2) non-RA mailbox add asks a
-> role + login password → creates/links a login User (mailbox↔user interconnected); RA =
-> no login; (3) Users module → "Add as mailbox". Full plan in
-> `Plan_RA_AutoSend_And_Mailbox_User_Link.md`.
+> ENTERPRISE SUBSCRIPTION LAUNCH readiness (2026-08-25). Ran 5 parallel read-only audits
+> (enterprise-readiness, tenant-isolation, test-coverage, email-deliverability, billing)
+> + live test suites. Verdict: **Conditional NO-GO** for a security-reviewed enterprise
+> buyer; readiness 6.2/10. Live tests: frontend build ✅; backend 1420 pass / 1 flaky
+> error (billing test isolation), coverage 41.6%.
 >
-> STATUS (2026-08-14):
-> - Phase 1 (auto_outbound gating) COMMITTED 0df7bb4. Backend 1358 pass.
-> - Phase 2 (SenderMailbox.user_id + create-or-link user) COMMITTED 1c9a7ed.
-> - Phase 3 (frontend) IN PROGRESS: mailboxes wizard login-password (conditional on
->   non-auto_outbound role) + outreach-role auto_outbound toggle + Users "Add as mailbox"
->   deep-link (?add_email=). tsc clean, jest 70 pass. Build running → then commit.
-> - Phase 4 (docs + deliverability review + PR + deploy) NOT STARTED.
+> DELIVERABLES WRITTEN (this session, no code changed):
+> - `Enterprise_Launch_Readiness_Report_2026-08-25.md` — full findings w/ file:line.
+> - `Master_Plan_Enterprise_Launch.md` — numbered ticket ledger ELR-001…036 across 3
+>   phases, mapped to REQ-039…046 + traceability + execution order.
+> - `Master_Plan.md` — added REQ-039…046 block + milestones M11–M13 pointing to the above.
 >
-> Earlier this session (all SHIPPED to prod): role rename+custom roles (PR #81),
-> user-tenant binding (PR #82), cleaned 7 E2E prod users.
+> NEXT STEP: awaiting user sign-off on scope, then start Phase 1 (M11). Recommended order:
+> ELR-011 (billing/plan-limit test scaffold + starter/professional fixtures) → ELR-007
+> (isolation regression suite) → fix leaks ELR-001..006 → billing safety ELR-008..010 →
+> email compliance ELR-012/014/013 → Sentry+DR ELR-017/018 → ELR-019 cleanup.
 
 ## Immediate TODO
-- [x] Phase 1 — auto_outbound gating (0df7bb4)
-- [x] Phase 2 — mailbox↔user link (1c9a7ed)
-- [ ] Phase 3 — frontend (commit after build green)
-- [ ] Phase 4 — docs + deliverability-guardian review + PR + deploy (migration: 2 cols + RA flag)
+- [ ] Get user sign-off on `Master_Plan_Enterprise_Launch.md` ticket scope/priorities
+- [ ] ELR-011 — billing/plan-limit test scaffold + conftest starter/professional fixtures
+- [ ] ELR-007 — tests/security/test_tenant_isolation.py (two-tenant fixture)
+- [ ] ELR-001..006 — fix 4 confirmed cross-tenant leaks + require_tenant_id on writes
+- [ ] ELR-008..010 — Stripe webhook idempotency, credit enforcement, invoice seq integrity
 
 ## Blockers / Notes
-- Deploy migration adds outreach_roles.auto_outbound (RA=1) + sender_mailboxes.user_id.
-- Gate only applies to the AUTOMATED pool; explicit campaign mailbox assignment bypasses.
+- ELR-013 (DKIM signing) is blocked on publishing the 10 pending GoDaddy DKIM DNS records
+  (see memory/dkim-dns-records.md) — never emit a signature for an unpublished domain.
+- ELR-009 (credit enforcement) should ship behind a per-tenant `credit_enforcement_enabled`
+  flag (default off) to avoid breaking live pipelines.
+- Land ELR-011 test net BEFORE the billing refactors (ELR-008/009/010).
+- Phase 1 (M11) is the only hard gate to charge customers; M12/M13 can follow post-launch.

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.contact import ContactDetails, PriorityLevel, OutreachStatus as ContactOutreachStatus
@@ -585,7 +585,7 @@ async def create_contact(
     lead_ids = contact_in.lead_ids
     contact_data = contact_in.model_dump(exclude={"lead_ids"})
     contact = ContactDetails(**contact_data)
-    contact.tenant_id = tenant_id or 1
+    contact.tenant_id = ensure_tenant(tenant_id)
 
     # Auto-resolve timezone: prefer contact's own state, fall back to client's timezone
     if contact.location_state:
@@ -593,7 +593,7 @@ async def create_contact(
     elif contact.client_name:
         client = db.query(ClientInfo).filter(
             ClientInfo.client_name == contact.client_name,
-            ClientInfo.tenant_id == (tenant_id or 1),
+            ClientInfo.tenant_id == (ensure_tenant(tenant_id)),
         ).first()
         if client and client.timezone:
             contact.timezone = client.timezone

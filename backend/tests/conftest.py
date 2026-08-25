@@ -16,6 +16,10 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 from app.main import app
 from app.db.base import Base
 from app.api.deps.database import get_db
+# Some endpoints (e.g. analytics, visitor_tracking) import get_db from app.db.base
+# rather than app.api.deps.database. These are DISTINCT callables, so both must be
+# overridden or those endpoints silently hit the un-migrated app engine in tests.
+from app.db.base import get_db as get_db_base
 
 # Disable API rate limiting during tests. The shared in-memory slowapi limiter
 # otherwise accumulates hits across tests (all TestClient requests share one key)
@@ -94,6 +98,7 @@ def _reset_rate_limiter():
 def client(db_session):
     """Create a test client with database override."""
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_db_base] = lambda: db_session
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

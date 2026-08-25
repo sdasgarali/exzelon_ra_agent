@@ -790,6 +790,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for is_archived: {e}")
 
+    # Migration: add tenant_id to visitor_events for tenant isolation (ELR-004)
+    try:
+        if settings.DB_TYPE == "mysql":
+            from sqlalchemy import text as sa_text_vis, inspect as sa_inspect_vis
+            with engine.connect() as conn:
+                inspector_vis = sa_inspect_vis(engine)
+                if "visitor_events" in inspector_vis.get_table_names():
+                    vis_cols = [c["name"] for c in inspector_vis.get_columns("visitor_events")]
+                    if "tenant_id" not in vis_cols:
+                        conn.execute(sa_text_vis(
+                            "ALTER TABLE visitor_events ADD COLUMN tenant_id INTEGER NULL"
+                        ))
+                        conn.execute(sa_text_vis(
+                            "CREATE INDEX idx_visitor_tenant ON visitor_events (tenant_id)"
+                        ))
+                        conn.commit()
+                        logger.info("Migration: added tenant_id column to visitor_events")
+    except Exception as e:
+        logger.warning(f"Migration check for visitor_events.tenant_id: {e}")
+
     # Migration: add unsubscribe columns
     try:
         from sqlalchemy import text as sa_text_unsub, inspect as sa_inspect_unsub

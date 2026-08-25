@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, get_current_tenant_id
+from app.api.deps.auth import get_current_user, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User
 from app.db.models.saved_search import SavedSearch
 from app.db.query_helpers import tenant_filter
@@ -48,7 +48,7 @@ def create_saved_search(
         filters_json=body.filters_json,
         is_shared=body.is_shared,
         user_id=current_user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(search)
     db.commit()

@@ -6,7 +6,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.goal_target import GoalTarget
@@ -98,7 +98,7 @@ def create_goal(
 ):
     """Create a new goal/target."""
     goal = GoalTarget(
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         user_id=body.user_id,
         metric=body.metric,
         target_value=body.target_value,

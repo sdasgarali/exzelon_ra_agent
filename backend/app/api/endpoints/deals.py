@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, effective_base_role
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant, effective_base_role
 from app.db.models.user import User, UserRole
 from app.db.models.deal import Deal, DealStage, DealActivity
 from app.db.models.deal import DealCandidate
@@ -112,15 +112,23 @@ def _initials(full_name: Optional[str]) -> str:
     return (parts[0][0] + parts[-1][0]).upper()
 
 
-def _user_ref(db: Optional[Session], user_id: Optional[int], users_by_id: Optional[dict] = None) -> Optional[dict]:
-    """Resolve a user id to {id, name, initials}. Uses a cache dict when provided."""
+def _user_ref(db: Optional[Session], user_id: Optional[int], users_by_id: Optional[dict] = None,
+              tenant_id: Optional[int] = None) -> Optional[dict]:
+    """Resolve a user id to {id, name, initials}. Uses a cache dict when provided.
+
+    When ``tenant_id`` is given, the direct DB lookup is tenant-scoped so a
+    cross-tenant owner/claimed_by id cannot resolve another tenant's user (ELR-003).
+    """
     if not user_id:
         return None
     user = None
     if users_by_id is not None:
         user = users_by_id.get(user_id)
     if user is None and db is not None:
-        user = db.query(User).filter(User.user_id == user_id).first()
+        q = db.query(User).filter(User.user_id == user_id)
+        if tenant_id is not None:
+            q = q.filter(User.tenant_id == tenant_id)
+        user = q.first()
     if user is None:
         return {"id": user_id, "name": None, "initials": "?"}
     name = user.full_name or user.email
@@ -143,9 +151,9 @@ def _deal_to_dict(d: Deal, db: Session = None, users_by_id: Optional[dict] = Non
         "probability": d.probability,
         "expected_close_date": str(d.expected_close_date) if d.expected_close_date else None,
         "owner_id": d.owner_id,
-        "owner": _user_ref(db, d.owner_id, users_by_id),
+        "owner": _user_ref(db, d.owner_id, users_by_id, tenant_id=d.tenant_id),
         "claimed_by_user_id": claimed_by_id,
-        "claimed_by": _user_ref(db, claimed_by_id, users_by_id),
+        "claimed_by": _user_ref(db, claimed_by_id, users_by_id, tenant_id=d.tenant_id),
         "claimed_at": d.claimed_at.isoformat() if getattr(d, "claimed_at", None) else None,
         # Truly "in the open pool" — nobody has claimed it AND nobody is assigned it.
         # An assigned-but-unclaimed deal is NOT unclaimed (it shows the owner's initials).
@@ -161,9 +169,12 @@ def _deal_to_dict(d: Deal, db: Session = None, users_by_id: Optional[dict] = Non
         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
     }
 
+    # Sub-resource reads MUST be tenant-scoped to the parent deal's tenant, else a
+    # cross-tenant contact_id/client_id/stage_id would leak another tenant's data (ELR-003).
     if db and d.contact_id:
         contact = db.query(ContactDetails).filter(
-            ContactDetails.contact_id == d.contact_id
+            ContactDetails.contact_id == d.contact_id,
+            ContactDetails.tenant_id == d.tenant_id,
         ).first()
         if contact:
             result["contact_name"] = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
@@ -171,13 +182,17 @@ def _deal_to_dict(d: Deal, db: Session = None, users_by_id: Optional[dict] = Non
 
     if db and d.client_id:
         client = db.query(ClientInfo).filter(
-            ClientInfo.client_id == d.client_id
+            ClientInfo.client_id == d.client_id,
+            ClientInfo.tenant_id == d.tenant_id,
         ).first()
         if client:
             result["client_name"] = client.client_name
 
     if db:
-        stage = db.query(DealStage).filter(DealStage.stage_id == d.stage_id).first()
+        stage = db.query(DealStage).filter(
+            DealStage.stage_id == d.stage_id,
+            DealStage.tenant_id == d.tenant_id,
+        ).first()
         if stage:
             result["stage_name"] = stage.name
             result["stage_color"] = stage.color
@@ -219,7 +234,7 @@ def create_stage(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     stage = DealStage(
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         name=data.name,
         stage_order=data.stage_order,
         color=data.color,
@@ -488,7 +503,7 @@ def create_deal(
 ):
     from datetime import date as date_type
     deal = Deal(
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         name=data.name,
         stage_id=data.stage_id,
         contact_id=data.contact_id,
@@ -567,9 +582,15 @@ def get_deal(
     result["job"] = None
     lead = None
     if deal.contact_id:
-        contact = db.query(ContactDetails).filter(ContactDetails.contact_id == deal.contact_id).first()
+        contact = db.query(ContactDetails).filter(
+            ContactDetails.contact_id == deal.contact_id,
+            ContactDetails.tenant_id == deal.tenant_id,
+        ).first()
         if contact and contact.lead_id:
-            lead = db.query(LeadDetails).filter(LeadDetails.lead_id == contact.lead_id).first()
+            lead = db.query(LeadDetails).filter(
+                LeadDetails.lead_id == contact.lead_id,
+                LeadDetails.tenant_id == deal.tenant_id,
+            ).first()
     if lead:
         result["job"] = {
             "lead_id": lead.lead_id,
@@ -938,8 +959,12 @@ def deal_messages(
     if not deal.contact_id:
         return {"contact_id": None, "messages": []}
 
+    # Messages MUST be scoped to the deal's tenant, not fetched by bare contact_id (ELR-003/HIGH-2).
     msgs = []
-    for ev in db.query(OutreachEvent).filter(OutreachEvent.contact_id == deal.contact_id).all():
+    for ev in db.query(OutreachEvent).filter(
+        OutreachEvent.contact_id == deal.contact_id,
+        OutreachEvent.tenant_id == deal.tenant_id,
+    ).all():
         msgs.append({
             "source": "outreach", "direction": "sent",
             "subject": ev.subject, "body": _clip(ev.body_text or ev.body_html),
@@ -951,7 +976,10 @@ def deal_messages(
                 "subject": getattr(ev, "reply_subject", None), "body": _clip(ev.reply_body),
                 "at": ev.sent_at.isoformat() if ev.sent_at else None,
             })
-    for im in db.query(InboxMessage).filter(InboxMessage.contact_id == deal.contact_id).all():
+    for im in db.query(InboxMessage).filter(
+        InboxMessage.contact_id == deal.contact_id,
+        InboxMessage.tenant_id == deal.tenant_id,
+    ).all():
         msgs.append({
             "source": "inbox",
             "direction": im.direction.value if hasattr(im.direction, "value") else str(im.direction),
