@@ -1,22 +1,13 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> ENTERPRISE SUBSCRIPTION LAUNCH readiness (2026-08-25). Ran 5 parallel read-only audits
-> (enterprise-readiness, tenant-isolation, test-coverage, email-deliverability, billing)
-> + live test suites. Verdict: **Conditional NO-GO** for a security-reviewed enterprise
-> buyer; readiness 6.2/10. Live tests: frontend build ✅; backend 1420 pass / 1 flaky
-> error (billing test isolation), coverage 41.6%.
->
-> DELIVERABLES WRITTEN (this session, no code changed):
-> - `Enterprise_Launch_Readiness_Report_2026-08-25.md` — full findings w/ file:line.
-> - `Master_Plan_Enterprise_Launch.md` — numbered ticket ledger ELR-001…036 across 3
->   phases, mapped to REQ-039…046 + traceability + execution order.
-> - `Master_Plan.md` — added REQ-039…046 block + milestones M11–M13 pointing to the above.
->
-> NEXT STEP: awaiting user sign-off on scope, then start Phase 1 (M11). Recommended order:
-> ELR-011 (billing/plan-limit test scaffold + starter/professional fixtures) → ELR-007
-> (isolation regression suite) → fix leaks ELR-001..006 → billing safety ELR-008..010 →
-> email compliance ELR-012/014/013 → Sentry+DR ELR-017/018 → ELR-019 cleanup.
+> Executing Phase 1 of the enterprise-launch remediation on branch
+> `feature/elr-phase1-launch-blockers`. Epic 1A (tenant isolation, commit f511bc1) and
+> Epic 1B (billing safety, commit 72597c8) DONE + full suite green (1446 passed).
+> NEXT: Epic 1C email compliance (ELR-012 CAN-SPAM address → ELR-014 auto-unsubscribe →
+> ELR-013 DKIM [blocked on DNS]) then Epic 1D (ELR-017 Sentry, ELR-018 backups/DR).
+> Ledger + statuses in Master_Plan_Enterprise_Launch.md. NOTE: `pip install stripe` was
+> needed locally (declared dep, CI has it).
 
 ## Phase 1 progress (branch feature/elr-phase1-launch-blockers)
 - [x] ELR-007 — tests/security/test_tenant_isolation.py (5 two-tenant tests) — commit f511bc1
@@ -24,12 +15,17 @@
 - [x] ELR-005a — ensure_tenant() write-guard on 17 CRUD files (28 sites) — f511bc1
 - [x] conftest dual get_db override fix; 2 tests updated for impersonation — f511bc1
 - [x] Docs: readiness report + master plan — commit a95790a
+- [x] ELR-011 — conftest starter/professional fixtures + plan-limit tests — commit 72597c8
+- [x] ELR-008 — Stripe webhook idempotency (ProcessedStripeEvent) + amount/tenant verify — 72597c8
+- [x] ELR-009 — credit-budget 402 gate (default OFF) + config ceilings; wired SMS + balance — 72597c8
+- [x] ELR-010 — InvoiceSequence counter (gapless, row-locked, seeds legacy) — 72597c8
 - [ ] ELR-005b — email_preview/integrations/leads (webhook/pipeline `tenant_id or 1`, per-site review)
-- [ ] ELR-011 — billing/plan-limit test scaffold + conftest starter/professional fixtures (do BEFORE 008-010)
-- [ ] ELR-008 — Stripe webhook idempotency (processed_stripe_events table) + amount/tenant verify
-- [ ] ELR-009 — atomic credit-budget enforcement at paid choke-points (behind per-tenant flag)
-- [ ] ELR-010 — invoice-number sequence integrity (per-year seq + SELECT FOR UPDATE)
-- [ ] ELR-012..016 (email compliance), ELR-017/018 (Sentry + backups/DR), ELR-019 cleanup
+- [ ] ELR-009b — wire check_credit_budget into AI/enrichment/validation choke-points + atomic balance row
+- [ ] ELR-012 — CAN-SPAM postal address required + injected into footer
+- [ ] ELR-014 — auto-action unsubscribe-by-reply (reply_tracker)
+- [ ] ELR-013 — wire DKIM signing (blocked on publishing 10 GoDaddy DNS records)
+- [ ] ELR-015/016 — soft-bounce enforcement + suppression (tenant_id,email) index
+- [ ] ELR-017/018 — Sentry + offsite encrypted backups/DR; ELR-019 cleanup
 
 ## Blockers / Notes
 - ELR-013 (DKIM signing) is blocked on publishing the 10 pending GoDaddy DKIM DNS records
