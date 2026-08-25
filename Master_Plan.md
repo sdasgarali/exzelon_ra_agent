@@ -61,6 +61,20 @@ Fully automated cold-email outreach system for NeuraLeads AI targeting non-IT in
 | REQ-033 | Sync backend DEFAULT_SETTINGS with refined exclude keywords | Pending |
 | REQ-034 | Email signature templates/presets for quick setup | Pending |
 
+### Enterprise Subscription Launch (REQ-039…046)
+> Numbered ticket ledger (ELR-001…036) in `Master_Plan_Enterprise_Launch.md`; findings in `Enterprise_Launch_Readiness_Report_2026-08-25.md`.
+
+| ID | Requirement | Phase | Status |
+|----|-------------|-------|--------|
+| REQ-039 | Guaranteed tenant data isolation (zero cross-tenant read/write) | 1 | Not started |
+| REQ-040 | Subscription-grade billing (idempotent webhooks, enforced limits, invoice integrity, lifecycle) | 1–2 | Not started |
+| REQ-041 | Outbound email legal compliance (CAN-SPAM, DKIM, auto-unsubscribe, GDPR DSAR) | 1–2 | Not started |
+| REQ-042 | Production observability & disaster recovery (Sentry, offsite encrypted backups) | 1 | Not started |
+| REQ-043 | Enterprise identity (SSO/SAML or OIDC) | 2 | Not started |
+| REQ-044 | Delivery hardening (CD, rollback, staging, security scanning, Alembic) | 2 | Not started |
+| REQ-045 | Test coverage for money/auth/isolation paths + coverage gate | 1–2 | Not started |
+| REQ-046 | Horizontal scale (Celery async pipelines, Redis caching, readiness/metrics) | 3 | Not started |
+
 
 ### Smart Enrichment & Pipeline Selection
 | ID | Requirement | Status |
@@ -106,6 +120,9 @@ Fully automated cold-email outreach system for NeuraLeads AI targeting non-IT in
 | M8 | Warmup | Peer warmup, auto-reply, DNS checks, blacklist monitor | Complete | 2026-01-24 |
 | M9 | Signatures | Per-mailbox email signatures with form + live preview | Complete | 2026-02-12 |
 | M10 | Production Readiness | Enrichment run, real validation, outreach test | In Progress | - |
+| M11 | Enterprise Launch Blockers | ELR-001…019: tenant isolation, billing safety, email compliance, Sentry+DR (`Master_Plan_Enterprise_Launch.md`) | Not started | Phase 1 (~3 wks) |
+| M12 | Enterprise Enablers | ELR-020…030: SSO, subscription lifecycle, GDPR, CD/Alembic | Not started | Phase 2 (~5 wks) |
+| M13 | Scale & Hardening | ELR-031…036: Celery, Redis, readiness/metrics, RLS, load tests | Not started | Phase 3 (~6 wks) |
 
 ---
 
