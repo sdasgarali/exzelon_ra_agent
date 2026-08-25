@@ -31,13 +31,23 @@ Turn the current feature-complete MVP+ (enterprise readiness **6.2/10**) into a 
 
 **Legend** — Priority: `P0`=launch blocker · `P1`=high · `P2`=medium. Every ticket lists a **regression test** (per the regression-per-fix hard rule). Effort in engineer-hours.
 
-> **STATUS 2026-08-25** (branch `feature/elr-phase1-launch-blockers`): Epic 1A complete —
-> **ELR-001,002,003,004,006 DONE**, **ELR-007 DONE** (new `tests/security/test_tenant_isolation.py`,
-> 5 tests). Also fixed a pre-existing test-infra gap (analytics/visitor imported `get_db` from a
-> module conftest didn't override). **ELR-005 DONE for 17 CRUD-create files** via the new
-> `ensure_tenant()` guard (28 sites); **ELR-005b DEFERRED** = `email_preview.py`, `integrations.py`,
-> `leads.py` — these hold webhook/pipeline/internal-caller `(ref_)tenant_id or 1` resolutions that
-> must NOT hard-400, so they need per-site review, not a blanket swap. Next: Epic 1B (billing).
+> **STATUS 2026-08-25** (branch `feature/elr-phase1-launch-blockers`):
+> **Epic 1A DONE** (commit f511bc1) — ELR-001,002,003,004,006 + ELR-007 (new
+> `tests/security/test_tenant_isolation.py`, 5 tests) + a pre-existing test-infra gap
+> (analytics/visitor imported `get_db` from a module conftest didn't override). ELR-005 DONE
+> for 17 CRUD-create files via `ensure_tenant()` (28 sites); **ELR-005b DEFERRED** =
+> `email_preview.py`/`integrations.py`/`leads.py` (webhook/pipeline `(ref_)tenant_id or 1`
+> resolutions that must NOT hard-400 — per-site review).
+>
+> **Epic 1B DONE (code+tests)** — **ELR-008** idempotent+verified Stripe webhook
+> (new `ProcessedStripeEvent` de-dup table + amount/tenant verification); **ELR-009** config-driven
+> credit ceilings + `check_credit_budget()` 402 gate (default OFF, per-tenant opt-in), wired into
+> SMS send + `/credits/balance`; **ELR-010** `InvoiceSequence` counter (gapless, row-locked, seeds
+> from legacy). **ELR-011** conftest `starter_tenant`/`professional_capped_tenant` fixtures + 4 new
+> test files (plan-limits, credit-enforcement, invoice-sequence, billing-webhook). New tables are
+> auto-created by lifespan `create_all`. FOLLOW-UP: wire `check_credit_budget` into the remaining
+> paid choke-points (AI/enrichment/validation) — ELR-009b; atomic balance-row hardening later.
+> Next: Epic 1C (email compliance ELR-012/014/013) + Epic 1D (Sentry/backups ELR-017/018).
 
 ### PHASE 1 — Launch Blockers (target ~3 weeks, ~90h) — DO BEFORE CHARGING
 
