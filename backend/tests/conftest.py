@@ -1,10 +1,10 @@
 """Pytest configuration and fixtures."""
 import os
 import pytest
-from datetime import date, datetime
+from datetime import date
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event as _sa_event
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Set test database URL BEFORE importing app to avoid MySQL connection
@@ -125,6 +125,62 @@ def test_tenant(db_session):
     db_session.commit()
     db_session.refresh(tenant)
     return tenant
+
+
+@pytest.fixture
+def starter_tenant(db_session):
+    """A STARTER-plan tenant (paid resources locked). Exercises plan-limit
+    enforcement, which the always-ENTERPRISE `test_tenant` never triggers (ELR-011)."""
+    tenant = Tenant(
+        name="Starter Org", slug="starter-org", plan=TenantPlan.STARTER,
+        max_users=1, max_mailboxes=0, max_contacts=0, max_campaigns=0, max_leads=0,
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant
+
+
+@pytest.fixture
+def professional_capped_tenant(db_session):
+    """A PROFESSIONAL-plan tenant with small non-zero caps to exercise the
+    'cap reached' branch of check_plan_limit (ELR-011)."""
+    tenant = Tenant(
+        name="Pro Org", slug="pro-org", plan=TenantPlan.PROFESSIONAL,
+        max_users=5, max_mailboxes=3, max_contacts=2, max_campaigns=2, max_leads=3,
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant
+
+
+def _admin_and_headers(db_session, tenant, email, plan):
+    user = User(
+        email=email, password_hash=get_password_hash("testpassword"),
+        full_name=f"Admin {email}", role=UserRole.ADMIN,
+        is_active=True, is_verified=True, tenant_id=tenant.tenant_id,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    token = create_access_token(data={
+        "sub": user.email, "role": user.role,
+        "tenant_id": user.tenant_id, "plan": plan,
+    })
+    return user, {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def starter_admin_headers(db_session, starter_tenant):
+    _, headers = _admin_and_headers(db_session, starter_tenant, "admin@starter.com", "starter")
+    return headers
+
+
+@pytest.fixture
+def professional_admin_headers(db_session, professional_capped_tenant):
+    _, headers = _admin_and_headers(db_session, professional_capped_tenant, "admin@pro.com", "professional")
+    return headers
 
 
 # ---------------------------------------------------------------------------

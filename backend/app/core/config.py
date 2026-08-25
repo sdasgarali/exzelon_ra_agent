@@ -152,6 +152,15 @@ class Settings(BaseSettings):
     INVOICE_MAX_REMINDERS: int = 5
     INVOICE_DUE_DAY: int = 5
 
+    # Credit metering / enforcement (ELR-009). Enforcement is OFF by default so
+    # enabling it never breaks live pipelines without an explicit opt-in (global
+    # here, or per-tenant via the `credit_enforcement_enabled` setting). Ceilings
+    # are the monthly credit budget per plan (0 = unlimited).
+    CREDIT_ENFORCEMENT_ENABLED: bool = False
+    CREDIT_LIMIT_STARTER: int = 1000
+    CREDIT_LIMIT_PROFESSIONAL: int = 5000
+    CREDIT_LIMIT_ENTERPRISE: int = 0  # unlimited
+
     # Industries (Non-IT only)
     TARGET_INDUSTRIES: list[str] = [
         "Healthcare", "Manufacturing", "Logistics", "Retail", "BFSI",

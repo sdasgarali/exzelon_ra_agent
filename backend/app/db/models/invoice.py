@@ -91,6 +91,34 @@ class InvoiceLineItem(Base):
     )
 
 
+class InvoiceSequence(Base):
+    """Per-year monotonic counter for gapless, race-safe invoice numbering.
+
+    Replaces the old MAX(string LIKE) scan (which mis-ordered across digit widths
+    and could collide/abort under concurrent generation). Callers take a row lock
+    (SELECT ... FOR UPDATE) on the year row before incrementing. (ELR-010)
+    """
+
+    __tablename__ = "invoice_sequences"
+
+    year = Column(Integer, primary_key=True)  # e.g. 2026
+    last_seq = Column(Integer, nullable=False, default=0)
+
+
+class ProcessedStripeEvent(Base):
+    """Idempotency ledger for Stripe webhook events.
+
+    Stripe can deliver the same event id more than once (retries/at-least-once).
+    Inserting the event id first — under a UNIQUE constraint — makes the webhook
+    handler reject replays instead of double-recording a payment. (ELR-008)
+    """
+
+    __tablename__ = "processed_stripe_events"
+
+    event_id = Column(String(255), primary_key=True)
+    event_type = Column(String(100), nullable=True)
+
+
 class PaymentRecord(Base):
     """Record of a payment (partial or full) against an invoice."""
 

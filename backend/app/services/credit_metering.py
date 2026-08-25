@@ -1,6 +1,8 @@
 """Credit usage tracking and metering."""
 import structlog
 from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -8,6 +10,79 @@ from app.db.models.credit_usage import CreditUsage
 from app.db.query_helpers import tenant_filter
 
 logger = structlog.get_logger()
+
+
+def plan_credit_limit(plan: Optional[str]) -> int:
+    """Monthly credit ceiling for a plan (0 = unlimited). Config-driven (ELR-009)."""
+    from app.core.config import settings
+    p = (plan or "").lower()
+    return {
+        "starter": settings.CREDIT_LIMIT_STARTER,
+        "professional": settings.CREDIT_LIMIT_PROFESSIONAL,
+        "enterprise": settings.CREDIT_LIMIT_ENTERPRISE,
+    }.get(p, settings.CREDIT_LIMIT_STARTER)
+
+
+def month_usage(db: Session, tenant_id: int) -> float:
+    """Total credits used by a tenant in the current calendar month."""
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    q = db.query(func.sum(CreditUsage.credits_used)).filter(
+        CreditUsage.is_archived == False,
+        CreditUsage.recorded_at >= month_start,
+    )
+    q = tenant_filter(q, CreditUsage, tenant_id)
+    return float(q.scalar() or 0)
+
+
+def enforcement_enabled(db: Session, tenant_id: Optional[int]) -> bool:
+    """Whether credit enforcement is active — global config OR per-tenant opt-in.
+
+    Defaults OFF so turning it on is always an explicit decision and never breaks
+    a live pipeline silently. (ELR-009)
+    """
+    from app.core.config import settings
+    from app.core.settings_resolver import get_tenant_setting_bool
+    if settings.CREDIT_ENFORCEMENT_ENABLED:
+        return True
+    return get_tenant_setting_bool(db, "credit_enforcement_enabled", tenant_id=tenant_id, default=False)
+
+
+def check_credit_budget(
+    db: Session,
+    tenant_id: Optional[int],
+    plan: Optional[str] = None,
+    credits_needed: float = 1.0,
+) -> None:
+    """Pre-flight budget guard for a paid action. Raises HTTP 402 when enabled and
+    the tenant's month-to-date usage + this request would exceed the plan ceiling.
+
+    A no-op unless enforcement is enabled (see :func:`enforcement_enabled`) — so it
+    is safe to call at every paid choke-point without changing current behaviour.
+
+    NOTE: this is a sum-then-check guard; under heavy concurrency it can admit a
+    small overage. A per-tenant balance row with SELECT ... FOR UPDATE is the
+    hardening follow-up tracked in the ledger. (ELR-009)
+    """
+    if tenant_id is None:
+        return  # super-admin / internal: not metered
+    if not enforcement_enabled(db, tenant_id):
+        return
+    if plan is None:
+        from app.db.models.tenant import Tenant
+        tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        if tenant is not None:
+            plan = tenant.plan.value if hasattr(tenant.plan, "value") else str(tenant.plan)
+    ceiling = plan_credit_limit(plan)
+    if ceiling <= 0:
+        return  # unlimited
+    used = month_usage(db, tenant_id)
+    if used + credits_needed > ceiling:
+        logger.warning("credit_budget_exceeded", tenant_id=tenant_id,
+                       used=used, needed=credits_needed, ceiling=ceiling)
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Monthly credit limit reached ({int(used)}/{ceiling}). Upgrade your plan for more.",
+        )
 
 
 def record_usage(

@@ -126,22 +126,18 @@ def credit_balance(
     used_q = tenant_filter(used_q, CreditUsage, tenant_id)
     total_used = float(used_q.scalar() or 0)
 
-    # Get tenant plan limit (if available)
+    # Get tenant plan limit from the shared config-driven ceiling (ELR-009).
+    # 0 = unlimited (enterprise) → surface as None.
     plan_limit = None
     try:
         from app.db.models.tenant import Tenant
+        from app.services.credit_metering import plan_credit_limit
         if tenant_id:
             tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
             if tenant:
-                # Credit limits could be stored in settings_json or as a plan attribute
-                # For now, use plan-based defaults
-                plan_limits = {
-                    "starter": 1000,
-                    "professional": 5000,
-                    "enterprise": 50000,
-                }
                 plan_val = tenant.plan.value if hasattr(tenant.plan, 'value') else str(tenant.plan)
-                plan_limit = plan_limits.get(plan_val, 1000)
+                ceiling = plan_credit_limit(plan_val)
+                plan_limit = ceiling if ceiling > 0 else None
     except Exception:
         pass
 
