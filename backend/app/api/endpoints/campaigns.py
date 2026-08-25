@@ -11,7 +11,7 @@ from sqlalchemy import func, asc, desc, or_, case, literal
 logger = structlog.get_logger()
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.core.rate_limiter import limiter
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import tenant_filter
@@ -540,7 +540,7 @@ def create_campaign_from_leads(
         send_days_json=json.dumps(data.send_days if data.send_days else ["mon", "tue", "wed", "thu", "fri"]),
         daily_limit=30,
         created_by=user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         preview_mode=data.preview_mode,
         sending_speed="normal",
     )
@@ -706,7 +706,7 @@ def create_campaign(
         daily_limit=data.daily_limit,
         enrollment_rules_json=json.dumps(data.enrollment_rules.model_dump()) if data.enrollment_rules else None,
         created_by=user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         preview_mode=data.preview_mode,
         sending_speed=data.sending_speed if data.sending_speed in ('relaxed', 'normal', 'aggressive') else 'normal',
     )
@@ -1531,16 +1531,19 @@ def list_campaign_contacts(
     lead_ids = [cc.lead_id for cc in items if cc.lead_id]
     from app.db.models.contact import ContactDetails
     from app.db.models.lead import LeadDetails
+    # Enrichment batch scoped to the campaign's tenant (ELR-006/HIGH-3).
     contacts_map = {}
     if contact_ids:
         contacts = db.query(ContactDetails).filter(
-            ContactDetails.contact_id.in_(contact_ids)
+            ContactDetails.contact_id.in_(contact_ids),
+            ContactDetails.tenant_id == campaign.tenant_id,
         ).all()
         contacts_map = {c.contact_id: c for c in contacts}
     leads_map = {}
     if lead_ids:
         leads = db.query(LeadDetails).filter(
-            LeadDetails.lead_id.in_(lead_ids)
+            LeadDetails.lead_id.in_(lead_ids),
+            LeadDetails.tenant_id == campaign.tenant_id,
         ).all()
         leads_map = {l.lead_id: l for l in leads}
 

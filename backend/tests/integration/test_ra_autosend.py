@@ -72,8 +72,10 @@ class TestAutoSendGating:
 
 
 class TestOutreachRoleAutoOutboundApi:
-    def test_create_and_toggle_auto_outbound(self, client, sa_headers, auth_headers):
-        created = client.post("/api/v1/outreach-roles", headers=sa_headers,
+    def test_create_and_toggle_auto_outbound(self, client, sa_headers, auth_headers, test_tenant):
+        # Super-admin must impersonate a tenant to create tenant-scoped data (ELR-005).
+        imp = {**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)}
+        created = client.post("/api/v1/outreach-roles", headers=imp,
                              json={"role_name": "Blaster", "auto_outbound": True}).json()
         assert created["auto_outbound"] is True
         role_id = created["role_id"]
@@ -81,7 +83,7 @@ class TestOutreachRoleAutoOutboundApi:
         listed = client.get("/api/v1/outreach-roles", headers=auth_headers).json()
         assert next(x for x in listed if x["role_id"] == role_id)["auto_outbound"] is True
         # toggle off
-        upd = client.put(f"/api/v1/outreach-roles/{role_id}", headers=sa_headers,
+        upd = client.put(f"/api/v1/outreach-roles/{role_id}", headers=imp,
                         json={"auto_outbound": False})
         assert upd.status_code == 200
         assert upd.json()["auto_outbound"] is False

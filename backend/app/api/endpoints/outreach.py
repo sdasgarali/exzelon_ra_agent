@@ -89,20 +89,24 @@ async def get_outreach_thread(
             detail="Outreach event not found"
         )
 
+    # Sub-resource reads scoped to the event's tenant (ELR-003/HIGH-5).
     contact = db.query(ContactDetails).filter(
-        ContactDetails.contact_id == event.contact_id
+        ContactDetails.contact_id == event.contact_id,
+        ContactDetails.tenant_id == event.tenant_id,
     ).first()
 
     lead = None
     if event.lead_id:
         lead = db.query(LeadDetails).filter(
-            LeadDetails.lead_id == event.lead_id
+            LeadDetails.lead_id == event.lead_id,
+            LeadDetails.tenant_id == event.tenant_id,
         ).first()
 
     sender = None
     if event.sender_mailbox_id:
         sender = db.query(SenderMailbox).filter(
-            SenderMailbox.mailbox_id == event.sender_mailbox_id
+            SenderMailbox.mailbox_id == event.sender_mailbox_id,
+            SenderMailbox.tenant_id == event.tenant_id,
         ).first()
 
     return {

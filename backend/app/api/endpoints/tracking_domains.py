@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_user, require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.tracking_domain import TrackingDomain
 from app.core.config import settings
@@ -129,7 +129,7 @@ def create_tracking_domain(
         cname_target=_derive_cname_target(),
         is_verified=False,
         is_default=False,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(tracking_domain)
     db.commit()

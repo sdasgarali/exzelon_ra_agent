@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.objection_template import ObjectionTemplate
@@ -88,7 +88,7 @@ def create_objection(
 ):
     """Create a custom objection template."""
     template = ObjectionTemplate(
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
         objection_type=data.objection_type,
         objection_text=data.objection_text,
         response_text=data.response_text,
@@ -188,7 +188,7 @@ def seed_objections(
     """Seed system objection templates for the current tenant."""
     from app.services.objection_handler import seed_system_objections
 
-    result = seed_system_objections(db, tenant_id=tenant_id or 1)
+    result = seed_system_objections(db, tenant_id=ensure_tenant(tenant_id))
     return result
 
 

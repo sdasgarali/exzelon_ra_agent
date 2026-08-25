@@ -13,6 +13,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.campaign import Campaign, CampaignContact, CampaignContactStatus
 from app.db.models.deal import Deal, DealStage
+from app.db.models.sender_mailbox import SenderMailbox
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -33,21 +34,27 @@ def team_leaderboard(
     leaderboard = []
 
     for user in users:
-        # Emails sent (outreach events linked to campaigns)
-        sent_query = db.query(func.count(OutreachEvent.event_id)).filter(
+        # Emails sent — attributed to THIS user via their linked sender mailbox(es).
+        # (RA "machine" mailboxes have no linked user and are intentionally excluded.)
+        # Without the per-user join every row returned the tenant-wide total. (ELR-001)
+        sent_query = db.query(func.count(OutreachEvent.event_id)).join(
+            SenderMailbox, OutreachEvent.sender_mailbox_id == SenderMailbox.mailbox_id
+        ).filter(
             OutreachEvent.status == OutreachStatus.SENT,
             OutreachEvent.sent_at >= cutoff,
+            SenderMailbox.user_id == user.user_id,
         )
         sent_query = tenant_filter(sent_query, OutreachEvent, tenant_id)
         emails_sent = sent_query.scalar() or 0
 
-        # Deals won
+        # Deals won — attributed to the assigned owner (ELR-001).
         won_query = db.query(func.count(Deal.deal_id)).join(
             DealStage, Deal.stage_id == DealStage.stage_id
         ).filter(
             DealStage.is_won == True,
             Deal.is_archived == False,
             Deal.updated_at >= cutoff,
+            Deal.owner_id == user.user_id,
         )
         won_query = tenant_filter(won_query, Deal, tenant_id)
         deals_won = won_query.scalar() or 0
@@ -58,6 +65,7 @@ def team_leaderboard(
             DealStage.is_won == True,
             Deal.is_archived == False,
             Deal.updated_at >= cutoff,
+            Deal.owner_id == user.user_id,
         )
         val_query = tenant_filter(val_query, Deal, tenant_id)
         total_won_value = val_query.scalar() or 0
@@ -142,8 +150,12 @@ def revenue_analytics(
     """Revenue metrics: total won value, avg deal size, pipeline value, cost per lead, ROI."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
-    # Won deals
-    won_stage_ids = [s.stage_id for s in db.query(DealStage).filter(DealStage.is_won == True).all()]
+    # Won deals — stage IDs MUST be tenant-scoped, else another tenant's won-stage
+    # IDs pollute this tenant's revenue filter (ELR-002).
+    won_stage_q = tenant_filter(
+        db.query(DealStage).filter(DealStage.is_won == True), DealStage, tenant_id
+    )
+    won_stage_ids = [s.stage_id for s in won_stage_q.all()]
 
     won_val_query = db.query(func.sum(Deal.value)).filter(
         Deal.stage_id.in_(won_stage_ids),
@@ -163,8 +175,11 @@ def revenue_analytics(
 
     avg_deal_size = float(total_won_value) / deals_won_count if deals_won_count > 0 else 0
 
-    # Pipeline value (non-won, non-lost deals)
-    lost_stage_ids = [s.stage_id for s in db.query(DealStage).filter(DealStage.is_lost == True).all()]
+    # Pipeline value (non-won, non-lost deals) — lost stage IDs tenant-scoped (ELR-002).
+    lost_stage_q = tenant_filter(
+        db.query(DealStage).filter(DealStage.is_lost == True), DealStage, tenant_id
+    )
+    lost_stage_ids = [s.stage_id for s in lost_stage_q.all()]
     excluded_ids = set(won_stage_ids + lost_stage_ids)
 
     pipeline_query = db.query(func.sum(Deal.value)).filter(

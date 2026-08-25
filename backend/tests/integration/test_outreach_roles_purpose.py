@@ -5,10 +5,13 @@ pytestmark = pytest.mark.integration
 
 
 class TestOutreachRolePurpose:
-    def test_create_with_purpose(self, client, sa_headers):
+    # Super-admin must impersonate a tenant to create tenant-scoped data; an
+    # un-impersonated super-admin write is now rejected with 400 (ELR-005).
+    def test_create_with_purpose(self, client, sa_headers, test_tenant):
+        headers = {**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)}
         r = client.post(
             "/api/v1/outreach-roles",
-            headers=sa_headers,
+            headers=headers,
             json={"role_name": "Account Exec", "description": "AE", "purpose": "closes deals"},
         )
         assert r.status_code == 201, r.text
@@ -17,10 +20,20 @@ class TestOutreachRolePurpose:
         assert body["description"] == "AE"
         assert body["purpose"] == "closes deals"
 
-    def test_purpose_round_trips_on_list_and_update(self, client, sa_headers, auth_headers):
-        created = client.post(
+    def test_unimpersonated_super_admin_create_is_rejected(self, client, sa_headers):
+        # ELR-005: no tenant selected → 400, never a silent write to tenant 1.
+        r = client.post(
             "/api/v1/outreach-roles",
             headers=sa_headers,
+            json={"role_name": "Nope", "purpose": "x"},
+        )
+        assert r.status_code == 400
+
+    def test_purpose_round_trips_on_list_and_update(self, client, sa_headers, auth_headers, test_tenant):
+        headers = {**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)}
+        created = client.post(
+            "/api/v1/outreach-roles",
+            headers=headers,
             json={"role_name": "Sourcer", "purpose": "finds candidates"},
         ).json()
         role_id = created["role_id"]
@@ -34,7 +47,7 @@ class TestOutreachRolePurpose:
         # update purpose
         upd = client.put(
             f"/api/v1/outreach-roles/{role_id}",
-            headers=sa_headers,
+            headers=headers,
             json={"purpose": "sources & qualifies candidates"},
         )
         assert upd.status_code == 200

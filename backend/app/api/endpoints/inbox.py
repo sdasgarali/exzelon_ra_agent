@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.inbox_message import InboxMessage, MessageDirection
@@ -453,7 +453,7 @@ def send_reply(
         in_reply_to=last_received.raw_message_id if last_received else None,
         received_at=datetime.utcnow(),
         is_read=True,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(sent_msg)
     db.commit()
@@ -726,7 +726,7 @@ def generate_draft(
         received_message=last_received,
         contact=contact,
         campaign=campaign_obj,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
 
     if not draft:

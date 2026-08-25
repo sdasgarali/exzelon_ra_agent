@@ -13,6 +13,10 @@ class VisitorEvent(Base):
     __tablename__ = "visitor_events"
 
     event_id = Column(Integer, primary_key=True, autoincrement=True)
+    # Owning tenant. Nullable because legacy rows + pixels installed without a site
+    # token have no tenant; such rows are visible only to super-admin (never leaked
+    # to a specific tenant, since tenant_filter excludes NULLs). (ELR-004)
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     visitor_id = Column(String(100), nullable=False, index=True)  # cookie-based ID
     contact_id = Column(Integer, ForeignKey("contact_details.contact_id"), nullable=True)
     page_url = Column(String(1000), nullable=False)
@@ -28,6 +32,7 @@ class VisitorEvent(Base):
         Index("idx_visitor_id", "visitor_id"),
         Index("idx_visitor_contact", "contact_id"),
         Index("idx_visitor_visited", "visited_at"),
+        Index("idx_visitor_tenant", "tenant_id"),
     )
 
     def __repr__(self) -> str:

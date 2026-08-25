@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.db.base import get_db
-from app.api.deps.auth import get_current_user, get_current_tenant_id
+from app.api.deps.auth import get_current_user, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User
 from app.db.models.icp_profile import ICPProfile
 from app.db.query_helpers import tenant_filter
@@ -61,7 +61,7 @@ def save_icp_profile(
         states_json=json.dumps(body.states),
         company_sizes_json=json.dumps(body.company_sizes),
         user_id=current_user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(profile)
     db.commit()

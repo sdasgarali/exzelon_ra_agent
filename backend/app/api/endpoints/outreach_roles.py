@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, require_role, get_current_tenant_id
+from app.api.deps import get_db, require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.outreach_role import OutreachRole
 from app.db.models.sender_mailbox import SenderMailbox
@@ -94,7 +94,7 @@ async def create_outreach_role(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new outreach role (Super Admin only)."""
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
     existing = (
         db.query(OutreachRole)
         .filter(
