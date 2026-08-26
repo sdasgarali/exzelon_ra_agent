@@ -1,11 +1,27 @@
-import math
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import structlog
 
 logger = structlog.get_logger()
+
+
+def compute_tax_cents(subtotal_cents: int, tax_rate_percent) -> int:
+    """Tax in integer cents, rounded HALF_UP (banker-safe, not always-up).
+
+    The old ``math.ceil(subtotal * rate / 100)`` always rounded up (over-charging
+    by up to 1¢) and cast the Numeric rate through float. This keeps everything in
+    Decimal and rounds to the nearest cent. (ELR-029)
+    """
+    rate = Decimal(str(tax_rate_percent or 0))
+    if rate <= 0:
+        return 0
+    cents = (Decimal(int(subtotal_cents)) * rate / Decimal(100)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return int(cents)
 
 
 def _generate_invoice_number(db: Session) -> str:
@@ -95,11 +111,11 @@ def generate_invoice_for_tenant(
             return {"status": "skipped", "detail": f"Invoice already exists: {existing.invoice_number}",
                     "invoice_id": existing.invoice_id, "invoice_number": existing.invoice_number}
 
-        # Calculate tax
+        # Calculate tax (Decimal, HALF_UP — see compute_tax_cents)
         tax_rate = float(tenant.tax_rate_percent or 0)
         if tax_rate <= 0:
             tax_rate = settings.BILLING_TAX_RATE_DEFAULT
-        tax_cents = math.ceil(amount_cents * tax_rate / 100) if tax_rate > 0 else 0
+        tax_cents = compute_tax_cents(amount_cents, tax_rate)
         total_cents = amount_cents + tax_cents
 
         # Generate invoice number
@@ -118,7 +134,7 @@ def generate_invoice_for_tenant(
             subtotal_cents=amount_cents,
             tax_cents=tax_cents,
             total_cents=total_cents,
-            currency="USD",
+            currency=settings.BILLING_DEFAULT_CURRENCY,
             status=InvoiceStatus.DRAFT,
         )
         db.add(invoice)

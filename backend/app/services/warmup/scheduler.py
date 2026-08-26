@@ -837,6 +837,38 @@ def job_check_overdue_invoices():
         if count:
             db.commit()
             logger.info("Marked invoices as overdue", count=count)
+
+        # Suspend tenants past the grace window; un-suspend those with no unpaid
+        # overdue invoices left (ELR-023).
+        grace = app_settings.BILLING_SUSPEND_AFTER_DAYS_OVERDUE
+        if grace and grace > 0:
+            from app.db.models.tenant import Tenant
+            from datetime import timedelta
+            cutoff = today - timedelta(days=grace)
+            unpaid = (InvoiceStatus.SENT, InvoiceStatus.OVERDUE)
+            suspended_n = unsuspended_n = 0
+            for tenant in db.query(Tenant).all():
+                has_stale = db.query(Invoice.invoice_id).filter(
+                    Invoice.tenant_id == tenant.tenant_id,
+                    Invoice.status == InvoiceStatus.OVERDUE,
+                    Invoice.due_date < cutoff,
+                    Invoice.is_archived == False,
+                ).first() is not None
+                has_any_unpaid = db.query(Invoice.invoice_id).filter(
+                    Invoice.tenant_id == tenant.tenant_id,
+                    Invoice.status.in_(unpaid),
+                    Invoice.is_archived == False,
+                ).first() is not None
+                if has_stale and not tenant.billing_suspended:
+                    tenant.billing_suspended = True
+                    suspended_n += 1
+                elif tenant.billing_suspended and not has_any_unpaid:
+                    tenant.billing_suspended = False
+                    unsuspended_n += 1
+            if suspended_n or unsuspended_n:
+                db.commit()
+                logger.info("Billing suspension sync",
+                            suspended=suspended_n, unsuspended=unsuspended_n)
     except Exception as e:
         logger.error("Overdue invoice check failed", error=str(e))
     finally:

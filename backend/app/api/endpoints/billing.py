@@ -45,6 +45,23 @@ class PayRequest(BaseModel):
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+def _clear_suspension_if_settled(db, tenant_id: int) -> None:
+    """Lift a non-payment suspension once a tenant has no unpaid (sent/overdue)
+    invoices left. Safe to call after any payment. (ELR-023)"""
+    from app.db.models.invoice import Invoice, InvoiceStatus
+    from app.db.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if tenant is None or not getattr(tenant, "billing_suspended", False):
+        return
+    still_unpaid = db.query(Invoice.invoice_id).filter(
+        Invoice.tenant_id == tenant_id,
+        Invoice.status.in_((InvoiceStatus.SENT, InvoiceStatus.OVERDUE)),
+        Invoice.is_archived == False,
+    ).first() is not None
+    if not still_unpaid:
+        tenant.billing_suspended = False
+
+
 def _invoice_to_dict(inv) -> dict:
     return {
         "invoice_id": inv.invoice_id,
@@ -219,6 +236,7 @@ def mark_paid(
     invoice.paid_at = datetime.utcnow()
     invoice.paid_via = method
     invoice.payment_reference = req.reference or None
+    _clear_suspension_if_settled(db, invoice.tenant_id)  # ELR-023
 
     # Audit
     try:
@@ -274,8 +292,8 @@ def override_amount(
     from app.db.models.tenant import Tenant
     tenant = db.query(Tenant).filter(Tenant.tenant_id == invoice.tenant_id).first()
     tax_rate = float(tenant.tax_rate_percent or 0) if tenant else 0
-    import math
-    invoice.tax_cents = math.ceil(req.new_amount_cents * tax_rate / 100) if tax_rate > 0 else 0
+    from app.services.billing.invoice_generator import compute_tax_cents
+    invoice.tax_cents = compute_tax_cents(req.new_amount_cents, tax_rate)
     invoice.total_cents = invoice.subtotal_cents + invoice.tax_cents
     invoice.notes = (invoice.notes or "") + f"\nAmount overridden by {current_user.email}: {req.reason}"
 
@@ -744,6 +762,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except Exception as e_audit:
             logger.warning("Audit log failed for stripe invoice_paid", error=str(e_audit))
 
+        # Lift a non-payment suspension immediately if this clears their arrears (ELR-023).
+        _clear_suspension_if_settled(db, invoice.tenant_id)
+
         # Record the event id in the SAME transaction as the payment/invoice update
         # so processing and de-dup are all-or-nothing.
         if not _mark_processed_and_commit():
@@ -760,6 +781,51 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         logger.info("Stripe payment processed", invoice_number=invoice.invoice_number,
                     amount=amount_total)
+
+    elif event["type"] in ("charge.refunded", "charge.dispute.created",
+                           "payment_intent.payment_failed", "invoice.payment_failed"):
+        # Resolve the invoice from the payment intent (these events don't carry our
+        # metadata). No match → just record the event and move on. (ELR-022)
+        obj = event["data"]["object"]
+        pi = obj.get("payment_intent") or obj.get("id")
+        invoice = None
+        if pi:
+            invoice = db.query(Invoice).filter(Invoice.stripe_payment_intent_id == pi).first()
+
+        if invoice is not None:
+            etype = event["type"]
+            if etype == "charge.refunded":
+                invoice.status = InvoiceStatus.REFUNDED
+                refunded = obj.get("amount_refunded", invoice.total_cents)
+                db.add(PaymentRecord(
+                    tenant_id=invoice.tenant_id, invoice_id=invoice.invoice_id,
+                    amount_cents=-int(refunded), currency=invoice.currency,
+                    payment_method=PaymentMethod.STRIPE,
+                    stripe_payment_id=pi, status=PaymentStatus.REFUNDED,
+                    recorded_by="stripe_webhook", notes="Refund via Stripe",
+                ))
+                action = "invoice_refunded"
+            elif etype == "charge.dispute.created":
+                # Don't auto-void a disputed invoice — flag it for a human.
+                invoice.notes = (invoice.notes or "") + "\n[DISPUTE] Chargeback opened via Stripe."
+                action = "invoice_disputed"
+            else:  # payment failed
+                if invoice.status != InvoiceStatus.PAID:
+                    invoice.status = InvoiceStatus.OVERDUE
+                action = "invoice_payment_failed"
+            try:
+                db.add(AuditLog(
+                    tenant_id=invoice.tenant_id, entity_type="invoice",
+                    entity_id=invoice.invoice_id, action=action,
+                    changed_by="stripe_webhook", notes=f"Stripe event {event['type']}",
+                ))
+            except Exception:
+                pass
+            logger.info("Stripe lifecycle event processed",
+                        invoice_id=invoice.invoice_id, event_type=event["type"])
+        if not _mark_processed_and_commit():
+            return {"received": True, "duplicate": True}
+
     else:
         # Unhandled event type — record it so retries of the same id are no-ops.
         _mark_processed_and_commit()

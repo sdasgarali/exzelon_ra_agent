@@ -13,6 +13,7 @@ class InvoiceStatus(str, PyEnum):
     OVERDUE = "overdue"
     CANCELLED = "cancelled"
     VOID = "void"
+    REFUNDED = "refunded"  # payment reversed via Stripe refund (ELR-022)
 
 
 class PaymentMethod(str, PyEnum):

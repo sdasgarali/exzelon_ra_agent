@@ -849,6 +849,36 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for suppression_list uniqueness: {e}")
 
+    # Migration: billing lifecycle — widen invoice status enum (+refunded) and add
+    # tenants.billing_suspended (ELR-022 / ELR-023). Idempotent.
+    try:
+        if settings.DB_TYPE == "mysql":
+            from sqlalchemy import text as sa_text_bl, inspect as sa_inspect_bl
+            with engine.connect() as conn:
+                insp_bl = sa_inspect_bl(engine)
+                tables_bl = insp_bl.get_table_names()
+                if "invoices" in tables_bl:
+                    try:
+                        conn.execute(sa_text_bl(
+                            "ALTER TABLE invoices MODIFY COLUMN status "
+                            "ENUM('draft','sent','paid','overdue','cancelled','void','refunded') "
+                            "NOT NULL DEFAULT 'draft'"
+                        ))
+                        conn.commit()
+                        logger.info("Migration: invoices.status enum widened (+refunded)")
+                    except Exception:
+                        pass
+                if "tenants" in tables_bl:
+                    tcols = [c["name"] for c in insp_bl.get_columns("tenants")]
+                    if "billing_suspended" not in tcols:
+                        conn.execute(sa_text_bl(
+                            "ALTER TABLE tenants ADD COLUMN billing_suspended BOOLEAN NOT NULL DEFAULT 0"
+                        ))
+                        conn.commit()
+                        logger.info("Migration: added tenants.billing_suspended")
+    except Exception as e:
+        logger.warning(f"Migration check for billing lifecycle columns: {e}")
+
     # Migration: add unsubscribe columns
     try:
         from sqlalchemy import text as sa_text_unsub, inspect as sa_inspect_unsub

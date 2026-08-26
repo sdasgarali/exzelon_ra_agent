@@ -46,6 +46,36 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
 
+  security-scan:
+    # Dependency + static security scanning (ELR-028). Report-only for now
+    # (continue-on-error) so findings surface on every PR without blocking on
+    # pre-existing transitive CVEs; flip to blocking once the backlog is cleared.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: pip-audit (dependency CVEs)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+
+      - name: bandit (Python SAST)
+        continue-on-error: true
+        run: |
+          pip install bandit
+          bandit -r backend/app -ll -x backend/app/tests
+
+      - name: npm audit (frontend deps)
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
   frontend-test-build:
     runs-on: ubuntu-latest
     defaults:

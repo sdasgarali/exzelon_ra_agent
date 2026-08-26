@@ -374,6 +374,7 @@ async def get_current_tenant_id(
 
 
 async def require_tenant_id(
+    db: Session = Depends(get_db),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ) -> int:
     """Like :func:`get_current_tenant_id` but REQUIRES a concrete tenant.
@@ -383,11 +384,21 @@ async def require_tenant_id(
     API keys/settings are used and only its data is touched. A super admin who has
     not selected (impersonated) a tenant resolves to ``None`` — this returns 400
     instead of silently defaulting to a tenant.
+
+    Also blocks tenants suspended for non-payment (ELR-023) — they get 402 until
+    their outstanding invoices are settled.
     """
     if tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Select a tenant first — impersonate the tenant you want to run this for before starting a pipeline.",
+        )
+    from app.db.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if tenant is not None and getattr(tenant, "billing_suspended", False):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Account suspended for non-payment. Please settle outstanding invoices to resume.",
         )
     return tenant_id
 
