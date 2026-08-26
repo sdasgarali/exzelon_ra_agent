@@ -21,11 +21,11 @@
 - [x] ELR-010 — InvoiceSequence counter (gapless, row-locked, seeds legacy) — 72597c8
 - [ ] ELR-005b — email_preview/integrations/leads (webhook/pipeline `tenant_id or 1`, per-site review)
 - [ ] ELR-009b — wire check_credit_budget into AI/enrichment/validation choke-points + atomic balance row
-- [ ] ELR-012 — CAN-SPAM postal address required + injected into footer
-- [ ] ELR-014 — auto-action unsubscribe-by-reply (reply_tracker)
-- [ ] ELR-013 — wire DKIM signing (blocked on publishing 10 GoDaddy DNS records)
-- [ ] ELR-015/016 — soft-bounce enforcement + suppression (tenant_id,email) index
-- [ ] ELR-017/018 — Sentry + offsite encrypted backups/DR; ELR-019 cleanup
+- [x] ELR-012 — CAN-SPAM address injected into footer (per-tenant + global fallback) at all send sites
+- [x] ELR-014 — auto-action unsubscribe: extracted apply_unsubscribe() (suppress+status+CANCEL pending enrollments+audit); fixed autoflush=False double-insert
+- [ ] ELR-013 — DKIM signing DEFERRED (user publishes 10 GoDaddy DNS records first)
+- [ ] ELR-015/016 — soft-bounce enforcement + suppression (tenant_id,email) composite index
+- [ ] ELR-017/018 — Sentry + offsite encrypted backups/DR (code behind env vars; adds sentry-sdk+boto3); ELR-019 cleanup
 
 ## Blockers / Notes
 - ELR-013 (DKIM signing) is blocked on publishing the 10 pending GoDaddy DKIM DNS records
