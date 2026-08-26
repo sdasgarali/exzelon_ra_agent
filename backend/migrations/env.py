@@ -12,16 +12,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings
 from app.db.base import Base
 
-# Import all models so metadata is populated
-from app.db.models import lead, contact, client, user, job_run  # noqa
-from app.db.models import sender_mailbox, outreach, email_validation  # noqa
-from app.db.models import email_template, warmup_profile, settings as settings_model  # noqa
-from app.db.models import lead_contact, audit_log  # noqa
+# Import the models package so EVERY model registers on Base.metadata (its __init__
+# imports all of them). The old explicit list covered only ~13 of 51 models, so a
+# baseline/autogenerate would have silently missed the rest. (ELR-026)
+import app.db.models  # noqa: F401
+
+import os
 
 config = context.config
 
-# Override sqlalchemy.url with app's DATABASE_URL
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Prefer an explicit DATABASE_URL env var (standard for migration tools / CI /
+# a throwaway test DB); fall back to the app's computed URL. (ELR-026)
+_db_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", _db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

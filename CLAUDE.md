@@ -141,7 +141,7 @@ For full deployment details (SSH, logs, nginx, systemd, rollback): **Read `CLAUD
 
 | Change Type | Files to Update |
 |-------------|----------------|
-| **New DB migration** | `backend/app/main.py` (lifespan hook) |
+| **New DB migration** | **Alembic** revision in `backend/migrations/versions/` (`alembic revision -m …`) — see `deploy/MIGRATIONS.md`. Do NOT add new ALTERs to `main.py` (legacy block kept only as a safety net, ELR-026). |
 | **New DB table/model** | `backend/app/db/models/`, `db/base.py`, `CLAUDE_REFERENCE/data-models.md` |
 | **New API endpoint** | `backend/app/api/endpoints/`, `api/router.py`, `CLAUDE_REFERENCE/api-endpoints.md` |
 | **New dashboard page** | `frontend/src/app/dashboard/`, `layout.tsx` nav, MODULES in roles page |
