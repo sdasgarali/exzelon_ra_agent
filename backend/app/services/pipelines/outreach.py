@@ -313,21 +313,52 @@ def get_active_template(db, category: str = "outreach", tenant_id: Optional[int]
     return query.first()
 
 
-def generate_unsub_footer(tracking_id: str, base_url: str = "") -> Dict[str, str]:
-    """Generate HTML and text unsubscribe footers with a clickable link."""
+def generate_unsub_footer(tracking_id: str, base_url: str = "", company_address: str = "") -> Dict[str, str]:
+    """Generate HTML and text unsubscribe footers with a clickable link.
+
+    CAN-SPAM §5(a)(5) requires a valid physical postal address in every commercial
+    email. ``company_address`` is the sender tenant's address; when not supplied it
+    falls back to the global ``BILLING_COMPANY_ADDRESS`` so a configured deployment
+    always includes an address. (ELR-012)
+    """
     from app.core.tracking import generate_tracking_token
     if not base_url:
         base_url = settings.EFFECTIVE_BASE_URL
     token = generate_tracking_token(tracking_id)
     unsub_url = f"{base_url}/unsub/{tracking_id}?token={token}"
+
+    address = (company_address or "").strip() or (settings.BILLING_COMPANY_ADDRESS or "").strip()
+    addr_html = f'<br/><span style="color:#bbb;">{address}</span>' if address else ""
+    addr_text = f"\n{address}" if address else ""
+
     html = (
         '<hr style="border:none;border-top:1px solid #eee;margin-top:20px;" />'
         '<p style="font-size:11px;color:#999;text-align:center;">'
         f'<a href="{unsub_url}" style="color:#999;text-decoration:underline;">Unsubscribe</a>'
-        ' | Reply with "UNSUBSCRIBE" to opt out</p>'
+        ' | Reply with "UNSUBSCRIBE" to opt out'
+        f'{addr_html}</p>'
     )
-    text = f"\n---\nUnsubscribe: {unsub_url}\nOr reply with \"UNSUBSCRIBE\" to opt out."
-    return {"html": html, "text": text, "url": unsub_url}
+    text = (
+        f"\n---\nUnsubscribe: {unsub_url}\nOr reply with \"UNSUBSCRIBE\" to opt out."
+        f"{addr_text}"
+    )
+    return {"html": html, "text": text, "url": unsub_url, "address": address}
+
+
+def resolve_tenant_address(db, tenant_id) -> str:
+    """The sending tenant's postal address for the CAN-SPAM footer (ELR-012).
+
+    Empty string when the tenant has none set — the footer then falls back to the
+    global BILLING_COMPANY_ADDRESS. Best-effort; never raises into the send path.
+    """
+    if not tenant_id:
+        return ""
+    try:
+        from app.db.models.tenant import Tenant
+        t = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        return (t.company_address or "").strip() if t else ""
+    except Exception:
+        return ""
 
 
 def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png", unsub_url=""):
@@ -801,8 +832,10 @@ def run_outreach_send_pipeline(
             db.add(event)
             db.flush()  # Get tracking_id
 
-            # Generate unsub footer
-            unsub_footer = generate_unsub_footer(event.tracking_id)
+            # Generate unsub footer (with sending tenant's postal address — CAN-SPAM, ELR-012)
+            unsub_footer = generate_unsub_footer(
+                event.tracking_id, company_address=resolve_tenant_address(db, event.tenant_id)
+            )
 
             # Look up the contact's associated lead for job_title and company context
             contact_lead = None
@@ -1049,8 +1082,10 @@ def run_outreach_for_lead(
                 db.add(event)
                 db.flush()  # Get tracking_id
 
-                # Generate unsub footer
-                unsub_footer = generate_unsub_footer(event.tracking_id)
+                # Generate unsub footer (with sending tenant's postal address — CAN-SPAM, ELR-012)
+                unsub_footer = generate_unsub_footer(
+                    event.tracking_id, company_address=resolve_tenant_address(db, event.tenant_id)
+                )
 
                 # Use template if available, otherwise fallback to hardcoded
                 if active_template:

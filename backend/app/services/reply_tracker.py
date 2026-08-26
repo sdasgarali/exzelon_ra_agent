@@ -97,6 +97,55 @@ def _is_unsubscribe(subject: str, body: str) -> bool:
     return False
 
 
+def apply_unsubscribe(
+    db: Session,
+    contact,
+    reason: str = "unsubscribe_reply",
+    changed_by: str = "system",
+    note: str = "Unsubscribed via email reply",
+) -> None:
+    """Fully action an unsubscribe for a contact, synchronously (ELR-014):
+
+    1. add to the suppression list (idempotent),
+    2. mark the contact UNSUBSCRIBED,
+    3. cancel its pending campaign enrollments so no further email is sent,
+    4. write an audit entry.
+
+    Extracted from the IMAP reply loop so it is directly unit-testable and reusable
+    by any reply path (inbox, AI agent) that detects an opt-out.
+    """
+    if not contact:
+        return
+    tid = getattr(contact, "tenant_id", None) or 1
+    email_lc = (contact.email or "").lower()
+
+    existing = db.query(SuppressionList).filter(SuppressionList.email == email_lc).first()
+    if not existing:
+        db.add(SuppressionList(tenant_id=tid, email=email_lc, reason=reason))
+        # Flush so a subsequent call in the same session sees it (the session is
+        # autoflush=False, so without this a repeat opt-out double-inserts).
+        db.flush()
+
+    contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
+    contact.unsubscribed_at = datetime.utcnow()
+
+    from app.db.models.campaign import CampaignContact, CampaignContactStatus
+    db.query(CampaignContact).filter(
+        CampaignContact.contact_id == contact.contact_id,
+        CampaignContact.status.in_([
+            CampaignContactStatus.ACTIVE, CampaignContactStatus.PAUSED,
+        ]),
+    ).update(
+        {CampaignContact.status: CampaignContactStatus.UNSUBSCRIBED},
+        synchronize_session=False,
+    )
+
+    db.add(AuditLog(
+        tenant_id=tid, entity_type="contact", entity_id=contact.contact_id,
+        action="unsubscribe", changed_by=changed_by, notes=note,
+    ))
+
+
 def _clean_message_id(msg_id: str) -> str:
     """Normalize a Message-ID header value."""
     if not msg_id:
@@ -223,40 +272,13 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
                     contact = db.query(ContactDetails).filter(
                         ContactDetails.contact_id == matched_event.contact_id
                     ).first()
-
                     if contact:
-                        existing = db.query(SuppressionList).filter(
-                            SuppressionList.email == contact.email.lower()
-                        ).first()
-
-                        if not existing:
-                            suppression = SuppressionList(
-                                tenant_id=getattr(contact, 'tenant_id', None) or 1,
-                                email=contact.email.lower(),
-                                reason="unsubscribe_reply",
-                            )
-                            db.add(suppression)
-
-                        # Update contact outreach status
-                        contact.outreach_status = ContactOutreachStatus.UNSUBSCRIBED
-                        contact.unsubscribed_at = datetime.utcnow()
-
-                        # Audit log
-                        db.add(AuditLog(
-                            tenant_id=getattr(contact, 'tenant_id', None) or 1,
-                            entity_type="contact",
-                            entity_id=contact.contact_id,
-                            action="unsubscribe",
-                            changed_by="system",
-                            notes="Unsubscribed via email reply",
-                        ))
-
+                        apply_unsubscribe(db, contact)
                         logger.info("Contact unsubscribed",
                             email=contact.email,
                             reason="unsubscribe_reply",
                             event_id=matched_event.event_id
                         )
-
                     result["unsubscribes"] += 1
 
             except Exception as e:
