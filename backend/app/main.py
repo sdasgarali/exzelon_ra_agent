@@ -810,6 +810,45 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration check for visitor_events.tenant_id: {e}")
 
+    # Migration: suppression_list uniqueness (tenant_id, email) instead of global
+    # email so each tenant owns its own opt-outs (ELR-016). Best-effort/idempotent.
+    try:
+        if settings.DB_TYPE == "mysql":
+            from sqlalchemy import text as sa_text_sup, inspect as sa_inspect_sup
+            with engine.connect() as conn:
+                insp_sup = sa_inspect_sup(engine)
+                if "suppression_list" in insp_sup.get_table_names():
+                    uniques = insp_sup.get_unique_constraints("suppression_list")
+                    indexes = insp_sup.get_indexes("suppression_list")
+                    has_composite = any(
+                        set(u.get("column_names") or []) == {"tenant_id", "email"} for u in uniques
+                    )
+                    # Drop any UNIQUE on email alone (constraint or index).
+                    for u in uniques:
+                        if u.get("column_names") == ["email"] and u.get("name"):
+                            try:
+                                conn.execute(sa_text_sup(f"ALTER TABLE suppression_list DROP INDEX {u['name']}"))
+                            except Exception:
+                                pass
+                    for i in indexes:
+                        if i.get("unique") and i.get("column_names") == ["email"] and i.get("name"):
+                            try:
+                                conn.execute(sa_text_sup(f"ALTER TABLE suppression_list DROP INDEX {i['name']}"))
+                            except Exception:
+                                pass
+                    if not has_composite:
+                        try:
+                            conn.execute(sa_text_sup(
+                                "ALTER TABLE suppression_list ADD CONSTRAINT "
+                                "uq_suppression_tenant_email UNIQUE (tenant_id, email)"
+                            ))
+                        except Exception:
+                            pass
+                    conn.commit()
+                    logger.info("Migration: suppression_list uniqueness -> (tenant_id, email)")
+    except Exception as e:
+        logger.warning(f"Migration check for suppression_list uniqueness: {e}")
+
     # Migration: add unsubscribe columns
     try:
         from sqlalchemy import text as sa_text_unsub, inspect as sa_inspect_unsub
@@ -2489,6 +2528,32 @@ async def lifespan(app: FastAPI):
             pass
     logger.info("Shutting down application")
 
+
+def _init_sentry() -> None:
+    """Initialise Sentry error tracking when SENTRY_DSN is configured (ELR-017).
+
+    Inert (and dependency-free) when the DSN is unset — the import only happens on
+    the configured path, so a deployment without sentry-sdk still starts cleanly.
+    """
+    if not settings.SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.SENTRY_ENVIRONMENT or settings.APP_ENV,
+            traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+            send_default_pii=False,  # do not ship PII (contact emails/names)
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+        )
+        logger.info("Sentry error tracking enabled", environment=settings.SENTRY_ENVIRONMENT or settings.APP_ENV)
+    except Exception as e:  # pragma: no cover - defensive; never block startup
+        logger.warning("Sentry init failed (continuing without it)", error=str(e))
+
+
+_init_sentry()
 
 app = FastAPI(
     title=settings.APP_NAME,
