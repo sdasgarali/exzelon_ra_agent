@@ -18,8 +18,9 @@ async def test_require_tenant_id_blocks_none():
 
 
 @pytest.mark.asyncio
-async def test_require_tenant_id_passes_concrete():
-    assert await require_tenant_id(tenant_id=7) == 7
+async def test_require_tenant_id_passes_concrete(db_session):
+    # tenant 7 doesn't exist → no suspension check applies → id passes through.
+    assert await require_tenant_id(db=db_session, tenant_id=7) == 7
 
 
 def test_superadmin_without_tenant_is_blocked_on_pipeline_run(client, super_admin_headers):

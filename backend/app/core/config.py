@@ -142,6 +142,7 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     BILLING_TAX_RATE_DEFAULT: float = 0.0
+    BILLING_DEFAULT_CURRENCY: str = "USD"  # ISO-4217; invoices default to this (ELR-029)
     BILLING_COMPANY_NAME: str = ""
     BILLING_COMPANY_ADDRESS: str = ""
     BILLING_COMPANY_LOGO_PATH: str = ""
@@ -151,6 +152,9 @@ class Settings(BaseSettings):
     INVOICE_REMINDER_INTERVAL_DAYS: int = 3
     INVOICE_MAX_REMINDERS: int = 5
     INVOICE_DUE_DAY: int = 5
+    # Suspend a tenant's service once it has an invoice this many days past due
+    # (0 = never auto-suspend). (ELR-023)
+    BILLING_SUSPEND_AFTER_DAYS_OVERDUE: int = 14
 
     # Observability — Sentry error tracking (ELR-017). Inert unless SENTRY_DSN set.
     SENTRY_DSN: str = ""

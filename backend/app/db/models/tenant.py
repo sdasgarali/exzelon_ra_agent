@@ -57,6 +57,9 @@ class Tenant(Base):
     billing_address_json = Column(Text, nullable=True)
     stripe_customer_id = Column(String(100), nullable=True, index=True)
     tax_rate_percent = Column(Numeric(5, 2), default=0, nullable=False)
+    # Set when a tenant is past-due beyond the grace window; blocks spend actions
+    # until they pay. Checked in the auth dependency. (ELR-023)
+    billing_suspended = Column(Boolean, default=False, nullable=False, server_default="0")
 
     def __repr__(self) -> str:
         return f"<Tenant(tenant_id={self.tenant_id}, slug='{self.slug}', plan='{self.plan}')>"
