@@ -50,6 +50,56 @@ def _parse_timestamp_from_filename(filename: str) -> Optional[datetime]:
         return None
 
 
+def _sha256_file(path: Path) -> str:
+    """SHA-256 hex digest of a file (streamed)."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _upload_offsite(backup_path: Path, checksum: str) -> dict:
+    """Upload a backup to S3 (optionally Fernet-encrypted), keyed with its checksum.
+
+    Returns a status dict. Gated on ``BACKUP_S3_BUCKET`` — a no-op when unset so
+    deployments without offsite storage keep working. A failure is logged at
+    warning with ``backup_offsite_failed`` (wire an alert to that event). (ELR-018)
+    """
+    if not settings.BACKUP_S3_BUCKET:
+        return {"status": "disabled"}
+    try:
+        data = backup_path.read_bytes()
+        key_suffix = ""
+        if settings.BACKUP_ENCRYPT and settings.ENCRYPTION_KEY:
+            from cryptography.fernet import Fernet
+            data = Fernet(settings.ENCRYPTION_KEY.encode()).encrypt(data)
+            key_suffix = ".enc"
+
+        import boto3
+        key = f"{settings.BACKUP_S3_PREFIX.rstrip('/')}/{backup_path.name}{key_suffix}"
+        client_kwargs = {}
+        if settings.BACKUP_S3_ENDPOINT_URL:
+            client_kwargs["endpoint_url"] = settings.BACKUP_S3_ENDPOINT_URL
+        s3 = boto3.client("s3", **client_kwargs)
+        s3.put_object(
+            Bucket=settings.BACKUP_S3_BUCKET,
+            Key=key,
+            Body=data,
+            Metadata={"sha256": checksum, "encrypted": str(bool(key_suffix))},
+        )
+        logger.info("backup_offsite_uploaded", bucket=settings.BACKUP_S3_BUCKET,
+                    key=key, encrypted=bool(key_suffix))
+        return {"status": "uploaded", "bucket": settings.BACKUP_S3_BUCKET,
+                "key": key, "encrypted": bool(key_suffix)}
+    except Exception as e:
+        # Loud + alertable — an offsite backup that silently stops uploading is a
+        # DR gap you only discover when you need to restore.
+        logger.warning("backup_offsite_failed", error=str(e), filename=backup_path.name)
+        return {"status": "failed", "error": str(e)}
+
+
 def create_backup() -> dict:
     """Create a full database backup using mysqldump + gzip.
 
@@ -100,13 +150,23 @@ def create_backup() -> dict:
         size_bytes = backup_path.stat().st_size
         created_at = datetime.now().isoformat()
 
-        logger.info("Backup created", filename=filename, size_bytes=size_bytes)
+        # Integrity checksum (detects silent corruption / partial writes).
+        checksum = _sha256_file(backup_path)
+
+        logger.info("Backup created", filename=filename, size_bytes=size_bytes, sha256=checksum)
+
+        # Offsite copy (disaster recovery) — a local-only backup on the same VPS
+        # is lost with the VPS. Best-effort: a failure is logged loudly (alertable)
+        # but does not fail the local backup. (ELR-018)
+        offsite = _upload_offsite(backup_path, checksum)
 
         return {
             "filename": filename,
             "size_bytes": size_bytes,
             "size_human": _format_size(size_bytes),
             "created_at": created_at,
+            "sha256": checksum,
+            "offsite": offsite,
         }
 
     except subprocess.TimeoutExpired:

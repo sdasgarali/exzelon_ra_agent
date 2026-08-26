@@ -152,6 +152,17 @@ class Settings(BaseSettings):
     INVOICE_MAX_REMINDERS: int = 5
     INVOICE_DUE_DAY: int = 5
 
+    # Observability — Sentry error tracking (ELR-017). Inert unless SENTRY_DSN set.
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = ""  # defaults to APP_ENV when empty
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
+    # Disaster recovery — offsite encrypted backups (ELR-018). Inert unless bucket set.
+    BACKUP_S3_BUCKET: str = ""
+    BACKUP_S3_PREFIX: str = "db-backups"
+    BACKUP_S3_ENDPOINT_URL: str = ""  # optional (S3-compatible providers)
+    BACKUP_ENCRYPT: bool = True       # Fernet-encrypt uploads using ENCRYPTION_KEY
+
     # Credit metering / enforcement (ELR-009). Enforcement is OFF by default so
     # enabling it never breaks live pipelines without an explicit opt-in (global
     # here, or per-tenant via the `credit_enforcement_enabled` setting). Ceilings

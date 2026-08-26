@@ -54,3 +54,8 @@ python-docx==1.1.2
 # Billing & Invoicing
 reportlab>=4.0
 stripe>=8.0.0
+
+# Observability & Disaster Recovery (ELR-017 / ELR-018)
+# Both are inert unless configured (SENTRY_DSN / BACKUP_S3_BUCKET).
+sentry-sdk[fastapi]>=1.40
+boto3>=1.34
