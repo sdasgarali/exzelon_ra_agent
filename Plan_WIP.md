@@ -10,8 +10,10 @@
 - [x] ELR-027 — access-token jti + logout revocation (token_blacklist Redis/memory); get_current_user rejects revoked. (permission cache = perf follow-up)
 - [x] ELR-030 — issued invoices immutable (override draft-only)
 - [x] ELR-021 — full Stripe Subscriptions: SubscriptionRecord model, StripeGateway sub methods, /billing/subscription/{checkout,cancel} + GET, webhook customer.subscription.* sync + tenant plan sync, deploy/STRIPE_SUBSCRIPTIONS_SETUP.md (inert until STRIPE_PRICE_* set)
+- [x] ELR-026 — Alembic backbone: fixed env.py (imports ALL models via app.db.models; honors DATABASE_URL env), migrations/versions/0001_baseline.py (create_all-based, matches models), deploy/MIGRATIONS.md, CLAUDE.md updated. Fresh DB=upgrade head, existing prod=stamp 0001_baseline. Legacy main.py block kept as safety net (ELR-026b = retire it later)
 - [ ] ELR-020 — SSO — DEFERRED per user ("remind me later")
-- [ ] ELR-026 — Alembic migration baseline (large, risky); ELR-025 CD pipeline (needs VPS/secrets)
+- [ ] ELR-026b — retire legacy main.py migration block into discrete Alembic revisions (careful follow-up)
+- [ ] ELR-025 — CD pipeline (needs VPS/secrets access)
 
 ## SESSION_CONTEXT_RETRIEVAL
 > Phase 2 STARTED on branch feature/elr-phase2-enterprise (stacked on phase1). Billing-lifecycle
