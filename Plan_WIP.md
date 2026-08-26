@@ -1,6 +1,22 @@
 # Plan WIP
 
+## PHASE 2 progress (branch feature/elr-phase2-enterprise, stacked on phase1)
+- [x] ELR-029 — tax Decimal HALF_UP (compute_tax_cents) + BILLING_DEFAULT_CURRENCY config
+- [x] ELR-022 — webhook handles charge.refunded (→REFUNDED + negative PaymentRecord), payment_failed (→OVERDUE), dispute (→note). New InvoiceStatus.REFUNDED + enum migration
+- [x] ELR-023 — tenants.billing_suspended flag + migration; require_tenant_id 402s suspended tenants; scheduler suspends after BILLING_SUSPEND_AFTER_DAYS_OVERDUE (14) grace + un-suspends when settled; immediate clear on payment
+- [x] ELR-028 — CI security-scan job (pip-audit + bandit + npm audit, report-only)
+- [x] ELR-024 — GDPR /gdpr/export (Right-to-Access) + /gdpr/erase (Right-to-Erasure: anonymise PII, keep rows, suppress, audit); tenant-scoped, admin-gated; api-endpoints.md updated
+- [ ] ELR-030 — immutable issued invoices (credit-note flow) — deferred, needs design
+- [ ] ELR-027 — token revocation on logout + permission cache (needs Redis)
+- [ ] ELR-021 — real Stripe Subscriptions — NEEDS DECISION (Stripe product/price setup)
+- [ ] ELR-020 — SSO/SAML or OIDC — NEEDS DECISION (IdP approach)
+- [ ] ELR-026 — Alembic migration baseline (large, risky); ELR-025 CD pipeline (needs VPS/secrets)
+
 ## SESSION_CONTEXT_RETRIEVAL
+> Phase 2 STARTED on branch feature/elr-phase2-enterprise (stacked on phase1). Billing-lifecycle
+> batch done: ELR-029/022/023/028. NEXT: ELR-024 (GDPR export/erasure). DECISIONS NEEDED before
+> ELR-021 (Stripe Subscriptions) + ELR-020 (SSO provider). Phase 1 branch still not PR'd.
+>
 > Executing Phase 1 of the enterprise-launch remediation on branch
 > `feature/elr-phase1-launch-blockers`. Epic 1A (tenant isolation, commit f511bc1) and
 > Epic 1B (billing safety, commit 72597c8) DONE + full suite green (1446 passed).

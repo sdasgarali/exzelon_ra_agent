@@ -42,6 +42,7 @@ All endpoints are mounted under `/api/v1`.
 | `/deals/{id}/tasks` | `deal_tasks.py` | Deal task CRUD + my-tasks |
 | `/spam-check` | `spam_check.py` | Email spam score checking |
 | `/tracking-domains` | `tracking_domains.py` | Custom tracking domain CRUD + verify |
+| `/gdpr` | `gdpr.py` | GDPR data-subject rights (admin, tenant-scoped): `GET /gdpr/export?email=` (Right-to-Access — all PII: contacts, outreach events, inbox, visits, suppression status); `POST /gdpr/erase {email}` (Right-to-Erasure — anonymises contact PII, keeps rows for FK integrity, suppresses the address, audits; requires impersonated tenant) (ELR-024) |
 
 ## Admin & Billing Endpoints
 
