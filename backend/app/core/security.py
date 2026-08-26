@@ -31,12 +31,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
       - tenant_id: user's tenant ID (None for super_admin)
       - plan: tenant's plan tier
     """
+    import uuid
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "type": "access"})
+    # jti = unique token id so a specific token can be revoked on logout (ELR-027).
+    to_encode.update({"exp": expire, "type": "access", "jti": uuid.uuid4().hex})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 

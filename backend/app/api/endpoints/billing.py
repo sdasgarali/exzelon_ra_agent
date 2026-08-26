@@ -282,8 +282,14 @@ def override_amount(
     ).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if invoice.status not in (InvoiceStatus.DRAFT, InvoiceStatus.SENT):
-        raise HTTPException(status_code=400, detail="Can only override draft or sent invoices")
+    # An issued (sent/paid) invoice is immutable — editing it would rewrite a
+    # document the customer already has. Only drafts can be amended; a sent invoice
+    # must be voided and re-issued (or credited). (ELR-030)
+    if invoice.status != InvoiceStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Only draft invoices can be amended. Void and re-issue an already-sent invoice.",
+        )
 
     old_total = invoice.total_cents
     invoice.subtotal_cents = req.new_amount_cents
