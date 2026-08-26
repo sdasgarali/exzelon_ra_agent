@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.core.settings_resolver import get_tenant_setting
 from app.db.models.user import User, UserRole
 from app.db.models.api_key import ApiKey
@@ -59,7 +59,7 @@ def create_api_key(
         scopes_json=json.dumps(data.scopes),
         user_id=user.user_id,
         is_active=True,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(api_key)
     db.commit()
@@ -142,7 +142,7 @@ def zapier_subscribe(
         events_json=json.dumps([data.event]),
         is_active=True,
         created_by=user.user_id,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(webhook)
     db.commit()
@@ -240,7 +240,7 @@ def zapier_add_contact(
         title=data.title,
         phone=data.phone,
         source="zapier",
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(contact)
     db.commit()
@@ -292,9 +292,11 @@ def zapier_create_deal(
 ):
     """Create a CRM deal from Zapier."""
     from app.db.models.deal import Deal, DealStage
-    # Get first stage
+    # Get first stage — MUST be tenant-scoped, else the deal could be attached to
+    # another tenant's stage (ELR-005b hardening).
     first_stage = db.query(DealStage).filter(
         DealStage.stage_order == 1,
+        DealStage.tenant_id == ensure_tenant(tenant_id),
     ).first()
     deal = Deal(
         title=data.title,
@@ -303,7 +305,7 @@ def zapier_create_deal(
         client_id=data.client_id,
         stage_id=first_stage.stage_id if first_stage else None,
         probability=10,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(deal)
     db.commit()

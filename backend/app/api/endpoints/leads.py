@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, desc, or_, and_, case
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant, require_tenant_with_budget
 from app.api.deps.plan_limits import check_plan_limit
 from app.db.query_helpers import (
     tenant_filter, SIZE_OPERATORS, effective_size_expr, size_operator_clause,
@@ -1767,6 +1767,9 @@ def _parse_and_import_lead_rows(
 
     Returns dict with imported, skipped, errors, imported_lead_ids.
     """
+    # Both callers are user-facing import endpoints — require a concrete tenant so
+    # a super-admin can't silently import into tenant 1 (ELR-005b).
+    tenant_id = ensure_tenant(tenant_id)
     imported = 0
     skipped = 0
     excluded = 0
@@ -1925,7 +1928,7 @@ def _parse_and_import_lead_rows(
                 salary_max=salary_max,
                 contact_email=contact_email or None,
             )
-            lead.tenant_id = tenant_id or 1
+            lead.tenant_id = tenant_id
             db.add(lead)
             db.flush()
             imported_lead_ids.append(lead.lead_id)
@@ -1935,7 +1938,7 @@ def _parse_and_import_lead_rows(
             if contact_email:
                 try:
                     contact = ContactDetails(
-                        tenant_id=tenant_id or 1,
+                        tenant_id=tenant_id,
                         lead_id=lead.lead_id,
                         client_name=client_name,
                         first_name=contact_first or "Unknown",
@@ -2425,7 +2428,7 @@ async def bulk_update_leads(
                         }.items() if v
                     },
                     changed_by=getattr(current_user, "email", None),
-                    tenant_id=tenant_id or 1,
+                    tenant_id=lead.tenant_id,  # audit attributed to the lead's own tenant (ELR-005b)
                 )
 
         # Real campaign enrollment for eligible leads' contacts.
@@ -2609,7 +2612,7 @@ async def bulk_enrich_leads(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
-    tenant_id: int = Depends(require_tenant_id),
+    tenant_id: int = Depends(require_tenant_with_budget),  # ELR-009b: pre-flight credit gate
 ):
     """Trigger contact enrichment for selected leads (runs in background)."""
     lead_ids = request.lead_ids
@@ -2621,9 +2624,10 @@ async def bulk_enrich_leads(
     from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
     from app.db.models.job_run import JobRun, JobStatus
 
-    # Pre-create job run so we can return run_id immediately
+    # Pre-create job run so we can return run_id immediately.
+    # (tenant_id comes from require_tenant_id, so it is always concrete — ELR-005b.)
     job_run = JobRun(
-        tenant_id=tenant_id or 1,
+        tenant_id=tenant_id,
         pipeline_name="contact_enrichment",
         status=JobStatus.PENDING,
         triggered_by=current_user.email,
@@ -3033,7 +3037,7 @@ async def create_lead(
             )
 
     lead = LeadDetails(**lead_in.model_dump())
-    lead.tenant_id = tenant_id or 1  # fallback for super admin without X-Tenant-ID
+    lead.tenant_id = ensure_tenant(tenant_id)  # ELR-005b: super-admin must impersonate, no silent tenant-1 write
 
     # Exclusion gate — an out-of-scope lead is recorded (auditable) but marked
     # terminal (EXCLUDED) so contact enrichment never spends API on it.

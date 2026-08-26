@@ -406,3 +406,17 @@ def ensure_tenant(tenant_id: Optional[int]) -> int:
             detail="Select a tenant first — impersonate the tenant you want to write to before creating data.",
         )
     return tenant_id
+
+
+async def require_tenant_with_budget(
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(require_tenant_id),
+) -> int:
+    """Like :func:`require_tenant_id`, plus a pre-flight credit-budget check for
+    paid pipelines (lead sourcing, enrichment, validation, outreach). Raises 402
+    when credit enforcement is enabled and the tenant is over its monthly ceiling;
+    a no-op otherwise. (ELR-009b)
+    """
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, tenant_id)
+    return tenant_id
