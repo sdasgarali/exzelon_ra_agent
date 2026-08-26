@@ -115,6 +115,11 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
 
+    # Reject tokens revoked at logout (ELR-027).
+    from app.core.token_blacklist import is_revoked
+    if is_revoked(payload.get("jti")):
+        raise credentials_exception
+
     email: str = payload.get("sub")
     if email is None:
         raise credentials_exception

@@ -276,7 +276,11 @@ class TestBillingRBAC:
 
 
 class TestOverrideAmount:
-    def test_override_sent_invoice(self, client, sa_headers, sample_invoice):
+    def test_override_draft_invoice(self, client, sa_headers, sample_invoice, db_session):
+        # Drafts are amendable (ELR-030).
+        from app.db.models.invoice import InvoiceStatus
+        sample_invoice.status = InvoiceStatus.DRAFT
+        db_session.commit()
         r = client.put(f"/api/v1/billing/invoices/{sample_invoice.invoice_id}/override-amount",
                       headers=sa_headers, json={
             "new_amount_cents": 19900,
@@ -284,6 +288,15 @@ class TestOverrideAmount:
         })
         assert r.status_code == 200
         assert r.json()["invoice"]["subtotal_cents"] == 19900
+
+    def test_cannot_override_sent_invoice(self, client, sa_headers, sample_invoice):
+        # An issued (sent) invoice is immutable — must be voided & re-issued (ELR-030).
+        r = client.put(f"/api/v1/billing/invoices/{sample_invoice.invoice_id}/override-amount",
+                      headers=sa_headers, json={
+            "new_amount_cents": 19900,
+            "reason": "Too late",
+        })
+        assert r.status_code == 400
 
     def test_cannot_override_paid(self, client, sa_headers, sample_invoice, db_session):
         from app.db.models.invoice import InvoiceStatus

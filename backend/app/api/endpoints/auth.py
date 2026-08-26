@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_active_user
-from app.api.deps.auth import role_value
+from app.api.deps.auth import role_value, oauth2_scheme
 from app.api.deps.plan_limits import check_plan_limit
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_access_token
 from app.core.config import settings
@@ -388,6 +388,17 @@ async def reset_password_endpoint(
 
 
 @router.post("/logout")
-async def logout(current_user: User = Depends(get_current_active_user)):
-    """Logout user (client should discard token)."""
+async def logout(
+    current_user: User = Depends(get_current_active_user),
+    token: str = Depends(oauth2_scheme),
+):
+    """Logout: revoke this access token so it can't be replayed (ELR-027)."""
+    from datetime import datetime, timezone
+    from app.core.token_blacklist import revoke
+    payload = decode_access_token(token) or {}
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if jti and exp:
+        ttl = int(exp - datetime.now(timezone.utc).timestamp())
+        revoke(jti, ttl)
     return {"message": "Successfully logged out"}
