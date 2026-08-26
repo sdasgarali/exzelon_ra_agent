@@ -27,8 +27,10 @@
 - [x] ELR-016 — suppression uniqueness → (tenant_id,email) composite + best-effort MySQL migration
 - [x] ELR-017 — Sentry init in main.py, inert unless SENTRY_DSN set (PII off)
 - [x] ELR-018 — backup SHA256 + offsite S3 (Fernet-encrypted) upload behind env vars + deploy/DR_RUNBOOK.md; adds sentry-sdk+boto3
+- [x] ELR-005b — email_preview (15) + integrations (4 writes, webhook ref preserved) + leads (create/bulk/import-helper) now use ensure_tenant; also fixed unscoped DealStage lookup in Zapier deal create
+- [x] ELR-009b — require_tenant_with_budget dep wired into 5 pipelines + 2 validation + leads enrichment (pre-flight 402 gate, no-op unless enforcement on)
 - [ ] ELR-013 — DKIM signing DEFERRED (user publishes 10 GoDaddy DNS records first)
-- [ ] ELR-019 — verify/close the (already-green) flaky billing test; ELR-005b/009b follow-ups
+- [ ] ELR-019 — verify/close the (already-green) flaky billing test
 - [ ] PHASE 1 nearly complete → open PR after final green (per user: hold PR for now)
 
 ## Blockers / Notes
