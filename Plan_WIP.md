@@ -7,9 +7,10 @@
 - [x] ELR-028 — CI security-scan job (pip-audit + bandit + npm audit, report-only)
 - [x] ELR-024 — GDPR /gdpr/export (Right-to-Access) + /gdpr/erase (Right-to-Erasure: anonymise PII, keep rows, suppress, audit); tenant-scoped, admin-gated; api-endpoints.md updated
 - [ ] ELR-030 — immutable issued invoices (credit-note flow) — deferred, needs design
-- [ ] ELR-027 — token revocation on logout + permission cache (needs Redis)
-- [ ] ELR-021 — real Stripe Subscriptions — NEEDS DECISION (Stripe product/price setup)
-- [ ] ELR-020 — SSO/SAML or OIDC — NEEDS DECISION (IdP approach)
+- [x] ELR-027 — access-token jti + logout revocation (token_blacklist Redis/memory); get_current_user rejects revoked. (permission cache = perf follow-up)
+- [x] ELR-030 — issued invoices immutable (override draft-only)
+- [x] ELR-021 — full Stripe Subscriptions: SubscriptionRecord model, StripeGateway sub methods, /billing/subscription/{checkout,cancel} + GET, webhook customer.subscription.* sync + tenant plan sync, deploy/STRIPE_SUBSCRIPTIONS_SETUP.md (inert until STRIPE_PRICE_* set)
+- [ ] ELR-020 — SSO — DEFERRED per user ("remind me later")
 - [ ] ELR-026 — Alembic migration baseline (large, risky); ELR-025 CD pipeline (needs VPS/secrets)
 
 ## SESSION_CONTEXT_RETRIEVAL

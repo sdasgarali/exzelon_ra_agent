@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
 from app.core.rate_limiter import limiter
 from app.db.query_helpers import paginate
 from app.db.models.user import UserRole
@@ -652,6 +652,87 @@ def download_invoice_pdf(
     return FileResponse(filepath, media_type="application/pdf", filename=f"{invoice.invoice_number}.pdf")
 
 
+# ─── Subscriptions (ELR-021) ─────────────────────────────────────────────────
+
+class SubscribeRequest(BaseModel):
+    plan: Optional[str] = None  # defaults to the tenant's current plan
+    success_url: str = Field(default="")
+    cancel_url: str = Field(default="")
+
+
+@router.post("/subscription/checkout")
+def subscription_checkout(
+    req: SubscribeRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: int = Depends(require_tenant_id),
+):
+    """Start a recurring-subscription Checkout for the tenant's plan (ELR-021)."""
+    from app.core.config import settings
+    from app.services.billing.subscription_service import price_id_for_plan
+    from app.db.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    plan = req.plan or (tenant.plan.value if tenant and tenant.plan else None)
+    price_id = price_id_for_plan(plan)
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No Stripe price configured for plan '{plan}'. Set STRIPE_PRICE_* first.",
+        )
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=400, detail="Online payments are not configured")
+
+    from app.services.billing.payment_gateway import get_payment_gateway
+    base_url = settings.EFFECTIVE_BASE_URL
+    result = get_payment_gateway().create_subscription_checkout(
+        price_id=price_id,
+        customer_email=current_user.email,
+        success_url=req.success_url or f"{base_url}/dashboard/billing?subscribed=1",
+        cancel_url=req.cancel_url or f"{base_url}/dashboard/billing",
+        metadata={"tenant_id": str(tenant_id), "plan": plan or ""},
+    )
+    return result
+
+
+@router.get("/subscription")
+def get_subscription_status(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Current subscription for the tenant (or null)."""
+    from app.db.models.subscription import SubscriptionRecord
+    from app.db.query_helpers import tenant_filter
+    rec = tenant_filter(db.query(SubscriptionRecord), SubscriptionRecord, tenant_id).first()
+    if not rec:
+        return {"subscription": None}
+    return {"subscription": {
+        "plan": rec.plan, "status": rec.status.value,
+        "cancel_at_period_end": rec.cancel_at_period_end,
+        "current_period_end": rec.current_period_end.isoformat() if rec.current_period_end else None,
+        "stripe_subscription_id": rec.stripe_subscription_id,
+    }}
+
+
+@router.post("/subscription/cancel")
+def cancel_subscription(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: int = Depends(require_tenant_id),
+):
+    """Cancel the tenant's subscription at period end (ELR-021)."""
+    from app.db.models.subscription import SubscriptionRecord
+    rec = db.query(SubscriptionRecord).filter(
+        SubscriptionRecord.tenant_id == tenant_id).first()
+    if not rec or not rec.stripe_subscription_id:
+        raise HTTPException(status_code=404, detail="No active subscription")
+    from app.services.billing.payment_gateway import get_payment_gateway
+    get_payment_gateway().cancel_subscription(rec.stripe_subscription_id, at_period_end=True)
+    rec.cancel_at_period_end = True
+    db.commit()
+    return {"message": "Subscription will cancel at period end", "canceled_at_period_end": True}
+
+
 # ─── Stripe Webhook ──────────────────────────────────────────────────────────
 
 @router.post("/webhook/stripe")
@@ -705,6 +786,22 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
+
+        # Subscription checkout → link tenant↔subscription; details arrive via the
+        # customer.subscription.* events. (ELR-021)
+        if session.get("subscription"):
+            tid = session.get("metadata", {}).get("tenant_id")
+            if tid:
+                from app.services.billing.subscription_service import upsert_from_stripe
+                upsert_from_stripe(db, {
+                    "id": session.get("subscription"),
+                    "customer": session.get("customer"),
+                    "status": "active",
+                    "metadata": session.get("metadata", {}),
+                }, int(tid))
+            _mark_processed_and_commit()
+            return {"received": True}
+
         invoice_id = session.get("metadata", {}).get("invoice_id")
         if not invoice_id:
             logger.warning("Stripe webhook: no invoice_id in metadata")
@@ -831,6 +928,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                         invoice_id=invoice.invoice_id, event_type=event["type"])
         if not _mark_processed_and_commit():
             return {"received": True, "duplicate": True}
+
+    elif event["type"].startswith("customer.subscription."):
+        # Subscription lifecycle: created / updated / deleted. Keep our
+        # SubscriptionRecord (and the tenant's plan) in sync. (ELR-021)
+        from app.db.models.subscription import SubscriptionRecord
+        sub_obj = event["data"]["object"]
+        tid = (sub_obj.get("metadata") or {}).get("tenant_id")
+        if not tid:
+            existing = db.query(SubscriptionRecord).filter(
+                SubscriptionRecord.stripe_subscription_id == sub_obj.get("id")).first()
+            tid = existing.tenant_id if existing else None
+        if tid:
+            from app.services.billing.subscription_service import upsert_from_stripe
+            upsert_from_stripe(db, sub_obj, int(tid))
+        _mark_processed_and_commit()
 
     else:
         # Unhandled event type — record it so retries of the same id are no-ops.

@@ -106,6 +106,41 @@ class StripeGateway(PaymentGateway):
         logger.info("Stripe refund created", refund_id=refund.id, payment_id=payment_id)
         return {"refund_id": refund.id, "status": refund.status}
 
+    # --- Recurring subscriptions (ELR-021) ---
+
+    def create_subscription_checkout(
+        self, price_id: str, customer_email: str, success_url: str, cancel_url: str,
+        metadata: dict = None,
+    ) -> dict:
+        """Start a Checkout Session in subscription mode. Returns checkout_url + session_id."""
+        session = self._stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            customer_email=customer_email,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata or {},
+            # Propagate metadata onto the Subscription too, so subscription.* webhook
+            # events can resolve the owning tenant without a separate lookup.
+            subscription_data={"metadata": metadata or {}},
+        )
+        logger.info("Stripe subscription checkout created", session_id=session.id, price=price_id)
+        return {"checkout_url": session.url, "session_id": session.id}
+
+    def cancel_subscription(self, subscription_id: str, at_period_end: bool = True) -> dict:
+        if at_period_end:
+            sub = self._stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
+        else:
+            sub = self._stripe.Subscription.delete(subscription_id)
+        return {"id": sub.id, "status": sub.status,
+                "cancel_at_period_end": getattr(sub, "cancel_at_period_end", False)}
+
+    def get_subscription(self, subscription_id: str) -> dict:
+        sub = self._stripe.Subscription.retrieve(subscription_id)
+        return {"id": sub.id, "status": sub.status,
+                "current_period_end": getattr(sub, "current_period_end", None),
+                "cancel_at_period_end": getattr(sub, "cancel_at_period_end", False)}
+
 
 class ManualGateway(PaymentGateway):
     """No-op gateway for manual/offline payments."""
