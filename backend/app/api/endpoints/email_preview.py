@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func
 
 from app.api.deps.database import get_db
-from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id
+from app.api.deps.auth import get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.core.rate_limiter import limiter
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
@@ -84,7 +84,7 @@ def generate_drafts(
         generate_campaign_drafts, generate_pipeline_drafts, generate_broadcast_drafts,
     )
 
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
     source = data.source.lower()
 
     if source == "campaign":
@@ -237,7 +237,7 @@ def approve_single_draft(
 ):
     """Approve a single draft."""
     from app.services.email_preview_service import approve_draft
-    result = approve_draft(draft_id, user.user_id, db, tenant_id or 1)
+    result = approve_draft(draft_id, user.user_id, db, ensure_tenant(tenant_id))
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
@@ -252,7 +252,7 @@ def reject_single_draft(
 ):
     """Reject a single draft."""
     from app.services.email_preview_service import reject_draft
-    result = reject_draft(draft_id, user.user_id, db, tenant_id or 1)
+    result = reject_draft(draft_id, user.user_id, db, ensure_tenant(tenant_id))
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
@@ -267,7 +267,7 @@ def approve_all_drafts(
 ):
     """Bulk approve all pending drafts in a batch."""
     from app.services.email_preview_service import approve_batch
-    result = approve_batch(data.batch_id, user.user_id, db, tenant_id or 1)
+    result = approve_batch(data.batch_id, user.user_id, db, ensure_tenant(tenant_id))
     return result
 
 
@@ -281,7 +281,7 @@ def bulk_approve_drafts(
     """Approve multiple drafts by ID list."""
     if not data.draft_ids:
         raise HTTPException(400, "No draft IDs provided")
-    effective_tenant = tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id)
     from datetime import datetime
     now = datetime.utcnow()
     count = db.query(OutreachDraft).filter(
@@ -303,7 +303,7 @@ def approve_all_pending_drafts(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Approve ALL pending drafts for the tenant (no batch_id required)."""
-    effective_tenant = tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id)
     from datetime import datetime
     now = datetime.utcnow()
     count = db.query(OutreachDraft).filter(
@@ -331,7 +331,7 @@ def bulk_send_drafts(
     from app.services.email_preview_service import send_single_draft
     from app.db.base import SessionLocal
 
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
     ids = list(data.draft_ids)
 
     def _bg_send():
@@ -357,7 +357,7 @@ def send_all_approved_drafts(
     from app.services.email_preview_service import send_single_draft
     from app.db.base import SessionLocal
 
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
     draft_ids = [
         d.draft_id for d in db.query(OutreachDraft.draft_id).filter(
             OutreachDraft.tenant_id == tid,
@@ -388,7 +388,7 @@ def send_draft(
 ):
     """Send a single approved draft."""
     from app.services.email_preview_service import send_single_draft
-    result = send_single_draft(draft_id, db, tenant_id or 1)
+    result = send_single_draft(draft_id, db, ensure_tenant(tenant_id))
     if result.get("blocked"):
         raise HTTPException(409, detail={
             "message": result["error"],
@@ -413,7 +413,7 @@ def send_batch_drafts(
     from app.services.email_preview_service import send_batch
     from app.db.base import SessionLocal
 
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
     bid = data.batch_id
 
     def _bg_send():
@@ -438,7 +438,7 @@ def ai_rewrite(
 ):
     """AI-rewrite a single draft."""
     from app.services.email_preview_service import ai_rewrite_draft
-    result = ai_rewrite_draft(draft_id, db, tenant_id or 1)
+    result = ai_rewrite_draft(draft_id, db, ensure_tenant(tenant_id))
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
@@ -454,7 +454,7 @@ def deliverability_score(
     """Calculate deliverability score for a mailbox + email content."""
     from app.services.email_preview_service import calculate_deliverability_score
     result = calculate_deliverability_score(
-        data.mailbox_id, data.subject, data.body_html, db, tenant_id or 1
+        data.mailbox_id, data.subject, data.body_html, db, ensure_tenant(tenant_id)
     )
     return result
 
@@ -468,7 +468,7 @@ def spam_check(
 ):
     """Check spam score + get AI suggestions for replacements."""
     from app.services.email_preview_service import check_spam_and_suggest
-    result = check_spam_and_suggest(data.subject, data.body_html, db, tenant_id or 1)
+    result = check_spam_and_suggest(data.subject, data.body_html, db, ensure_tenant(tenant_id))
     return result
 
 
@@ -485,7 +485,7 @@ def preview_personalization(
     from app.services.ai_personalizer import personalize_email_for_contact
     from app.services.spintax import process_spintax
 
-    tid = tenant_id or 1
+    tid = ensure_tenant(tenant_id)
 
     # Load campaign
     campaign = tenant_filter(
@@ -617,7 +617,7 @@ def apply_spam_fixes(
 ):
     """Apply spam word replacements to a draft."""
     from app.services.email_preview_service import apply_spam_fix
-    result = apply_spam_fix(draft_id, data.replacements, db, tenant_id or 1)
+    result = apply_spam_fix(draft_id, data.replacements, db, ensure_tenant(tenant_id))
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
