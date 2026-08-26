@@ -755,8 +755,11 @@ def _execute_email_step(
     except Exception as e_track:
         logger.warning("Failed to inject tracking pixel", error=str(e_track))
 
-    # Add unsubscribe footer
-    unsub_footer = generate_unsub_footer(event.tracking_id)
+    # Add unsubscribe footer (with the sending tenant's postal address — CAN-SPAM, ELR-012)
+    from app.services.pipelines.outreach import resolve_tenant_address
+    unsub_footer = generate_unsub_footer(
+        event.tracking_id, company_address=resolve_tenant_address(db, campaign.tenant_id)
+    )
     if "unsub/" not in body_html:
         body_html += unsub_footer["html"]
         body_text += unsub_footer["text"]
