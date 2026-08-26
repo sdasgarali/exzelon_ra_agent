@@ -47,7 +47,16 @@ Turn the current feature-complete MVP+ (enterprise readiness **6.2/10**) into a 
 > test files (plan-limits, credit-enforcement, invoice-sequence, billing-webhook). New tables are
 > auto-created by lifespan `create_all`. FOLLOW-UP: wire `check_credit_budget` into the remaining
 > paid choke-points (AI/enrichment/validation) — ELR-009b; atomic balance-row hardening later.
-> Next: Epic 1C (email compliance ELR-012/014/013) + Epic 1D (Sentry/backups ELR-017/018).
+>
+> **Epic 1C DONE** (commits 2273194 + this batch) — ELR-012 (CAN-SPAM footer address, per-tenant
+> + global fallback, wired at all send sites), ELR-014 (extracted `apply_unsubscribe()` — suppress +
+> status + CANCEL pending enrollments + audit; fixed autoflush double-insert), ELR-015 (SoftBounceTracker
+> escalates 4xx after MAX_TEMP_FAILURES + mailbox bounce-rate auto-pause >5%), ELR-016 (suppression
+> uniqueness → (tenant_id,email) + best-effort MySQL migration). ELR-013 (DKIM) DEFERRED pending DNS.
+> **Epic 1D DONE (code, secrets later)** — ELR-017 Sentry init (inert unless SENTRY_DSN, PII off),
+> ELR-018 backup SHA256 + offsite S3 Fernet-encrypted upload behind env vars + `deploy/DR_RUNBOOK.md`;
+> added sentry-sdk + boto3 to requirements (both inert unless configured).
+> REMAINING Phase 1: ELR-013 (DNS-blocked), ELR-019 cleanup, ELR-005b/009b follow-ups. Then PR.
 
 ### PHASE 1 — Launch Blockers (target ~3 weeks, ~90h) — DO BEFORE CHARGING
 

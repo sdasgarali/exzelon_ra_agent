@@ -23,9 +23,13 @@
 - [ ] ELR-009b — wire check_credit_budget into AI/enrichment/validation choke-points + atomic balance row
 - [x] ELR-012 — CAN-SPAM address injected into footer (per-tenant + global fallback) at all send sites
 - [x] ELR-014 — auto-action unsubscribe: extracted apply_unsubscribe() (suppress+status+CANCEL pending enrollments+audit); fixed autoflush=False double-insert
+- [x] ELR-015 — soft-bounce tracker (SoftBounceTracker) escalates after MAX_TEMP_FAILURES + mailbox bounce-rate auto-pause (>5%)
+- [x] ELR-016 — suppression uniqueness → (tenant_id,email) composite + best-effort MySQL migration
+- [x] ELR-017 — Sentry init in main.py, inert unless SENTRY_DSN set (PII off)
+- [x] ELR-018 — backup SHA256 + offsite S3 (Fernet-encrypted) upload behind env vars + deploy/DR_RUNBOOK.md; adds sentry-sdk+boto3
 - [ ] ELR-013 — DKIM signing DEFERRED (user publishes 10 GoDaddy DNS records first)
-- [ ] ELR-015/016 — soft-bounce enforcement + suppression (tenant_id,email) composite index
-- [ ] ELR-017/018 — Sentry + offsite encrypted backups/DR (code behind env vars; adds sentry-sdk+boto3); ELR-019 cleanup
+- [ ] ELR-019 — verify/close the (already-green) flaky billing test; ELR-005b/009b follow-ups
+- [ ] PHASE 1 nearly complete → open PR after final green (per user: hold PR for now)
 
 ## Blockers / Notes
 - ELR-013 (DKIM signing) is blocked on publishing the 10 pending GoDaddy DKIM DNS records
