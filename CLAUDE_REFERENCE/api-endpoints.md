@@ -49,7 +49,7 @@ All endpoints are mounted under `/api/v1`.
 | Prefix | File | Purpose |
 |--------|------|---------|
 | `/admin/tenants` | `admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate, branding, features, LOB assignments). GET/PUT `/{id}/lob-assignments` for tenant LOB type control |
-| `/billing` | `billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service |
+| `/billing` | `billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service. **Subscriptions (ELR-021)**: `POST /billing/subscription/checkout {plan?}` (Stripe subscription-mode Checkout for the tenant's plan → checkout_url; needs `STRIPE_PRICE_*` set — see `deploy/STRIPE_SUBSCRIPTIONS_SETUP.md`), `GET /billing/subscription` (status), `POST /billing/subscription/cancel` (cancel at period end). Webhook syncs `customer.subscription.*` + refunds/failed-payments/disputes into `subscriptions` + invoices; suspends on non-payment (ELR-023). |
 | `/activity` | `activity_log.py` | Login history, 24h stats, auth audit, active users, my-login-history, unlock user (Super admin except my-login-history) |
 
 ## Feature Endpoints

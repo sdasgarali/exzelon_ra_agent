@@ -52,6 +52,7 @@ from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.db.models.company_exclusion import CompanyExclusion
 from app.db.models.resource_pool_attribution import ResourcePoolAttribution
 from app.db.models.soft_bounce import SoftBounceTracker
+from app.db.models.subscription import SubscriptionRecord, SubscriptionStatus
 
 __all__ = [
     "User",

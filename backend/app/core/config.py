@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str = ""
     BILLING_TAX_RATE_DEFAULT: float = 0.0
     BILLING_DEFAULT_CURRENCY: str = "USD"  # ISO-4217; invoices default to this (ELR-029)
+    # Stripe recurring Price IDs per plan (create the Products/Prices in Stripe and
+    # paste the price_... ids here). Subscriptions are inert until these are set. (ELR-021)
+    STRIPE_PRICE_STARTER: str = ""
+    STRIPE_PRICE_PROFESSIONAL: str = ""
+    STRIPE_PRICE_ENTERPRISE: str = ""
     BILLING_COMPANY_NAME: str = ""
     BILLING_COMPANY_ADDRESS: str = ""
     BILLING_COMPANY_LOGO_PATH: str = ""
