@@ -174,7 +174,7 @@ async def get_active_users(
     total = db.query(User).filter(User.is_active == True).count()
     offset = (page - 1) * page_size
     users = db.query(User).filter(User.is_active == True).order_by(
-        User.last_login_at.desc().nullslast()
+        User.last_login_at.is_(None), User.last_login_at.desc()
     ).offset(offset).limit(page_size).all()
 
     result = []
