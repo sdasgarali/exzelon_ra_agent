@@ -89,7 +89,7 @@ def list_deal_tasks(
     tasks = db.query(DealTask).filter(
         DealTask.deal_id == deal_id,
         DealTask.is_archived == False,
-    ).order_by(DealTask.due_date.asc().nullslast(), DealTask.created_at.desc()).all()
+    ).order_by(DealTask.due_date.is_(None), DealTask.due_date.asc(), DealTask.created_at.desc()).all()
 
     return [_task_to_dict(t) for t in tasks]
 
@@ -211,7 +211,7 @@ def my_tasks(
     if status and status in [e.value for e in TaskStatus]:
         q = q.filter(DealTask.status == TaskStatus(status))
 
-    tasks = q.order_by(DealTask.due_date.asc().nullslast(), DealTask.created_at.desc()).all()
+    tasks = q.order_by(DealTask.due_date.is_(None), DealTask.due_date.asc(), DealTask.created_at.desc()).all()
     return [_task_to_dict(t) for t in tasks]
 
 

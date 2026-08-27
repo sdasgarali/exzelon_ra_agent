@@ -495,7 +495,7 @@ def resource_pool_attribution_summary(
     by_source = [
         {"source": s or "unknown", "events": int(n or 0), "amount": float(amt or 0)}
         for s, n, amt in base.with_entities(A.source, func.count(A.attribution_id), func.sum(A.amount))
-        .group_by(A.source).order_by(func.sum(A.amount).desc().nullslast()).all()
+        .group_by(A.source).order_by(func.coalesce(func.sum(A.amount), 0).desc()).all()
     ]
     placements = int(by_event.get("placement.created", 0))
     offers_accepted = int(by_event.get("offer.accepted", 0))
