@@ -23,16 +23,33 @@ type BrandVariant = 'lockup' | 'mark'
 interface BrandLogoProps {
   /** 'lockup' = mark + NeuraLeads wordmark. 'mark' = square N only. */
   variant?: BrandVariant
-  /** Background the logo sits on. 'auto' swaps on the `dark` class. */
-  on?: 'light' | 'dark' | 'auto'
+  /**
+   * Background the logo sits on. 'auto' swaps on the `dark` class.
+   *
+   * 'brand' = a brand-indigo ground, which needs the all-white lockup: the
+   * two-tone artwork's indigo "Leads" disappears against the brand color.
+   */
+  on?: 'light' | 'dark' | 'brand' | 'auto'
   /** Rendered height in px; width is derived from the asset ratio. */
   height?: number
   className?: string
 }
 
 const ASSETS = {
-  lockup: { light: '/brand/logo-light.png', dark: '/brand/logo-dark.png', w: 700, h: 130 },
-  mark: { light: '/brand/mark.png', dark: '/brand/mark.png', w: 256, h: 256 },
+  lockup: {
+    light: '/brand/logo-light.png',
+    dark: '/brand/logo-dark.png',
+    brand: '/brand/logo-mono-white.png',
+    w: 700,
+    h: 130,
+  },
+  mark: {
+    light: '/brand/mark.png',
+    dark: '/brand/mark.png',
+    brand: '/brand/mark.png',
+    w: 256,
+    h: 256,
+  },
 } as const
 
 export function BrandLogo({
@@ -48,7 +65,7 @@ export function BrandLogo({
   if (variant === 'mark' || on !== 'auto') {
     return (
       <img
-        src={on === 'dark' ? asset.dark : asset.light}
+        src={on === 'brand' ? asset.brand : on === 'dark' ? asset.dark : asset.light}
         width={width}
         height={height}
         alt="NeuraLeads"

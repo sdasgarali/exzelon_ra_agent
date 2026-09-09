@@ -30,6 +30,46 @@ module.exports = {
           700: '#1a1f3d',
           600: '#232952',
         },
+        // Brand palette, sampled from the NeuraLeads master lockup. Used by the
+        // marketing surface. Four roles, each with a job:
+        //   brand  = the flow / primary action   ink    = type
+        //   signal = rejected at a gate          paper  = ground
+        brand: {
+          50: '#EFEFFE',
+          100: '#DEDEFC',
+          200: '#BFBFF8',
+          400: '#7A7BEC',
+          DEFAULT: '#4B4CE3',
+          500: '#4B4CE3',
+          600: '#3B3CCB',
+          700: '#2E2FA3',
+          900: '#1B1B63',
+        },
+        ink: {
+          DEFAULT: '#0B172E',
+          900: '#0B172E',
+          800: '#16233D',
+          700: '#2B3752',
+          500: '#5A6580',
+          300: '#969DB0',
+        },
+        signal: {
+          DEFAULT: '#DA3510',
+          500: '#DA3510',
+          600: '#B62A0B',
+          100: '#FCE6E0',
+        },
+        paper: {
+          DEFAULT: '#FBFBFD',
+          0: '#FFFFFF',
+          100: '#F3F3F8',
+          200: '#E7E8F0',
+        },
+      },
+      fontFamily: {
+        // Marketing surface only — applied via the (marketing) layout wrapper so
+        // the app UI keeps Inter.
+        archivo: ['var(--font-archivo)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       keyframes: {
         slideIn: {

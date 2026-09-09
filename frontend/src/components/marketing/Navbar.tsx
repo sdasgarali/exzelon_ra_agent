@@ -59,7 +59,7 @@ export default function Navbar() {
           </Link>
           <Link
             href="/login"
-            className="bg-primary-500 hover:bg-primary-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+            className="bg-white hover:bg-white/90 text-brand-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
           >
             Get Started
           </Link>
