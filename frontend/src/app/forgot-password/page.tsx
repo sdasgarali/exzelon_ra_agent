@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { authApi } from '@/lib/api'
-import { Brain, ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
+import BrandLogo from '@/components/brand-logo'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -31,10 +32,8 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md">
         <div className="card">
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
+            <div className="flex items-center justify-center mb-4">
+              <BrandLogo on="light" height={40} />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">Reset Password</h1>
             <p className="text-gray-500 mt-2 text-sm">

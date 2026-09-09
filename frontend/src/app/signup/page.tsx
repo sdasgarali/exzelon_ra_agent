@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { authApi } from '@/lib/api'
-import { Brain, Building, Mail, User, Lock, CheckCircle } from 'lucide-react'
+import { Building, Mail, User, Lock, CheckCircle } from 'lucide-react'
+import BrandLogo from '@/components/brand-logo'
 
 export default function SignupPage() {
   const [loading, setLoading] = useState(false)
@@ -74,10 +75,8 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <div className="card">
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
+            <div className="flex items-center justify-center mb-4">
+              <BrandLogo on="light" height={40} />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">Get Started Free</h1>
             <p className="text-gray-500 mt-2 text-sm">Create your NeuraLeads account</p>
