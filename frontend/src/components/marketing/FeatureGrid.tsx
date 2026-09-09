@@ -1,73 +1,117 @@
-'use client'
+/**
+ * Capability spec sheet.
+ *
+ * Deliberately not a card grid: nine identical rounded boxes with gradient icon
+ * chips is the shape every generated SaaS page ships. This is a specification
+ * list — hairline-ruled rows, name / description / hard figure — which suits a
+ * product whose whole argument is that it counts things carefully.
+ *
+ * Every figure here is real and checkable in the codebase.
+ */
 
-import { Search, Mail, Inbox, Shield, BarChart3, Briefcase } from 'lucide-react'
-import ScrollReveal from './ScrollReveal'
+interface Spec {
+  name: string
+  body: string
+  figure: string
+  unit: string
+}
 
-const features = [
+const SPECS: Spec[] = [
   {
-    icon: Search,
-    title: 'Lead Intelligence',
-    description: '10 job source APIs with AI-powered search and 3-layer deduplication. Source thousands of leads daily.',
-    color: 'from-blue-500 to-cyan-400',
+    name: 'Lead sourcing',
+    body: 'Ten job boards queried in parallel, normalised, then deduplicated on external job ID, employer LinkedIn URL, and company + title + state.',
+    figure: '10',
+    unit: 'sources',
   },
   {
-    icon: Mail,
-    title: 'Multi-Step Campaigns',
-    description: 'A/B testing, spintax variation, timezone-aware sending, and automated follow-ups across sequences.',
-    color: 'from-violet-500 to-purple-400',
+    name: 'Company gate',
+    body: 'Drops confidential employers, anything over your headcount ceiling, and excluded industries before a single credit is spent on enrichment.',
+    figure: '22',
+    unit: 'target industries',
   },
   {
-    icon: Inbox,
-    title: 'Unified Inbox',
-    description: 'Thread view with AI sentiment analysis, smart reply suggestions, and automatic categorization.',
-    color: 'from-pink-500 to-rose-400',
+    name: 'Contact discovery',
+    body: 'Waterfall enrichment across seven providers, capped at four decision-makers per company per role so you never carpet-bomb an org.',
+    figure: '7',
+    unit: 'providers',
   },
   {
-    icon: Shield,
-    title: 'Warmup Engine',
-    description: 'Peer-to-peer warmup, DNS health checks, SPF/DKIM/DMARC verification, and blacklist monitoring.',
-    color: 'from-emerald-500 to-green-400',
+    name: 'Email validation',
+    body: 'Every address verified before it can queue. Only addresses that come back Valid are ever eligible for outreach.',
+    figure: '7',
+    unit: 'validators',
   },
   {
-    icon: Briefcase,
-    title: 'CRM Deal Pipeline',
-    description: 'Kanban board with 7-stage pipeline, deal forecasting, and bidirectional HubSpot/Salesforce sync.',
-    color: 'from-amber-500 to-yellow-400',
+    name: 'Send gate',
+    body: 'Ten ordered checks — status, suppression, validation, cooldown, per-lead limit, company cap, fatigue, domain throttle — on all four send paths.',
+    figure: '10',
+    unit: 'ordered checks',
   },
   {
-    icon: BarChart3,
-    title: 'Analytics & Reporting',
-    description: 'Team leaderboard, campaign comparison, revenue metrics, cost tracking, and ROI analytics.',
-    color: 'from-indigo-500 to-blue-400',
+    name: 'Campaign engine',
+    body: 'Multi-step sequences with wait and condition branching, A/B variants with chi-squared auto-optimisation, spintax, and per-contact timezone windows.',
+    figure: '4',
+    unit: 'step types',
+  },
+  {
+    name: 'Warmup engine',
+    body: 'Peer-to-peer warmup between your own mailboxes, SPF/DKIM/DMARC verification, and continuous IP and domain blacklist monitoring.',
+    figure: '30',
+    unit: 'day ramp',
+  },
+  {
+    name: 'Unified inbox',
+    body: 'Replies threaded by Message-ID chain, categorised by intent, with sentiment scoring and drafted responses held for approval.',
+    figure: '6',
+    unit: 'intent labels',
+  },
+  {
+    name: 'Deals and reporting',
+    body: 'Seven-stage pipeline with two-way HubSpot and Salesforce sync, plus per-source cost tracking down to the fraction of a cent.',
+    figure: '2-way',
+    unit: 'CRM sync',
+  },
+  {
+    name: 'Roles and tenancy',
+    body: 'Every table is tenant-scoped. Four built-in roles plus custom ones you define, with permissions granular down to individual settings tabs.',
+    figure: '4+',
+    unit: 'roles, extensible',
   },
 ]
 
 export default function FeatureGrid() {
   return (
-    <section className="py-20 px-6">
-      <div className="max-w-7xl mx-auto">
-        <ScrollReveal>
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Everything You Need to Close More Deals
-            </h2>
-            <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-              A complete outreach automation platform — from finding leads to closing deals.
-            </p>
-          </div>
-        </ScrollReveal>
+    <section className="border-t border-paper-200 bg-paper px-6 py-20 lg:py-28">
+      <div className="mx-auto max-w-7xl">
+        <div className="max-w-[54ch]">
+          <h2 className="text-balance text-[clamp(1.9rem,3.6vw,2.9rem)] font-extrabold leading-[1.08] tracking-[-0.03em] text-ink">
+            One system, sourcing through signed.
+          </h2>
+          <p className="mt-5 text-[17px] leading-relaxed text-ink-700">
+            The pipeline above isn&rsquo;t a marketing diagram — it&rsquo;s the actual
+            architecture. Here is what each stage ships with.
+          </p>
+        </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, i) => (
-            <ScrollReveal key={feature.title} delay={i * 0.08}>
-              <div className="marketing-card-glow rounded-2xl p-6 h-full transition-all duration-300 hover:-translate-y-1">
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4`}>
-                  <feature.icon className="w-6 h-6 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
+        <div className="mt-14 grid gap-x-16 md:grid-cols-2">
+          {SPECS.map((s) => (
+            <article
+              key={s.name}
+              className="grid grid-cols-[1fr_auto] items-start gap-x-6 border-t border-paper-200 py-6"
+            >
+              <div>
+                <h3 className="text-[15px] font-bold tracking-tight text-ink">{s.name}</h3>
+                <p className="mt-1.5 max-w-[46ch] text-[14px] leading-relaxed text-ink-700">
+                  {s.body}
+                </p>
               </div>
-            </ScrollReveal>
+              <div className="pt-0.5 text-right">
+                <div className="text-[22px] font-extrabold leading-none tracking-tight tabular-nums text-brand">
+                  {s.figure}
+                </div>
+                <div className="mt-1 text-[11px] leading-tight text-ink-500">{s.unit}</div>
+              </div>
+            </article>
           ))}
         </div>
       </div>

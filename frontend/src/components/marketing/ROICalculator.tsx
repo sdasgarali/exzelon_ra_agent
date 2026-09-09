@@ -1,124 +1,145 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { motion } from 'framer-motion'
-import ScrollReveal from './ScrollReveal'
+import { useMemo, useState } from 'react'
+
+/**
+ * Cost comparison. Homepage-only, so it carries the light ground.
+ *
+ * The competitor baseline is an explicit, stated assumption (per-seat pricing at
+ * ~$79/seat/month plus volume add-ons) rather than an unsourced claim — the note
+ * under the result says so, because a savings figure with a hidden model is just
+ * a number we made up.
+ */
+
+const SEAT_PRICE = 79
+const VOLUME_BLOCK = 20 // per 500 emails/day on typical per-seat tools
 
 export default function ROICalculator() {
   const [teamSize, setTeamSize] = useState(3)
   const [emailsPerDay, setEmailsPerDay] = useState(500)
-  const [currentCost, setCurrentCost] = useState(150)
 
-  const savings = useMemo(() => {
-    // Competitor cost estimate: per-seat tools ~ $79/seat/mo average
-    const competitorCost = teamSize * 79 + Math.ceil(emailsPerDay / 500) * 20
-    // NeuraLeads cost: flat fee, no per-seat
-    const exzelonCost = emailsPerDay <= 500 ? 49 : emailsPerDay <= 2500 ? 99 : 199
-    const monthlySaving = Math.max(0, (currentCost || competitorCost) - exzelonCost)
-    const yearlySaving = monthlySaving * 12
-    const pctSaving = currentCost > 0 ? Math.round((monthlySaving / currentCost) * 100) : 0
-
-    return { competitorCost, exzelonCost, monthlySaving, yearlySaving, pctSaving }
-  }, [teamSize, emailsPerDay, currentCost])
+  const { theirCost, ourCost, monthly, yearly, pct } = useMemo(() => {
+    const theirs = teamSize * SEAT_PRICE + Math.ceil(emailsPerDay / 500) * VOLUME_BLOCK
+    const ours = emailsPerDay <= 500 ? 49 : emailsPerDay <= 2500 ? 99 : 199
+    const m = Math.max(0, theirs - ours)
+    return {
+      theirCost: theirs,
+      ourCost: ours,
+      monthly: m,
+      yearly: m * 12,
+      pct: theirs > 0 ? Math.round((m / theirs) * 100) : 0,
+    }
+  }, [teamSize, emailsPerDay])
 
   return (
-    <section className="py-20 px-6">
-      <div className="max-w-4xl mx-auto">
-        <ScrollReveal>
-          <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Calculate Your Savings
-            </h2>
-            <p className="text-slate-400 text-lg">
-              See how much you could save by switching to NeuraLeads.
-            </p>
+    <section className="border-t border-paper-200 bg-paper px-6 py-20 lg:py-24">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+        <div>
+          <h2 className="text-balance text-[clamp(1.9rem,3.6vw,2.9rem)] font-extrabold leading-[1.08] tracking-[-0.03em] text-ink">
+            Seats are where it gets expensive.
+          </h2>
+          <p className="mt-5 max-w-[46ch] text-[17px] leading-relaxed text-ink-700">
+            Per-seat outreach tools charge again every time you add a recruiter. Move the
+            sliders to your team and see what the difference looks like over a year.
+          </p>
+        </div>
+
+        <div>
+          <div className="grid gap-8 sm:grid-cols-2">
+            <Slider
+              label="Team size"
+              value={`${teamSize} ${teamSize === 1 ? 'seat' : 'seats'}`}
+              min={1}
+              max={20}
+              step={1}
+              raw={teamSize}
+              onChange={setTeamSize}
+            />
+            <Slider
+              label="Emails per day"
+              value={emailsPerDay.toLocaleString()}
+              min={100}
+              max={10000}
+              step={100}
+              raw={emailsPerDay}
+              onChange={setEmailsPerDay}
+            />
           </div>
-        </ScrollReveal>
 
-        <ScrollReveal>
-          <div className="marketing-card-glow rounded-2xl p-8">
-            <div className="grid md:grid-cols-2 gap-10">
-              {/* Inputs */}
-              <div className="space-y-6">
-                <div>
-                  <label className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-300">Team size</span>
-                    <span className="text-white font-semibold">{teamSize} seats</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={20}
-                    value={teamSize}
-                    onChange={(e) => setTeamSize(+e.target.value)}
-                    className="w-full accent-primary-500"
-                  />
-                </div>
+          <dl className="mt-10 border-t border-paper-200">
+            <Row label="Typical per-seat tool" value={`$${theirCost.toLocaleString()}/mo`} />
+            <Row label="NeuraLeads" value={`$${ourCost}/mo`} accent />
+          </dl>
 
-                <div>
-                  <label className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-300">Emails per day</span>
-                    <span className="text-white font-semibold">{emailsPerDay.toLocaleString()}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={100}
-                    max={10000}
-                    step={100}
-                    value={emailsPerDay}
-                    onChange={(e) => setEmailsPerDay(+e.target.value)}
-                    className="w-full accent-primary-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-300">Current monthly cost</span>
-                    <span className="text-white font-semibold">${currentCost}/mo</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1000}
-                    step={10}
-                    value={currentCost}
-                    onChange={(e) => setCurrentCost(+e.target.value)}
-                    className="w-full accent-primary-500"
-                  />
-                </div>
-              </div>
-
-              {/* Results */}
-              <div className="flex flex-col justify-center">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center py-3 border-b border-white/5">
-                    <span className="text-slate-400 text-sm">NeuraLeads cost</span>
-                    <span className="text-white font-semibold text-lg">${savings.exzelonCost}/mo</span>
-                  </div>
-                  <div className="flex justify-between items-center py-3 border-b border-white/5">
-                    <span className="text-slate-400 text-sm">Your current cost</span>
-                    <span className="text-slate-400 font-semibold text-lg">${currentCost}/mo</span>
-                  </div>
-
-                  <motion.div
-                    key={savings.monthlySaving}
-                    initial={{ scale: 0.95, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-6 text-center"
-                  >
-                    <div className="text-3xl md:text-4xl font-bold text-green-400">
-                      ${savings.yearlySaving.toLocaleString()}/yr
-                    </div>
-                    <div className="text-green-400/70 text-sm mt-1">
-                      {savings.pctSaving > 0 ? `${savings.pctSaving}% savings` : 'estimated savings'} &mdash; ${savings.monthlySaving}/mo
-                    </div>
-                  </motion.div>
-                </div>
-              </div>
-            </div>
+          <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t-2 border-ink pt-6">
+            <span
+              className="text-[clamp(2.25rem,5vw,3.5rem)] font-extrabold leading-none tracking-[-0.035em] tabular-nums text-ink"
+              aria-live="polite"
+            >
+              ${yearly.toLocaleString()}
+            </span>
+            <span className="text-[15px] font-medium text-ink-700">
+              a year back{pct > 0 ? `, ${pct}% less` : ''}
+            </span>
           </div>
-        </ScrollReveal>
+
+          <p className="mt-4 max-w-[58ch] text-[12px] leading-relaxed text-ink-500">
+            Assumes a competitor at ${SEAT_PRICE}/seat/month plus ${VOLUME_BLOCK} per 500
+            emails/day of volume — a common shape, not a specific vendor&rsquo;s quote. Your own
+            provider API costs are additional on either side and billed at cost here.
+          </p>
+        </div>
       </div>
     </section>
+  )
+}
+
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  raw,
+  onChange,
+}: {
+  label: string
+  value: string
+  min: number
+  max: number
+  step: number
+  raw: number
+  onChange: (n: number) => void
+}) {
+  return (
+    <div>
+      <label className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="text-[14px] font-medium text-ink-700">{label}</span>
+        <span className="text-[14px] font-bold tabular-nums text-ink">{value}</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={raw}
+          onChange={(e) => onChange(+e.target.value)}
+          className="mt-3 w-full basis-full accent-brand"
+          aria-label={label}
+        />
+      </label>
+    </div>
+  )
+}
+
+function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="flex items-center justify-between border-b border-paper-200 py-3.5">
+      <dt className="text-[14px] text-ink-700">{label}</dt>
+      <dd
+        className={`text-[17px] font-bold tabular-nums ${accent ? 'text-brand' : 'text-ink'}`}
+      >
+        {value}
+      </dd>
+    </div>
   )
 }
