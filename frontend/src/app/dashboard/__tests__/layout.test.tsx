@@ -63,12 +63,13 @@ describe('DashboardLayout', () => {
     jest.clearAllTimers()
   })
 
-  test('renders sidebar with app name', async () => {
+  test('renders sidebar with brand logo', async () => {
     await act(async () => {
       render(<DashboardLayout><div>Test Content</div></DashboardLayout>)
     })
     await waitFor(() => {
-      expect(screen.getAllByText('NeuraLeads').length).toBeGreaterThanOrEqual(1)
+      // Brand is rendered as the NeuraLeads lockup image, not literal text.
+      expect(screen.getAllByAltText('NeuraLeads').length).toBeGreaterThanOrEqual(1)
     })
   })
 

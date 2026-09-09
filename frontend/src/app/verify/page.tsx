@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authApi } from '@/lib/api'
+import BrandLogo from '@/components/brand-logo'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 
 function VerifyContent() {
@@ -34,6 +35,9 @@ function VerifyContent() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100">
       <div className="w-full max-w-md">
         <div className="card text-center">
+          <div className="flex items-center justify-center mb-6">
+            <BrandLogo on="light" height={36} />
+          </div>
           {status === 'loading' && (
             <>
               <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />

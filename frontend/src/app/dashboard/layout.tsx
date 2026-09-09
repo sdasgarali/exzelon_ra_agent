@@ -16,6 +16,7 @@ import { CopilotChat } from '@/components/copilot-chat'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
 import { LobSelector } from '@/components/lob-selector'
+import BrandLogo from '@/components/brand-logo'
 import {
   LayoutDashboard,
   Users,
@@ -259,10 +260,12 @@ export default function DashboardLayout({
           <div className="flex items-center justify-between">
             {collapsed ? (
               <div className="w-full flex justify-center">
-                <span className="text-lg font-bold">N</span>
+                <BrandLogo variant="mark" height={28} />
               </div>
             ) : (
-              <h1 className="text-xl font-bold">NeuraLeads</h1>
+              <h1 className="flex items-center">
+                <BrandLogo on="dark" height={26} />
+              </h1>
             )}
             {/* Desktop collapse toggle */}
             <button
@@ -474,7 +477,9 @@ export default function DashboardLayout({
           >
             <Menu className="w-6 h-6" />
           </button>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex-1">NeuraLeads</h1>
+          <h1 className="flex-1 flex items-center">
+            <BrandLogo height={24} />
+          </h1>
           <NotificationCenter />
         </div>
 

@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
-import { Brain, CheckCircle, Eye, EyeOff } from 'lucide-react'
+import { CheckCircle, Eye, EyeOff } from 'lucide-react'
+import BrandLogo from '@/components/brand-logo'
 
 function LoginContent() {
   const router = useRouter()
@@ -49,14 +50,10 @@ function LoginContent() {
       <div className="w-full max-w-md">
         <div className="card">
           <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
+            <div className="flex items-center justify-center mb-5">
+              <BrandLogo on="light" height={44} />
             </div>
-            <h1 className="text-3xl font-bold text-gray-800 flex items-center justify-center gap-2">
-              <span className="bg-gradient-to-r from-primary-600 to-emerald-500 bg-clip-text text-transparent">NeuraLeads AI Agent</span>
-            </h1>
+            <h1 className="text-2xl font-bold text-gray-800">Sign in to your account</h1>
             <p className="text-gray-500 mt-2 text-sm">AI-Powered Cold Email & Lead Generation</p>
           </div>
 

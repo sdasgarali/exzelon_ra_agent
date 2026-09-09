@@ -82,6 +82,13 @@ Thumbs.db
 images/
 test_screenshots/
 
+# ...but brand artwork is shipped product code, not a screenshot. Without these
+# negations the blanket *.png rule silently drops the logo/favicon from the
+# deploy and every brand image 404s in production.
+!frontend/public/brand/*.png
+!frontend/src/app/icon.png
+!frontend/src/app/apple-icon.png
+
 # Claude Code
 .claude/
 

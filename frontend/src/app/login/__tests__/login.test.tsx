@@ -46,9 +46,11 @@ describe('LoginPage', () => {
     expect(screen.getByText('Sign In')).toBeInTheDocument()
   })
 
-  test('renders app title', () => {
+  test('renders brand logo and sign-in heading', () => {
     render(<LoginPage />)
-    expect(screen.getByText('NeuraLeads AI Agent')).toBeInTheDocument()
+    // Brand is the NeuraLeads lockup image; the heading states the page's purpose.
+    expect(screen.getByAltText('NeuraLeads')).toBeInTheDocument()
+    expect(screen.getByText('Sign in to your account')).toBeInTheDocument()
   })
 
   test('has required attribute on email field', () => {
