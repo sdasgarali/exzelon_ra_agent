@@ -1,25 +1,8 @@
 import type { Metadata } from 'next'
-import { IBM_Plex_Mono, Source_Serif_4 } from 'next/font/google'
+import { marketingFontVars } from '@/lib/marketing-fonts'
 import DocsRail from './DocsRail'
 import { SECTIONS } from './sections'
 import styles from './handbook.module.css'
-
-// Two supporting roles alongside Archivo (supplied by the marketing layout):
-// a serif that opens each section, and a mono for labels, counters and data.
-// Self-hosted via next/font — the app CSP does not allow a remote font CDN.
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  display: 'swap',
-  variable: '--font-plex-mono',
-})
-
-const sourceSerif = Source_Serif_4({
-  subsets: ['latin'],
-  weight: ['400', '600'],
-  display: 'swap',
-  variable: '--font-source-serif',
-})
 
 export const metadata: Metadata = {
   title: 'Documentation',
@@ -37,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function DocumentationPage() {
   return (
-    <div className={`${styles.handbook} ${plexMono.variable} ${sourceSerif.variable}`}>
+    <div className={`${styles.handbook} ${marketingFontVars}`}>
       {/* ---------------- Masthead ---------------- */}
       <header className={styles.masthead}>
         <div className={styles.mastheadInner}>

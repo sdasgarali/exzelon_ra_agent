@@ -10,21 +10,21 @@ const footerLinks = {
     { label: 'Dashboard', href: '/dashboard' },
   ],
   'Use Cases': [
-    { label: 'Sales Teams', href: '/features#campaigns' },
     { label: 'Lead Generation', href: '/features#lead-sourcing' },
-    { label: 'Email Outreach', href: '/features#outreach' },
+    { label: 'Email Outreach', href: '/features#campaigns' },
+    { label: 'Deliverability', href: '/features#warmup' },
     { label: 'CRM Integration', href: '/features#crm' },
   ],
   Resources: [
-    { label: 'API Documentation', href: '/dashboard' },
-    { label: 'Help Center', href: '/documentation' },
-    { label: 'Status', href: '/' },
+    { label: 'Documentation', href: '/documentation' },
+    { label: 'API Reference', href: '/api/docs', external: true },
+    { label: 'Service Status', href: '/status' },
   ],
   Company: [
-    { label: 'About', href: '/' },
-    { label: 'Contact', href: '/' },
-    { label: 'Privacy Policy', href: '/' },
-    { label: 'Terms of Service', href: '/' },
+    { label: 'About', href: '/about' },
+    { label: 'Contact', href: '/contact' },
+    { label: 'Privacy Policy', href: '/privacy' },
+    { label: 'Terms of Service', href: '/terms' },
   ],
 }
 
@@ -50,12 +50,25 @@ export default function Footer() {
               <ul className="space-y-2.5">
                 {links.map((link) => (
                   <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      className="text-slate-500 hover:text-slate-300 transition-colors text-sm"
-                    >
-                      {link.label}
-                    </Link>
+                    {'external' in link && link.external ? (
+                      // Served by the API, not the Next router — a <Link> would
+                      // try to client-navigate and 404.
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-slate-500 hover:text-slate-300 transition-colors text-sm"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        className="text-slate-500 hover:text-slate-300 transition-colors text-sm"
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -69,10 +82,10 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} NeuraLeads. All rights reserved.
           </p>
           <div className="flex items-center gap-6">
-            <Link href="/" className="text-slate-600 hover:text-slate-400 transition-colors text-sm">
+            <Link href="/privacy" className="text-slate-600 hover:text-slate-400 transition-colors text-sm">
               Privacy
             </Link>
-            <Link href="/" className="text-slate-600 hover:text-slate-400 transition-colors text-sm">
+            <Link href="/terms" className="text-slate-600 hover:text-slate-400 transition-colors text-sm">
               Terms
             </Link>
           </div>
