@@ -1,0 +1,584 @@
+/* ============================================================================
+   Handbook — /documentation
+   The marketing layout paints the navy gradient ground and supplies Archivo.
+   This sheet adds the two extra roles the handbook needs (a serif for section
+   openings, a mono for labels and data) and the long-form reading styles.
+   Single dark treatment on purpose: it sits inside the marketing surface.
+   ========================================================================= */
+
+.handbook {
+  --hb-ink: #F1F4FA;
+  --hb-ink-2: #C2CADA;
+  --hb-ink-3: #8A93A8;
+  --hb-accent: #8F90F0;
+  --hb-accent-soft: rgba(123, 124, 236, 0.14);
+  --hb-good: #4ADE9B;
+  --hb-warn: #F5A97B;
+  --hb-stop: #F58C82;
+  --hb-rule: rgba(255, 255, 255, 0.09);
+  --hb-rule-strong: rgba(255, 255, 255, 0.16);
+  --hb-surface: rgba(255, 255, 255, 0.035);
+  --hb-surface-2: rgba(255, 255, 255, 0.055);
+
+  color: var(--hb-ink-2);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* ---------- Masthead ---------- */
+.masthead {
+  border-bottom: 1px solid var(--hb-rule);
+}
+.mastheadInner {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 132px 28px 44px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.mastheadTitle {
+  font-size: clamp(32px, 4.6vw, 50px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 18px 0 14px;
+  color: #FFFFFF;
+  text-wrap: balance;
+  max-width: 15ch;
+}
+.standfirst {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-size: 17.5px;
+  line-height: 1.55;
+  color: var(--hb-ink-2);
+  max-width: 58ch;
+  margin: 0;
+}
+.metaStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+.metaRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------- Small type roles ---------- */
+.eyebrow {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hb-ink-3);
+}
+.chip {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--hb-rule-strong);
+  color: var(--hb-ink-2);
+  background: var(--hb-surface);
+  white-space: nowrap;
+}
+.chipAccent {
+  border-color: rgba(143, 144, 240, 0.5);
+  background: var(--hb-accent-soft);
+  color: var(--hb-accent);
+}
+.chipGood {
+  border-color: rgba(74, 222, 155, 0.45);
+  background: rgba(74, 222, 155, 0.12);
+  color: var(--hb-good);
+}
+
+/* ---------- Shell ---------- */
+.shell {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0 28px 104px;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 52px;
+  align-items: start;
+}
+
+/* ---------- Contents rail ---------- */
+.rail {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  padding: 36px 0 40px;
+  scrollbar-width: thin;
+}
+.railHeading {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hb-ink-3);
+  margin: 0 0 12px;
+  font-weight: 500;
+}
+.railList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.railLink {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: var(--hb-ink-2);
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.railNum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--hb-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.railLink:hover {
+  background: var(--hb-surface-2);
+  color: #FFFFFF;
+}
+.railLinkActive {
+  background: var(--hb-surface-2);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.railLinkActive .railNum {
+  color: var(--hb-accent);
+}
+.railFoot {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--hb-rule);
+  font-size: 12.5px;
+  color: var(--hb-ink-3);
+  line-height: 1.5;
+}
+.tocToggle {
+  display: none;
+}
+.tocChevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+.tocChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ---------- Document body ---------- */
+.doc {
+  padding: 40px 0 0;
+  min-width: 0;
+}
+.section {
+  scroll-margin-top: 84px;
+  padding-bottom: 14px;
+}
+.section + .section {
+  margin-top: 52px;
+  padding-top: 46px;
+  border-top: 1px solid var(--hb-rule);
+}
+.secHead {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.secNum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--hb-accent);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+.secTitle {
+  font-size: clamp(23px, 2.7vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0;
+  color: #FFFFFF;
+  text-wrap: balance;
+}
+.secIntro {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-size: 16.5px;
+  line-height: 1.62;
+  color: var(--hb-ink-2);
+  max-width: 66ch;
+  margin: 10px 0 24px;
+}
+
+.doc h3 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 36px 0 10px;
+  color: #FFFFFF;
+}
+.doc h4 {
+  font-size: 14.5px;
+  font-weight: 600;
+  margin: 24px 0 8px;
+  color: #FFFFFF;
+}
+.doc p {
+  margin: 0 0 12px;
+  max-width: 70ch;
+}
+.doc ul,
+.doc ol.plain {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  max-width: 72ch;
+}
+.doc li {
+  margin-bottom: 6px;
+}
+.doc li::marker {
+  color: var(--hb-ink-3);
+}
+.doc strong {
+  font-weight: 600;
+  color: var(--hb-ink);
+}
+.doc em {
+  font-style: italic;
+}
+.doc code {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.86em;
+  background: var(--hb-surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--hb-ink);
+}
+
+/* ---------- Cards ---------- */
+.grid {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 6px;
+}
+.g2 {
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+}
+.g3 {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.card {
+  background: var(--hb-surface);
+  border: 1px solid var(--hb-rule);
+  border-radius: 10px;
+  padding: 16px 17px;
+}
+.card h4 {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+}
+.card p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: none;
+}
+
+/* Stage cards — the numbering is the real pipeline order, not decoration */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 20px 0 8px;
+}
+.stage {
+  background: var(--hb-surface);
+  border: 1px solid var(--hb-rule);
+  border-radius: 10px;
+  padding: 15px;
+}
+.stageNum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--hb-accent);
+  letter-spacing: 0.1em;
+}
+.stage h4 {
+  margin: 6px 0 5px;
+  font-size: 14.5px;
+}
+.stage p {
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+  max-width: none;
+}
+
+/* ---------- Tables ---------- */
+.tableWrap {
+  overflow-x: auto;
+  margin: 16px 0 8px;
+  border: 1px solid var(--hb-rule);
+  border-radius: 10px;
+  background: var(--hb-surface);
+}
+.tableWrap table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 520px;
+  font-size: 13.5px;
+}
+.tableWrap th {
+  text-align: left;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--hb-ink-3);
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hb-rule-strong);
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+.tableWrap td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hb-rule);
+  vertical-align: top;
+  line-height: 1.5;
+}
+.tableWrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tableWrap tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+.tableWrap td:first-child {
+  color: var(--hb-ink);
+  font-weight: 500;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.yes {
+  color: var(--hb-good);
+  font-weight: 600;
+}
+.no {
+  color: var(--hb-ink-3);
+}
+
+/* ---------- Callouts ---------- */
+.note {
+  border-left: 3px solid var(--hb-accent);
+  background: var(--hb-surface);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 17px;
+  margin: 18px 0;
+  font-size: 13.5px;
+  max-width: 74ch;
+}
+.note .eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--hb-accent);
+}
+.noteGood {
+  border-left-color: var(--hb-good);
+}
+.noteGood .eyebrow {
+  color: var(--hb-good);
+}
+.noteStop {
+  border-left-color: var(--hb-stop);
+}
+.noteStop .eyebrow {
+  color: var(--hb-stop);
+}
+
+/* ---------- The send gate ---------- */
+.gate {
+  counter-reset: gate;
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 8px;
+  border: 1px solid var(--hb-rule);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--hb-surface);
+  max-width: none;
+}
+.gate li {
+  counter-increment: gate;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hb-rule);
+  margin: 0;
+  font-size: 13.5px;
+}
+.gate li:last-child {
+  border-bottom: 0;
+}
+.gate li::before {
+  content: counter(gate, decimal-leading-zero);
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--hb-accent);
+  padding-top: 2px;
+}
+.gate b {
+  color: var(--hb-ink);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 1px;
+}
+
+/* ---------- FAQ ---------- */
+.faqItem {
+  border: 1px solid var(--hb-rule);
+  border-radius: 10px;
+  background: var(--hb-surface);
+  margin-bottom: 9px;
+  overflow: hidden;
+}
+.faqItem summary {
+  padding: 13px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14.5px;
+  list-style: none;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--hb-ink);
+}
+.faqItem summary::-webkit-details-marker {
+  display: none;
+}
+.faqItem summary::before {
+  content: '+';
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  color: var(--hb-accent);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.faqItem[open] summary::before {
+  content: '\2013';
+}
+.faqItem[open] summary {
+  border-bottom: 1px solid var(--hb-rule);
+}
+.faqBody {
+  padding: 13px 16px 15px 38px;
+  font-size: 13.5px;
+}
+.faqBody p {
+  margin: 0;
+  max-width: 70ch;
+}
+
+/* ---------- Closing note ---------- */
+.closing {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 26px 28px 64px;
+  border-top: 1px solid var(--hb-rule);
+  color: var(--hb-ink-3);
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+/* ---------- Narrow viewports ---------- */
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 20px 80px;
+  }
+  .mastheadInner {
+    padding: 108px 20px 32px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 22px 0 0;
+    border-bottom: 1px solid var(--hb-rule);
+  }
+  .railHeading {
+    display: none;
+  }
+  .railList {
+    display: none;
+  }
+  .railOpen .railList {
+    display: flex;
+    padding-bottom: 16px;
+  }
+  .railFoot {
+    display: none;
+  }
+  .railOpen .railFoot {
+    display: block;
+  }
+  .tocToggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: var(--hb-surface);
+    border: 1px solid var(--hb-rule);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font: inherit;
+    font-weight: 600;
+    color: var(--hb-ink);
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .doc {
+    padding-top: 28px;
+  }
+  .closing {
+    padding: 22px 20px 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .railLink,
+  .tocChevron {
+    transition: none;
+  }
+}

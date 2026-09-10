@@ -6,6 +6,7 @@ const footerLinks = {
     { label: 'Features', href: '/features' },
     { label: 'Pricing', href: '/pricing' },
     { label: 'Compare', href: '/compare' },
+    { label: 'Documentation', href: '/documentation' },
     { label: 'Dashboard', href: '/dashboard' },
   ],
   'Use Cases': [
@@ -16,7 +17,7 @@ const footerLinks = {
   ],
   Resources: [
     { label: 'API Documentation', href: '/dashboard' },
-    { label: 'Help Center', href: '/features' },
+    { label: 'Help Center', href: '/documentation' },
     { label: 'Status', href: '/' },
   ],
   Company: [
