@@ -1,0 +1,378 @@
+/* ============================================================================
+   Shared shell for long-form legal pages (/privacy, /terms).
+   Sits inside the marketing layout, which paints the navy ground and supplies
+   Archivo. Single dark treatment, matching the rest of the marketing surface.
+   ========================================================================= */
+
+.legal {
+  --lg-ink: #F1F4FA;
+  --lg-ink-2: #C2CADA;
+  --lg-ink-3: #8A93A8;
+  --lg-accent: #8F90F0;
+  --lg-warn: #E3A94A;
+  --lg-warn-soft: rgba(227, 169, 74, 0.14);
+  --lg-rule: rgba(255, 255, 255, 0.09);
+  --lg-rule-strong: rgba(255, 255, 255, 0.16);
+  --lg-surface: rgba(255, 255, 255, 0.035);
+  --lg-surface-2: rgba(255, 255, 255, 0.055);
+
+  color: var(--lg-ink-2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* ---------- Masthead ---------- */
+.masthead {
+  border-bottom: 1px solid var(--lg-rule);
+}
+.mastheadInner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 132px 28px 44px;
+}
+.eyebrow {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-3);
+}
+.title {
+  font-size: clamp(32px, 4.4vw, 48px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  margin: 16px 0 14px;
+  color: #FFFFFF;
+  text-wrap: balance;
+  max-width: 18ch;
+}
+.standfirst {
+  font-family: var(--font-source-serif), Georgia, serif;
+  font-size: 17.5px;
+  line-height: 1.55;
+  color: var(--lg-ink-2);
+  max-width: 62ch;
+  margin: 0 0 20px;
+}
+.dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.dateChip {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--lg-rule-strong);
+  color: var(--lg-ink-2);
+  background: var(--lg-surface);
+  white-space: nowrap;
+}
+
+/* ---------- Shell ---------- */
+.shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 28px 104px;
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  gap: 52px;
+  align-items: start;
+}
+
+/* ---------- Contents rail ---------- */
+.rail {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  padding: 36px 0 40px;
+  scrollbar-width: thin;
+}
+.railHeading {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-3);
+  margin: 0 0 12px;
+  font-weight: 500;
+}
+.railList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.railLink {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: var(--lg-ink-2);
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.railNum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--lg-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.railLink:hover {
+  background: var(--lg-surface-2);
+  color: #FFFFFF;
+}
+.railLinkActive {
+  background: var(--lg-surface-2);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.railLinkActive .railNum {
+  color: var(--lg-accent);
+}
+.tocToggle {
+  display: none;
+}
+.tocChevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+.tocChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ---------- Body ---------- */
+.doc {
+  padding: 40px 0 0;
+  min-width: 0;
+}
+.section {
+  scroll-margin-top: 84px;
+  padding-bottom: 12px;
+}
+.section + .section {
+  margin-top: 44px;
+  padding-top: 38px;
+  border-top: 1px solid var(--lg-rule);
+}
+.secHead {
+  display: flex;
+  gap: 13px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.secNum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--lg-accent);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+.secTitle {
+  font-size: clamp(20px, 2.3vw, 25px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: #FFFFFF;
+  text-wrap: balance;
+}
+
+.doc h3 {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 26px 0 8px;
+  color: #FFFFFF;
+}
+.doc p {
+  margin: 0 0 12px;
+  max-width: 74ch;
+}
+.doc ul,
+.doc ol {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  max-width: 74ch;
+}
+.doc li {
+  margin-bottom: 6px;
+}
+.doc li::marker {
+  color: var(--lg-ink-3);
+}
+.doc strong {
+  font-weight: 600;
+  color: var(--lg-ink);
+}
+.doc em {
+  font-style: italic;
+}
+.doc a {
+  color: var(--lg-accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(143, 144, 240, 0.35);
+}
+.doc a:hover {
+  border-bottom-color: var(--lg-accent);
+}
+
+/* ---------- Tables ---------- */
+.tableWrap {
+  overflow-x: auto;
+  margin: 16px 0 8px;
+  border: 1px solid var(--lg-rule);
+  border-radius: 10px;
+  background: var(--lg-surface);
+}
+.tableWrap table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 520px;
+  font-size: 13.5px;
+}
+.tableWrap th {
+  text-align: left;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--lg-ink-3);
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--lg-rule-strong);
+  background: rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+.tableWrap td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--lg-rule);
+  vertical-align: top;
+  line-height: 1.5;
+}
+.tableWrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tableWrap td:first-child {
+  color: var(--lg-ink);
+  font-weight: 500;
+}
+
+/* ---------- Callout ---------- */
+.note {
+  border-left: 3px solid var(--lg-accent);
+  background: var(--lg-surface);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 17px;
+  margin: 18px 0;
+  font-size: 13.5px;
+  max-width: 76ch;
+}
+.noteLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-accent);
+}
+.note p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Pending placeholder ----------
+   Deliberately conspicuous. These mark facts that must be supplied by the
+   operator rather than guessed — an invented privacy address would send
+   data-subject requests nowhere. */
+.pending {
+  /* `inline`, not `inline-block`: an atomic inline box creates a line-break
+     opportunity on both sides, which orphans the following punctuation onto
+     the next line mid-sentence. */
+  display: inline;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  padding: 1px 7px;
+  border-radius: 3px;
+  border: 1px dashed var(--lg-warn);
+  background: var(--lg-warn-soft);
+  color: var(--lg-warn);
+  white-space: nowrap;
+}
+
+/* ---------- Closing ---------- */
+.closing {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 28px 64px;
+  border-top: 1px solid var(--lg-rule);
+  color: var(--lg-ink-3);
+  font-size: 13px;
+}
+
+/* ---------- Narrow viewports ---------- */
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 20px 80px;
+  }
+  .mastheadInner {
+    padding: 108px 20px 32px;
+  }
+  .rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 22px 0 0;
+    border-bottom: 1px solid var(--lg-rule);
+  }
+  .railHeading,
+  .railList {
+    display: none;
+  }
+  .railOpen .railList {
+    display: flex;
+    padding-bottom: 16px;
+  }
+  .tocToggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: var(--lg-surface);
+    border: 1px solid var(--lg-rule);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font: inherit;
+    font-weight: 600;
+    color: var(--lg-ink);
+    cursor: pointer;
+    margin-bottom: 12px;
+  }
+  .doc {
+    padding-top: 28px;
+  }
+  .closing {
+    padding: 22px 20px 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .railLink,
+  .tocChevron {
+    transition: none;
+  }
+}

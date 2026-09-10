@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 }
 
 interface FeatureSection {
+  id: string
   icon: typeof Search
   title: string
   description: string
@@ -23,6 +24,7 @@ interface FeatureSection {
 
 const featureSections: FeatureSection[] = [
   {
+    id: 'lead-sourcing',
     icon: Search,
     title: 'Lead Sourcing Pipeline',
     description: 'Aggregate leads from 10 job board APIs with intelligent deduplication and scheduling.',
@@ -36,6 +38,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-blue-500 to-cyan-400',
   },
   {
+    id: 'contacts',
     icon: Users,
     title: 'Contact Discovery',
     description: '7 contact discovery providers to find decision-makers with verified email addresses.',
@@ -49,6 +52,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-violet-500 to-purple-400',
   },
   {
+    id: 'validation',
     icon: Shield,
     title: 'Email Validation Engine',
     description: '7 validation providers ensure every email is verified before outreach begins.',
@@ -62,6 +66,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-emerald-500 to-green-400',
   },
   {
+    id: 'campaigns',
     icon: Mail,
     title: 'Campaign Engine',
     description: 'Multi-step email sequences with A/B testing, branching logic, and timezone-aware delivery.',
@@ -75,6 +80,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-pink-500 to-rose-400',
   },
   {
+    id: 'warmup',
     icon: Zap,
     title: 'Warmup Engine',
     description: 'Peer-to-peer domain warmup with DNS health monitoring and blacklist detection.',
@@ -88,6 +94,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-amber-500 to-yellow-400',
   },
   {
+    id: 'inbox',
     icon: Inbox,
     title: 'Unified Inbox',
     description: 'Centralized reply management with AI sentiment analysis and smart categorization.',
@@ -101,6 +108,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-indigo-500 to-blue-400',
   },
   {
+    id: 'ai',
     icon: Brain,
     title: 'AI Content Generation',
     description: '4 AI engines for email generation, sequence building, and content optimization.',
@@ -114,6 +122,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-teal-500 to-cyan-400',
   },
   {
+    id: 'crm',
     icon: Briefcase,
     title: 'CRM Deal Pipeline',
     description: 'Kanban-style deal tracking with HubSpot and Salesforce bidirectional sync.',
@@ -127,6 +136,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-rose-500 to-pink-400',
   },
   {
+    id: 'analytics',
     icon: BarChart3,
     title: 'Analytics & Reporting',
     description: 'Comprehensive analytics from email metrics to revenue tracking and team performance.',
@@ -140,6 +150,7 @@ const featureSections: FeatureSection[] = [
     color: 'from-orange-500 to-amber-400',
   },
   {
+    id: 'integrations',
     icon: Globe,
     title: 'Integrations & Webhooks',
     description: 'Connect to your existing stack with webhooks, API keys, and native integrations.',
@@ -182,7 +193,8 @@ export default function FeaturesPage() {
             return (
               <div
                 key={section.title}
-                className={`flex flex-col ${isReversed ? 'lg:flex-row-reverse' : 'lg:flex-row'} items-start gap-12`}
+                id={section.id}
+                className={`scroll-mt-24 flex flex-col ${isReversed ? 'lg:flex-row-reverse' : 'lg:flex-row'} items-start gap-12`}
               >
                 {/* Icon card */}
                 <ScrollReveal direction={isReversed ? 'right' : 'left'} className="flex-shrink-0">
