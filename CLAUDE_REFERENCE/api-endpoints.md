@@ -23,6 +23,7 @@ All endpoints are mounted under `/api/v1`.
 | `/warmup` | `warmup.py` | Warmup profiles, DNS checks, blacklist monitoring |
 | `/webhooks` | `webhooks.py` | Webhook subscription CRUD |
 | `/api-keys` | `api_keys.py` | API key CRUD |
+| `/dashboard` | `dashboard.py` | KPI tiles, funnel, trends, per-tab tables. **Metric sources are load-bearing — do not change without reading this.** `/kpis` mixes windows on purpose: `total_companies_identified` / `total_leads` are **last 30 days** (by `posting_date`) and `emails_sent` / `emails_bounced` / `emails_replied` are **last 30 days** (by `sent_at`), while `total_contacts` and `total_valid_emails` are **all-time**. Each tile states its own window in the UI. `total_valid_emails` counts `contact_details.validation_status` case-insensitively — **not** `email_validation_results`, which is a raw provider-response log with no `tenant_id` that is never restamped on re-validation (a date-windowed count of it decayed to 0 while contacts stayed valid). The reply key is `emails_replied`, never `total_replied`. `/stats` and `/trends` are all-time and tenant-scoped; the frontend funnel reads `/stats` end-to-end so every step shares one window. |
 
 ## Extended Endpoints
 

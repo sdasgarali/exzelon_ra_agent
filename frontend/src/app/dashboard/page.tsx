@@ -143,12 +143,14 @@ function StatCard({
   icon: Icon,
   trend,
   trendLabel,
+  subtitle,
 }: {
   title: string
   value: string | number
   icon: any
   trend?: 'up' | 'down'
   trendLabel?: string
+  subtitle?: string
 }) {
   return (
     <div className="glass-card rounded-xl p-6">
@@ -156,6 +158,9 @@ function StatCard({
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
           <p className="text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100">{value}</p>
+          {subtitle && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{subtitle}</p>
+          )}
           {trend && trendLabel && (
             <div className="flex items-center gap-1 mt-2">
               {trend === 'up' ? (
@@ -820,12 +825,19 @@ export default function DashboardPage() {
     return Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date))
   })()
 
+  // Funnel reads /dashboard/stats end-to-end, never /kpis. The two payloads use different
+  // windows — kpis.total_leads is last-30-days while kpis.total_contacts is all-time — and
+  // mixing them made step 1 → 2 report conversion rates in the thousands of percent.
+  // stats is all-time and tenant-scoped throughout, so every step is comparable.
+  const validContacts = Object.entries(stats?.contacts?.by_validation_status ?? {})
+    .filter(([name]) => name.toLowerCase() === 'valid')
+    .reduce((sum, [, count]) => sum + (count as number), 0)
   const funnelSteps = [
-    { label: 'Leads', value: kpis?.total_leads || 0, color: 'bg-indigo-600' },
-    { label: 'Contacts', value: kpis?.total_contacts || 0, color: 'bg-purple-700' },
-    { label: 'Valid Emails', value: kpis?.total_valid_emails || 0, color: 'bg-cyan-700' },
-    { label: 'Emails Sent', value: kpis?.emails_sent || 0, color: 'bg-orange-700' },
-    { label: 'Replied', value: kpis?.total_replied || 0, color: 'bg-green-700' },
+    { label: 'Leads', value: stats?.leads?.total || 0, color: 'bg-indigo-600' },
+    { label: 'Contacts', value: stats?.contacts?.total || 0, color: 'bg-purple-700' },
+    { label: 'Valid Emails', value: validContacts, color: 'bg-cyan-700' },
+    { label: 'Emails Sent', value: stats?.outreach?.total_sent || 0, color: 'bg-orange-700' },
+    { label: 'Replied', value: stats?.outreach?.total_replied || 0, color: 'bg-green-700' },
   ]
 
   const leadStatusData = stats?.leads?.by_status
@@ -904,21 +916,25 @@ export default function DashboardPage() {
           title="Companies Identified"
           value={kpis?.total_companies_identified || 0}
           icon={Building}
+          subtitle="Last 30 days"
         />
         <StatCard
           title="Total Contacts"
           value={kpis?.total_contacts || 0}
           icon={Users}
+          subtitle="All time"
         />
         <StatCard
           title="Valid Emails"
           value={kpis?.total_valid_emails || 0}
           icon={CheckCircle}
+          subtitle="All time"
         />
         <StatCard
           title="Emails Sent"
           value={kpis?.emails_sent || 0}
           icon={Mail}
+          subtitle="Last 30 days"
         />
       </div>
 
@@ -1206,7 +1222,8 @@ export default function DashboardPage() {
 
       {/* Pipeline Funnel */}
       <div className="card">
-        <h3 className="text-lg font-semibold mb-6">Pipeline Funnel</h3>
+        <h3 className="text-lg font-semibold mb-1">Pipeline Funnel</h3>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">All time</p>
         <div className="flex items-center justify-between px-4">
           {funnelSteps.map((step, i) => {
             const prevValue = i > 0 ? funnelSteps[i - 1].value : null
