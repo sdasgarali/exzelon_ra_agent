@@ -12,7 +12,6 @@ from app.db.models.user import User
 from app.db.models.lead import LeadDetails
 from app.db.models.client import ClientInfo
 from app.db.models.contact import ContactDetails
-from app.db.models.email_validation import EmailValidationResult, ValidationStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus
 from app.db.models.outreach_draft import OutreachDraft
 from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
@@ -60,18 +59,22 @@ async def get_kpis(
         LeadDetails.posting_date <= to_date
     ).with_entities(func.count(LeadDetails.lead_id)).scalar() or 0
 
-    # Total valid emails (EmailValidationResult doesn't have tenant_id — skip filtering for now)
-    total_valid = db.query(EmailValidationResult).filter(
-        EmailValidationResult.status == ValidationStatus.VALID,
-        EmailValidationResult.validated_at >= datetime.combine(from_date, datetime.min.time()),
-        EmailValidationResult.validated_at <= datetime.combine(to_date, datetime.max.time())
-    ).with_entities(func.count(EmailValidationResult.validation_id)).scalar() or 0
-
     # Total contacts
     contact_q = tenant_filter(db.query(ContactDetails), ContactDetails, tenant_id)
     total_contacts = contact_q.with_entities(
         func.count(ContactDetails.contact_id)
     ).scalar() or 0
+
+    # Total valid emails — counted off ContactDetails.validation_status, NOT off
+    # email_validation_results. That table is the raw provider-response log: it has no
+    # tenant_id, it is only written by the validation pipeline, and a re-validation reuses
+    # the existing row instead of restamping validated_at — so a date-windowed count of it
+    # decays to 0 while contacts stay marked valid. Contacts are the source of truth the
+    # rest of the dashboard (validation donut, outreach eligibility) already reads, so the
+    # tile now agrees with them. All-time and tenant-scoped, like total_contacts.
+    total_valid = contact_q.filter(
+        func.lower(ContactDetails.validation_status) == "valid"
+    ).with_entities(func.count(ContactDetails.contact_id)).scalar() or 0
 
     # Outreach stats (tenant-scoped)
     outreach_query = tenant_filter(db.query(OutreachEvent), OutreachEvent, tenant_id).filter(
@@ -306,8 +309,10 @@ async def get_trends(
         LeadDetails.created_at >= datetime.combine(start_date, datetime.min.time())
     ).group_by(func.date(LeadDetails.created_at)).all()
 
-    # Daily outreach count
-    daily_outreach = db.query(OutreachEvent).with_entities(
+    # Daily outreach count (tenant-scoped, to match daily_leads above)
+    daily_outreach = tenant_filter(
+        db.query(OutreachEvent), OutreachEvent, tenant_id
+    ).with_entities(
         func.date(OutreachEvent.sent_at).label('date'),
         func.count(OutreachEvent.event_id).label('count')
     ).filter(
@@ -348,17 +353,19 @@ async def get_dashboard_stats(
         ContactDetails.validation_status, func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
-    # Outreach (no tenant_id yet — Phase 3)
-    total_sent = db.query(OutreachEvent).filter(
+    # Outreach (tenant-scoped — outreach_events.tenant_id is NOT NULL; without this the
+    # Outreach Outcomes chart showed every tenant's sends next to a tenant-scoped KPI tile)
+    outreach_q = tenant_filter(db.query(OutreachEvent), OutreachEvent, tenant_id)
+    total_sent = outreach_q.filter(
         OutreachEvent.status == OutreachStatus.SENT
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
-    total_replied = db.query(OutreachEvent).filter(
+    total_replied = outreach_q.filter(
         OutreachEvent.status == OutreachStatus.REPLIED
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
-    total_bounced = db.query(OutreachEvent).filter(
+    total_bounced = outreach_q.filter(
         OutreachEvent.status == OutreachStatus.BOUNCED
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
-    total_skipped = db.query(OutreachEvent).filter(
+    total_skipped = outreach_q.filter(
         OutreachEvent.status == OutreachStatus.SKIPPED
     ).with_entities(func.count(OutreachEvent.event_id)).scalar() or 0
     reply_rate = (total_replied / total_sent * 100) if total_sent > 0 else 0
