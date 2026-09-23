@@ -1,5 +1,34 @@
 # Plan WIP
 
+## SESSION_CONTEXT_RETRIEVAL
+> 2026-09-23 session ended. Prod https://ra.partnerwithus.tech is on master d620771+docs
+> (credit/pricing system, one-user workspaces, plan-change billing fixes, user-delete FK fix),
+> MySQL, Alembic head 0004. Full prod Playwright run: 54 pass / 24 fail / 25 not run / 2 skipped;
+> all 10 new pricing/one-user tests PASS. Failures = outdated tests, except ONE real bug below.
+> Resume with the "Immediate TODO" list.
+
+## Immediate TODO (pickup 2026-09-24)
+- [ ] 1. PROD: daily_send_limit is 30, must be 35 (e2e settings test changed it; my DB restore was
+      blocked by the auto-mode classifier). User sets it in Settings > Business Rules, or grants a
+      prod-DB write. Snapshot of both settings tables: /opt/exzelon-ra-agent/backups/pre-e2e-settings.json
+- [ ] 2. PROD: decide keep/delete "E2E Sandbox" tenant #12 + its admin user #32
+      (kabirbiswas131+e2e@gmail.com; random password in the 09-23 session scratchpad only).
+- [ ] 3. REAL BUG: Deals board in super-admin "All Tenants" view shows 63 columns (each tenant's
+      7 stages side by side: "New Lead" x9, ...). Data is fine per tenant. Fix: merge columns by
+      stage name/order in the all-tenants view.
+- [ ] 4. Update the 24 outdated Playwright tests: duplicated sidebar nav (5), pagination text now
+      shown twice (6), UI/layout drift (5), intended behaviour changes (3: SA must pick tenant to
+      create template; create-user has tenant+role selects; admins have no Add User), mailbox
+      count now 1,012 (1), empty sandbox tenant data (4).
+- [ ] 5. Optional cleanup: old "E2E Test Deal ..." / "E2E Test Template ... (Copy)" rows in prod
+      from months-old test runs. Exzelon has 1,012 mailboxes vs its 999 limit (FYI).
+- [ ] 6. Make deploy.sh take a backup + run `alembic upgrade head` (today done by hand; see
+      CLAUDE_REFERENCE/deployment.md "Database Migrations").
+- [ ] 7. User should change the super-admin password (it was shared in chat).
+Uncommitted on purpose: frontend/playwright.local.config.ts (localhost), frontend/playwright.prod-run.config.ts
+(prod run), frontend/e2e/pricing-credits.spec.ts origin-aware API fix. Repo playwright.config.ts
+still has baseURL = PRODUCTION.
+
 ## SUPABASE MIGRATION — CANCELLED 2026-09-23 (user decision: stay on MySQL)
 Do NOT migrate to Supabase/Postgres. Prod stays on MySQL on the VPS. `Plan_Supabase_Migration.md`
 is kept for reference only. The small Postgres-ready prep already on master (psycopg2-binary,
