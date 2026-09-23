@@ -11,7 +11,7 @@ async function apiGet(page: Page, path: string) {
     // Same key + dual storage as lib/store.ts (localStorage when "remember me", else session).
     const raw = localStorage.getItem('auth-storage') ?? sessionStorage.getItem('auth-storage') ?? '{}'
     const token = JSON.parse(raw)?.state?.token || ''
-    const r = await fetch('http://localhost:8000/api/v1' + p, { headers: { Authorization: `Bearer ${token}` } })
+    const r = await fetch((location.origin.includes('localhost') ? 'http://localhost:8000' : location.origin) + '/api/v1' + p, { headers: { Authorization: `Bearer ${token}` } })
     return { status: r.status, body: await r.json().catch(() => null) }
   }, path)
 }
