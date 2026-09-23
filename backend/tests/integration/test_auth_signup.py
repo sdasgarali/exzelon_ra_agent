@@ -127,7 +127,7 @@ class TestSignupFlow:
         data = resp.json()
         assert "access_token" in data
         assert data["user"]["tenant_id"] is not None
-        assert data["user"]["tenant"]["plan"] == "starter"
+        assert data["user"]["tenant"]["plan"] == "free"
 
     def test_register_endpoint_requires_auth(self, client):
         """Old /register endpoint should require authentication now."""

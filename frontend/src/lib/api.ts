@@ -1630,6 +1630,54 @@ export const billingApi = {
     const response = await api.get('/billing/my-payments', { params })
     return response.data
   },
+  // Plan usage — both meters, resource counts and the plan's own numbers in one call,
+  // so the usage screen can never render four views that disagree with each other.
+  usage: async () => {
+    const response = await api.get('/billing/usage')
+    return response.data
+  },
+  subscribe: async (data: { plan?: string; annual?: boolean; success_url?: string; cancel_url?: string }) => {
+    const response = await api.post('/billing/subscription/checkout', data)
+    return response.data
+  },
+  subscription: async () => {
+    const response = await api.get('/billing/subscription')
+    return response.data
+  },
+  cancelSubscription: async () => {
+    const response = await api.post('/billing/subscription/cancel')
+    return response.data
+  },
+  buyCredits: async (blocks: number) => {
+    const response = await api.post('/billing/credits/topup', { blocks })
+    return response.data
+  },
+  requestCustomQuote: async (data: Record<string, number | string>) => {
+    const response = await api.post('/billing/custom-quote', data)
+    return response.data
+  },
+}
+
+// Credits API — the credit ledger and the published price list.
+export const creditsApi = {
+  balance: async () => {
+    const response = await api.get('/credits/balance')
+    return response.data
+  },
+  usage: async (params?: { usage_type?: string; page?: number; page_size?: number }) => {
+    const response = await api.get('/credits/usage', { params })
+    return response.data
+  },
+  summary: async (params?: { days?: number }) => {
+    const response = await api.get('/credits/summary', { params })
+    return response.data
+  },
+  // What each action costs. The UI reads this rather than hardcoding numbers, so a
+  // price change in core/credit_costs.py reaches the screen without a deploy.
+  priceList: async () => {
+    const response = await api.get('/credits/price-list')
+    return response.data
+  },
 }
 
 // Activity Log API

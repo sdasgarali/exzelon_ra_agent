@@ -829,6 +829,17 @@ def run_contact_enrichment_pipeline(
         except Exception as e:
             logger.warning(f"Failed to record contact-discovery costs: {e}")
 
+        # Meter credits on contacts actually discovered and stored — not on API calls,
+        # which vary by provider and by how many waterfall steps it took.
+        try:
+            from app.services.credit_metering import meter
+            discovered = int(counters.get("contacts_found", 0) or 0)
+            if discovered > 0:
+                meter(db, tenant_id, "contact_enriched", discovered,
+                      reference_id=str(job_run.run_id))
+        except Exception as e:
+            logger.warning(f"Failed to meter contact-discovery credits: {e}")
+
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
         db.commit()

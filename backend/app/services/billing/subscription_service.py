@@ -9,19 +9,37 @@ from app.db.models.subscription import SubscriptionRecord, SubscriptionStatus
 logger = structlog.get_logger()
 
 
-def price_id_for_plan(plan: Optional[str]) -> str:
-    """Configured Stripe price id for a plan ("" if unset)."""
+#: Plans that can be bought self-serve. Free charges nothing and Custom is quoted and
+#: invoiced through the ManualGateway, so neither has a Stripe price id.
+BILLABLE_PLANS = ("pro", "max")
+
+
+def price_id_for_plan(plan: Optional[str], annual: bool = False) -> str:
+    """Configured Stripe price id for a plan ("" if unset).
+
+    Legacy plan names are normalized first, so a stale `starter`/`professional`/
+    `enterprise` string from an old JWT or integration still resolves.
+    """
+    from app.core.plans import normalize_plan
+
+    key = normalize_plan(plan)
+    if annual:
+        return {
+            "pro": settings.STRIPE_PRICE_PRO_ANNUAL,
+            "max": settings.STRIPE_PRICE_MAX_ANNUAL,
+        }.get(key, "")
     return {
-        "starter": settings.STRIPE_PRICE_STARTER,
-        "professional": settings.STRIPE_PRICE_PROFESSIONAL,
-        "enterprise": settings.STRIPE_PRICE_ENTERPRISE,
-    }.get((plan or "").lower(), "")
+        "pro": settings.STRIPE_PRICE_PRO,
+        "max": settings.STRIPE_PRICE_MAX,
+    }.get(key, "")
 
 
 def plan_for_price_id(price_id: str) -> Optional[str]:
-    """Reverse mapping: Stripe price id -> plan name."""
-    for plan in ("starter", "professional", "enterprise"):
-        if price_id and price_id == price_id_for_plan(plan):
+    """Reverse mapping: Stripe price id -> plan name (monthly or annual)."""
+    if not price_id:
+        return None
+    for plan in BILLABLE_PLANS:
+        if price_id in (price_id_for_plan(plan), price_id_for_plan(plan, annual=True)):
             return plan
     return None
 

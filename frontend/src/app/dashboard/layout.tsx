@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { usePlanFeatures } from '@/hooks/use-plan-features'
 import { useAuthStore } from '@/lib/store'
 import { warmupApi, tenantsApi, authApi } from '@/lib/api'
 import type { TenantSummary } from '@/types/api'
@@ -67,7 +68,7 @@ const navigation = [
 
   // Step 1: Setup — mailboxes & warmup
   { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-mailboxes' },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'warmup' },
 
   // Step 2: Source — pipeline execution & lead results
   { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
@@ -79,11 +80,11 @@ const navigation = [
   { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
 
   // Step 5: Campaign — targeting, templates, sequences, outreach
-  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'icp_wizard' },
   { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-campaigns' },
   { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'email_preview' },
 
   // Step 6: Engage & Close
   { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-inbox' },
@@ -91,18 +92,18 @@ const navigation = [
 
   // Reporting & Monitoring
   { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] , feature: 'analytics' },
+  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'attribution' },
+  { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] , feature: 'visitors' },
+  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] , feature: 'automation' },
 
   // Administration
   { name: 'Activity Log', href: '/dashboard/activity-log', icon: ScrollText, iconColor: 'text-cyan-400', roles: ['super_admin'] as string[] },
   { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] },
+  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] , feature: 'custom_roles' },
   { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
   { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'backups' },
   { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-red-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
@@ -121,6 +122,7 @@ export default function DashboardLayout({
   const { startTour } = useTour()
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
+  const { has: hasFeature, ready: planReady } = usePlanFeatures()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -167,14 +169,20 @@ export default function DashboardLayout({
   }, [mounted, impersonation])
 
   useEffect(() => {
-    if (mounted && isAuthenticated()) {
+    // Only poll when the plan includes warmup. This endpoint is gated, so polling it
+    // on Free 402s once a minute and on every page load — console noise that reads
+    // like a bug rather than a plan boundary working as designed.
+    // Wait for planReady: hasFeature() fails open while the plan is loading, so
+    // firing on mount would send exactly one 402 before the answer arrives.
+    if (mounted && planReady && isAuthenticated() && hasFeature('warmup')) {
       warmupApi.getUnreadCount().then(data => setUnreadAlerts(data?.unread_count || 0)).catch(() => {})
       const interval = setInterval(() => {
         warmupApi.getUnreadCount().then(data => setUnreadAlerts(data?.unread_count || 0)).catch(() => {})
       }, 60000)
       return () => clearInterval(interval)
     }
-  }, [mounted])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, planReady])
 
   // Auto-launch tour on first visit
   useEffect(() => {
@@ -316,6 +324,12 @@ export default function DashboardLayout({
             // Custom roles resolve to their built-in base_role for nav gating.
             const navRole = user?.base_role || user?.role || 'recruiter'
             if (item.roles && !item.roles.includes(navRole)) return false
+            // Hide what the plan does not include. Cosmetic only — the server gate is
+            // the enforcement — but linking somewhere that always 402s is a dead end,
+            // and the upgrade prompt belongs on the billing page, not behind a nav
+            // item that looks broken.
+            if ((item as { feature?: string }).feature
+                && !hasFeature((item as { feature: string }).feature)) return false
             return true
           }).map((item) => {
             const isActive = item.href === '/dashboard'

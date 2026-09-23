@@ -103,6 +103,8 @@ def check_intent_signals(
 
         lobs = query.all()
 
+        from app.services.credit_metering import meter
+
         for lob in lobs:
             lob_results = _check_signals_for_lob(db, lob)
             results["signals_checked"] += lob_results["signals_checked"]
@@ -114,6 +116,13 @@ def check_intent_signals(
                 "lob_type": lob.lob_type,
                 **lob_results,
             })
+            # Billed per signal checked, and to the LOB's OWN tenant — this runs from
+            # the scheduler across every tenant, so using the `tenant_id` argument
+            # would bill one tenant (or nobody, when it is None) for all of them.
+            if lob_results["signals_checked"]:
+                meter(db, lob.tenant_id, "intent_scan", lob_results["signals_checked"],
+                      reference_id=f"lob:{lob.lob_id}")
+        db.commit()
 
         logger.info(
             "intent_signal_check_completed",

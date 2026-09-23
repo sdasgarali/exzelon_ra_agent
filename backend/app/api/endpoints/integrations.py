@@ -485,6 +485,9 @@ def resource_pool_attribution_summary(
     Optional ``start``/``end`` (YYYY-MM-DD) filter every aggregation by the outcome
     date (occurred_at, falling back to created_at); ``end`` is inclusive.
     """
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "attribution")
+
     from app.db.models.resource_pool_attribution import ResourcePoolAttribution as A
 
     base = _attribution_query(db, tenant_id, start, end)
@@ -584,6 +587,9 @@ def resource_pool_attribution_export(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """CSV export of the (date-range-filtered) attribution rows."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "attribution")
+
     import csv
     import io
     from fastapi.responses import StreamingResponse

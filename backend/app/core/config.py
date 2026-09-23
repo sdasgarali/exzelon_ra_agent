@@ -8,6 +8,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Anchor all relative paths to the backend/ directory (parent of app/)
@@ -60,12 +61,22 @@ class Settings(BaseSettings):
     EXPORT_PATH: str = str(_BACKEND_DIR / "data" / "exports")
 
     # Database
-    DB_TYPE: Literal["mysql", "sqlite"] = "sqlite"
+    DB_TYPE: Literal["mysql", "postgresql", "sqlite"] = "sqlite"
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_NAME: str = "exzelon_ra_agent"
     DB_USER: str = "ra_user"
     DB_PASSWORD: str = ""
+
+    # Postgres/Supabase only. Tables live in this schema, NOT in `public`:
+    # Supabase auto-publishes every table in an *exposed* schema through PostgREST,
+    # and `public` is exposed by default. Keeping the app out of `public` means no
+    # table is reachable with the project's anon key, with no RLS policy to maintain
+    # (and no way to forget one on a table added later).
+    DB_SCHEMA: str = "app"
+    # Supabase requires TLS. "require" encrypts without verifying the server cert;
+    # use "verify-full" plus DB_SSL_ROOT_CERT once the CA bundle is deployed.
+    DB_SSLMODE: str = "require"
 
     # Connection pool settings (MySQL only)
     DB_POOL_SIZE: int = 20
@@ -73,18 +84,43 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
 
     @property
+    def _DB_CREDENTIALS(self) -> str:
+        """user:password@host:port/name, URL-encoded.
+
+        Supabase generates passwords containing characters that are reserved in a
+        URI authority (@ : / ? # are all possible), so the password MUST be quoted
+        or the URL silently parses into the wrong host.
+        """
+        user = quote_plus(self.DB_USER)
+        password = quote_plus(self.DB_PASSWORD)
+        return f"{user}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    @property
     def DATABASE_URL(self) -> str:
+        # An explicit DATABASE_URL wins outright. The test harness and `migrations/
+        # env.py` both set it expecting exactly that, but because this is a *property*
+        # rather than a Settings field it used to be ignored here — so every test run
+        # built `app.db.base.engine` against the developer's real `data/ra_agent.db`
+        # and seeded it on app startup. Silent pollution before; with SQLite write
+        # locking it can also block a dev server that happens to be running.
+        explicit = os.environ.get("DATABASE_URL", "").strip()
+        if explicit:
+            return explicit
         if self.DB_TYPE == "sqlite":
             db_path = _BACKEND_DIR / "data" / "ra_agent.db"
             return f"sqlite:///{db_path}"
-        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+        if self.DB_TYPE == "postgresql":
+            return f"postgresql+psycopg2://{self._DB_CREDENTIALS}?sslmode={self.DB_SSLMODE}"
+        return f"mysql+pymysql://{self._DB_CREDENTIALS}?charset=utf8mb4"
 
     @property
     def ASYNC_DATABASE_URL(self) -> str:
         if self.DB_TYPE == "sqlite":
             db_path = _BACKEND_DIR / "data" / "ra_agent.db"
             return f"sqlite+aiosqlite:///{db_path}"
-        return f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+        if self.DB_TYPE == "postgresql":
+            return f"postgresql+asyncpg://{self._DB_CREDENTIALS}"
+        return f"mysql+aiomysql://{self._DB_CREDENTIALS}?charset=utf8mb4"
 
     @property
     def EFFECTIVE_BASE_URL(self) -> str:
@@ -125,6 +161,25 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
 
+    # --- Transactional (system) mail -------------------------------------
+    # Verification, password resets, deal notifications, invoices. This is SEPARATE
+    # from EMAIL_SEND_MODE above, which governs campaign/cold outreach through each
+    # tenant's own mailboxes. Never point cold outreach at a transactional provider:
+    # Resend and every comparable service prohibits it, and one shared sender would
+    # put every tenant's deliverability behind a single reputation.
+    #
+    #   auto   — Resend if RESEND_API_KEY is set, else global SMTP (default)
+    #   resend — force Resend; no silent SMTP fallback
+    #   smtp   — force global SMTP
+    #   none   — disable global system mail (tenant-configured senders still work)
+    SYSTEM_MAIL_PROVIDER: Literal["auto", "resend", "smtp", "none"] = "auto"
+    RESEND_API_KEY: str = ""
+    # Must be on a domain verified in Resend. `onboarding@resend.dev` is their shared
+    # test sender and only delivers to the account owner — fine for a smoke test,
+    # useless in production.
+    RESEND_FROM_EMAIL: str = ""
+    RESEND_FROM_NAME: str = ""
+
     # Business Rules
     DAILY_SEND_LIMIT: int = 30
     COOLDOWN_DAYS: int = 10
@@ -145,9 +200,17 @@ class Settings(BaseSettings):
     BILLING_DEFAULT_CURRENCY: str = "USD"  # ISO-4217; invoices default to this (ELR-029)
     # Stripe recurring Price IDs per plan (create the Products/Prices in Stripe and
     # paste the price_... ids here). Subscriptions are inert until these are set. (ELR-021)
-    STRIPE_PRICE_STARTER: str = ""
-    STRIPE_PRICE_PROFESSIONAL: str = ""
-    STRIPE_PRICE_ENTERPRISE: str = ""
+    # Free has no price id — nothing is charged. Custom is quoted and invoiced through
+    # the ManualGateway, so it has no self-serve price id either.
+    STRIPE_PRICE_PRO: str = ""
+    STRIPE_PRICE_MAX: str = ""
+    # Annual (billed yearly at the discounted per-month rate).
+    STRIPE_PRICE_PRO_ANNUAL: str = ""
+    STRIPE_PRICE_MAX_ANNUAL: str = ""
+    # One-time credit top-up: $10 per 1,000 credits, never expires.
+    STRIPE_PRICE_CREDIT_TOPUP: str = ""
+    CREDIT_TOPUP_BLOCK_SIZE: int = 1000
+    CREDIT_TOPUP_BLOCK_PRICE_CENTS: int = 1000
     BILLING_COMPANY_NAME: str = ""
     BILLING_COMPANY_ADDRESS: str = ""
     BILLING_COMPANY_LOGO_PATH: str = ""
@@ -174,12 +237,16 @@ class Settings(BaseSettings):
 
     # Credit metering / enforcement (ELR-009). Enforcement is OFF by default so
     # enabling it never breaks live pipelines without an explicit opt-in (global
-    # here, or per-tenant via the `credit_enforcement_enabled` setting). Ceilings
-    # are the monthly credit budget per plan (0 = unlimited).
+    # here, or per-tenant via the `credit_enforcement_enabled` setting).
+    #
+    # The per-plan allowances themselves live in `core/plans.py` (PLAN_MATRIX) — they
+    # are product pricing, not deployment config, and must not drift per environment.
+    # A non-zero override replaces the matrix value for that plan in this deployment
+    # only (staging caps, load tests); 0 means "use the plan matrix".
     CREDIT_ENFORCEMENT_ENABLED: bool = False
-    CREDIT_LIMIT_STARTER: int = 1000
-    CREDIT_LIMIT_PROFESSIONAL: int = 5000
-    CREDIT_LIMIT_ENTERPRISE: int = 0  # unlimited
+    CREDIT_LIMIT_FREE_OVERRIDE: int = 0
+    CREDIT_LIMIT_PRO_OVERRIDE: int = 0
+    CREDIT_LIMIT_MAX_OVERRIDE: int = 0
 
     # Industries (Non-IT only)
     TARGET_INDUSTRIES: list[str] = [

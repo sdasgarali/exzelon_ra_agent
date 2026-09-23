@@ -170,5 +170,11 @@ def enrich_firmographics_batch(
         except Exception:  # cost recording must never break enrichment
             logger.debug("firmographic_cost_record_failed", exc_info=True)
 
+        # Metered on lookups ATTEMPTED, not resolved: Apollo bills us for a miss the
+        # same as a hit, so charging only on `out` would have us absorb every
+        # not-found. This is the one action where the customer pays for a miss.
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "firmographic_lookup", calls, reference_id=str(run_id or ""))
+
     logger.info("firmographic_batch_done", looked_up=calls, resolved=len(out))
     return out

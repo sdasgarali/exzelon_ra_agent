@@ -19,6 +19,10 @@ from app.db.models.tenant_lob_assignment import TenantLOBAssignment
 from app.api.deps.auth import require_role, UserRole
 from app.core.security import create_access_token
 from app.core.lob_defaults import LOB_DEFAULT_CONFIGS, LOB_TYPE_META, TENANT_PROMPT_PROFILES
+from app.core.plans import (
+    DEFAULT_PLAN, LIMIT_FIELDS, PLAN_MATRIX,
+    custom_floor_violations, get_plan, is_custom, normalize_plan,
+)
 from app.services.audit_helper import write_audit_log
 from app.services.tenant_service import generate_unique_slug
 from app.core.settings_resolver import get_tenant_setting_bool, set_tenant_setting
@@ -28,6 +32,47 @@ logger = structlog.get_logger()
 
 # All routes require super_admin
 super_admin_dep = require_role([UserRole.SUPER_ADMIN])
+
+
+def _parse_plan(raw: Optional[str]) -> TenantPlan:
+    """Plan string -> TenantPlan, accepting the legacy starter/professional/enterprise
+    names. Rejects anything else rather than silently defaulting, because this is an
+    explicit admin action — unlike the request path, where a stale claim must not 500.
+    """
+    if raw is None:
+        return TenantPlan(DEFAULT_PLAN)
+    key = normalize_plan(raw)
+    supplied = str(raw).strip().lower()
+    if key == DEFAULT_PLAN and supplied not in ("free", "starter"):
+        raise HTTPException(status_code=400, detail=f"Invalid plan: {raw}")
+    return TenantPlan(key)
+
+
+def _resolve_limits(plan: TenantPlan, data) -> dict:
+    """Effective limit columns for a create/update payload.
+
+    Standard tiers are provisioned straight from PLAN_MATRIX, so an admin can never
+    hand-type a tenant into the all-zeros state that locked self-signup accounts out.
+    Custom tenants take the supplied numbers — that IS the contract — but are rejected
+    if any of them sits below Max, since Custom exists to be bigger than Max.
+    """
+    if not is_custom(plan):
+        spec = get_plan(plan)
+        return {f: getattr(spec, f) for f in LIMIT_FIELDS}
+
+    floor = PLAN_MATRIX["max"]
+    supplied = {f: getattr(data, f, None) for f in LIMIT_FIELDS}
+    violations = custom_floor_violations(supplied)
+    if violations:
+        detail = ", ".join(f"{f} must be at least {v}" for f, v in sorted(violations.items()))
+        raise HTTPException(
+            status_code=400,
+            detail=f"A custom plan cannot be smaller than Max: {detail}",
+        )
+    return {
+        f: int(supplied[f]) if supplied[f] is not None else getattr(floor, f)
+        for f in LIMIT_FIELDS
+    }
 
 
 def _normalize_domain(d: Optional[str]) -> Optional[str]:
@@ -86,18 +131,22 @@ class TenantDetail(TenantSummary):
 
 class TenantCreate(BaseModel):
     name: str
-    plan: str = "starter"
+    plan: str = DEFAULT_PLAN
     domain: Optional[str] = None  # registered domain — unique link key across systems
     website: Optional[str] = None
     industry: Optional[str] = None
     company_address: Optional[str] = None
     phone: Optional[str] = None
     contact_email: Optional[str] = None
-    max_users: int = 3
-    max_mailboxes: int = 0
-    max_contacts: int = 0
-    max_campaigns: int = 0
-    max_leads: int = 0
+    # Omit these and the tenant is provisioned from PLAN_MATRIX. They are only
+    # meaningful for plan=custom, where they ARE the contract — and are then floored
+    # at Max's numbers, since Custom sits above Max by definition.
+    max_users: Optional[int] = None
+    max_mailboxes: Optional[int] = None
+    max_contacts: Optional[int] = None
+    max_campaigns: Optional[int] = None
+    max_leads: Optional[int] = None
+    max_lobs: Optional[int] = None
 
 
 class TenantUpdate(BaseModel):
@@ -110,6 +159,7 @@ class TenantUpdate(BaseModel):
     max_contacts: Optional[int] = None
     max_campaigns: Optional[int] = None
     max_leads: Optional[int] = None
+    max_lobs: Optional[int] = None
     website: Optional[str] = None
     industry: Optional[str] = None
     company_address: Optional[str] = None
@@ -169,10 +219,8 @@ async def create_tenant(
     if not data.name or not data.name.strip():
         raise HTTPException(status_code=400, detail="Tenant name is required")
 
-    try:
-        plan = TenantPlan(data.plan)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid plan: {data.plan}")
+    plan = _parse_plan(data.plan)
+    limits = _resolve_limits(plan, data)
 
     slug = generate_unique_slug(data.name, db)
 
@@ -190,11 +238,7 @@ async def create_tenant(
         company_address=data.company_address or None,
         phone=data.phone or None,
         contact_email=data.contact_email or None,
-        max_users=data.max_users,
-        max_mailboxes=data.max_mailboxes,
-        max_contacts=data.max_contacts,
-        max_campaigns=data.max_campaigns,
-        max_leads=data.max_leads,
+        **limits,
     )
     db.add(tenant)
     db.commit()
@@ -291,11 +335,12 @@ async def update_tenant(
 
     if data.name is not None:
         tenant.name = data.name
-    if data.plan is not None:
-        try:
-            tenant.plan = TenantPlan(data.plan)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid plan: {data.plan}")
+
+    # Plan first — whether the limit columns below are authoritative depends on it.
+    plan_changed = data.plan is not None
+    if plan_changed:
+        tenant.plan = _parse_plan(data.plan)
+
     if data.is_active is not None:
         tenant.is_active = data.is_active
     if data.domain is not None:
@@ -303,16 +348,36 @@ async def update_tenant(
         if norm and _domain_taken(db, norm, exclude_tenant_id=tenant.tenant_id):
             raise HTTPException(status_code=409, detail="That registered domain is already linked to another tenant.")
         tenant.domain = norm
-    if data.max_users is not None:
-        tenant.max_users = data.max_users
-    if data.max_mailboxes is not None:
-        tenant.max_mailboxes = data.max_mailboxes
-    if data.max_contacts is not None:
-        tenant.max_contacts = data.max_contacts
-    if data.max_campaigns is not None:
-        tenant.max_campaigns = data.max_campaigns
-    if data.max_leads is not None:
-        tenant.max_leads = data.max_leads
+
+    if is_custom(tenant.plan):
+        # Custom: the columns ARE the contract. Validate the merge of what's stored
+        # and what's being sent, so a partial update can't dip below Max either.
+        merged = {
+            f: (getattr(data, f) if getattr(data, f, None) is not None else getattr(tenant, f))
+            for f in LIMIT_FIELDS
+        }
+        violations = custom_floor_violations(merged)
+        if violations:
+            detail = ", ".join(f"{f} must be at least {v}" for f, v in sorted(violations.items()))
+            raise HTTPException(
+                status_code=400,
+                detail=f"A custom plan cannot be smaller than Max: {detail}",
+            )
+        for f, v in merged.items():
+            setattr(tenant, f, int(v))
+    elif plan_changed:
+        # Moving onto a standard tier re-provisions the columns from PLAN_MATRIX, so
+        # a downgrade from custom can't leave inflated limits behind.
+        spec = get_plan(tenant.plan)
+        for f in LIMIT_FIELDS:
+            setattr(tenant, f, getattr(spec, f))
+    else:
+        # Standard tier, no plan change: allow a manual per-tenant override (support
+        # grants, trials). PLAN_MATRIX still governs anything left unset.
+        for f in LIMIT_FIELDS:
+            v = getattr(data, f, None)
+            if v is not None:
+                setattr(tenant, f, int(v))
     if data.website is not None:
         tenant.website = data.website
     if data.industry is not None:

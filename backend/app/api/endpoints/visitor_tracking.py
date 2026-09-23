@@ -8,6 +8,7 @@ from sqlalchemy import func, desc
 from pydantic import BaseModel
 
 from app.db.base import get_db
+from app.api.deps.features import require_feature
 from app.api.deps.auth import require_role, get_current_tenant_id
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
@@ -29,7 +30,7 @@ class TrackVisitRequest(BaseModel):
     site: Optional[str] = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_feature("visitors"))])
 def list_visitors(
     visitor_id: Optional[str] = None,
     company_name: Optional[str] = None,
@@ -81,7 +82,7 @@ def list_visitors(
     }
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_feature("visitors"))])
 def visitor_stats(
     days: int = Query(30, ge=1, le=90),
     db: Session = Depends(get_db),
@@ -164,6 +165,15 @@ def track_visit(
         t = db.query(Tenant).filter(Tenant.slug == body.site).first()
         if t:
             resolved_tenant_id = t.tenant_id
+
+    # This endpoint is a public beacon from the customer's own website, so a plan
+    # gate here must NOT 402 — that would show up as a console error on their site
+    # and look like our bug. A plan without Visitors simply has its events dropped,
+    # and the pixel gets the same 200 it always does.
+    if resolved_tenant_id is not None:
+        from app.api.deps.features import has_feature
+        if not has_feature(db, resolved_tenant_id, "visitors"):
+            return {"ok": True, "event_id": None, "tracked": False}
 
     event = VisitorEvent(
         tenant_id=resolved_tenant_id,

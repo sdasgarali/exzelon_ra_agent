@@ -4,21 +4,39 @@ Recurring subscriptions are **inert until you create the Products/Prices in Stri
 and paste the price ids into config.** Do this once per environment.
 
 ## 1. Create Products + recurring Prices in Stripe
-In the Stripe Dashboard → **Products**, create one product per plan (Starter,
-Professional, Enterprise). For each, add a **recurring** price (e.g. monthly, in
-your billing currency). Copy each `price_...` id.
+Only **two** plans are charged through Stripe. Free costs nothing, and Custom is
+quoted and invoiced by contract through the `ManualGateway` — neither has a price id.
 
-(Or via CLI: `stripe products create --name "Professional"` then
+In the Stripe Dashboard → **Products**, create one product per billable plan and give
+each **two** recurring prices, monthly and yearly:
+
+| Plan | Monthly | Annual (billed yearly) |
+|------|---------|------------------------|
+| Pro  | $99 (`unit_amount=9900`, `interval=month`) | $948 (`unit_amount=94800`, `interval=year`) — $79/mo |
+| Max  | $299 (`unit_amount=29900`, `interval=month`) | $2,868 (`unit_amount=286800`, `interval=year`) — $239/mo |
+
+Also create a **one-time** price for credit top-ups: $10 per 1,000 credits
+(`unit_amount=1000`, no `recurring`).
+
+(Or via CLI: `stripe products create --name "Pro"` then
 `stripe prices create --product <prod_id> --unit-amount 9900 --currency usd --recurring interval=month`.)
+
+These amounts must match `PLAN_MATRIX` in `backend/app/core/plans.py`, which is the
+source of truth for what the app believes a plan costs.
 
 ## 2. Set the price ids (host `.env`, never in git)
 ```
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_STARTER=price_...
-STRIPE_PRICE_PROFESSIONAL=price_...
-STRIPE_PRICE_ENTERPRISE=price_...
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_MAX=price_...
+STRIPE_PRICE_PRO_ANNUAL=price_...
+STRIPE_PRICE_MAX_ANNUAL=price_...
+STRIPE_PRICE_CREDIT_TOPUP=price_...
 ```
+
+Checkout picks the annual price when the request sets `annual: true`; both price ids
+map back to the same plan on the webhook side.
 
 ## 3. Add the webhook endpoint in Stripe
 Point a webhook at `https://<your-host>/api/v1/billing/webhook/stripe` and enable

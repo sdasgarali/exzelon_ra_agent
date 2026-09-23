@@ -3,6 +3,7 @@ import re
 from sqlalchemy.orm import Session
 import structlog
 
+from app.core.plans import PLAN_MATRIX, DEFAULT_PLAN
 from app.db.models.tenant import Tenant, TenantPlan
 
 logger = structlog.get_logger()
@@ -35,7 +36,13 @@ def generate_unique_slug(company_name: str, db: Session) -> str:
 
 
 def create_tenant_for_signup(company_name: str, db: Session) -> Tenant:
-    """Create a new starter tenant for self-service signup.
+    """Create a new Free tenant for self-service signup.
+
+    Limits come from `PLAN_MATRIX["free"]`, never hardcoded here. Until 2026-09 this
+    function assigned `max_mailboxes/contacts/campaigns/leads = 0`, which the old
+    plan-limit sentinel read as "locked" — so every self-signup tenant was created
+    unable to add a mailbox, lead, contact or campaign. Reading the matrix means a
+    pricing change can never silently strand new signups again.
 
     Args:
         company_name: The company name from the signup form.
@@ -46,15 +53,18 @@ def create_tenant_for_signup(company_name: str, db: Session) -> Tenant:
     """
     slug = generate_unique_slug(company_name, db)
 
+    free = PLAN_MATRIX[DEFAULT_PLAN]
     tenant = Tenant(
         name=company_name,
         slug=slug,
-        plan=TenantPlan.STARTER,
-        max_users=3,
-        max_mailboxes=0,
-        max_contacts=0,
-        max_campaigns=0,
-        max_leads=0,
+        plan=TenantPlan(DEFAULT_PLAN),
+        max_users=free.max_users,
+        max_mailboxes=free.max_mailboxes,
+        max_contacts=free.max_contacts,
+        max_campaigns=free.max_campaigns,
+        max_leads=free.max_leads,
+        max_lobs=free.max_lobs,
+        monthly_price_cents=free.monthly_price_cents,
     )
     db.add(tenant)
     db.commit()

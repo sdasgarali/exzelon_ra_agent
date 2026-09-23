@@ -32,7 +32,7 @@ def test_super_admin_apikey_create_ok_with_impersonation(client, sa_headers, tes
 async def test_budget_dep_blocks_over_ceiling(db_session, professional_capped_tenant, monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings, "CREDIT_ENFORCEMENT_ENABLED", True)
-    monkeypatch.setattr(settings, "CREDIT_LIMIT_PROFESSIONAL", 5)
+    monkeypatch.setattr(settings, "CREDIT_LIMIT_PRO_OVERRIDE", 5)
     tid = professional_capped_tenant.tenant_id
     record_usage(db_session, tid, "ai_generation", credits=5)
     with pytest.raises(HTTPException) as exc:

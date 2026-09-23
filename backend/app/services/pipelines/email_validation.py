@@ -191,6 +191,16 @@ def run_email_validation_pipeline(
             "error_message": None,
         }]
 
+        # Meter credits on emails actually sent to the provider. `errors` are not
+        # charged — a provider timeout is our problem, not the customer's.
+        try:
+            from app.services.credit_metering import meter
+            if total_validated > 0:
+                meter(db, tenant_id, "email_validated", total_validated,
+                      reference_id=str(job_run.run_id))
+        except Exception as e:
+            logger.warning(f"Failed to meter validation credits: {e}")
+
         # Update job run
         db.refresh(job_run)
         if job_run.is_cancel_requested == 1:

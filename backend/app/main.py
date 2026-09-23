@@ -1226,7 +1226,7 @@ async def lifespan(app: FastAPI):
                         pass
                     conn.execute(sa_text_mt(
                         "INSERT INTO tenants (tenant_id, name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
-                        "VALUES (1, 'Exzelon', 'exzelon', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                        "VALUES (1, 'Exzelon', 'exzelon', 'max', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
                     ))
                     conn.commit()
                     logger.info("Migration: created primary Tenant #1 (Exzelon)")
@@ -1272,7 +1272,7 @@ async def lifespan(app: FastAPI):
                 if result.fetchone() is None:
                     conn.execute(sa_text_mt(
                         "INSERT INTO tenants (name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
-                        "VALUES ('Neuraforz', 'neuraforz', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                        "VALUES ('Neuraforz', 'neuraforz', 'max', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
                     ))
                     conn.commit()
                     logger.info("Migration: created Neuraforz tenant")
@@ -1322,7 +1322,7 @@ async def lifespan(app: FastAPI):
                 if result.fetchone() is None:
                     conn.execute(sa_text_mt(
                         "INSERT INTO tenants (name, slug, plan, is_active, max_users, max_mailboxes, max_contacts, max_campaigns, max_leads, created_at, updated_at, is_archived) "
-                        "VALUES ('Medeoan', 'medeoan', 'enterprise', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
+                        "VALUES ('Medeoan', 'medeoan', 'max', 1, 999, 999, 999999, 999, 999999, NOW(), NOW(), 0)"
                     ))
                     conn.commit()
                     logger.info("Migration: created Medeoan tenant")

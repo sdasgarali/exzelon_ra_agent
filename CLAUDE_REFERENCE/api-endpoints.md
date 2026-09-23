@@ -45,12 +45,21 @@ All endpoints are mounted under `/api/v1`.
 | `/tracking-domains` | `tracking_domains.py` | Custom tracking domain CRUD + verify |
 | `/gdpr` | `gdpr.py` | GDPR data-subject rights (admin, tenant-scoped): `GET /gdpr/export?email=` (Right-to-Access — all PII: contacts, outreach events, inbox, visits, suppression status); `POST /gdpr/erase {email}` (Right-to-Erasure — anonymises contact PII, keeps rows for FK integrity, suppresses the address, audits; requires impersonated tenant) (ELR-024) |
 
+> **Plan gating (Phase 3):** several routers are mounted in `api/router.py` with
+> `dependencies=[Depends(require_feature(...))]` and return **402** with a structured body
+> (`{code: "feature_not_in_plan", required_plan, ...}`) for plans that don't include them:
+> warmup, automation, webhooks, crm_sync, roles, analytics, email_preview, icp_wizard,
+> sequence_generator, backups, dfy. Partial gates live in the endpoint bodies — analytics
+> `/forecast`, integrations `/resource-pool/attribution[/export]`, leads `/intent-scores`,
+> lob `/{id}/intent-signals[/run]`, visitors `""`/`/stats`. `POST /visitors/track` and
+> `/visitors/pixel.js` stay PUBLIC by design (see `CLAUDE_REFERENCE/multi-tenancy.md`).
+
 ## Admin & Billing Endpoints
 
 | Prefix | File | Purpose |
 |--------|------|---------|
 | `/admin/tenants` | `admin_tenants.py` | Super admin tenant management (list, detail, update, deactivate, impersonate, branding, features, LOB assignments). GET/PUT `/{id}/lob-assignments` for tenant LOB type control |
-| `/billing` | `billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service. **Subscriptions (ELR-021)**: `POST /billing/subscription/checkout {plan?}` (Stripe subscription-mode Checkout for the tenant's plan → checkout_url; needs `STRIPE_PRICE_*` set — see `deploy/STRIPE_SUBSCRIPTIONS_SETUP.md`), `GET /billing/subscription` (status), `POST /billing/subscription/cancel` (cancel at period end). Webhook syncs `customer.subscription.*` + refunds/failed-payments/disputes into `subscriptions` + invoices; suspends on non-payment (ELR-023). |
+| `/billing` | `billing.py` | Invoice CRUD, bulk generation, mark-paid, PDF download, Stripe checkout, webhook, stats, tenant self-service. **Subscriptions (ELR-021)**: `POST /billing/subscription/checkout {plan?, annual?}` (Stripe subscription-mode Checkout → checkout_url; `annual:true` picks the yearly price. Rejects `free` (nothing to pay) and `custom` (invoiced by contract). Needs `STRIPE_PRICE_{PRO,MAX}[_ANNUAL]` — see `deploy/STRIPE_SUBSCRIPTIONS_SETUP.md`), `POST /billing/custom-quote {mailboxes?, credits_per_month?, sends_per_month?, users?, lobs?, campaigns?, notes?}` (records a Custom-plan request; every supplied axis must **exceed** Max's number or 400s, audit-logged), `GET /billing/usage` (**the usage screen's single source** — plan + both meters + resource counts + the tenant's `features` list + `near_limit` flags, deliberately one call so four views cannot disagree mid-render), `POST /billing/credits/topup {blocks}` (one-time Stripe Checkout for credit blocks — $10/1,000 by default, paid plans only; credits are granted by the `checkout.session.completed` webhook, never at checkout time, so an abandoned payment credits nobody, and the `ProcessedStripeEvent` guard stops a retried webhook granting twice), `GET /billing/subscription` (status), `POST /billing/subscription/cancel` (cancel at period end). Webhook syncs `customer.subscription.*` + refunds/failed-payments/disputes into `subscriptions` + invoices; suspends on non-payment (ELR-023). |
 | `/activity` | `activity_log.py` | Login history, 24h stats, auth audit, active users, my-login-history, unlock user (Super admin except my-login-history) |
 
 ## Feature Endpoints
@@ -61,7 +70,7 @@ All endpoints are mounted under `/api/v1`.
 | `/reply-macros` | `reply_macros.py` | Reply macro CRUD + usage tracking |
 | `/notifications` | `notifications.py` | Notification center (list, unread-count, mark-read, mark-all-read) |
 | `/calendar` | `calendar.py` | Calendar booking CRUD + stats |
-| `/credits` | `credits.py` | Credit usage tracking (list, summary, balance) |
+| `/credits` | `credits.py` | `GET /credits/usage` (paginated ledger), `GET /credits/summary` (by type), `GET /credits/balance` (**both meters**: credit allowance vs top-up vs total, plus a `sends` block with used/limit/remaining — reads `TenantCreditBalance` and `send_quota`, so it agrees exactly with the 402 gate), `GET /credits/price-list` (what each action costs; the UI must read this rather than hardcoding numbers) |
 | `/goals` | `goals.py` | Goal/KPI target CRUD + progress tracking |
 | `/visitors` | `visitor_tracking.py` | Website visitor tracking (pixel.js, track endpoint, stats, sessions) |
 | `/sms` | `sms.py` | SMS outreach via Twilio (send, status check) |

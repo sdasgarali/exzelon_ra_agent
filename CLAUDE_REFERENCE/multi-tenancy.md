@@ -15,16 +15,17 @@ class Tenant:
     tenant_id: int  # PK
     name: str
     slug: str  # unique
-    plan: TenantPlan  # starter/professional/enterprise
+    plan: TenantPlan  # free/pro/max/custom
     is_active: bool
     website: str  # URL
     industry: str  # saas/recruiting/healthcare/ecommerce/finance/general
-    # Plan limits
+    # Plan limits — 0 = "use the plan's number"; see the sentinel table below
     max_users: int
     max_mailboxes: int
     max_contacts: int
     max_campaigns: int
     max_leads: int
+    max_lobs: int  # added 2026-09 (migration 0002)
     # Billing columns
     monthly_price_cents: int
     billing_email: str
@@ -53,15 +54,141 @@ Every user is bound to exactly ONE tenant, except `super_admin` (global, `tenant
   (or an explicit `tenant_id=null` on a normal role) requires a valid tenant.
 - Frontend: Users page has a Tenant column + a super-admin-only tenant dropdown/filter.
 
-## Plan Limits
+## Plans & Limits
 
+**Source of truth: `core/plans.py` (`PLAN_MATRIX`).** Limits, credit allowances, send
+quotas and feature flags all live there — never hardcode them in a service or endpoint.
 Enforced at CREATE endpoints via `check_plan_limit()` in `api/deps/plan_limits.py`.
 
-| Plan | Users | Mailboxes | Contacts | Campaigns | Leads |
-|------|-------|-----------|----------|-----------|-------|
-| Starter | 3 | 5 | 500 | 5 | 1000 |
-| Professional | 10 | 25 | 5000 | 25 | 10000 |
-| Enterprise | Unlimited | Unlimited | Unlimited | Unlimited | Unlimited |
+Plans were renamed 2026-09 from starter/professional/enterprise to **free/pro/max**,
+plus a new **custom** tier. See `Plan_Credit_System_And_Pricing.md`.
+
+| Plan | Price/mo | Credits/mo | Sends/mo | Users | Mailboxes | Active campaigns | LOBs | Contacts | Leads |
+|------|----------|-----------|----------|-------|-----------|------------------|------|----------|-------|
+| Free | $0 | 300 | 500 | 2 | 1 | 2 | 1 | 1,000 | 2,000 |
+| Pro | $99 | 6,000 | 25,000 | 10 | 25 | 25 | 3 | 25,000 | 50,000 |
+| Max | $299 | 25,000 | 150,000 | 50 | 1,000 | 100 | 25 | 150,000 | 250,000 |
+| Custom | Quoted | > Max | > Max | > Max | > Max | > Max | > Max | > Max | > Max |
+
+**No tier is unlimited.** Every limit is a positive integer.
+
+### The `0` sentinel (changed 2026-09 — read this before touching limits)
+
+A tenant's `max_*` column has exactly two states:
+
+| Value | Meaning |
+|-------|---------|
+| `0` | Not configured for this tenant → **the plan's number applies** |
+| `> 0` | Explicit per-tenant limit (support grant, trial bump, restricted account) |
+
+It **never** means "unlimited". Previously `0` meant "unlimited" on professional and
+"locked" on starter — the same value with two opposite meanings — and
+`create_tenant_for_signup()` provisioned exactly those zeroes, so **every self-signup
+tenant was unable to create a mailbox, lead, contact or campaign**. Such rows now fall
+back to the plan. Whether a tenant may use a feature at all is a feature-gate question
+(Phase 3), not a limit of zero.
+
+### Counting rules
+
+- **Campaigns count live state**, not lifetime: only `ACTIVE` and `PAUSED` occupy a
+  slot (`LIVE_CAMPAIGN_STATUSES`). `DRAFT` is free and `COMPLETED`/`ARCHIVED` release
+  their slot. Counting every row ever created made the cap a one-way ratchet.
+- **Leads and contacts stay cumulative** — they are genuine storage. Their caps are set
+  well above what a year of credits can produce, so credits remain the binding meter.
+- **LOBs count rows in `lines_of_business`** (an instance table — several LOBs may share
+  one `lob_type`). Distinct from `TenantLOBAssignment`, which gates *which* of the 6
+  types a tenant may use.
+
+### Feature gating (Phase 3)
+
+Limits answer "how many"; the **feature gate** answers "at all". `core/plans.py` holds
+`BASE_FEATURES` / `PRO_FEATURES` / `MAX_FEATURES` (strictly cumulative — upgrading never
+removes a feature), and `api/deps/features.py` enforces them three ways:
+
+| Helper | Use when |
+|---|---|
+| `require_feature("warmup")` | FastAPI dependency — router-level in `api/router.py` when a WHOLE area is paid, or per-endpoint |
+| `ensure_feature(db, tid, "x")` | Inside an endpoint/service, when only some routes are gated |
+| `has_feature(db, tid, "x")` | Branching rather than blocking (hiding UI, dropping a beacon) |
+
+**Returns 402, not 403** — "your plan doesn't include it yet" is a payment state, same
+as the credit gate. The body is a **structured dict** so the frontend can distinguish a
+feature gate from an exhausted balance (both are 402):
+`{code: "feature_not_in_plan", feature, feature_label, plan, required_plan, message}`.
+`required_plan` is derived from `PLAN_MATRIX` by `minimum_plan_for()`, so the upgrade
+prompt can never drift from what the tiers actually grant. Super admins bypass.
+
+Gated at mount in `api/router.py`: warmup, automation, webhooks, crm_sync, roles,
+analytics, email_preview, icp_wizard, sequence_generator, backups, dfy.
+Gated per-endpoint (the router also serves un-gated routes): analytics `/forecast`,
+integrations `/resource-pool/attribution[/export]`, leads `/intent-scores`, lob
+`/{id}/intent-signals[/run]`, visitors `""` and `/stats`.
+
+**`POST /visitors/track` is deliberately NOT gated with a 402.** It is a public beacon
+from the customer's own website; a 402 there would surface as a console error on their
+site and read as our bug. Unentitled plans get a 200 with `tracked: false` and the event
+is dropped. `/visitors/pixel.js` stays fully public.
+
+### SQLite and the credit race (dev/test only)
+
+Credit spending is a read-then-write transaction (SELECT the balance, UPDATE it), and
+SQLite has no row locks — `with_for_update()` compiles away. Two connections each take
+a SHARED lock on the read, both try to escalate, and SQLite returns SQLITE_BUSY
+**immediately** rather than waiting, because waiting could never resolve it. That is
+why `busy_timeout` does not help.
+
+The app engine gets **WAL + busy_timeout only** (`configure_sqlite_pragmas`). It
+deliberately does NOT get `BEGIN IMMEDIATE`: that fixes the race but serialises
+read-only transactions too, so one long-lived scheduler session blocks every request —
+measured, not theorised; it hung the dev server. `configure_sqlite_write_locking()`
+adds it and is used only by
+`tests/security/test_credit_concurrency.py`, where serialisation is the point.
+
+Production runs MySQL or PostgreSQL and needs none of this — they have real row locks,
+and that test asserts `FOR UPDATE` is genuinely emitted for those dialects, since a
+behavioural test on SQLite would pass whether the code asked for the lock or not.
+
+### Test isolation: `DATABASE_URL` must be honoured
+
+`Settings.DATABASE_URL` is a **property**, so an env var of the same name used to be
+ignored — meaning every test run built `app.db.base.engine` against the developer's
+real `data/ra_agent.db` and seeded it at app startup. It now returns an explicit
+`DATABASE_URL` when one is set, which is what `tests/conftest.py` and
+`migrations/env.py` always assumed.
+
+### Send quota — the second meter
+
+`services/send_quota.py`. Sends are **not** credits: marginal cost is ~$0 because
+tenants bring their own mailboxes, and metering them in credits would make people
+ration the one action the product exists to perform.
+
+Counted from `OutreachEvent` (statuses `SENT`/`REPLIED`/`BOUNCED` — a bounce was still
+a send; `SKIPPED` never left the building) rather than an incrementing counter, because
+all five send paths already converge on that table and the one someone forgets to
+increment becomes free sends nobody notices. Composite index
+`idx_outreach_tenant_sent (tenant_id, sent_at)` (migration `0004`) keeps that count an
+index range scan at Max's 150k/month. Warmup traffic is not counted — it has its own
+tables.
+
+Enforced as **check 0** of `send_gate.unified_send_gate()` — first, not last, because it
+is the only tenant-level check and a failure makes every per-contact check below it
+wasted work (including the AI orchestrator's LLM call). Skipped for `dry_run` and
+`is_reply`. **Fails OPEN**: a counting bug must not stop a paying customer's campaign,
+and the per-mailbox daily limit still bounds the damage.
+
+### Custom tier
+
+`plan=custom` is the only tier whose `max_*` columns are authoritative — they *are* the
+contract. They are floored at Max's numbers (`custom_floor_violations()`), so a custom
+plan can never be smaller than the tier it sits above. Set by a super_admin via
+`PUT /admin/tenants/{id}`; quotes come in through `POST /billing/custom-quote`.
+
+### Legacy plan names
+
+`TenantPlan.STARTER / PROFESSIONAL / ENTERPRISE` remain as **enum aliases** of
+FREE / PRO / MAX (same values, so Python binds them to the same members) and
+`core.plans.normalize_plan()` maps the old strings from stale JWTs and API payloads.
+Remove one release after migration `0002_plan_rename_and_max_lobs`.
 
 ## Key Dependencies
 

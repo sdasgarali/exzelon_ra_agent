@@ -1500,40 +1500,44 @@ export default function DocumentationPage() {
                 <thead>
                   <tr>
                     <th>&nbsp;</th>
-                    <th>Starter</th>
-                    <th>Professional</th>
-                    <th>Enterprise</th>
+                    <th>Free</th>
+                    <th>Pro</th>
+                    <th>Max</th>
+                    <th>Custom</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td>Monthly price</td><td className={styles.num}>$49</td><td className={styles.num}>$99</td><td className={styles.num}>$199</td></tr>
-                  <tr><td>Annual, per month</td><td className={styles.num}>$39</td><td className={styles.num}>$79</td><td className={styles.num}>$159</td></tr>
-                  <tr><td>Users</td><td className={styles.num}>3</td><td className={styles.num}>10</td><td>Unlimited</td></tr>
-                  <tr><td>Mailboxes</td><td className={styles.num}>5</td><td className={styles.num}>25</td><td>Unlimited</td></tr>
-                  <tr><td>Emails per day</td><td className={styles.num}>500</td><td className={styles.num}>2,500</td><td className={styles.num}>10,000+</td></tr>
-                  <tr><td>Contacts</td><td className={styles.num}>500</td><td className={styles.num}>5,000</td><td>Unlimited</td></tr>
-                  <tr><td>Leads</td><td className={styles.num}>1,000</td><td className={styles.num}>10,000</td><td>Unlimited</td></tr>
-                  <tr><td>Active campaigns</td><td className={styles.num}>5</td><td className={styles.num}>25</td><td>Unlimited</td></tr>
-                  <tr><td>Lead sources</td><td className={styles.num}>3</td><td className={styles.num}>7</td><td>All</td></tr>
-                  <tr><td>Contact providers</td><td className={styles.num}>2</td><td className={styles.num}>5</td><td>All</td></tr>
-                  <tr><td>AI engines</td><td className={styles.num}>1</td><td className={styles.num}>2</td><td>All 4</td></tr>
-                  <tr><td>A/B testing</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Unified inbox</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>CRM deals</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>ICP Wizard</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Analytics</td><td>Basic</td><td>Advanced</td><td>Full, plus API</td></tr>
-                  <tr><td>Webhooks &amp; integrations</td><td className={styles.no}>—</td><td>Basic</td><td>Full</td></tr>
-                  <tr><td>Custom tracking domains</td><td className={styles.no}>—</td><td className={styles.num}>1</td><td>Unlimited</td></tr>
-                  <tr><td>Self-hosted option</td><td className={styles.no}>—</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>White-label</td><td className={styles.no}>—</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Support</td><td>Email</td><td>Email and chat</td><td>Dedicated manager</td></tr>
+                  <tr><td>Monthly price</td><td className={styles.num}>$0</td><td className={styles.num}>$99</td><td className={styles.num}>$299</td><td>Quoted</td></tr>
+                  <tr><td>Annual, per month</td><td className={styles.num}>$0</td><td className={styles.num}>$79</td><td className={styles.num}>$239</td><td>Contract</td></tr>
+                  <tr><td>Credits per month</td><td className={styles.num}>300</td><td className={styles.num}>6,000</td><td className={styles.num}>25,000</td><td>From 25,000</td></tr>
+                  <tr><td>Emails per month</td><td className={styles.num}>500</td><td className={styles.num}>25,000</td><td className={styles.num}>150,000</td><td>From 150,000</td></tr>
+                  <tr><td>Mailboxes</td><td className={styles.num}>1</td><td className={styles.num}>25</td><td className={styles.num}>1,000</td><td>From 1,000</td></tr>
+                  <tr><td>Team seats</td><td className={styles.num}>2</td><td className={styles.num}>10</td><td className={styles.num}>50</td><td>From 50</td></tr>
+                  <tr><td>Active campaigns</td><td className={styles.num}>2</td><td className={styles.num}>25</td><td className={styles.num}>100</td><td>From 100</td></tr>
+                  <tr><td>Lines of business</td><td className={styles.num}>1</td><td className={styles.num}>3</td><td className={styles.num}>25</td><td>From 25</td></tr>
+                  <tr><td>Contacts stored</td><td className={styles.num}>1,000</td><td className={styles.num}>25,000</td><td className={styles.num}>150,000</td><td>From 150,000</td></tr>
+                  <tr><td>Leads stored</td><td className={styles.num}>2,000</td><td className={styles.num}>50,000</td><td className={styles.num}>250,000</td><td>From 250,000</td></tr>
+                  <tr><td>Warmup engine</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>AI Sales Agent</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>ICP Wizard</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>A/B testing</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Analytics</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Webhooks &amp; CRM sync</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Attribution &amp; visitors</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Intent signals</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>White-label &amp; agency mode</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Support</td><td>Email</td><td>Email</td><td>Priority + SLA</td><td>Account manager</td></tr>
                 </tbody>
               </table>
             </div>
             <p>
               Plan limits are enforced at the moment you create something, not silently in the
               background — you are told immediately if an action would exceed your plan, so nothing is
-              ever created and then quietly discarded.
+              ever created and then quietly discarded. Alongside those caps run two monthly meters:
+              <strong> credits</strong>, which pay for data enrichment, validation and AI (roughly six
+              credits move one contact from sourced to ready-to-send), and a separate
+              <strong> send allowance</strong>. They are independent — running out of one does not
+              affect the other — and extra credits can be bought at $10 per 1,000, which never expire.
             </p>
 
             <h3>Invoicing</h3>

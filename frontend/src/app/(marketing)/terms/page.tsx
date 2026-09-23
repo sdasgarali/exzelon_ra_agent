@@ -326,16 +326,20 @@ export default function TermsPage() {
             </thead>
             <tbody>
               <tr>
-                <td>Starter</td>
+                <td>Free</td>
                 <td>Email support</td>
               </tr>
               <tr>
-                <td>Professional</td>
-                <td>Email and chat support</td>
+                <td>Pro</td>
+                <td>Email support</td>
               </tr>
               <tr>
-                <td>Enterprise</td>
-                <td>Dedicated account manager and priority response</td>
+                <td>Max</td>
+                <td>Priority support with an SLA</td>
+              </tr>
+              <tr>
+                <td>Custom</td>
+                <td>Named account manager and priority response</td>
               </tr>
             </tbody>
           </table>

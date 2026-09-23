@@ -249,6 +249,11 @@ def generate_ai_reply_draft(
     if subject and not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
 
+    # One charge covers both halves of the work — classifying the inbound intent and
+    # drafting the response — because they are a single AI round-trip per reply.
+    from app.services.credit_metering import meter
+    meter(db, tenant_id, "ai_reply", reference_id=str(thread_id or ""))
+
     # Create draft
     draft = AIReplyDraft(
         tenant_id=tenant_id,

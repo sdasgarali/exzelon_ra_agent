@@ -1054,6 +1054,9 @@ async def lead_intent_scores(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get intent/buying signal scores for leads, sorted by score descending."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "intent_engine")
+
     from app.services.intent_data import enrich_leads_with_intent
     results = enrich_leads_with_intent(db, tenant_id, limit)
     return {"leads": results, "total": len(results)}

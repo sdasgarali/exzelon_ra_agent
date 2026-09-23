@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, get_current_tenant_id, require_role
+from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
@@ -312,6 +313,10 @@ async def create_lob(
     if tenant_id is None:
         raise HTTPException(status_code=400, detail="Tenant context required")
 
+    # How MANY lines of business the plan allows. Distinct from the assignment check
+    # below, which governs WHICH of the LOB types this tenant may use at all.
+    check_plan_limit(db, tenant_id, "lobs")
+
     # Check LOB assignment restrictions
     assigned = _get_assigned_lob_types(db, tenant_id)
     if assigned is not None:
@@ -472,6 +477,9 @@ async def get_lob_intent_signals(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Return configured + available intent signals for a LOB with their status."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "intent_engine")
+
     query = db.query(LineOfBusiness).filter(
         LineOfBusiness.lob_id == lob_id,
         LineOfBusiness.is_archived == False,
@@ -523,6 +531,9 @@ async def run_lob_intent_signals(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger intent engine for a specific LOB."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "intent_engine")
+
     query = db.query(LineOfBusiness).filter(
         LineOfBusiness.lob_id == lob_id,
         LineOfBusiness.is_archived == False,

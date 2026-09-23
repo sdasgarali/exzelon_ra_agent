@@ -11,6 +11,7 @@ import { useLobStore } from '@/lib/lob-store'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { MyDealsWidget } from '@/components/my-deals-widget'
 import { GettingStarted } from '@/components/getting-started'
+import UsageMeters from '@/components/usage-meters'
 import {
   Building,
   Users,
@@ -904,6 +905,12 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
         <p className="text-gray-600 mt-1">Overview of your cold-email automation</p>
       </div>
+
+      {/* Both meters. Sits above the KPIs because running out of credits or sends
+          stops everything below it from changing — that is the first thing someone
+          needs to know, not a footnote on the billing page. Renders nothing for
+          super admins, who are not on a plan. */}
+      <UsageMeters compact />
 
       {/* My Queue — BDMs/Recruiters see their claimed + assigned deals up front */}
       {['bdm', 'recruiter'].includes(user?.base_role || user?.role || '') && (

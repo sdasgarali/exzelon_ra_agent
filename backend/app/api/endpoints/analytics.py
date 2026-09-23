@@ -573,5 +573,11 @@ def pipeline_forecast(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI-powered deal pipeline revenue forecast."""
+    # The router already requires `analytics` (Pro). The AI forecast engine is a
+    # separate, Max-only feature — `GET /deals/forecast` remains the Pro-and-below
+    # weighted-sum version.
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "forecast")
+
     from app.services.forecast_engine import generate_forecast
     return generate_forecast(db, tenant_id=tenant_id, months_ahead=months_ahead)
