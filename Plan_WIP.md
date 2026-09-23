@@ -8,6 +8,15 @@ main.py (114-line legacy DDL block), job_run.py (LONGTEXT), config.py (utf8mb4 U
 Top risk = MySQL ci-collation vs Postgres cs (mixed-case validation_status proven in data).
 
 
+## PROD DEPLOY — IN PROGRESS 2026-09-23 (user-authorized)
+Prod was at master a20b29a. deploy.sh does NOT run Alembic and takes NO backup -> manual:
+- [ ] 1. push feature/credit-system-pricing, PR, squash-merge to master
+- [ ] 2. mysqldump exzelon_ra_agent -> /opt/exzelon-ra-agent/backups/pre-credit-system-<ts>.sql.gz
+- [ ] 3. alembic current; stamp 0001_baseline if unstamped; alembic upgrade head (0002-0004)
+- [ ] 4. git pull, pip install, npm run build, restart exzelon-api + exzelon-web
+- [ ] 5. health checks (api, site, login, migration logs)
+ROLLBACK: restore the dump + `git checkout a20b29a` + rebuild + restart.
+
 ## ONE USER, ONE WORKSPACE — DONE 2026-09-23 (plan: `Plan_Remove_Seats_LOB.md`)
 User decision: anyone who signs up becomes a tenant under the platform and is its ONLY user;
 they cannot add users, LOBs or tenants — super_admin only. PLAN_MATRIX max_users=1/max_lobs=1
