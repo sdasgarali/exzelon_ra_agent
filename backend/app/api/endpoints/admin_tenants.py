@@ -336,6 +336,11 @@ async def update_tenant(
     if data.name is not None:
         tenant.name = data.name
 
+    # Snapshot the allowance before anything that feeds it changes, so the month's
+    # credits can be moved onto the new plan at the end (see plan_change.change_plan).
+    from app.services.credit_metering import plan_credit_limit
+    old_allowance = plan_credit_limit(tenant.plan, tenant=tenant)
+
     # Plan first — whether the limit columns below are authoritative depends on it.
     plan_changed = data.plan is not None
     if plan_changed:
@@ -388,6 +393,10 @@ async def update_tenant(
         tenant.phone = data.phone
     if data.contact_email is not None:
         tenant.contact_email = data.contact_email
+
+    from app.services.billing.plan_change import change_plan
+    change_plan(db, tenant, tenant.plan, reason=f"admin:{current_user.email}",
+                old_allowance=old_allowance)
 
     db.commit()
     db.refresh(tenant)

@@ -72,6 +72,12 @@ plus a new **custom** tier. See `Plan_Credit_System_And_Pricing.md`.
 
 **No tier is unlimited.** Every limit is a positive integer.
 
+**Plan changes (2026-09-23).** Always via `services/billing/plan_change.change_plan()` —
+credits move with the plan the moment it changes (upgrade = difference now), and a
+Stripe subscription that ends (canceled/unpaid) returns the tenant to **Free**. Nothing is
+deleted on downgrade: resources above Free's limits stay but can't grow, and paid features
+402. Tests: `tests/integration/test_plan_change_credits.py`.
+
 **One user, one workspace (2026-09-23).** Anyone who signs up gets their own tenant under
 the platform and is its only user. Seats and lines of business are not sold on any tier.
 Adding users (`POST /users`, `POST /auth/register`), managing LOBs (`POST/PUT/DELETE /lob`,

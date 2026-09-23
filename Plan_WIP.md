@@ -19,8 +19,21 @@ Local Playwright: `e2e/pricing-credits.spec.ts` 10/10 green (run with the uncomm
 `frontend/playwright.local.config.ts` — prod baseURL otherwise!).
 LEGACY Playwright suite vs local empty DB: 30 pass / 38 fail / 30 not run — mostly empty-data
 assertions + strict-mode selectors that predate the duplicated mobile/desktop nav. Not triaged.
-OPEN (found 2026-09-23, not fixed): (1) mid-month upgrade leaves the old plan's credit allowance
-until the 1st; (2) cancelled/unpaid subscription never downgrades tenant.plan to free.
+## BILLING PLAN-CHANGE FIXES — DONE 2026-09-23 (tests: test_plan_change_credits.py)
+- [x] 1. `credit_metering.adjust_allowance_for_plan_change(db, tenant, old_allowance)`: remaining
+      allowance moves by (new - old). Upgrade adds the difference now; downgrade lowers it but
+      never below 0 and never deepens existing overage. Top-ups untouched. Stale period -> the
+      normal refill (already on the new plan) and no delta.
+- [x] 2. `services/billing/plan_change.change_plan(db, tenant, new_plan, reason)` = the ONE way a
+      plan changes: sets tenant.plan + adjusts credits + logs. Used by `upsert_from_stripe` and
+      admin_tenants update (which also snapshots old allowance for custom credit edits).
+- [x] 3. `upsert_from_stripe`: status canceled/unpaid -> change_plan(free). past_due keeps the
+      plan (Stripe is still retrying; ELR-023 handles suspension). Only acts when the event is
+      for the tenant's CURRENT subscription (an old sub's late "deleted" must not downgrade a
+      tenant who has since re-subscribed).
+- [x] 4. Tests: upgrade mid-month, downgrade clamp, overage preserved, top-ups kept, stale period,
+      webhook deleted/unpaid -> free, past_due keeps plan, stale-sub event ignored, admin change.
+- [x] 5. Full suite, docs (multi-tenancy.md), commit locally.
 
 ## TRANSACTIONAL MAIL — RESEND (added 2026-09-22)
 System mail (verification, password reset, deal notifications, invoices) now runs through

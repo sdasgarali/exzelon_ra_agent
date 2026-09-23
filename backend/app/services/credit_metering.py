@@ -188,6 +188,52 @@ def refill_if_new_period(db: Session, balance: TenantCreditBalance, tenant=None)
     return True
 
 
+def adjust_allowance_for_plan_change(db: Session, tenant, old_allowance: int) -> float:
+    """Move this month's remaining allowance onto the tenant's (already changed) plan.
+
+    Without this, a plan change only reached the balance at the next monthly refill: a
+    customer who paid for Pro on the 10th kept Free's 300 credits for three weeks.
+
+    `allowance_credits` is "plan allowance minus what was spent from it", so shifting it
+    by ``new - old`` keeps the spend and swaps the allowance underneath it:
+
+    * **Upgrade** — the whole difference is available immediately.
+    * **Downgrade** — lowered, but never below 0 and never deeper into overage than it
+      already was. A downgrade must not turn credits someone already used into a debt.
+
+    Top-ups are untouched either way; they were paid for separately. Returns the change
+    applied (0 when there is nothing to do).
+    """
+    new_allowance = plan_credit_limit(getattr(tenant, "plan", None), tenant=tenant)
+    delta = float(new_allowance) - float(old_allowance)
+    if delta == 0:
+        return 0.0
+
+    balance = (
+        db.query(TenantCreditBalance)
+        .filter(TenantCreditBalance.tenant_id == tenant.tenant_id)
+        .with_for_update()
+        .first()
+    )
+    # No row yet: it is created lazily from the plan the tenant is on NOW, which is
+    # already the new one. A stale month: the refill below uses the new plan too.
+    if balance is None or refill_if_new_period(db, balance, tenant=tenant):
+        return 0.0
+
+    current = float(balance.allowance_credits or 0)
+    if delta > 0:
+        updated = current + delta
+    else:
+        updated = min(current, max(0.0, current + delta))
+    balance.allowance_credits = updated
+    applied = updated - current
+
+    logger.info("credit_allowance_plan_change", tenant_id=tenant.tenant_id,
+                old_allowance=old_allowance, new_allowance=new_allowance,
+                remaining_before=current, remaining_after=updated)
+    return applied
+
+
 def available_credits(db: Session, tenant_id: Optional[int]) -> dict:
     """Remaining credits, split by source. Super admins are not metered."""
     if tenant_id is None:
