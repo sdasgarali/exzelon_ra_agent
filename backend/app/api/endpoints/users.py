@@ -299,9 +299,16 @@ async def delete_user(
                 detail="Cannot delete the last super admin"
             )
 
-    write_audit_log(db, tenant_id=current_user.tenant_id or 0, entity_type="user",
-                    entity_id=user.user_id, action="user_deleted",
+    # Nineteen NO ACTION foreign keys point at users — release them first, or MySQL
+    # refuses the delete (1451) for anyone who has ever logged in.
+    from app.services.user_deletion import release_user_references
+    released = release_user_references(db, user.user_id, reassign_to=current_user.user_id)
+
+    # File it under the tenant the user belonged to — a super admin has no tenant of
+    # their own, and 0 is not a tenant.
+    write_audit_log(db, tenant_id=user.tenant_id or current_user.tenant_id or 0,
+                    entity_type="user", entity_id=user.user_id, action="user_deleted",
                     changed_by=current_user.email,
-                    notes=f"email={user.email}")
+                    notes=f"email={user.email} released={released}")
     db.delete(user)
     db.commit()
