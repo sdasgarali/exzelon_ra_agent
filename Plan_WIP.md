@@ -8,6 +8,20 @@ main.py (114-line legacy DDL block), job_run.py (LONGTEXT), config.py (utf8mb4 U
 Top risk = MySQL ci-collation vs Postgres cs (mixed-case validation_status proven in data).
 
 
+## ONE USER, ONE WORKSPACE — DONE 2026-09-23 (plan: `Plan_Remove_Seats_LOB.md`)
+User decision: anyone who signs up becomes a tenant under the platform and is its ONLY user;
+they cannot add users, LOBs or tenants — super_admin only. PLAN_MATRIX max_users=1/max_lobs=1
+on every tier; POST /users + /auth/register + LOB writes = super_admin; a tenant admin's
+personal mailbox no longer mints a login user; LOB UI + "Add User" hidden for non-super-admin;
+seat/LOB rows removed from pricing, usage panel, custom-quote, docs, terms; homepage ROI
+calculator (per-seat savings pitch, stale $49 prices) removed. Nothing deleted, no migration.
+Local Playwright: `e2e/pricing-credits.spec.ts` 10/10 green (run with the uncommitted
+`frontend/playwright.local.config.ts` — prod baseURL otherwise!).
+LEGACY Playwright suite vs local empty DB: 30 pass / 38 fail / 30 not run — mostly empty-data
+assertions + strict-mode selectors that predate the duplicated mobile/desktop nav. Not triaged.
+OPEN (found 2026-09-23, not fixed): (1) mid-month upgrade leaves the old plan's credit allowance
+until the 1st; (2) cancelled/unpaid subscription never downgrades tenant.plan to free.
+
 ## TRANSACTIONAL MAIL — RESEND (added 2026-09-22)
 System mail (verification, password reset, deal notifications, invoices) now runs through
 `services/adapters/transactional/` — Resend or SMTP, chosen by `SYSTEM_MAIL_PROVIDER`

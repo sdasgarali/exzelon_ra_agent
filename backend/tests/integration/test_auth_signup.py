@@ -138,7 +138,7 @@ class TestSignupFlow:
         })
         assert resp.status_code == 401
 
-    def test_register_endpoint_no_role_injection(self, client, admin_token):
+    def test_register_endpoint_no_role_injection(self, client, super_admin_token):
         """Verify role from request body is ignored -- always viewer."""
         resp = client.post(
             "/api/v1/auth/register",
@@ -148,7 +148,7 @@ class TestSignupFlow:
                 "full_name": "Role Injector",
                 "role": "admin",
             },
-            headers={"Authorization": f"Bearer {admin_token}"},
+            headers={"Authorization": f"Bearer {super_admin_token}"},
         )
         assert resp.status_code == 200
         assert resp.json()["role"] == "recruiter"

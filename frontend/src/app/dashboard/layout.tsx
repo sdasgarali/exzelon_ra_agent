@@ -17,6 +17,7 @@ import { CopilotChat } from '@/components/copilot-chat'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
 import { LobSelector } from '@/components/lob-selector'
+import { useLobStore } from '@/lib/lob-store'
 import BrandLogo from '@/components/brand-logo'
 import {
   LayoutDashboard,
@@ -104,7 +105,8 @@ const navigation = [
   { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
   { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'backups' },
-  { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin', 'admin'] as string[] },
+  // Lines of business are not a customer feature — super admin only (2026-09-23).
+  { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin'] as string[] },
   { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-red-400', roles: ['super_admin', 'admin'] as string[] },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
 ]
@@ -117,6 +119,13 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { user, setUser, logout, isAuthenticated, impersonation, startImpersonation, stopImpersonation } = useAuthStore()
+  const { activeLobId, setActiveLob } = useLobStore()
+
+  // Customers have no LOB switcher, so a LOB filter persisted from before (or from an
+  // impersonation session) would silently hide data they can never un-filter.
+  useEffect(() => {
+    if (user && user.role !== 'super_admin' && activeLobId !== null) setActiveLob(null)
+  }, [user, activeLobId, setActiveLob])
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const { startTour } = useTour()
@@ -316,8 +325,8 @@ export default function DashboardLayout({
           ) : null}
         </div>
 
-        {/* LOB Selector — switch between Lines of Business */}
-        <LobSelector collapsed={collapsed} />
+        {/* LOB Selector — super admin only; customers work in a single workspace */}
+        {user?.role === 'super_admin' && <LobSelector collapsed={collapsed} />}
 
         <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? 'p-2' : 'p-4'}`} aria-label="Main navigation" data-tour="sidebar">
           {navigation.filter(item => {

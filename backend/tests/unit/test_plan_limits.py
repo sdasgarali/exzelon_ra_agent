@@ -55,8 +55,9 @@ def test_max_plan_generous_but_not_unlimited(db_session, test_tenant):
     # No tier is unlimited any more — every Max limit is a real positive number.
     spec = PLAN_MATRIX["max"]
     assert spec.max_mailboxes == 1000
-    assert spec.max_users == 50
-    assert spec.max_lobs == 25
+    # Seats and lines of business are not sold on any tier (2026-09-23).
+    assert spec.max_users == 1
+    assert spec.max_lobs == 1
     assert spec.max_campaigns == 100
 
 
@@ -163,5 +164,5 @@ def test_new_limit_columns_default_to_use_the_plan(db_session):
     db_session.refresh(t)
 
     assert t.max_lobs == 0, "column default must mean 'use the plan'"
-    assert limits_for_tenant(t)["max_lobs"] == PLAN_MATRIX["max"].max_lobs == 25
+    assert limits_for_tenant(t)["max_lobs"] == PLAN_MATRIX["max"].max_lobs
     check_plan_limit(db_session, t.tenant_id, "lobs")  # not capped at 1

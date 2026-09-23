@@ -63,6 +63,8 @@ class PlanSpec:
     credits_per_month: int
     send_quota_per_month: int
     # Resource caps. All positive integers — never "unlimited".
+    # max_users / max_lobs are 1 on EVERY tier (2026-09-23): team seats and lines of
+    # business are not sold. Adding users or LOBs is a super_admin action only.
     max_users: int
     max_mailboxes: int
     max_campaigns: int  # counts ACTIVE + PAUSED only, see plan_limits.RESOURCE_COUNTERS
@@ -94,7 +96,7 @@ PLAN_MATRIX: dict[str, PlanSpec] = {
         annual_price_cents=0,
         credits_per_month=300,
         send_quota_per_month=500,
-        max_users=2,
+        max_users=1,
         max_mailboxes=1,
         max_campaigns=2,
         max_lobs=1,
@@ -109,10 +111,10 @@ PLAN_MATRIX: dict[str, PlanSpec] = {
         annual_price_cents=7_900,
         credits_per_month=6_000,
         send_quota_per_month=25_000,
-        max_users=10,
+        max_users=1,
         max_mailboxes=25,
         max_campaigns=25,
-        max_lobs=3,
+        max_lobs=1,
         max_contacts=25_000,
         max_leads=50_000,
         features=BASE_FEATURES | PRO_FEATURES,
@@ -124,10 +126,10 @@ PLAN_MATRIX: dict[str, PlanSpec] = {
         annual_price_cents=23_900,
         credits_per_month=25_000,
         send_quota_per_month=150_000,
-        max_users=50,
+        max_users=1,
         max_mailboxes=1_000,
         max_campaigns=100,
-        max_lobs=25,
+        max_lobs=1,
         max_contacts=150_000,
         max_leads=250_000,
         features=BASE_FEATURES | PRO_FEATURES | MAX_FEATURES,

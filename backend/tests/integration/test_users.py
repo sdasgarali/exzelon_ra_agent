@@ -35,12 +35,11 @@ def _payload(email, **kw):
 
 
 class TestCreateBindsTenant:
-    def test_admin_create_forces_own_tenant(self, client, auth_headers, admin_user):
-        # Admin passes a bogus tenant_id — must be ignored and forced to own tenant.
+    def test_tenant_admin_cannot_create_users(self, client, auth_headers):
+        # Every plan is one user per tenant; only a super admin adds users (2026-09-23).
         resp = client.post("/api/v1/users", headers=auth_headers,
                            json=_payload("new1@test.com", role="bdm", tenant_id=99999))
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["tenant_id"] == admin_user.tenant_id
+        assert resp.status_code == 403, resp.text
 
     def test_super_admin_create_requires_tenant(self, client, sa_headers):
         resp = client.post("/api/v1/users", headers=sa_headers,
@@ -136,8 +135,9 @@ class TestTenantReassignment:
 
     def test_admin_cannot_reassign_tenant(self, client, auth_headers, sa_headers, admin_user, other_tenant):
         # A user in the admin's own tenant; admin tries to push them to other_tenant → ignored.
-        created = client.post("/api/v1/users", headers=auth_headers,
-                             json=_payload("stay@test.com", role="bdm")).json()
+        created = client.post("/api/v1/users", headers=sa_headers,
+                             json=_payload("stay@test.com", role="bdm",
+                                           tenant_id=admin_user.tenant_id)).json()
         resp = client.put(f"/api/v1/users/{created['user_id']}", headers=auth_headers,
                          json={"tenant_id": other_tenant.tenant_id, "full_name": "Renamed"})
         assert resp.status_code == 200

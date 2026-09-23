@@ -302,11 +302,14 @@ async def list_lobs(
     return [_to_response(lob) for lob in lobs]
 
 
+# Lines of business are not a customer feature (2026-09-23): every tenant works in one
+# workspace. Reads stay open so existing lob_id-tagged data still resolves; every write
+# below is super_admin only.
 @router.post("/", response_model=LOBResponse, status_code=status.HTTP_201_CREATED)
 async def create_lob(
     payload: LOBCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new Line of Business."""
@@ -399,7 +402,7 @@ async def update_lob(
     lob_id: int,
     payload: LOBUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update an existing LOB."""
@@ -448,7 +451,7 @@ async def update_lob(
 async def delete_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete (archive) an LOB. Cannot delete the default LOB."""
@@ -527,7 +530,7 @@ async def get_lob_intent_signals(
 async def run_lob_intent_signals(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger intent engine for a specific LOB."""
@@ -558,7 +561,7 @@ async def run_lob_intent_signals(
 async def set_default_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Set an LOB as the default for the tenant."""

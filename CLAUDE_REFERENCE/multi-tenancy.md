@@ -65,12 +65,22 @@ plus a new **custom** tier. See `Plan_Credit_System_And_Pricing.md`.
 
 | Plan | Price/mo | Credits/mo | Sends/mo | Users | Mailboxes | Active campaigns | LOBs | Contacts | Leads |
 |------|----------|-----------|----------|-------|-----------|------------------|------|----------|-------|
-| Free | $0 | 300 | 500 | 2 | 1 | 2 | 1 | 1,000 | 2,000 |
-| Pro | $99 | 6,000 | 25,000 | 10 | 25 | 25 | 3 | 25,000 | 50,000 |
-| Max | $299 | 25,000 | 150,000 | 50 | 1,000 | 100 | 25 | 150,000 | 250,000 |
-| Custom | Quoted | > Max | > Max | > Max | > Max | > Max | > Max | > Max | > Max |
+| Free | $0 | 300 | 500 | 1 | 1 | 2 | 1 | 1,000 | 2,000 |
+| Pro | $99 | 6,000 | 25,000 | 1 | 25 | 25 | 1 | 25,000 | 50,000 |
+| Max | $299 | 25,000 | 150,000 | 1 | 1,000 | 100 | 1 | 150,000 | 250,000 |
+| Custom | Quoted | > Max | > Max | 1 | > Max | > Max | 1 | > Max | > Max |
 
 **No tier is unlimited.** Every limit is a positive integer.
+
+**One user, one workspace (2026-09-23).** Anyone who signs up gets their own tenant under
+the platform and is its only user. Seats and lines of business are not sold on any tier.
+Adding users (`POST /users`, `POST /auth/register`), managing LOBs (`POST/PUT/DELETE /lob`,
+set-default, intent-signal run) and creating tenants are **super_admin only**. A tenant
+admin's personal (non-RA) mailbox is created WITHOUT minting a login user. The LOB UI and
+"Add User" are hidden for everyone but super_admin, and the layout clears any persisted
+`activeLobId` for customers so no data stays filtered behind a LOB they cannot switch.
+Customer data runs with `lob_id = NULL` (tenant-level config). Guarded by
+`tests/security/test_single_user_workspace.py`.
 
 ### The `0` sentinel (changed 2026-09 — read this before touching limits)
 

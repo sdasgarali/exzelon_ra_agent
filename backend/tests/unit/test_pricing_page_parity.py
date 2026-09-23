@@ -28,9 +28,7 @@ METER_TO_SPEC = {
     "Credits / month": "credits_per_month",
     "Emails / month": "send_quota_per_month",
     "Mailboxes": "max_mailboxes",
-    "Team seats": "max_users",
     "Active campaigns": "max_campaigns",
-    "Lines of business": "max_lobs",
 }
 
 PRICE_RE = re.compile(
@@ -105,6 +103,13 @@ def test_the_retired_tier_names_are_gone(tsx):
     no longer exists — the exact failure this page shipped with before the rename."""
     for dead in ("Starter", "Professional", "Enterprise"):
         assert f"name: '{dead}'" not in tsx, f"retired tier {dead!r} still on the pricing page"
+
+
+def test_seats_and_lines_of_business_are_not_sold(tsx):
+    """Every plan is one user and one workspace, managed by super admin (2026-09-23).
+    A seat or LOB row on the pricing page would sell something customers cannot use."""
+    for label in ("Team seats", "Lines of business"):
+        assert f"label: '{label}'" not in tsx, f"{label!r} is advertised but not sold"
 
 
 def test_annual_discount_is_the_advertised_twenty_percent(tsx):

@@ -27,8 +27,8 @@ const pricingFAQ = [
     answer: 'Custom sits above Max. If you need more than 1,000 mailboxes, 25,000 credits or 150,000 sends a month, you choose your own numbers — each one starting above Max — and we quote against them on an annual contract.',
   },
   {
-    question: 'Are there per-seat fees?',
-    answer: 'No. Seats are included in the plan price — 50 of them on Max, which works out at about $6 a seat. Competitors that charge per user would bill a 50-person team thousands a month for the same thing.',
+    question: 'How many users does a plan include?',
+    answer: 'Every plan includes one user login for the workspace. You pay per workspace, never per seat — if you need an extra login, contact us and we will set it up.',
   },
   {
     question: 'What happens when I run out of credits or sends?',

@@ -879,8 +879,6 @@ class CustomQuoteRequest(BaseModel):
     mailboxes: Optional[int] = None
     credits_per_month: Optional[int] = None
     sends_per_month: Optional[int] = None
-    users: Optional[int] = None
-    lobs: Optional[int] = None
     campaigns: Optional[int] = None
     notes: str = Field(default="", max_length=2000)
 
@@ -907,8 +905,6 @@ def request_custom_quote(
         "mailboxes": max_spec.max_mailboxes,
         "credits_per_month": max_spec.credits_per_month,
         "sends_per_month": max_spec.send_quota_per_month,
-        "users": max_spec.max_users,
-        "lobs": max_spec.max_lobs,
         "campaigns": max_spec.max_campaigns,
     }
 

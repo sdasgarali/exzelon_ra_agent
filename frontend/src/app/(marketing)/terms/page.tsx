@@ -102,8 +102,8 @@ export default function TermsPage() {
             the end of it, the account stops sending.
           </li>
           <li>
-            <strong>Flat fee.</strong> Subscriptions are charged per workspace, not per seat. Adding
-            team members within your plan’s limits costs nothing extra.
+            <strong>Flat fee.</strong> Subscriptions are charged per workspace, not per seat. Each plan
+            includes one user login for the workspace.
           </li>
           <li>
             <strong>Renewal.</strong> Subscriptions renew automatically each period until cancelled.

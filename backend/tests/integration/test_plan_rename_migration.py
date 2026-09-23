@@ -177,7 +177,7 @@ def test_max_lobs_does_not_cap_existing_max_tenants(legacy_db):
     for k, v in row.items():
         setattr(tenant, k, v)
 
-    assert limits_for_tenant(tenant)["max_lobs"] == PLAN_MATRIX["max"].max_lobs == 25
+    assert limits_for_tenant(tenant)["max_lobs"] == PLAN_MATRIX["max"].max_lobs
 
 
 def test_migration_is_reversible(legacy_db):

@@ -21,9 +21,11 @@ const RESOURCE_LABELS: Record<string, string> = {
   contacts: 'Contacts',
   mailboxes: 'Mailboxes',
   campaigns: 'Active campaigns',
-  lobs: 'Lines of business',
-  users: 'Team seats',
 }
+
+// Team seats and lines of business are 1 on every plan and managed by super admin only,
+// so they are not metered to the customer.
+const HIDDEN_RESOURCES = new Set(['users', 'lobs'])
 
 const fmt = (n: number) => n.toLocaleString()
 
@@ -69,7 +71,7 @@ export default function PlanUsagePanel() {
   const [showCustom, setShowCustom] = useState(false)
   const [custom, setCustom] = useState({
     mailboxes: '', credits_per_month: '', sends_per_month: '',
-    users: '', lobs: '', campaigns: '', notes: '',
+    campaigns: '', notes: '',
   })
 
   const { data, isLoading } = useQuery<UsageResponse>({
@@ -128,11 +130,12 @@ export default function PlanUsagePanel() {
   // Super admins have no plan of their own; the invoice tools below are what they want.
   if (!data?.metered || !data.plan || !data.credits || !data.sends) return null
 
-  const { plan, credits, sends, resources = [] } = data
+  const { plan, credits, sends } = data
+  const resources = (data.resources || []).filter((r) => !HIDDEN_RESOURCES.has(r.resource))
   // Max's published numbers, mirrored from PLAN_MATRIX — also enforced server-side.
   const floors: Record<string, number> = {
     mailboxes: 1000, credits_per_month: 25000, sends_per_month: 150000,
-    users: 50, lobs: 25, campaigns: 100,
+    campaigns: 100,
   }
 
   return (

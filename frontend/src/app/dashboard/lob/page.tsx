@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { lobApi, getApiError } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/lib/store'
 import { useLobStore, type LOB, type LOBTypeInfo } from '@/lib/lob-store'
 import {
   Plus,
@@ -36,6 +38,13 @@ function getLobIcon(iconName: string | null): React.ElementType {
 
 export default function LobPage() {
   const { lobs, setLobs, lobTypes, setLobTypes } = useLobStore()
+  const { user } = useAuthStore()
+  const router = useRouter()
+
+  // Lines of business are super admin only; a customer reaching this URL goes home.
+  useEffect(() => {
+    if (user && user.role !== 'super_admin') router.replace('/dashboard')
+  }, [user, router])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)

@@ -35,9 +35,7 @@ const limits: PlanFeature[] = [
   { label: 'Credits / month', free: '300', pro: '6,000', max: '25,000', custom: 'From 25,000' },
   { label: 'Emails / month', free: '500', pro: '25,000', max: '150,000', custom: 'From 150,000' },
   { label: 'Mailboxes', free: '1', pro: '25', max: '1,000', custom: 'From 1,000' },
-  { label: 'Team seats', free: '2', pro: '10', max: '50', custom: 'From 50' },
   { label: 'Active campaigns', free: '2', pro: '25', max: '100', custom: 'From 100' },
-  { label: 'Lines of business', free: '1', pro: '3', max: '25', custom: 'From 25' },
 ]
 
 // ── Features, mirroring BASE / PRO / MAX feature sets ───────────────────────
