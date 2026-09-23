@@ -11,7 +11,8 @@ email-validator==2.1.0.post1
 # Database
 sqlalchemy==2.0.25
 alembic==1.13.1
-pymysql==1.1.0
+pymysql==1.1.0          # DB_TYPE=mysql (legacy; kept for rollback window)
+psycopg2-binary==2.9.9  # DB_TYPE=postgresql (Supabase)
 cryptography==42.0.2
 
 # Redis and Celery
