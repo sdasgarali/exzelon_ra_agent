@@ -1,9 +1,12 @@
-"""Billing email sender — invoice notifications, reminders, and payment acknowledgements."""
+"""Billing email sender — invoice notifications, reminders, and payment acknowledgements.
+
+Routes through `system_mailer`, the same transactional path as verification and deal
+notifications, so invoices honour the tenant's own sender and work with Resend. This
+file previously carried its own SMTP implementation and skipped silently whenever
+`SMTP_HOST` was unset — which meant a deployment using any other provider sent no
+invoices at all and logged a warning nobody was watching.
+"""
 import os
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 from pathlib import Path
 import structlog
 
@@ -38,48 +41,51 @@ def _get_billing_email(tenant) -> str:
     return None
 
 
-def _send_billing_email(to_email: str, subject: str, html_body: str, pdf_path: str = None) -> bool:
-    """Send a billing email with optional PDF attachment."""
+def _send_billing_email(to_email: str, subject: str, html_body: str,
+                        pdf_path: str = None, tenant=None) -> bool:
+    """Send a billing email with optional PDF attachment.
+
+    `tenant` is optional only for backward compatibility with older call sites; pass it
+    so the tenant's own notification sender is used when they have configured one.
+    """
     if not to_email:
         logger.warning("No billing email address available")
         return False
 
-    if not settings.SMTP_HOST or not settings.SMTP_USER:
-        logger.warning("SMTP not configured — billing email skipped", to=to_email, subject=subject)
-        return False
+    from app.db.base import SessionLocal
+    from app.services.adapters.transactional import Attachment
+    from app.services.system_mailer import send_system_email
 
+    attachments = []
+    if pdf_path:
+        abs_path = _BACKEND_DIR / pdf_path if not os.path.isabs(pdf_path) else Path(pdf_path)
+        if abs_path.exists():
+            attachments.append(Attachment(
+                filename=abs_path.name,
+                content=abs_path.read_bytes(),
+                content_type="application/pdf",
+            ))
+        else:
+            # Send the email anyway: an invoice notice without its PDF still tells the
+            # customer they owe money, and the portal link in the body still works.
+            logger.warning("Invoice PDF missing — sending without attachment",
+                           path=str(abs_path), to=to_email)
+
+    tenant_id = getattr(tenant, "tenant_id", None)
+    db = SessionLocal()
     try:
-        msg = MIMEMultipart("mixed")
-        msg["From"] = settings.SMTP_USER
-        msg["To"] = to_email
-        msg["Subject"] = subject
+        ok = send_system_email(
+            db, tenant_id, to_email, subject, html_body, attachments=attachments or None,
+        )
+    finally:
+        db.close()
 
-        # HTML body
-        msg.attach(MIMEText(html_body, "html"))
-
-        # PDF attachment
-        if pdf_path:
-            abs_path = _BACKEND_DIR / pdf_path if not os.path.isabs(pdf_path) else Path(pdf_path)
-            if abs_path.exists():
-                with open(abs_path, "rb") as f:
-                    pdf_attach = MIMEApplication(f.read(), _subtype="pdf")
-                    pdf_attach.add_header(
-                        "Content-Disposition", "attachment",
-                        filename=abs_path.name,
-                    )
-                    msg.attach(pdf_attach)
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, to_email, msg.as_string())
-
-        logger.info("Billing email sent", to=to_email, subject=subject)
-        return True
-
-    except Exception as e:
-        logger.error("Billing email failed", to=to_email, subject=subject, error=str(e))
-        return False
+    if ok:
+        logger.info("Billing email sent", to=to_email, subject=subject,
+                    attached=bool(attachments))
+    else:
+        logger.error("Billing email failed", to=to_email, subject=subject)
+    return ok
 
 
 def _format_cents(cents: int) -> str:
@@ -151,7 +157,7 @@ def send_new_invoice_email(invoice, tenant) -> bool:
         cta_text="View Invoice",
         cta_url=f"{settings.EFFECTIVE_BASE_URL}/dashboard/billing",
     )
-    return _send_billing_email(to_email, subject, html, pdf_path=invoice.pdf_path)
+    return _send_billing_email(to_email, subject, html, pdf_path=invoice.pdf_path, tenant=tenant)
 
 
 def send_reminder_email(invoice, tenant, days_overdue: int) -> bool:
@@ -170,7 +176,7 @@ def send_reminder_email(invoice, tenant, days_overdue: int) -> bool:
         cta_text="Pay Now",
         cta_url=f"{settings.EFFECTIVE_BASE_URL}/dashboard/billing",
     )
-    return _send_billing_email(to_email, subject, html, pdf_path=invoice.pdf_path)
+    return _send_billing_email(to_email, subject, html, pdf_path=invoice.pdf_path, tenant=tenant)
 
 
 def send_payment_acknowledgement_email(invoice, tenant, payment=None) -> bool:
@@ -194,4 +200,4 @@ def send_payment_acknowledgement_email(invoice, tenant, payment=None) -> bool:
         cta_text="View Receipt",
         cta_url=f"{settings.EFFECTIVE_BASE_URL}/dashboard/billing",
     )
-    return _send_billing_email(to_email, subject, html)
+    return _send_billing_email(to_email, subject, html, tenant=tenant)

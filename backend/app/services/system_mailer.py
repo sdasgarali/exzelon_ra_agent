@@ -1,8 +1,11 @@
 """Tenant-aware system/notification email sender.
 
-System mail (email verification, password reset, deal notifications) is sent from a
-per-tenant configurable sender stored in tenant settings, falling back to the global
-`settings.SMTP_*` env config. Basic SMTP auth (STARTTLS on 587 or implicit SSL on 465).
+System mail (email verification, password reset, deal notifications, invoices) is sent
+from a per-tenant configurable sender stored in tenant settings, falling back to the
+globally configured provider — Resend or SMTP, per `SYSTEM_MAIL_PROVIDER`.
+
+The provider implementations live in `adapters/transactional/`; this module owns the
+tenant-settings lookup and the call sites' best-effort contract.
 
 Tenant setting keys (see settings_resolver):
   notification_sender_email / notification_sender_name
@@ -11,19 +14,14 @@ Tenant setting keys (see settings_resolver):
 """
 from __future__ import annotations
 
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
 from typing import Optional
 
 import structlog
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.encryption import decrypt_field
 from app.core.settings_resolver import get_tenant_setting
+from app.services.adapters.transactional import Attachment, SMTPMailer, resolve_sender
 
 logger = structlog.get_logger()
 
@@ -37,110 +35,101 @@ K_PASSWORD_ENC = "notification_smtp_password_enc"
 K_SECURITY = "notification_smtp_security"
 
 
-def _smtp_send(
-    *,
-    host: str,
-    port: int,
-    user: str,
-    password: str,
-    security: str,
-    from_email: str,
-    from_name: Optional[str],
-    to_email: str,
-    subject: str,
-    html_body: str,
-) -> bool:
-    """Low-level SMTP send. `security` = "ssl" (implicit TLS, e.g. 465) or "starttls" (e.g. 587)."""
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = formataddr((from_name, from_email)) if from_name else from_email
-    msg["To"] = to_email
-    msg.attach(MIMEText(html_body, "html"))
+def get_tenant_smtp_config(db: Session, tenant_id: Optional[int]) -> Optional[dict]:
+    """The tenant's own SMTP sender, or None if they have not configured one.
 
-    context = ssl.create_default_context()
-    if (security or "").lower() == "ssl" or int(port) == 465:
-        with smtplib.SMTP_SSL(host, int(port), timeout=30, context=context) as server:
-            server.login(user, password)
-            server.sendmail(from_email, [to_email], msg.as_string())
-    else:
-        with smtplib.SMTP(host, int(port), timeout=30) as server:
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-            server.login(user, password)
-            server.sendmail(from_email, [to_email], msg.as_string())
-    return True
-
-
-def get_notification_sender(db: Session, tenant_id: Optional[int]) -> dict:
-    """Resolve the tenant's notification-sender config (falls back to global settings.SMTP_*).
-
-    Returns a dict with: source ('tenant'|'global'|'none'), host, port, user, security,
-    sender_email, sender_name, password_set (bool). The plaintext password is under
-    the private '_password' key for internal use only — never serialize it.
+    The plaintext password is under the private '_password' key for internal use only
+    — never serialize it.
     """
     host = get_tenant_setting(db, K_HOST, tenant_id=tenant_id)
     user = get_tenant_setting(db, K_USER, tenant_id=tenant_id)
     pw_enc = get_tenant_setting(db, K_PASSWORD_ENC, tenant_id=tenant_id)
-    if host and user and pw_enc:
-        return {
-            "source": "tenant",
-            "host": host,
-            "port": int(get_tenant_setting(db, K_PORT, tenant_id=tenant_id, default=587) or 587),
-            "user": user,
-            "security": (get_tenant_setting(db, K_SECURITY, tenant_id=tenant_id, default="starttls") or "starttls"),
-            "sender_email": get_tenant_setting(db, K_EMAIL, tenant_id=tenant_id) or user,
-            "sender_name": get_tenant_setting(db, K_NAME, tenant_id=tenant_id) or None,
-            "password_set": True,
-            "_password": decrypt_field(pw_enc),
-        }
-
-    # Global fallback (env-configured transactional SMTP).
-    if settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
-        return {
-            "source": "global",
-            "host": settings.SMTP_HOST,
-            "port": int(settings.SMTP_PORT or 587),
-            "user": settings.SMTP_USER,
-            "security": "ssl" if int(settings.SMTP_PORT or 587) == 465 else "starttls",
-            "sender_email": settings.SMTP_USER,
-            "sender_name": None,
-            "password_set": True,
-            "_password": settings.SMTP_PASSWORD,
-        }
-
-    return {"source": "none", "password_set": False}
+    if not (host and user and pw_enc):
+        return None
+    return {
+        "host": host,
+        "port": int(get_tenant_setting(db, K_PORT, tenant_id=tenant_id, default=587) or 587),
+        "user": user,
+        "security": (get_tenant_setting(db, K_SECURITY, tenant_id=tenant_id, default="starttls") or "starttls"),
+        "sender_email": get_tenant_setting(db, K_EMAIL, tenant_id=tenant_id) or user,
+        "sender_name": get_tenant_setting(db, K_NAME, tenant_id=tenant_id) or None,
+        "_password": decrypt_field(pw_enc),
+    }
 
 
-def send_system_email(db: Session, tenant_id: Optional[int], to_email: str, subject: str, html_body: str) -> bool:
+def get_notification_sender(db: Session, tenant_id: Optional[int]) -> dict:
+    """Resolved sender config for the UI and for callers that need to inspect it.
+
+    Shape is kept backward compatible with the pre-Resend version — `source`, `host`,
+    `port`, `user`, `security`, `sender_email`, `sender_name`, `password_set` — with
+    `provider` added so the settings screen can say which service will actually send.
+    """
+    resolved = resolve_sender(db, tenant_id)
+    if resolved["source"] == "none":
+        return {"source": "none", "provider": resolved["provider"], "password_set": False}
+
+    mailer = resolved["mailer"]
+    out = {
+        "source": resolved["source"],
+        "provider": resolved["provider"],
+        "sender_email": resolved["sender_email"],
+        "sender_name": resolved["sender_name"],
+        "password_set": True,
+    }
+    if isinstance(mailer, SMTPMailer):
+        out.update(host=mailer.host, port=mailer.port, user=mailer.user,
+                   security=mailer.security)
+    return out
+
+
+def send_system_email(
+    db: Session,
+    tenant_id: Optional[int],
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachments: Optional[list[Attachment]] = None,
+    reply_to: Optional[str] = None,
+) -> bool:
     """Send a system/notification email using the tenant's sender (or global fallback).
 
-    Best-effort — never raises to the caller. Returns True on success.
+    Best-effort — never raises to the caller. Returns True on success. Callers treat a
+    False as "the email did not go"; none of them roll back their own work over it,
+    because a missed deal notification must not lose the deal.
     """
     if not to_email:
         return False
-    cfg = get_notification_sender(db, tenant_id)
-    if cfg.get("source") == "none":
+
+    resolved = resolve_sender(db, tenant_id)
+    mailer = resolved["mailer"]
+    if mailer is None:
         logger.warning("No notification sender configured (tenant or global) — skipping email",
-                       tenant_id=tenant_id, to=to_email)
-        return False
-    try:
-        _smtp_send(
-            host=cfg["host"], port=cfg["port"], user=cfg["user"], password=cfg["_password"],
-            security=cfg["security"], from_email=cfg["sender_email"], from_name=cfg.get("sender_name"),
-            to_email=to_email, subject=subject, html_body=html_body,
-        )
-        logger.info("System email sent", tenant_id=tenant_id, to=to_email, source=cfg["source"], sender=cfg["sender_email"])
-        return True
-    except Exception as e:
-        logger.error("System email send failed", tenant_id=tenant_id, to=to_email, source=cfg.get("source"), error=str(e))
+                       tenant_id=tenant_id, to=to_email, provider=resolved["provider"])
         return False
 
+    result = mailer.send(
+        to_email=to_email, subject=subject, html_body=html_body,
+        from_email=resolved["sender_email"], from_name=resolved["sender_name"],
+        reply_to=reply_to, attachments=attachments,
+    )
+    if result.ok:
+        logger.info("System email sent", tenant_id=tenant_id, to=to_email,
+                    source=resolved["source"], provider=result.provider,
+                    sender=resolved["sender_email"], message_id=result.message_id)
+    else:
+        logger.error("System email send failed", tenant_id=tenant_id, to=to_email,
+                     source=resolved["source"], provider=result.provider,
+                     error=result.detail)
+    return result.ok
 
-def send_test_email(db: Session, tenant_id: Optional[int], to_email: str, override: Optional[dict] = None) -> tuple[bool, str]:
-    """Send a test email. If `override` (host/port/user/password/security/sender_email/name) is
-    given, use it directly (for validating before saving); otherwise use the saved config.
-    Returns (ok, detail) with the SMTP error surfaced for the UI.
+
+def send_test_email(db: Session, tenant_id: Optional[int], to_email: str,
+                    override: Optional[dict] = None) -> tuple[bool, str]:
+    """Send a test email, surfacing the provider's own error text to the UI.
+
+    `override` (host/port/user/password/security/sender_email/name) validates SMTP
+    credentials BEFORE they are saved, so a typo is caught at entry rather than
+    discovered later by a password reset that never arrived.
     """
     subject = "NeuraLeads notification sender test"
     html = (
@@ -150,25 +139,33 @@ def send_test_email(db: Session, tenant_id: Optional[int], to_email: str, overri
         "system emails (deal assignments, verification, password resets) will send from this address.</p>"
         "</div>"
     )
-    try:
-        if override and override.get("host") and override.get("user") and override.get("password"):
-            _smtp_send(
-                host=override["host"], port=int(override.get("port") or 587), user=override["user"],
-                password=override["password"], security=override.get("security") or "starttls",
-                from_email=override.get("sender_email") or override["user"], from_name=override.get("sender_name"),
-                to_email=to_email, subject=subject, html_body=html,
-            )
-            return True, "Test email sent."
-        cfg = get_notification_sender(db, tenant_id)
-        if cfg.get("source") == "none":
-            return False, "No sender configured. Fill in the SMTP fields (or set a global SMTP) first."
-        _smtp_send(
-            host=cfg["host"], port=cfg["port"], user=cfg["user"], password=cfg["_password"],
-            security=cfg["security"], from_email=cfg["sender_email"], from_name=cfg.get("sender_name"),
-            to_email=to_email, subject=subject, html_body=html,
+
+    if override and override.get("host") and override.get("user") and override.get("password"):
+        mailer = SMTPMailer(
+            host=override["host"], port=int(override.get("port") or 587),
+            user=override["user"], password=override["password"],
+            security=override.get("security") or "starttls",
         )
-        return True, f"Test email sent via the {cfg['source']} sender ({cfg['sender_email']})."
-    except smtplib.SMTPAuthenticationError as e:
-        return False, f"Authentication failed ({e.smtp_code}). Check the username/password — note Microsoft 365 blocks basic SMTP unless Authenticated SMTP is enabled."
-    except Exception as e:
-        return False, f"Send failed: {type(e).__name__}: {e}"
+        result = mailer.send(
+            to_email=to_email, subject=subject, html_body=html,
+            from_email=override.get("sender_email") or override["user"],
+            from_name=override.get("sender_name"),
+        )
+        return result.ok, (result.detail if not result.ok else "Test email sent.")
+
+    resolved = resolve_sender(db, tenant_id)
+    if resolved["mailer"] is None:
+        return False, (
+            "No sender configured. Fill in the SMTP fields, or set RESEND_API_KEY "
+            "and RESEND_FROM_EMAIL for a global sender."
+        )
+    result = resolved["mailer"].send(
+        to_email=to_email, subject=subject, html_body=html,
+        from_email=resolved["sender_email"], from_name=resolved["sender_name"],
+    )
+    if result.ok:
+        return True, (
+            f"Test email sent via the {resolved['source']} {result.provider} sender "
+            f"({resolved['sender_email']})."
+        )
+    return False, result.detail
