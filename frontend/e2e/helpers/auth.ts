@@ -44,8 +44,9 @@ async function doLogin(page: Page, email: string, password: string) {
   await page.click('button[type="submit"]')
   // Wait for redirect to dashboard (use regex pattern for reliability)
   await page.waitForURL(/\/dashboard/, { timeout: 30000 })
-  // Wait for sidebar to render (confirms auth loaded)
-  await page.waitForSelector('nav[aria-label="Main navigation"]', { timeout: 15000 })
+  // Wait for sidebar to render (confirms auth loaded). The layout renders the nav twice —
+  // the mobile drawer (hidden at desktop width) comes first in the DOM — so wait on the visible one.
+  await page.locator('nav[aria-label="Main navigation"]:visible').first().waitFor({ timeout: 15000 })
 }
 
 export async function loginWithCredentials(page: Page, email: string, password: string) {
