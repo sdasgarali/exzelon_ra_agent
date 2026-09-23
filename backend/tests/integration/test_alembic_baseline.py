@@ -38,4 +38,13 @@ def test_alembic_upgrade_head_builds_schema(tmp_path):
               "visitor_events", "soft_bounce_trackers", "processed_stripe_events",
               "alembic_version"):
         assert t in tables, f"{t} missing from migrated schema"
-    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0001_baseline"
+    # Stamped at whatever the current head is — asserting a literal revision id meant
+    # this test failed on every new migration, which is noise rather than signal.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    head = ScriptDirectory.from_config(Config(str(_BACKEND / "alembic.ini"))).get_current_head()
+    assert con.execute("SELECT version_num FROM alembic_version").fetchone()[0] == head
+
+    # max_lobs landed (0002) — the Max tier's line-of-business cap needs it.
+    tenant_cols = {row[1] for row in con.execute("PRAGMA table_info(tenants)")}
+    assert "max_lobs" in tenant_cols

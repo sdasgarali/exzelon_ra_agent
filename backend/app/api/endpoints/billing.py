@@ -1,4 +1,5 @@
 """Billing & Invoicing API endpoints."""
+import json
 from datetime import date, datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
@@ -656,6 +657,7 @@ def download_invoice_pdf(
 
 class SubscribeRequest(BaseModel):
     plan: Optional[str] = None  # defaults to the tenant's current plan
+    annual: bool = False        # bill yearly at the discounted per-month rate
     success_url: str = Field(default="")
     cancel_url: str = Field(default="")
 
@@ -669,15 +671,27 @@ def subscription_checkout(
 ):
     """Start a recurring-subscription Checkout for the tenant's plan (ELR-021)."""
     from app.core.config import settings
+    from app.core.plans import is_custom, normalize_plan
     from app.services.billing.subscription_service import price_id_for_plan
     from app.db.models.tenant import Tenant
     tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
-    plan = req.plan or (tenant.plan.value if tenant and tenant.plan else None)
-    price_id = price_id_for_plan(plan)
-    if not price_id:
+    plan = normalize_plan(req.plan or (tenant.plan if tenant else None))
+
+    if plan == "free":
+        raise HTTPException(status_code=400, detail="The Free plan has nothing to pay for.")
+    if is_custom(plan):
+        # Custom contracts are quoted and invoiced manually, never self-serve.
         raise HTTPException(
             status_code=400,
-            detail=f"No Stripe price configured for plan '{plan}'. Set STRIPE_PRICE_* first.",
+            detail="Custom plans are billed by contract. Request a quote instead.",
+        )
+
+    price_id = price_id_for_plan(plan, annual=req.annual)
+    if not price_id:
+        term = "annual" if req.annual else "monthly"
+        raise HTTPException(
+            status_code=400,
+            detail=f"No Stripe {term} price configured for plan '{plan}'. Set STRIPE_PRICE_* first.",
         )
     if not settings.STRIPE_SECRET_KEY:
         raise HTTPException(status_code=400, detail="Online payments are not configured")
@@ -689,9 +703,242 @@ def subscription_checkout(
         customer_email=current_user.email,
         success_url=req.success_url or f"{base_url}/dashboard/billing?subscribed=1",
         cancel_url=req.cancel_url or f"{base_url}/dashboard/billing",
-        metadata={"tenant_id": str(tenant_id), "plan": plan or ""},
+        metadata={
+            "tenant_id": str(tenant_id),
+            "plan": plan or "",
+            "term": "annual" if req.annual else "monthly",
+        },
     )
     return result
+
+
+@router.get("/usage")
+def plan_usage(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """Everything the usage screen and the upgrade prompt need, in one call.
+
+    Deliberately one endpoint rather than four: the billing page wants credits, sends,
+    resource counts and the plan's own numbers on screen together, and four round-trips
+    would let them disagree with each other mid-render.
+
+    `near_limit` is computed here rather than in the UI so "when do we nudge someone to
+    upgrade?" is one rule in one place instead of a threshold copy-pasted into every
+    meter component.
+    """
+    from app.api.deps.plan_limits import RESOURCE_COUNTERS, RESOURCE_LIMITS
+    from app.core.plans import (
+        PLAN_MATRIX, get_plan, is_custom, limits_for_tenant, normalize_plan,
+        plan_features,
+    )
+    from app.db.models.tenant import Tenant
+    from app.services.credit_metering import available_credits, get_usage_summary
+    from app.services.send_quota import quota_status
+
+    if tenant_id is None:
+        return {"metered": False, "message": "Super admin usage is not metered."}
+
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    plan_key = normalize_plan(tenant.plan)
+    spec = get_plan(plan_key)
+    credits = available_credits(db, tenant_id)
+    sends = quota_status(db, tenant_id)
+    limits = limits_for_tenant(tenant)
+
+    # Resource meters, using the same counters the 403 gate enforces — so what the
+    # screen shows and what blocks a create can never drift apart.
+    resources = []
+    for key, limit_field in RESOURCE_LIMITS.items():
+        limit = limits.get(limit_field, 0)
+        used = RESOURCE_COUNTERS[key](db, tenant_id)
+        resources.append({
+            "resource": key,
+            "used": used,
+            "limit": limit,
+            "remaining": max(0, limit - used),
+            "percent": round(used / limit * 100, 1) if limit > 0 else None,
+            "near_limit": limit > 0 and used / limit >= 0.8,
+        })
+
+    credit_pct = (
+        round((credits["period_spent"] or 0) / credits["plan_allowance"] * 100, 1)
+        if credits.get("plan_allowance") else None
+    )
+    next_plan = {"free": "pro", "pro": "max"}.get(plan_key)
+
+    return {
+        "metered": True,
+        "plan": {
+            "key": plan_key,
+            "label": spec.label,
+            "is_custom": is_custom(plan_key),
+            "monthly_price_cents": None if is_custom(plan_key) else spec.monthly_price_cents,
+            "annual_price_cents": None if is_custom(plan_key) else spec.annual_price_cents,
+            "upgrade_to": next_plan,
+            "upgrade_label": PLAN_MATRIX[next_plan].label if next_plan else None,
+        },
+        # What this plan includes. The UI uses it to hide nav for features the tenant
+        # cannot reach and — more importantly — to stop polling gated endpoints, which
+        # otherwise 402 on every page load and fill the console with errors that look
+        # like bugs. It is presentation only: the server-side gate is the enforcement.
+        "features": sorted(plan_features(plan_key)),
+        "credits": {
+            **credits,
+            "percent": credit_pct,
+            "near_limit": credit_pct is not None and credit_pct >= 80,
+        },
+        "sends": {
+            **sends,
+            "percent": round(sends["used"] / sends["limit"] * 100, 1) if sends.get("limit") else None,
+            "near_limit": bool(sends.get("limit")) and sends["used"] / sends["limit"] >= 0.8,
+        },
+        "resources": resources,
+        "breakdown": get_usage_summary(db, tenant_id, days=30).get("usage", []),
+    }
+
+
+class CreditTopupRequest(BaseModel):
+    """Buy credits in blocks. Default block: 1,000 credits for $10."""
+    blocks: int = Field(default=1, ge=1, le=500)
+    success_url: str = Field(default="")
+    cancel_url: str = Field(default="")
+
+
+@router.post("/credits/topup")
+def buy_credit_topup(
+    req: CreditTopupRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: int = Depends(require_tenant_id),
+):
+    """Start Checkout for a credit top-up.
+
+    Top-ups are priced at the same rate as the plan allowance ($0.01/credit) — running
+    out mid-month shouldn't cost more per credit than planning ahead did. They never
+    expire and are only drawn on once the monthly allowance is spent.
+
+    Credits are granted by the `checkout.session.completed` webhook, never here, so a
+    user who abandons Checkout is not credited.
+    """
+    from app.core.config import settings
+    from app.core.plans import normalize_plan
+
+    plan = normalize_plan(getattr(_tenant_or_404(db, tenant_id), "plan", None))
+    if plan == "free":
+        raise HTTPException(
+            status_code=400,
+            detail="Top-ups are available on paid plans. Upgrade to Pro to buy credits.",
+        )
+
+    price_id = settings.STRIPE_PRICE_CREDIT_TOPUP
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No Stripe price configured for credit top-ups. Set STRIPE_PRICE_CREDIT_TOPUP.",
+        )
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=400, detail="Online payments are not configured")
+
+    credits = req.blocks * settings.CREDIT_TOPUP_BLOCK_SIZE
+    base_url = settings.EFFECTIVE_BASE_URL
+    from app.services.billing.payment_gateway import get_payment_gateway
+    result = get_payment_gateway().create_one_time_checkout(
+        price_id=price_id,
+        customer_email=current_user.email,
+        success_url=req.success_url or f"{base_url}/dashboard/billing?topup=1",
+        cancel_url=req.cancel_url or f"{base_url}/dashboard/billing",
+        quantity=req.blocks,
+        metadata={
+            "tenant_id": str(tenant_id),
+            "purpose": "credit_topup",
+            "credits": str(credits),
+        },
+    )
+    return {
+        **result,
+        "credits": credits,
+        "price_cents": req.blocks * settings.CREDIT_TOPUP_BLOCK_PRICE_CENTS,
+    }
+
+
+def _tenant_or_404(db: Session, tenant_id: int):
+    from app.db.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
+class CustomQuoteRequest(BaseModel):
+    """A "build your own plan" request. Every axis is floored at Max's number."""
+    mailboxes: Optional[int] = None
+    credits_per_month: Optional[int] = None
+    sends_per_month: Optional[int] = None
+    campaigns: Optional[int] = None
+    notes: str = Field(default="", max_length=2000)
+
+
+@router.post("/custom-quote")
+def request_custom_quote(
+    req: CustomQuoteRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: int = Depends(require_tenant_id),
+):
+    """Record a request for a Custom plan and notify us.
+
+    Custom sits above Max: the customer picks their own numbers and we quote against
+    them, so anything at or below Max's figure is rejected with the floor it must
+    clear — otherwise "custom" would be a way to negotiate *down* from the published
+    tier. No payment is taken here; contracts are invoiced through the ManualGateway.
+    """
+    from app.core.plans import PLAN_MATRIX
+    from app.services.audit_helper import write_audit_log
+
+    max_spec = PLAN_MATRIX["max"]
+    floors = {
+        "mailboxes": max_spec.max_mailboxes,
+        "credits_per_month": max_spec.credits_per_month,
+        "sends_per_month": max_spec.send_quota_per_month,
+        "campaigns": max_spec.max_campaigns,
+    }
+
+    requested = {k: getattr(req, k) for k in floors if getattr(req, k) is not None}
+    if not requested:
+        raise HTTPException(
+            status_code=400,
+            detail="Specify at least one limit above Max to request a custom quote.",
+        )
+
+    too_small = {k: floors[k] for k, v in requested.items() if int(v) <= floors[k]}
+    if too_small:
+        detail = ", ".join(f"{k} must exceed {v}" for k, v in sorted(too_small.items()))
+        raise HTTPException(
+            status_code=400,
+            detail=f"A custom plan sits above Max: {detail}",
+        )
+
+    write_audit_log(
+        db, tenant_id=tenant_id, entity_type="tenant", entity_id=tenant_id,
+        action="custom_quote_requested", changed_by=current_user.email,
+        notes=json.dumps({"requested": requested, "notes": req.notes})[:500],
+    )
+    db.commit()
+
+    logger.info("custom_quote_requested", tenant_id=tenant_id,
+                requested=requested, requested_by=current_user.email)
+
+    return {
+        "status": "received",
+        "requested": requested,
+        "floors": floors,
+        "message": "Thanks — we'll be in touch with a quote.",
+    }
 
 
 @router.get("/subscription")
@@ -786,6 +1033,30 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
+        meta = session.get("metadata", {}) or {}
+
+        # Credit top-up → grant the credits. Done here rather than at checkout time so
+        # an abandoned or failed payment never results in free credits. The
+        # ProcessedStripeEvent guard above makes Stripe's at-least-once delivery safe:
+        # a retried webhook must not grant the credits twice.
+        if meta.get("purpose") == "credit_topup":
+            tid = meta.get("tenant_id")
+            credits = meta.get("credits")
+            if tid and credits:
+                from app.services.credit_metering import grant_topup
+                grant_topup(
+                    db, int(tid), float(credits),
+                    reference_id=session.get("id"),
+                    description=f"Top-up: {int(float(credits)):,} credits",
+                    commit=False,
+                )
+                logger.info("credit_topup_paid", tenant_id=int(tid), credits=credits,
+                            session_id=session.get("id"))
+            else:
+                logger.warning("Stripe webhook: credit_topup missing tenant_id/credits",
+                               metadata=meta)
+            _mark_processed_and_commit()
+            return {"received": True}
 
         # Subscription checkout → link tenant↔subscription; details arrive via the
         # customer.subscription.* events. (ELR-021)

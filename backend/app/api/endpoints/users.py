@@ -101,9 +101,12 @@ async def get_user(
 async def create_user(
     user_in: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN]))
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN]))
 ):
-    """Create a new user. Admin+ only.
+    """Create a new user. Super admin only.
+
+    Every plan is one user per tenant (team seats are not sold), so tenant admins
+    cannot add users — only a super admin can, for any tenant.
 
     Only super_admin can assign the super_admin role.
     """

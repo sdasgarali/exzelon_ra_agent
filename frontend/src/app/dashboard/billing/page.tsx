@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import PlanUsagePanel from '@/components/plan-usage-panel'
 import { useAuthStore } from '@/lib/store'
 import { billingApi } from '@/lib/api'
 import { Modal } from '@/components/modal'
@@ -299,6 +300,11 @@ export default function BillingPage() {
           Refresh
         </button>
       </div>
+
+      {/* Plan, both meters and the upgrade / top-up / custom-quote actions.
+          Renders nothing for super admins, who have no plan of their own — the
+          invoice tools below are what they came for. */}
+      <PlanUsagePanel />
 
       {/* Alerts */}
       {error && (

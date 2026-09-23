@@ -3,7 +3,6 @@ import Link from 'next/link'
 import Hero from '@/components/marketing/Hero'
 import FeatureGrid from '@/components/marketing/FeatureGrid'
 import FeatureShowcase from '@/components/marketing/FeatureShowcase'
-import ROICalculator from '@/components/marketing/ROICalculator'
 
 export const metadata: Metadata = {
   title: 'NeuraLeads — Outbound that knows what not to send',
@@ -96,7 +95,7 @@ const REASONS = [
   },
   {
     head: 'Priced per workspace, not per seat',
-    body: 'Add the whole team without re-reading the pricing page. Provider costs are passed through at cost and tracked per source, down to fractions of a cent.',
+    body: 'One flat monthly price, with usage metered in credits. Provider costs are passed through at cost and tracked per source, down to fractions of a cent.',
   },
   {
     head: 'Self-host it if you want to',
@@ -181,7 +180,6 @@ export default function LandingPage() {
       </div>
       <FeatureShowcase />
       <Integrations />
-      <ROICalculator />
       <WhySwitch />
       <Close />
     </>

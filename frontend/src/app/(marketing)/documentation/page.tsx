@@ -156,14 +156,6 @@ export default function DocumentationPage() {
                     <td>Everywhere — it is the boundary around everything</td>
                   </tr>
                   <tr>
-                    <td>Line of Business</td>
-                    <td>
-                      A service line you sell, with its own lead sources, ideal-customer profile,
-                      messaging tone and business rules. Six types ship in the box.
-                    </td>
-                    <td>Lines of Business</td>
-                  </tr>
-                  <tr>
                     <td>Lead</td>
                     <td>
                       An opportunity — usually a live job posting or a detected buying signal — with
@@ -1190,9 +1182,8 @@ export default function DocumentationPage() {
                   <tr><td>Visitors</td><td>Website visitor tracking via a small script — sessions, page visits, buying-intent scoring.</td><td>Admin</td></tr>
                   <tr><td>Automation</td><td>Switch each scheduled background job on or off; see its schedule and last run.</td><td>Admin</td></tr>
                   <tr><td>Activity Log</td><td>Login history, authentication audit, active users, account unlock.</td><td>Super admin</td></tr>
-                  <tr><td>User Management</td><td>Create users, assign roles, set notification defaults, deactivate.</td><td>Admin, super admin</td></tr>
+                  <tr><td>User Management</td><td>Your workspace login, role and notification defaults. Every plan includes one user; additional logins are set up by NeuraLeads support.</td><td>Admin</td></tr>
                   <tr><td>Roles &amp; Permissions</td><td>Per-module permission matrix; create custom roles.</td><td>Super admin</td></tr>
-                  <tr><td>Lines of Business</td><td>Create and configure service lines, their sources, ICP, rules and intent signals.</td><td>Admin</td></tr>
                   <tr><td>Excluded Companies</td><td>Your permanent do-not-source list.</td><td>Admin</td></tr>
                   <tr><td>Billing</td><td>Invoices, PDFs, payment status, subscription management.</td><td>Admin, BDM</td></tr>
                   <tr><td>Data Backups</td><td>Create, download, restore and delete backups of your workspace data.</td><td>Admin</td></tr>
@@ -1257,60 +1248,9 @@ export default function DocumentationPage() {
           </section>
 
           {/* ============ 13 ============ */}
-          <section id="lob" className={styles.section}>
-            <div className={styles.secHead}>
-              <span className={styles.secNum}>13</span>
-              <h2 className={styles.secTitle}>Lines of Business</h2>
-            </div>
-            <p className={styles.secIntro}>
-              A line of business is a self-contained way of selling one service. Each brings its own
-              lead sources, ideal-customer profile, business rules, messaging tone, lead-table columns
-              and intent signals.
-            </p>
-            <div className={styles.tableWrap}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Prospecting approach</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Staffing &amp; Recruiting</td><td>Job-board sourcing and hiring decision-maker targeting.</td></tr>
-                  <tr><td>Revenue Cycle Management</td><td>Healthcare provider targeting for medical billing and coding services.</td></tr>
-                  <tr><td>Software Development</td><td>Tech company prospecting aimed at engineering leadership.</td></tr>
-                  <tr><td>AI &amp; Agent Services</td><td>AI-adoption signal tracking and innovation-leader targeting.</td></tr>
-                  <tr><td>Digital Marketing</td><td>Website-audit-based prospecting — SEO and performance gap analysis.</td></tr>
-                  <tr><td>Custom</td><td>Define your own sources, profile and rules from scratch.</td></tr>
-                </tbody>
-              </table>
-            </div>
-
-            <h3>Intent signals</h3>
-            <p>
-              Beyond job boards, seven signal types can create leads on their own. Each line of
-              business decides which apply to it:
-            </p>
-            <div className={`${styles.grid} ${styles.g3}`}>
-              <div className={styles.card}><h4>Provider registry</h4><p>Licensed healthcare providers matching your criteria.</p></div>
-              <div className={styles.card}><h4>Funding events</h4><p>Companies that recently raised — new budget, new hiring.</p></div>
-              <div className={styles.card}><h4>Site performance</h4><p>Websites failing performance audits, for marketing and development offers.</p></div>
-              <div className={styles.card}><h4>Technology stack</h4><p>Companies running, or conspicuously missing, specific technologies.</p></div>
-              <div className={styles.card}><h4>Open-source activity</h4><p>Engineering organisations visible through their public repositories.</p></div>
-              <div className={styles.card}><h4>Hiring patterns</h4><p>Mined from your existing lead data at no external cost.</p></div>
-              <div className={styles.card}><h4>News</h4><p>Public news feeds indicating expansion, launches or change.</p></div>
-            </div>
-            <p>
-              Signals are scored into four tiers — <strong>Cold, Warm, Hot, Burning</strong> — using
-              weights tuned per line of business. You can run the intent engine for one line of
-              business on demand, or leave it to the schedule.
-            </p>
-          </section>
-
-          {/* ============ 14 ============ */}
           <section id="integrations" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>14</span>
+              <span className={styles.secNum}>13</span>
               <h2 className={styles.secTitle}>Integrations</h2>
             </div>
             <p className={styles.secIntro}>
@@ -1360,10 +1300,10 @@ export default function DocumentationPage() {
             </p>
           </section>
 
-          {/* ============ 15 ============ */}
+          {/* ============ 14 ============ */}
           <section id="automation" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>15</span>
+              <span className={styles.secNum}>14</span>
               <h2 className={styles.secTitle}>Background automation</h2>
             </div>
             <p className={styles.secIntro}>
@@ -1411,10 +1351,10 @@ export default function DocumentationPage() {
             </p>
           </section>
 
-          {/* ============ 16 ============ */}
+          {/* ============ 15 ============ */}
           <section id="roles" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>16</span>
+              <span className={styles.secNum}>15</span>
               <h2 className={styles.secTitle}>Users, roles &amp; permissions</h2>
             </div>
             <p className={styles.secIntro}>
@@ -1485,10 +1425,10 @@ export default function DocumentationPage() {
             </p>
           </section>
 
-          {/* ============ 17 ============ */}
+          {/* ============ 16 ============ */}
           <section id="plans" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>17</span>
+              <span className={styles.secNum}>16</span>
               <h2 className={styles.secTitle}>Plans, limits &amp; billing</h2>
             </div>
             <p className={styles.secIntro}>
@@ -1500,40 +1440,42 @@ export default function DocumentationPage() {
                 <thead>
                   <tr>
                     <th>&nbsp;</th>
-                    <th>Starter</th>
-                    <th>Professional</th>
-                    <th>Enterprise</th>
+                    <th>Free</th>
+                    <th>Pro</th>
+                    <th>Max</th>
+                    <th>Custom</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td>Monthly price</td><td className={styles.num}>$49</td><td className={styles.num}>$99</td><td className={styles.num}>$199</td></tr>
-                  <tr><td>Annual, per month</td><td className={styles.num}>$39</td><td className={styles.num}>$79</td><td className={styles.num}>$159</td></tr>
-                  <tr><td>Users</td><td className={styles.num}>3</td><td className={styles.num}>10</td><td>Unlimited</td></tr>
-                  <tr><td>Mailboxes</td><td className={styles.num}>5</td><td className={styles.num}>25</td><td>Unlimited</td></tr>
-                  <tr><td>Emails per day</td><td className={styles.num}>500</td><td className={styles.num}>2,500</td><td className={styles.num}>10,000+</td></tr>
-                  <tr><td>Contacts</td><td className={styles.num}>500</td><td className={styles.num}>5,000</td><td>Unlimited</td></tr>
-                  <tr><td>Leads</td><td className={styles.num}>1,000</td><td className={styles.num}>10,000</td><td>Unlimited</td></tr>
-                  <tr><td>Active campaigns</td><td className={styles.num}>5</td><td className={styles.num}>25</td><td>Unlimited</td></tr>
-                  <tr><td>Lead sources</td><td className={styles.num}>3</td><td className={styles.num}>7</td><td>All</td></tr>
-                  <tr><td>Contact providers</td><td className={styles.num}>2</td><td className={styles.num}>5</td><td>All</td></tr>
-                  <tr><td>AI engines</td><td className={styles.num}>1</td><td className={styles.num}>2</td><td>All 4</td></tr>
-                  <tr><td>A/B testing</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Unified inbox</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>CRM deals</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>ICP Wizard</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Analytics</td><td>Basic</td><td>Advanced</td><td>Full, plus API</td></tr>
-                  <tr><td>Webhooks &amp; integrations</td><td className={styles.no}>—</td><td>Basic</td><td>Full</td></tr>
-                  <tr><td>Custom tracking domains</td><td className={styles.no}>—</td><td className={styles.num}>1</td><td>Unlimited</td></tr>
-                  <tr><td>Self-hosted option</td><td className={styles.no}>—</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>White-label</td><td className={styles.no}>—</td><td className={styles.no}>—</td><td className={styles.yes}>Yes</td></tr>
-                  <tr><td>Support</td><td>Email</td><td>Email and chat</td><td>Dedicated manager</td></tr>
+                  <tr><td>Monthly price</td><td className={styles.num}>$0</td><td className={styles.num}>$99</td><td className={styles.num}>$299</td><td>Quoted</td></tr>
+                  <tr><td>Annual, per month</td><td className={styles.num}>$0</td><td className={styles.num}>$79</td><td className={styles.num}>$239</td><td>Contract</td></tr>
+                  <tr><td>Credits per month</td><td className={styles.num}>300</td><td className={styles.num}>6,000</td><td className={styles.num}>25,000</td><td>From 25,000</td></tr>
+                  <tr><td>Emails per month</td><td className={styles.num}>500</td><td className={styles.num}>25,000</td><td className={styles.num}>150,000</td><td>From 150,000</td></tr>
+                  <tr><td>Mailboxes</td><td className={styles.num}>1</td><td className={styles.num}>25</td><td className={styles.num}>1,000</td><td>From 1,000</td></tr>
+                  <tr><td>Active campaigns</td><td className={styles.num}>2</td><td className={styles.num}>25</td><td className={styles.num}>100</td><td>From 100</td></tr>
+                  <tr><td>Contacts stored</td><td className={styles.num}>1,000</td><td className={styles.num}>25,000</td><td className={styles.num}>150,000</td><td>From 150,000</td></tr>
+                  <tr><td>Leads stored</td><td className={styles.num}>2,000</td><td className={styles.num}>50,000</td><td className={styles.num}>250,000</td><td>From 250,000</td></tr>
+                  <tr><td>Warmup engine</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>AI Sales Agent</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>ICP Wizard</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>A/B testing</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Analytics</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Webhooks &amp; CRM sync</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Attribution &amp; visitors</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Intent signals</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>White-label &amp; agency mode</td><td className={styles.no}>&mdash;</td><td className={styles.no}>&mdash;</td><td className={styles.yes}>Yes</td><td className={styles.yes}>Yes</td></tr>
+                  <tr><td>Support</td><td>Email</td><td>Email</td><td>Priority + SLA</td><td>Account manager</td></tr>
                 </tbody>
               </table>
             </div>
             <p>
               Plan limits are enforced at the moment you create something, not silently in the
               background — you are told immediately if an action would exceed your plan, so nothing is
-              ever created and then quietly discarded.
+              ever created and then quietly discarded. Alongside those caps run two monthly meters:
+              <strong> credits</strong>, which pay for data enrichment, validation and AI (roughly six
+              credits move one contact from sourced to ready-to-send), and a separate
+              <strong> send allowance</strong>. They are independent — running out of one does not
+              affect the other — and extra credits can be bought at $10 per 1,000, which never expire.
             </p>
 
             <h3>Invoicing</h3>
@@ -1562,10 +1504,10 @@ export default function DocumentationPage() {
             </p>
           </section>
 
-          {/* ============ 18 ============ */}
+          {/* ============ 17 ============ */}
           <section id="data" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>18</span>
+              <span className={styles.secNum}>17</span>
               <h2 className={styles.secTitle}>Your data — privacy, control &amp; recovery</h2>
             </div>
             <p className={styles.secIntro}>
@@ -1654,15 +1596,14 @@ export default function DocumentationPage() {
             </div>
           </section>
 
-          {/* ============ 19 ============ */}
+          {/* ============ 18 ============ */}
           <section id="rules" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>19</span>
+              <span className={styles.secNum}>18</span>
               <h2 className={styles.secTitle}>Default business rules</h2>
             </div>
             <p className={styles.secIntro}>
-              These are the shipping defaults. All of them are configurable per workspace, and several
-              can be overridden per line of business.
+              These are the shipping defaults. All of them are configurable per workspace.
             </p>
             <div className={styles.tableWrap}>
               <table>
@@ -1684,16 +1625,16 @@ export default function DocumentationPage() {
                   <tr><td>Domain throttle — all other domains</td><td className={styles.num}>50 / day</td><td>Prevents one company’s mail server from seeing a burst.</td></tr>
                   <tr><td>Complaint-rate auto-pause</td><td className={styles.num}>0.3%</td><td>The industry line beyond which reputation damage compounds quickly.</td></tr>
                   <tr><td>Validation requirement</td><td>Valid only</td><td>Bounces are the fastest way to lose a sending domain.</td></tr>
-                  <tr><td>Target industries</td><td>22 non-IT industries</td><td>The default ideal-customer profile. Editable per line of business.</td></tr>
+                  <tr><td>Target industries</td><td>22 non-IT industries</td><td>The default ideal-customer profile. Editable per workspace.</td></tr>
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* ============ 20 ============ */}
+          {/* ============ 19 ============ */}
           <section id="faq" className={styles.section}>
             <div className={styles.secHead}>
-              <span className={styles.secNum}>20</span>
+              <span className={styles.secNum}>19</span>
               <h2 className={styles.secTitle}>Frequently asked questions</h2>
             </div>
 
@@ -1856,7 +1797,7 @@ export default function DocumentationPage() {
                 </thead>
                 <tbody>
                   <tr><td className={styles.num}>1</td><td>Connect your mailboxes, set signatures and daily limits, and start warmup on the Standard profile. Check that SPF, DKIM and DMARC are green on the DNS tab.</td><td>The reputation clock starts running.</td></tr>
-                  <tr><td className={styles.num}>1</td><td>Pick your line of business and let it seed your sources, ICP and rules. Adjust the business rules to your reality.</td><td>Targeting is defined.</td></tr>
+                  <tr><td className={styles.num}>1</td><td>Set your targeting — industries, job titles and exclusions — and adjust the business rules to your reality.</td><td>Targeting is defined.</td></tr>
                   <tr><td className={styles.num}>2</td><td>Add credentials for one lead source, one contact provider, one validation provider and one AI engine. Use “test connection” on each.</td><td>Every dependency is proven before it matters.</td></tr>
                   <tr><td className={styles.num}>2</td><td>Run the ICP Wizard, then run lead sourcing once. Read the run counters, not just the total.</td><td>You learn which filter is doing the work.</td></tr>
                   <tr><td className={styles.num}>3</td><td>Run contact enrichment, then validation. Review the priority tiers on your contacts.</td><td>A clean, sendable list.</td></tr>

@@ -38,7 +38,12 @@ def generate_sequence(
 
     if db is not None:
         try:
-            return _generate_with_ai(goal, product, tone, num_steps, db, tenant_id, lob_id)
+            steps = _generate_with_ai(goal, product, tone, num_steps, db, tenant_id, lob_id)
+            # Only the AI path costs credits. The template fallback below is free —
+            # charging for it would bill the customer for our provider being down.
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "ai_sequence", description=f"AI sequence: {goal}")
+            return steps
         except Exception as e:
             logger.warning("AI sequence generation failed, using template fallback", error=str(e))
 

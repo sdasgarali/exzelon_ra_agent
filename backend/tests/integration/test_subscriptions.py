@@ -9,17 +9,24 @@ pytestmark = pytest.mark.integration
 
 def _configure_prices(monkeypatch):
     from app.core.config import settings
-    monkeypatch.setattr(settings, "STRIPE_PRICE_STARTER", "price_starter", raising=False)
-    monkeypatch.setattr(settings, "STRIPE_PRICE_PROFESSIONAL", "price_pro", raising=False)
-    monkeypatch.setattr(settings, "STRIPE_PRICE_ENTERPRISE", "price_ent", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_PRICE_PRO", "price_pro", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_PRICE_MAX", "price_max", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_PRICE_PRO_ANNUAL", "price_pro_yr", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_PRICE_MAX_ANNUAL", "price_max_yr", raising=False)
 
 
 def test_price_plan_mapping(monkeypatch):
     from app.services.billing.subscription_service import price_id_for_plan, plan_for_price_id
     _configure_prices(monkeypatch)
-    assert price_id_for_plan("professional") == "price_pro"
-    assert plan_for_price_id("price_pro") == "professional"
+    assert price_id_for_plan("pro") == "price_pro"
+    assert plan_for_price_id("price_pro") == "pro"
     assert price_id_for_plan("nope") == ""
+    # Legacy plan names still resolve during the rename window.
+    assert price_id_for_plan("professional") == "price_pro"
+    assert price_id_for_plan("enterprise") == "price_max"
+    # Annual price ids map back to the same plan.
+    assert plan_for_price_id("price_pro_yr") == "pro"
+    assert price_id_for_plan("pro", annual=True) == "price_pro_yr"
 
 
 def test_upsert_from_stripe_creates_and_syncs_plan(db_session, test_tenant, monkeypatch):
@@ -33,9 +40,9 @@ def test_upsert_from_stripe_creates_and_syncs_plan(db_session, test_tenant, monk
     rec = upsert_from_stripe(db_session, sub_obj, test_tenant.tenant_id)
     db_session.commit()
     assert rec.status == SubscriptionStatus.ACTIVE
-    assert rec.plan == "professional"
+    assert rec.plan == "pro"
     db_session.refresh(test_tenant)
-    assert test_tenant.plan == TenantPlan.PROFESSIONAL  # tenant plan synced
+    assert test_tenant.plan == TenantPlan.PRO  # tenant plan synced
 
     # Update to canceled → status changes, only one row.
     upsert_from_stripe(db_session, {**sub_obj, "status": "canceled"}, test_tenant.tenant_id)
@@ -48,7 +55,7 @@ def test_upsert_from_stripe_creates_and_syncs_plan(db_session, test_tenant, monk
 
 def test_checkout_400_without_price_configured(client, sa_headers, test_tenant, monkeypatch):
     from app.core.config import settings
-    monkeypatch.setattr(settings, "STRIPE_PRICE_ENTERPRISE", "", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_PRICE_MAX", "", raising=False)
     r = client.post("/api/v1/billing/subscription/checkout", json={},
                     headers={**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)})
     assert r.status_code == 400

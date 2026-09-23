@@ -114,39 +114,56 @@ def credit_balance(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get remaining credits vs plan limit for the current month."""
-    now = datetime.utcnow()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    """Remaining credits for the current month, split by source.
 
-    # Total used this month
-    used_q = db.query(func.sum(CreditUsage.credits_used)).filter(
-        CreditUsage.is_archived == False,
-        CreditUsage.recorded_at >= month_start,
-    )
-    used_q = tenant_filter(used_q, CreditUsage, tenant_id)
-    total_used = float(used_q.scalar() or 0)
+    Reads the balance row rather than re-summing the ledger, so this agrees exactly
+    with what the 402 gate will decide. Allowance and top-ups are reported separately
+    because they behave differently: the allowance resets on the 1st, top-ups never
+    expire and are only drawn on once the allowance is gone.
+    """
+    from app.services.credit_metering import available_credits
 
-    # Get tenant plan limit from the shared config-driven ceiling (ELR-009).
-    # 0 = unlimited (enterprise) → surface as None.
-    plan_limit = None
-    try:
-        from app.db.models.tenant import Tenant
-        from app.services.credit_metering import plan_credit_limit
-        if tenant_id:
-            tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
-            if tenant:
-                plan_val = tenant.plan.value if hasattr(tenant.plan, 'value') else str(tenant.plan)
-                ceiling = plan_credit_limit(plan_val)
-                plan_limit = ceiling if ceiling > 0 else None
-    except Exception:
-        pass
+    if tenant_id is None:
+        # Super admin: not metered, and has no single tenant's balance to report.
+        return {"metered": False, "message": "Super admin usage is not metered."}
 
-    remaining = (plan_limit - total_used) if plan_limit else None
+    from app.services.send_quota import quota_status
+
+    info = available_credits(db, tenant_id)
+    plan_allowance = info.get("plan_allowance") or 0
+    spent = info.get("period_spent") or 0
 
     return {
-        "month": month_start.strftime("%Y-%m"),
-        "total_used": round(total_used, 2),
-        "plan_limit": plan_limit,
-        "remaining": round(remaining, 2) if remaining is not None else None,
-        "utilization_percent": round(total_used / plan_limit * 100, 1) if plan_limit and plan_limit > 0 else None,
+        "month": (info.get("period_start") or "")[:7],
+        "plan_allowance": plan_allowance,
+        "allowance_remaining": info["allowance"],
+        "topup_remaining": info["topup"],
+        "total_remaining": info["total"],
+        "used_this_month": spent,
+        "utilization_percent": (
+            round(spent / plan_allowance * 100, 1) if plan_allowance > 0 else None
+        ),
+        # The second meter. Returned alongside credits so the usage screen can show
+        # both without a second round-trip — they are separate budgets and running
+        # out of one says nothing about the other.
+        "sends": quota_status(db, tenant_id),
+        "metered": True,
+    }
+
+
+@router.get("/price-list")
+def credit_price_list(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """What each metered action costs, so the UI never hardcodes a number."""
+    from app.core.credit_costs import CREDITS_PER_FULL_CONTACT, price_list
+
+    return {
+        "actions": price_list(db),
+        "credits_per_full_contact": CREDITS_PER_FULL_CONTACT,
+        "note": (
+            "Email sends and warmup are free — they are governed by the monthly send "
+            "quota, not credits."
+        ),
     }

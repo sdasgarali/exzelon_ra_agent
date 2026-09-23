@@ -58,6 +58,10 @@ class SendGateResult:
 # ---------------------------------------------------------------------------
 
 _MESSAGES = {
+    "SEND_QUOTA_EXCEEDED": (
+        "Monthly send quota reached ({used}/{limit}). "
+        "Upgrade your plan to send more this month."
+    ),
     "UNSUBSCRIBED": "This contact has unsubscribed from communications.",
     "INACTIVE": "This contact is marked as inactive.",
     "SUPPRESSED": "This contact is on the suppression list: {reason}",
@@ -179,6 +183,32 @@ def unified_send_gate(
         SendGateResult with allowed=True or allowed=False + reason.
     """
     checks: List[GateCheckResult] = []
+
+    # ── 0. Monthly send quota (tenant-level) ──────────────────────
+    # Runs FIRST rather than last: it is the only tenant-level check here, so when it
+    # fails every per-contact check below is wasted work — including check 10, which
+    # spends an LLM call. Skipped for dry runs (nothing is sent) and for replies,
+    # which are conversations the customer is already in, not new outbound volume.
+    if not dry_run and not is_reply:
+        try:
+            from app.services.send_quota import has_send_quota
+            allowed, quota = has_send_quota(db, tenant_id)
+            if not allowed:
+                checks.append(GateCheckResult(
+                    "send_quota", False, f"{quota['used']}/{quota['limit']} this month"))
+                return _blocked(
+                    "SEND_QUOTA_EXCEEDED", checks,
+                    used=quota["used"], limit=quota["limit"],
+                )
+            checks.append(GateCheckResult("send_quota", True))
+        except Exception as e:
+            # Fail OPEN. A counting bug must not stop a paying customer's campaign;
+            # the daily per-mailbox limit still bounds the damage.
+            logger.warning("send_gate_quota_error", error=str(e))
+            checks.append(GateCheckResult("send_quota", True, f"check failed: {e}"))
+    else:
+        checks.append(GateCheckResult(
+            "send_quota", True, "skipped (dry_run)" if dry_run else "skipped (reply)"))
 
     # ── 1. Contact status (no DB query) ────────────────────────────
     if hasattr(contact, "outreach_status") and contact.outreach_status:

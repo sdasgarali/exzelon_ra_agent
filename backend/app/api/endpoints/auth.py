@@ -235,9 +235,9 @@ async def register(
     This endpoint requires authentication and creates users within the
     caller's tenant with the lowest (recruiter) role.
     """
-    # Only admins can create users
-    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    # Team seats are not sold: only a super admin may add users to a tenant.
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a super admin can add users")
 
     check_plan_limit(db, current_user.tenant_id, "users")
 

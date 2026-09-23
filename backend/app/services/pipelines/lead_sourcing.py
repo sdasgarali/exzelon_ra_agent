@@ -1362,6 +1362,14 @@ def run_lead_sourcing_pipeline(
             "per_sub_source_detail": per_sub_source_detail,
             "api_diagnostics": api_diagnostics_list,
         })
+
+        # Meter credits on leads that were actually STORED — after dedup and the ICP
+        # gates. Charging on fetched rows would bill the customer for the ~90% we
+        # throw away, and for duplicates they already paid for on an earlier run.
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "lead_sourced", counters["inserted"],
+              reference_id=str(job_run.run_id))
+
         db.commit()
 
         logger.info("Lead sourcing completed",

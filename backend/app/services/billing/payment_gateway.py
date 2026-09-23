@@ -127,6 +127,28 @@ class StripeGateway(PaymentGateway):
         logger.info("Stripe subscription checkout created", session_id=session.id, price=price_id)
         return {"checkout_url": session.url, "session_id": session.id}
 
+    def create_one_time_checkout(
+        self, price_id: str, customer_email: str, success_url: str, cancel_url: str,
+        quantity: int = 1, metadata: dict = None,
+    ) -> dict:
+        """Checkout Session in `payment` mode — a one-off purchase, not a subscription.
+
+        Used for credit top-ups, which are bought in blocks (`quantity`) rather than
+        as a recurring charge.
+        """
+        session = self._stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{"price": price_id, "quantity": quantity}],
+            customer_email=customer_email,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata or {},
+            payment_intent_data={"metadata": metadata or {}},
+        )
+        logger.info("Stripe one-time checkout created", session_id=session.id,
+                    price=price_id, quantity=quantity)
+        return {"checkout_url": session.url, "session_id": session.id}
+
     def cancel_subscription(self, subscription_id: str, at_period_end: bool = True) -> dict:
         if at_period_end:
             sub = self._stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
@@ -148,6 +170,11 @@ class ManualGateway(PaymentGateway):
     def create_checkout_session(self, invoice_id, amount_cents, currency,
                                 customer_email, success_url, cancel_url, metadata=None) -> dict:
         return {"checkout_url": None, "session_id": None, "message": "Manual payment — no online checkout"}
+
+    def create_one_time_checkout(self, price_id, customer_email, success_url,
+                                 cancel_url, quantity=1, metadata=None) -> dict:
+        return {"checkout_url": None, "session_id": None,
+                "message": "Manual payment — no online checkout"}
 
     def verify_payment(self, payment_id: str) -> dict:
         return {"status": "manual", "amount_cents": 0, "currency": "USD"}

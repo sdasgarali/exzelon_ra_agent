@@ -1,5 +1,160 @@
 # Plan WIP
 
+## CURRENT TASK — Migrate MySQL -> Supabase (Postgres)
+Full plan: `Plan_Supabase_Migration.md` (DRAFT, awaiting approval + 4 decisions).
+Waiting on: user creating a Supabase account, then credentials -> `backend/.env` only.
+Scoped 2026-09-17: 64 tables / 53 models / 19 enum cols; MySQL-only SQL isolated to
+main.py (114-line legacy DDL block), job_run.py (LONGTEXT), config.py (utf8mb4 URL).
+Top risk = MySQL ci-collation vs Postgres cs (mixed-case validation_status proven in data).
+
+
+## PROD DEPLOY — IN PROGRESS 2026-09-23 (user-authorized)
+Prod was at master a20b29a. deploy.sh does NOT run Alembic and takes NO backup -> manual:
+- [ ] 1. push feature/credit-system-pricing, PR, squash-merge to master
+- [ ] 2. mysqldump exzelon_ra_agent -> /opt/exzelon-ra-agent/backups/pre-credit-system-<ts>.sql.gz
+- [ ] 3. alembic current; stamp 0001_baseline if unstamped; alembic upgrade head (0002-0004)
+- [ ] 4. git pull, pip install, npm run build, restart exzelon-api + exzelon-web
+- [ ] 5. health checks (api, site, login, migration logs)
+ROLLBACK: restore the dump + `git checkout a20b29a` + rebuild + restart.
+
+## ONE USER, ONE WORKSPACE — DONE 2026-09-23 (plan: `Plan_Remove_Seats_LOB.md`)
+User decision: anyone who signs up becomes a tenant under the platform and is its ONLY user;
+they cannot add users, LOBs or tenants — super_admin only. PLAN_MATRIX max_users=1/max_lobs=1
+on every tier; POST /users + /auth/register + LOB writes = super_admin; a tenant admin's
+personal mailbox no longer mints a login user; LOB UI + "Add User" hidden for non-super-admin;
+seat/LOB rows removed from pricing, usage panel, custom-quote, docs, terms; homepage ROI
+calculator (per-seat savings pitch, stale $49 prices) removed. Nothing deleted, no migration.
+Local Playwright: `e2e/pricing-credits.spec.ts` 10/10 green (run with the uncommitted
+`frontend/playwright.local.config.ts` — prod baseURL otherwise!).
+LEGACY Playwright suite vs local empty DB: 30 pass / 38 fail / 30 not run — mostly empty-data
+assertions + strict-mode selectors that predate the duplicated mobile/desktop nav. Not triaged.
+## BILLING PLAN-CHANGE FIXES — DONE 2026-09-23 (tests: test_plan_change_credits.py)
+- [x] 1. `credit_metering.adjust_allowance_for_plan_change(db, tenant, old_allowance)`: remaining
+      allowance moves by (new - old). Upgrade adds the difference now; downgrade lowers it but
+      never below 0 and never deepens existing overage. Top-ups untouched. Stale period -> the
+      normal refill (already on the new plan) and no delta.
+- [x] 2. `services/billing/plan_change.change_plan(db, tenant, new_plan, reason)` = the ONE way a
+      plan changes: sets tenant.plan + adjusts credits + logs. Used by `upsert_from_stripe` and
+      admin_tenants update (which also snapshots old allowance for custom credit edits).
+- [x] 3. `upsert_from_stripe`: status canceled/unpaid -> change_plan(free). past_due keeps the
+      plan (Stripe is still retrying; ELR-023 handles suspension). Only acts when the event is
+      for the tenant's CURRENT subscription (an old sub's late "deleted" must not downgrade a
+      tenant who has since re-subscribed).
+- [x] 4. Tests: upgrade mid-month, downgrade clamp, overage preserved, top-ups kept, stale period,
+      webhook deleted/unpaid -> free, past_due keeps plan, stale-sub event ignored, admin change.
+- [x] 5. Full suite, docs (multi-tenancy.md), commit locally.
+
+## TRANSACTIONAL MAIL — RESEND (added 2026-09-22)
+System mail (verification, password reset, deal notifications, invoices) now runs through
+`services/adapters/transactional/` — Resend or SMTP, chosen by `SYSTEM_MAIL_PROVIDER`
+(auto | resend | smtp | none). Key lives in `.env` only (gitignored); `.env.example` has
+blank placeholders. Verified live: sends return a Resend message id.
+HARD RULE: Resend is TRANSACTIONAL ONLY. Cold outreach keeps going through each tenant's
+own mailboxes — their domain reputation, warmup, the 30/day send-gate pacing — and Resend's
+terms ban cold email outright. `test_transactional_mail.py` asserts `campaign_engine` and
+`pipelines/outreach` never import the transactional package.
+Sender order: tenant's own SMTP > global provider > none. Forcing `resend`/`smtp` does NOT
+silently fall back — mail from an unexpected sender is harder to debug than no mail.
+`billing_mailer` had its own duplicate SMTP block that skipped silently whenever SMTP_HOST
+was unset (so a Resend-only deploy would have sent zero invoices); it now routes through
+`send_system_email` and gained PDF attachment support via `Attachment`.
+The supplied key is SEND-ONLY scoped (cannot read /domains) — correct least privilege.
+`RESEND_FROM_EMAIL` is currently `onboarding@resend.dev`, which only delivers to the Resend
+account owner — set it to an address on a VERIFIED domain before relying on this in prod.
+
+## PRICING / CREDIT SYSTEM — PHASES 0 + 1 IMPLEMENTED 2026-09-22 (1,504 tests green)
+Done: `core/plans.py` PLAN_MATRIX (single source of truth), TenantPlan free/pro/max/custom with
+legacy enum aliases + `normalize_plan()`, Alembic `0002_plan_rename_and_max_lobs`, signup-blocker
+fix, `0`=use-plan-default sentinel, live-state campaign counting, LOB metering (`max_lobs` +
+counter + gate on LOB create), custom-tier floor guard in admin_tenants, annual Stripe price ids,
+`POST /billing/custom-quote`. Docs updated: multi-tenancy / data-models / api-endpoints /
+STRIPE_SUBSCRIPTIONS_SETUP / .env.example.
+PHASE 2 DONE 2026-09-22 (1,526 tests green): `core/credit_costs.py` price registry (6 credits =
+one contact end-to-end), `TenantCreditBalance` + migration `0003` with `SELECT..FOR UPDATE`
+(closes ELR-009b's sum-then-check race), metering wired at ALL 10 choke-points, monthly
+`credit_refill` scheduler job (1st, 00:05), top-up flow (`POST /billing/credits/topup` +
+`create_one_time_checkout` + webhook grant guarded by ProcessedStripeEvent),
+`GET /credits/balance` + `/credits/price-list`.
+Key semantics to preserve: GATE (`check_credit_budget`, raises 402, runs BEFORE work) vs METER
+(`meter()`/`spend()`, never raises, runs AFTER). Allowance spent before top-ups; overage goes
+NEGATIVE not clamped; no rollover; top-ups never expire. AI actions are charged only when the AI
+path actually succeeds — the template/rule-based fallbacks are free.
+PHASE 3 DONE 2026-09-22 (1,557 tests green): `api/deps/features.py` (require_feature dependency /
+ensure_feature / has_feature) returning **402 with a STRUCTURED body** so the frontend can tell a
+feature gate from an exhausted credit balance (both are 402); 11 routers gated at mount in
+`api/router.py`, 6 partial gates in endpoint bodies; `services/send_quota.py` as the second meter,
+wired as CHECK 0 of `unified_send_gate()` + composite index `idx_outreach_tenant_sent`
+(migration `0004`); `GET /credits/balance` now returns both meters.
+Two deliberate choices to preserve: `POST /visitors/track` and `/visitors/pixel.js` are PUBLIC and
+must never 402 (unentitled plans get 200 + `tracked:false`, event dropped) — a 402 there shows up
+as a console error on the CUSTOMER's website. And the send-quota check FAILS OPEN: a counting bug
+must not stop a paying customer's campaign; the per-mailbox daily limit still bounds it.
+PHASE 4 DONE 2026-09-22 (1,585 tests green; frontend tsc + build clean): `GET /billing/usage`
+(one call = plan + both meters + resource counts + `features` + near_limit flags),
+`components/usage-meters.tsx` on the dashboard, `components/plan-usage-panel.tsx` on billing
+(upgrade w/ annual toggle, credit top-up blocks, and the deferred 1.6 custom-plan configurator),
+`hooks/use-plan-features.ts`, feature-aware sidebar nav, and a full rewrite of the public
+pricing page + documentation/terms plan tables (they still advertised a $49 Starter tier,
+"self-hosted" and a 14-day trial that no longer exist).
+`tests/unit/test_pricing_page_parity.py` parses PricingCards.tsx and FAILS if any advertised
+number or price drifts from PLAN_MATRIX — that page is the one place a mismatch costs money
+in both directions.
+Two frontend rules to preserve: `usePlanFeatures().has()` FAILS OPEN while loading (a flash of
+a nav item beats hiding a paid feature), so anything that STARTS work on a feature — pollers,
+sockets — must wait on `.ready` or it fires one gated 402 on mount. And the gate is cosmetic:
+`api/deps/features.py` is the enforcement.
+BUG FIXED during Phase 4: migration 0002 backfilled `max_lobs=1`, and since a positive value is
+an explicit override that capped every existing MAX tenant at 1 LOB instead of 25. New limit
+columns must default to 0 ("use the plan"). Regression test added.
+PHASE 5 DONE (verified 2026-09-23: full suite 1,642 passed): `security/test_credit_concurrency.py`
+(parallel spends cannot overdraw), `security/test_credit_tenant_isolation.py`,
+`security/test_feature_gate_coverage.py`, `integration/test_feature_gate_routes.py` (402/200 matrix),
+`integration/test_plan_rename_migration.py`. The 1.6 custom-plan configurator shipped in Phase 4
+(`plan-usage-panel.tsx`).
+COMMITTED 2026-09-23 on branch `feature/credit-system-pricing` (local only, not pushed, no PR yet).
+NEXT: push + PR to master, then resume the Supabase migration (still blocked on credentials).
+Full plan: `Plan_Credit_System_And_Pricing.md`. Shareable version:
+https://claude.ai/code/artifact/6a4d0abf-596b-481c-a5b1-e4dab9634ce4
+Free $0 / 300 cr · Pro $99 / 6,000 cr · Max $299 / 25,000 cr · Custom (quoted). Credits meter
+data+AI only; email sends are a separate flat quota. 1 credit ≈ $0.01 retail, 6 credits = one
+contact end-to-end. 4 open decisions in §10 of the plan.
+NO tier is unlimited on ANY axis (user decision 2026-09-22). Max = 1,000 mailboxes / 50 seats /
+25 LOBs; above any of those is the Custom tier, floored at Max's numbers. Custom limits read from
+the existing per-tenant `Tenant` limit columns, not the plan matrix.
+Because every limit is now a positive integer, the sentinel fix SIMPLIFIES: `0` means only
+"not included", the `0 == unlimited` branch in plan_limits.py is deleted, and the
+`plan == ENTERPRISE: return` early-exit goes too. No -1 sentinel, no nullable migration.
+NEW PLUMBING: LOBs are not a metered resource today — no `Tenant.max_lobs` column and no `lobs`
+key in RESOURCE_COUNTERS/RESOURCE_LIMITS. Count rows in `lines_of_business` (an instance table —
+many LOBs may share one lob_type), distinct from TenantLOBAssignment which gates the 6 types.
+BLOCKER found: `tenant_service.create_tenant_for_signup()` assigns max_mailboxes/contacts/
+campaigns/leads = 0, and `plan_limits.py` reads 0-on-starter as a hard 403 — so self-signup
+tenants cannot create anything today. Must be fixed before any Free tier ships.
+Also: `credit_metering.record_usage()` is wired at exactly ONE call site (`sms.py:64`) —
+the ledger exists but nothing writes to it.
+
+
+## LOCAL OFFLINE RUN (set up 2026-09-22) — works with no network, no DB server
+Start backend:  `cd backend && venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`
+Start frontend: `cd frontend && npm run dev`   ->  http://localhost:3000
+Login: `admin@example.com` / `LocalDev#2026` (super_admin, local only)
+
+- `.env` (root, gitignored) — `APP_ENV=DEV`, `DEV_DB_TYPE=sqlite`, all providers on `mock`,
+  no SMTP / Stripe / Sentry keys. DB = `backend/data/ra_agent.db` (backup: `.bak-20260922`).
+- Tenant #1 (Exzelon) had to be seeded by hand: the legacy `main.py` DDL block inserts it with
+  `NOW()`, which SQLite has no function for, so the insert silently warned and skipped. Postgres
+  DOES have `NOW()`, so this does not block the Supabase migration — but the same block's
+  `SHOW COLUMNS` / `INFORMATION_SCHEMA` / backtick-quoted `` `key` `` statements are MySQL-only
+  and will warn on Postgres too. Relevant to ELR-026b (retire that block into Alembic).
+- `frontend/next.config.js` — CSP `connect-src 'self' https:` blocked the http://localhost:8000
+  API from the :3000 page (prod is same-origin behind nginx, so it never showed there). Added a
+  dev-only widening gated on `NODE_ENV !== 'production'`; shipped policy unchanged. UNCOMMITTED.
+- KNOWN BUG (pre-existing, blocks offline lead sourcing): `lead_sourcing.py:505,516` calls
+  `adapter.fetch_jobs(..., limit=, tuning=)`, but `MockJobSourceAdapter.fetch_jobs` (and the
+  `base.py` abstract signature, and several other adapters) accept neither -> `TypeError` on
+  every scheduled run. Only real adapters like TheirStack have the newer signature.
+
+
 ## PHASE 2 progress (branch feature/elr-phase2-enterprise, stacked on phase1)
 - [x] ELR-029 — tax Decimal HALF_UP (compute_tax_cents) + BILLING_DEFAULT_CURRENCY config
 - [x] ELR-022 — webhook handles charge.refunded (→REFUNDED + negative PaymentRecord), payment_failed (→OVERDUE), dispute (→note). New InvoiceStatus.REFUNDED + enum migration

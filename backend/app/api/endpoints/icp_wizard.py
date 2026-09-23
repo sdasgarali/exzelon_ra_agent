@@ -32,15 +32,22 @@ class SaveICPRequest(BaseModel):
 @router.post("/generate")
 def generate_icp(
     body: GenerateICPRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """AI-generate an Ideal Customer Profile from business description."""
     from app.services.ai_icp_wizard import generate_icp as gen_icp
+    from app.services.credit_metering import check_credit_budget
+    from app.core.credit_costs import cost_for
+
+    check_credit_budget(db, tenant_id, credits_needed=cost_for("icp_wizard"))
     result = gen_icp(
         company_desc=body.company_description,
         offering=body.offering,
         pain_points=body.pain_points,
+        db=db,
+        tenant_id=tenant_id,
     )
     return result
 

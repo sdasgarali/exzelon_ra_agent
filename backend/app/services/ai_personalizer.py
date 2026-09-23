@@ -172,6 +172,12 @@ def personalize_email_for_contact(
                 contact_id=getattr(contact, "contact_id", None),
                 tokens_used=tokens_used,
             )
+            # Charged only when the rewrite actually lands. A parse failure or an
+            # adapter error falls through to the original copy, and billing for an
+            # email we didn't personalise would be charging for nothing.
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "ai_personalization",
+                  reference_id=str(getattr(contact, "contact_id", "") or ""))
             return {
                 "subject": parsed["subject"],
                 "body_html": parsed["body_html"],

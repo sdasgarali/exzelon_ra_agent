@@ -6,10 +6,10 @@ import ScrollReveal from '@/components/marketing/ScrollReveal'
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Simple, transparent pricing with no per-seat fees. Start at $49/mo for your entire team. Save 70-90% compared to leading outreach platforms.',
+  description: 'A genuinely free tier, then $99/mo for a whole team. No per-seat fees. Credits cover data and AI; sends have their own monthly allowance.',
   openGraph: {
     title: 'Pricing — NeuraLeads',
-    description: 'Flat-fee pricing starting at $49/mo. No per-seat charges. 14-day free trial.',
+    description: 'Free forever to start. Pro $99/mo, Max $299/mo, flat — no per-seat charges.',
   },
 }
 
@@ -19,20 +19,20 @@ const pricingFAQ = [
     answer: 'Yes. Upgrade or downgrade at any time. When upgrading, you get immediate access to new features. When downgrading, your current plan continues until the end of the billing period.',
   },
   {
-    question: 'Is there a free trial?',
-    answer: 'Yes! Every plan comes with a 14-day free trial. No credit card required. You get full access to all features in your chosen plan during the trial.',
+    question: 'Is there a free plan?',
+    answer: 'Better — there is a free tier, not a trial. It never expires and needs no card: 300 credits and 500 emails a month, enough to source, enrich, validate and email around 50 contacts. Most competitors offer no free plan at all.',
   },
   {
-    question: 'What does "self-hosted" mean?',
-    answer: 'With the Enterprise plan, you can deploy NeuraLeads on your own servers. This gives you full control over your data, compliance with your security policies, and no dependency on our infrastructure.',
+    question: 'What is the Custom plan?',
+    answer: 'Custom sits above Max. If you need more than 1,000 mailboxes, 25,000 credits or 150,000 sends a month, you choose your own numbers — each one starting above Max — and we quote against them on an annual contract.',
   },
   {
-    question: 'Are there per-seat fees?',
-    answer: 'No. Unlike per-seat competitors that charge $49-$69 per user per month, NeuraLeads charges a flat monthly fee. Add as many team members as your plan allows at no extra cost.',
+    question: 'How many users does a plan include?',
+    answer: 'Every plan includes one user login for the workspace. You pay per workspace, never per seat — if you need an extra login, contact us and we will set it up.',
   },
   {
-    question: 'What happens if I exceed my daily email limit?',
-    answer: 'Emails beyond your daily limit are automatically queued and sent the next day. You can also upgrade your plan at any time to increase your limit.',
+    question: 'What happens when I run out of credits or sends?',
+    answer: 'They are two separate budgets. Running out of credits pauses data and AI work — buy a top-up at $10 per 1,000 credits, which never expire. Running out of monthly sends pauses campaigns until the 1st, or until you upgrade. Day-to-day, each mailbox is also paced at 30 emails a day to protect your domain.',
   },
   {
     question: 'Do you offer annual billing discounts?',
@@ -44,7 +44,7 @@ const pricingFAQ = [
   },
   {
     question: 'What kind of support do you offer?',
-    answer: 'Starter plans get email support. Professional plans include email + live chat. Enterprise customers get a dedicated account manager and priority response times.',
+    answer: 'Free and Pro get email support. Max adds priority support with an SLA and done-for-you onboarding. Custom contracts include a named account manager.',
   },
 ]
 
@@ -59,8 +59,8 @@ export default function PricingPage() {
                 Simple, Transparent Pricing
               </h1>
               <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-                No per-seat fees. No hidden costs. Pay one flat price and add your whole team.
-                Save 70-90% compared to per-seat competitors.
+                Start free and stay free until you outgrow it. No per-seat fees — one flat
+                price covers your whole team.
               </p>
             </div>
           </ScrollReveal>
@@ -72,9 +72,9 @@ export default function PricingPage() {
       <FAQAccordion items={pricingFAQ} title="Pricing FAQ" />
 
       <CTABanner
-        headline="Start Your 14-Day Free Trial"
-        subtext="No credit card required. Full access to all features. Cancel anytime."
-        ctaText="Get Started Free"
+        headline="Start Free — No Card, No Deadline"
+        subtext="300 credits and 500 emails every month, free forever. Upgrade only when you outgrow it."
+        ctaText="Create your workspace"
       />
     </>
   )

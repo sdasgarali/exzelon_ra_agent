@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.database import get_db
 from app.api.deps.auth import get_current_active_user, get_current_tenant_id, require_role
+from app.api.deps.plan_limits import check_plan_limit
 from app.db.models.user import User, UserRole
 from app.db.models.line_of_business import LineOfBusiness, LOBType, LOBStatus
 from app.db.models.tenant_lob_assignment import TenantLOBAssignment
@@ -301,16 +302,23 @@ async def list_lobs(
     return [_to_response(lob) for lob in lobs]
 
 
+# Lines of business are not a customer feature (2026-09-23): every tenant works in one
+# workspace. Reads stay open so existing lob_id-tagged data still resolves; every write
+# below is super_admin only.
 @router.post("/", response_model=LOBResponse, status_code=status.HTTP_201_CREATED)
 async def create_lob(
     payload: LOBCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new Line of Business."""
     if tenant_id is None:
         raise HTTPException(status_code=400, detail="Tenant context required")
+
+    # How MANY lines of business the plan allows. Distinct from the assignment check
+    # below, which governs WHICH of the LOB types this tenant may use at all.
+    check_plan_limit(db, tenant_id, "lobs")
 
     # Check LOB assignment restrictions
     assigned = _get_assigned_lob_types(db, tenant_id)
@@ -394,7 +402,7 @@ async def update_lob(
     lob_id: int,
     payload: LOBUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update an existing LOB."""
@@ -443,7 +451,7 @@ async def update_lob(
 async def delete_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Soft-delete (archive) an LOB. Cannot delete the default LOB."""
@@ -472,6 +480,9 @@ async def get_lob_intent_signals(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Return configured + available intent signals for a LOB with their status."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "intent_engine")
+
     query = db.query(LineOfBusiness).filter(
         LineOfBusiness.lob_id == lob_id,
         LineOfBusiness.is_archived == False,
@@ -519,10 +530,13 @@ async def get_lob_intent_signals(
 async def run_lob_intent_signals(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Manually trigger intent engine for a specific LOB."""
+    from app.api.deps.features import ensure_feature
+    ensure_feature(db, tenant_id, "intent_engine")
+
     query = db.query(LineOfBusiness).filter(
         LineOfBusiness.lob_id == lob_id,
         LineOfBusiness.is_archived == False,
@@ -547,7 +561,7 @@ async def run_lob_intent_signals(
 async def set_default_lob(
     lob_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
+    current_user: User = Depends(require_role([UserRole.SUPER_ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Set an LOB as the default for the tenant."""

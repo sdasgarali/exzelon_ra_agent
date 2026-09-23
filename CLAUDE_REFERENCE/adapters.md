@@ -14,7 +14,8 @@ All external integrations implement abstract base classes from `services/adapter
 | **Contact Discovery** | Apollo, Seamless, Hunter.io, Snov.io, RocketReach, People Data Labs, Proxycurl | `CONTACT_PROVIDER`, `HUNTER_CONTACT_API_KEY`, `SNOVIO_CLIENT_ID`+`SNOVIO_CLIENT_SECRET`, `ROCKETREACH_API_KEY`, `PDL_API_KEY`, `PROXYCURL_API_KEY` |
 | **Company Enrichment** | Clearbit (Breeze), OpenCorporates | `CLEARBIT_API_KEY`, `OPENCORPORATES_API_KEY` |
 | **Email Validation** | NeverBounce, ZeroBounce, Hunter, Clearout, Emailable, MailboxValidator, Reacher | `EMAIL_VALIDATION_PROVIDER` |
-| **Email Sending** | SMTP, Mock | `EMAIL_SEND_MODE` |
+| **Email Sending** (campaign / cold outreach) | SMTP, Mock | `EMAIL_SEND_MODE` |
+| **Transactional Mail** (system email) | Resend, SMTP | `SYSTEM_MAIL_PROVIDER`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` |
 | **AI Content** | Groq, OpenAI, Anthropic, Gemini | Per-adapter API keys, shared factory in `adapters/ai_content.py` |
 | **CRM** | HubSpot, Salesforce | `HUBSPOT_API_KEY`, `SALESFORCE_CLIENT_ID` |
 | **Notifications** | Slack, Microsoft Teams | Webhook URLs in settings |
@@ -61,6 +62,37 @@ Pipeline-level settings: `pipeline_adapter_limit` (default 1000) caps results pe
 **Fantastic.jobs company size — use the self-reported BAND, not the headcount.** Fantastic.jobs (`job_sources/fantastic_jobs.py`) returns two LinkedIn size signals: `org_linkedin_headcount` (a count of *tagged member profiles* — systematically UNDERSTATED) and `org_linkedin_size` (the company's SELF-REPORTED band, e.g. `1001-5000`, i.e. what the LinkedIn profile shows). The adapter maps `company_size` = the **band** (falling back to `str(headcount)` only when the band is absent) and keeps `employee_count` = headcount. Keying the gate on headcount let oversized companies pass and burned Apollo credits (the R1603 bug — headcount 156 for a 1001-5000 company). The gate is now **conservative across both signals** via `exceeds_size_ceiling_any` / `below_size_floor_any` (drops on the LARGEST parsed size). The adapter also pushes `organization_size` (band buckets ≤ ceiling, via `size_buckets_within_ceiling`) as a server-side filter so oversized companies are never fetched. Audit existing damage with `backend/scripts/audit_fantastic_jobs_company_size.py` (read-only). See `Fantastic_Jobs_Company_Size_RCA.md`.
 
 All configurable via Settings → Source Tuning tab (tab permission key: `source_tuning`).
+
+## Transactional mail vs campaign sending (do not merge these)
+
+Two email paths exist and must stay separate:
+
+| | Campaign / cold outreach | Transactional / system |
+|---|---|---|
+| Package | `adapters/email_sending/` | `adapters/transactional/` |
+| Sends through | the TENANT's own mailboxes | one shared provider |
+| Governed by | `EMAIL_SEND_MODE`, send gate, warmup, 30/day per mailbox | `SYSTEM_MAIL_PROVIDER` |
+| Examples | sequences, follow-ups, AI replies | verification, password reset, deal notifications, invoices |
+
+**Never route cold outreach through Resend (or any transactional provider).** Their
+terms prohibit it, the account gets terminated, and every tenant's deliverability ends
+up behind one shared sender reputation instead of their own warmed domain.
+`tests/unit/test_transactional_mail.py` asserts `campaign_engine` and
+`pipelines/outreach` never import the transactional package.
+
+**Sender resolution** (`adapters/transactional/__init__.py::resolve_sender`):
+1. The tenant's own SMTP, when configured — they set it up so mail comes from their
+   domain; overriding that would put their mail under our reputation.
+2. The global provider per `SYSTEM_MAIL_PROVIDER`: `auto` (Resend if keyed, else SMTP),
+   `resend` / `smtp` (forced, **no silent fallback** — mail from an unexpected sender is
+   harder to diagnose than mail that does not arrive), or `none`.
+3. Nothing — callers log and continue. System mail is best-effort at every call site;
+   a failed deal notification must not lose the deal.
+
+**Resend specifics:** the key should be SEND-ONLY scoped (it cannot read `/domains`,
+which is correct least privilege). `RESEND_FROM_EMAIL` must be on a domain verified in
+Resend — `onboarding@resend.dev` is their shared test sender and delivers only to the
+account owner. Attachments are base64-encoded by the adapter; invoices use this.
 
 ## Adding a New Adapter
 

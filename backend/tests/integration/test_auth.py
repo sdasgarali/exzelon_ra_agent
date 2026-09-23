@@ -19,8 +19,17 @@ class TestAuthEndpoints:
         )
         assert response.status_code == 401
 
-    def test_register_user(self, client, auth_headers):
-        """Test user registration (requires auth, always assigns viewer)."""
+    def test_register_user_forbidden_for_tenant_admin(self, client, auth_headers):
+        """A tenant admin cannot add users: every plan is one user, super admin adds more."""
+        response = client.post(
+            "/api/v1/auth/register",
+            json={"email": "newuser@test.com", "password": "password123", "full_name": "New User"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 403
+
+    def test_register_user(self, client, super_admin_headers):
+        """Super admin registration always assigns the lowest (recruiter) role."""
         response = client.post(
             "/api/v1/auth/register",
             json={
@@ -28,7 +37,7 @@ class TestAuthEndpoints:
                 "password": "password123",
                 "full_name": "New User"
             },
-            headers=auth_headers,
+            headers=super_admin_headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -37,7 +46,7 @@ class TestAuthEndpoints:
         assert data["role"] == "recruiter"
         assert "user_id" in data
 
-    def test_register_duplicate_email(self, client, admin_user, auth_headers):
+    def test_register_duplicate_email(self, client, admin_user, super_admin_headers):
         """Test registration with duplicate email fails."""
         response = client.post(
             "/api/v1/auth/register",
@@ -46,7 +55,7 @@ class TestAuthEndpoints:
                 "password": "password123",
                 "full_name": "Duplicate User"
             },
-            headers=auth_headers,
+            headers=super_admin_headers,
         )
         assert response.status_code == 400
         assert "already registered" in response.json()["detail"]

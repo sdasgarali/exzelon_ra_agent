@@ -65,6 +65,11 @@ class OutreachEvent(Base):
 
     __table_args__ = (
         Index('idx_outreach_tenant', 'tenant_id'),
+        # The monthly send-quota count runs once per send attempt
+        # (services/send_quota.py). Separate tenant_id and sent_at indexes force the
+        # planner to pick one and filter the rest; this composite keeps the count an
+        # index-only range scan even at Max's 150k sends a month.
+        Index('idx_outreach_tenant_sent', 'tenant_id', 'sent_at'),
         Index('idx_outreach_contact', 'contact_id'),
         Index('idx_outreach_lead', 'lead_id'),
         Index('idx_outreach_status', 'status'),

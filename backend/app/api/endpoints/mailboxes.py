@@ -539,6 +539,14 @@ async def create_mailbox(
             if not linked:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Linked user not found")
             linked_user_id = linked.user_id
+        elif (
+            current_user.role != UserRole.SUPER_ADMIN
+            and not db.query(User.user_id).filter(User.email == mailbox_in.email).first()
+        ):
+            # Team seats are not sold: a tenant admin's personal mailbox must not mint a
+            # second login user. The mailbox is still created and can send; it just has
+            # no login attached. Linking to an EXISTING user (their own email) is fine.
+            linked_user_id = None
         else:
             try:
                 linked = create_or_link_user(

@@ -127,7 +127,7 @@ class TestSignupFlow:
         data = resp.json()
         assert "access_token" in data
         assert data["user"]["tenant_id"] is not None
-        assert data["user"]["tenant"]["plan"] == "starter"
+        assert data["user"]["tenant"]["plan"] == "free"
 
     def test_register_endpoint_requires_auth(self, client):
         """Old /register endpoint should require authentication now."""
@@ -138,7 +138,7 @@ class TestSignupFlow:
         })
         assert resp.status_code == 401
 
-    def test_register_endpoint_no_role_injection(self, client, admin_token):
+    def test_register_endpoint_no_role_injection(self, client, super_admin_token):
         """Verify role from request body is ignored -- always viewer."""
         resp = client.post(
             "/api/v1/auth/register",
@@ -148,7 +148,7 @@ class TestSignupFlow:
                 "full_name": "Role Injector",
                 "role": "admin",
             },
-            headers={"Authorization": f"Bearer {admin_token}"},
+            headers={"Authorization": f"Bearer {super_admin_token}"},
         )
         assert resp.status_code == 200
         assert resp.json()["role"] == "recruiter"

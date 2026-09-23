@@ -66,6 +66,11 @@ frontend/e2e/test-results.json
 # Database
 *.db
 *.sqlite3
+# SQLite WAL sidecars (journal_mode=WAL) and local backups — `*.db` does not
+# match these, because the suffix is `-wal` / `-shm` rather than an extension.
+*.db-wal
+*.db-shm
+*.db.bak-*
 
 # OS
 .DS_Store

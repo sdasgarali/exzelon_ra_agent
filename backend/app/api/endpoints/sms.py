@@ -57,18 +57,19 @@ def send_sms(
                 detail=f"SMS send failed: {result.get('error', 'Unknown error')}",
             )
 
-        # Record credit usage
+        # Record credit usage. Priced from the central registry rather than a
+        # hardcoded 1.0 — Twilio costs ~$0.0079 a message, so SMS is 2 credits.
         try:
-            from app.services.credit_metering import record_usage
+            from app.services.credit_metering import meter
 
-            record_usage(
+            meter(
                 db,
-                tenant_id=ensure_tenant(tenant_id),
-                usage_type="sms_send",
-                credits=1.0,
-                description=f"SMS to {data.to_phone}",
+                ensure_tenant(tenant_id),
+                "sms",
                 user_id=user.user_id,
+                description=f"SMS to {data.to_phone}",
                 reference_id=str(data.contact_id) if data.contact_id else None,
+                commit=True,
             )
         except Exception:
             pass

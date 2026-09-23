@@ -8,15 +8,28 @@ class TestTenantModel:
     """Test Tenant model and TenantPlan enum."""
 
     def test_tenant_plan_enum_values(self):
-        assert TenantPlan.STARTER == "starter"
-        assert TenantPlan.PROFESSIONAL == "professional"
-        assert TenantPlan.ENTERPRISE == "enterprise"
+        assert TenantPlan.FREE == "free"
+        assert TenantPlan.PRO == "pro"
+        assert TenantPlan.MAX == "max"
+        assert TenantPlan.CUSTOM == "custom"
+
+    def test_legacy_plan_names_are_aliases(self):
+        """The old names repeat existing values, so Python binds them as aliases.
+
+        That keeps every `TenantPlan.ENTERPRISE` call site working through the rename
+        without a big-bang edit, while iteration (and therefore the DB enum) still
+        yields only the four canonical members.
+        """
+        assert TenantPlan.STARTER is TenantPlan.FREE
+        assert TenantPlan.PROFESSIONAL is TenantPlan.PRO
+        assert TenantPlan.ENTERPRISE is TenantPlan.MAX
+        assert [p.value for p in TenantPlan] == ["free", "pro", "max", "custom"]
 
     def test_create_tenant(self, db_session):
         tenant = Tenant(
             name="Test Corp",
             slug="test-corp",
-            plan=TenantPlan.STARTER,
+            plan=TenantPlan.FREE,
         )
         db_session.add(tenant)
         db_session.commit()
@@ -25,12 +38,7 @@ class TestTenantModel:
         assert tenant.tenant_id is not None
         assert tenant.name == "Test Corp"
         assert tenant.slug == "test-corp"
-        assert tenant.plan == TenantPlan.STARTER
-        assert tenant.max_users == 3
-        assert tenant.max_mailboxes == 0
-        assert tenant.max_contacts == 0
-        assert tenant.max_campaigns == 0
-        assert tenant.max_leads == 0
+        assert tenant.plan == TenantPlan.FREE
         assert tenant.is_active is True
 
     def test_create_enterprise_tenant(self, db_session):
@@ -142,14 +150,37 @@ class TestTenantService:
         assert slug == "test-sons-llc"
 
     def test_create_tenant_for_signup(self, db_session):
+        """Signup must provision a usable workspace.
+
+        This test previously asserted `max_mailboxes == 0` and `max_contacts == 0` —
+        i.e. it locked in the bug that made every self-signup account unable to create
+        anything at all. Limits now come from PLAN_MATRIX["free"].
+        """
         from app.services.tenant_service import create_tenant_for_signup
+        from app.core.plans import PLAN_MATRIX
+
         tenant = create_tenant_for_signup("My Startup Inc", db_session)
+        free = PLAN_MATRIX["free"]
+
         assert tenant.tenant_id is not None
         assert tenant.name == "My Startup Inc"
         assert tenant.slug == "my-startup-inc"
-        assert tenant.plan == TenantPlan.STARTER
-        assert tenant.max_mailboxes == 0
-        assert tenant.max_contacts == 0
+        assert tenant.plan == TenantPlan.FREE
+        assert tenant.max_mailboxes == free.max_mailboxes > 0
+        assert tenant.max_contacts == free.max_contacts > 0
+        assert tenant.max_campaigns == free.max_campaigns > 0
+        assert tenant.max_leads == free.max_leads > 0
+        assert tenant.max_lobs == free.max_lobs > 0
+        assert tenant.max_users == free.max_users > 0
+
+    def test_signup_tenant_can_actually_create_things(self, db_session):
+        """End-to-end of the same regression, through the real limit check."""
+        from app.services.tenant_service import create_tenant_for_signup
+        from app.api.deps.plan_limits import check_plan_limit
+
+        tenant = create_tenant_for_signup("Usable Co", db_session)
+        for resource in ("mailboxes", "contacts", "campaigns", "leads", "lobs", "users"):
+            check_plan_limit(db_session, tenant.tenant_id, resource)  # no raise
 
     def test_create_tenant_slug_collision(self, db_session):
         from app.services.tenant_service import create_tenant_for_signup

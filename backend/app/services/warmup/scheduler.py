@@ -91,6 +91,9 @@ def init_scheduler():
         _scheduler.add_job(job_check_overdue_invoices, CronTrigger(hour=6, minute=0), id="overdue_check", name="Overdue Invoice Check", replace_existing=True)
         _scheduler.add_job(job_send_overdue_reminders, CronTrigger(hour=9, minute=0), id="overdue_reminders", name="Overdue Invoice Reminders", replace_existing=True)
 
+        # Credits — refill monthly allowances just after midnight on the 1st.
+        _scheduler.add_job(job_refill_credit_allowances, CronTrigger(day=1, hour=0, minute=5), id="credit_refill", name="Monthly Credit Refill", replace_existing=True)
+
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
@@ -765,6 +768,38 @@ def job_cleanup_stale_tenants():
     except Exception as e:
         logger.error("Tenant cleanup failed", error=str(e))
         db.rollback()
+    finally:
+        db.close()
+
+
+def job_refill_credit_allowances():
+    """Reset every tenant's monthly credit allowance on the 1st.
+
+    Balances also refill lazily whenever they are read, so an active tenant is
+    correct even if this never runs. This sweep exists so DORMANT tenants and the
+    usage screens agree with the calendar without someone having to hit an endpoint
+    first — and so a month boundary is a single logged event rather than a thousand
+    scattered lazy refills.
+    """
+    if not _is_job_enabled("credit_refill"):
+        logger.info("Job credit_refill skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("credit_refill") as acquired:
+        if not acquired:
+            return
+        _job_refill_credit_allowances_inner()
+
+
+def _job_refill_credit_allowances_inner():
+    logger.info("Running monthly credit refill")
+    db = _get_db()
+    try:
+        from app.services.credit_metering import refill_all_balances
+        refilled = refill_all_balances(db)
+        logger.info("Monthly credit refill complete", tenants_refilled=refilled)
+    except Exception as e:
+        logger.error("Monthly credit refill failed", error=str(e))
     finally:
         db.close()
 

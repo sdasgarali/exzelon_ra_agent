@@ -1,7 +1,7 @@
 """AI ICP Wizard — generates Ideal Customer Profiles from business descriptions."""
 import json
 import structlog
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = structlog.get_logger()
 
@@ -10,6 +10,8 @@ def generate_icp(
     company_desc: str,
     offering: str,
     pain_points: str,
+    db=None,
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Generate an Ideal Customer Profile using AI.
 
@@ -19,13 +21,22 @@ def generate_icp(
         company_desc: Description of the user's company
         offering: What they sell / service they provide
         pain_points: Problems they solve for customers
+        db: Session, only needed to meter credits (optional — callers without a
+            session still get a profile, just an unmetered one)
+        tenant_id: Tenant to bill
 
     Returns:
         {industries: [], job_titles: [], states: [], company_sizes: [], rationale: str}
     """
     # Try AI-powered generation
     try:
-        return _generate_with_ai(company_desc, offering, pain_points)
+        result = _generate_with_ai(company_desc, offering, pain_points)
+        # The rule-based fallback below is free — it costs us nothing to run, so
+        # billing 10 credits for it would be charging for our own outage.
+        if db is not None:
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "icp_wizard")
+        return result
     except Exception as e:
         logger.warning("AI ICP generation failed, using rule-based fallback", error=str(e))
         return _generate_rule_based(company_desc, offering, pain_points)

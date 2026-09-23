@@ -81,5 +81,9 @@ def resolve_applicant_counts(
         except Exception as e:  # never fail sourcing on cost bookkeeping
             logger.warning("Firecrawl cost tracking failed", error=str(e))
 
+        # Firecrawl bills per scrape whether or not the page yielded a count.
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "applicant_scrape", scrapes, reference_id=str(run_id or ""))
+
     logger.info("Applicant enrichment complete", scrapes=scrapes, resolved=len(results))
     return results
