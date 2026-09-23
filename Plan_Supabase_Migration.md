@@ -1,3 +1,5 @@
+> **CANCELLED 2026-09-23** — user decided not to migrate to Supabase. Prod stays on MySQL. Kept for reference only.
+
 # Plan — MySQL → Supabase (Postgres) Migration
 
 > Status: DRAFT, awaiting approval. Nothing implemented yet.

@@ -1,12 +1,13 @@
 # Plan WIP
 
-## CURRENT TASK — Migrate MySQL -> Supabase (Postgres)
-Full plan: `Plan_Supabase_Migration.md` (DRAFT, awaiting approval + 4 decisions).
-Waiting on: user creating a Supabase account, then credentials -> `backend/.env` only.
-Scoped 2026-09-17: 64 tables / 53 models / 19 enum cols; MySQL-only SQL isolated to
-main.py (114-line legacy DDL block), job_run.py (LONGTEXT), config.py (utf8mb4 URL).
-Top risk = MySQL ci-collation vs Postgres cs (mixed-case validation_status proven in data).
+## SUPABASE MIGRATION — CANCELLED 2026-09-23 (user decision: stay on MySQL)
+Do NOT migrate to Supabase/Postgres. Prod stays on MySQL on the VPS. `Plan_Supabase_Migration.md`
+is kept for reference only. The small Postgres-ready prep already on master (psycopg2-binary,
+portable JobRun LONGTEXT, DB_TYPE=postgresql URL builder) is inert with DB_TYPE=mysql.
 
+## STRIPE — DEFERRED 2026-09-23 (user: "dont setup stripe yet")
+Do not configure Stripe on prod until the user asks. Until then Upgrade / credit top-up show
+"Online payments are not configured" — expected, not a bug.
 
 ## PROD DEPLOY — DONE 2026-09-23 (master 4624c72 live; Alembic head 0004)
 Prod was at master a20b29a. deploy.sh does NOT run Alembic and takes NO backup -> manual:
@@ -17,7 +18,7 @@ Prod was at master a20b29a. deploy.sh does NOT run Alembic and takes NO backup -
 - [x] 5. health checks (api, site, login, migration logs)
 ROLLBACK: restore backups/pre-migrate-20260923-125816.sql.gz + `git checkout a20b29a` + rebuild + restart.
 Verified: all pages 200, 0 tracebacks, plans enterprise->max x3, starter->free x3.
-NEXT: user-led production testing. Stripe price ids not set on prod (checkout says not configured).
+NEXT: user-led production testing. Stripe deliberately NOT configured (deferred by user).
 
 ## ONE USER, ONE WORKSPACE — DONE 2026-09-23 (plan: `Plan_Remove_Seats_LOB.md`)
 User decision: anyone who signs up becomes a tenant under the platform and is its ONLY user;
