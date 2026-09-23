@@ -15,8 +15,8 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.plans import limits_for_tenant, get_plan, normalize_plan
-from app.db.models.tenant import Tenant, TenantPlan
+from app.core.plans import limits_for_tenant, normalize_plan
+from app.db.models.tenant import Tenant
 from app.db.models.lead import LeadDetails
 from app.db.models.contact import ContactDetails
 from app.db.models.sender_mailbox import SenderMailbox

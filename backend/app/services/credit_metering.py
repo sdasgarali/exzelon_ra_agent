@@ -27,7 +27,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.core.credit_costs import category_for, cost_for, label_for
+from app.core.credit_costs import cost_for, label_for
 from app.db.models.credit_balance import TenantCreditBalance
 from app.db.models.credit_usage import CreditUsage
 from app.db.query_helpers import tenant_filter
@@ -60,7 +60,7 @@ def plan_credit_limit(plan: Optional[str], tenant=None) -> int:
     Pass `tenant` to resolve that; without it, custom falls back to Max's number.
     """
     from app.core.config import settings
-    from app.core.plans import PLAN_MATRIX, credits_for_plan, is_custom, normalize_plan
+    from app.core.plans import PLAN_MATRIX, credits_for_plan, normalize_plan
 
     key = normalize_plan(plan)
 

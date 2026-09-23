@@ -1,5 +1,12 @@
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
+
+// The layout reads the plan (usePlanFeatures -> React Query), so it needs a client.
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
 
 // Mock the store
 const mockUser = {
@@ -28,6 +35,10 @@ jest.mock('@/lib/api', () => ({
   },
   authApi: {
     me: jest.fn().mockResolvedValue({ user_id: 1, tenant: null }),
+  },
+  // usePlanFeatures (feature-aware nav). Unmetered = super admin: every item visible.
+  billingApi: {
+    usage: jest.fn().mockResolvedValue({ metered: false, features: null, plan: null }),
   },
 }))
 
