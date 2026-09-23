@@ -8,14 +8,16 @@ main.py (114-line legacy DDL block), job_run.py (LONGTEXT), config.py (utf8mb4 U
 Top risk = MySQL ci-collation vs Postgres cs (mixed-case validation_status proven in data).
 
 
-## PROD DEPLOY — IN PROGRESS 2026-09-23 (user-authorized)
+## PROD DEPLOY — DONE 2026-09-23 (master 4624c72 live; Alembic head 0004)
 Prod was at master a20b29a. deploy.sh does NOT run Alembic and takes NO backup -> manual:
-- [ ] 1. push feature/credit-system-pricing, PR, squash-merge to master
-- [ ] 2. mysqldump exzelon_ra_agent -> /opt/exzelon-ra-agent/backups/pre-credit-system-<ts>.sql.gz
-- [ ] 3. alembic current; stamp 0001_baseline if unstamped; alembic upgrade head (0002-0004)
-- [ ] 4. git pull, pip install, npm run build, restart exzelon-api + exzelon-web
-- [ ] 5. health checks (api, site, login, migration logs)
-ROLLBACK: restore the dump + `git checkout a20b29a` + rebuild + restart.
+- [x] 1. push feature/credit-system-pricing, PR, squash-merge to master
+- [x] 2. mysqldump exzelon_ra_agent -> /opt/exzelon-ra-agent/backups/pre-credit-system-<ts>.sql.gz
+- [x] 3. alembic current; stamp 0001_baseline if unstamped; alembic upgrade head (0002-0004)
+- [x] 4. git pull, pip install, npm run build, restart exzelon-api + exzelon-web
+- [x] 5. health checks (api, site, login, migration logs)
+ROLLBACK: restore backups/pre-migrate-20260923-125816.sql.gz + `git checkout a20b29a` + rebuild + restart.
+Verified: all pages 200, 0 tracebacks, plans enterprise->max x3, starter->free x3.
+NEXT: user-led production testing. Stripe price ids not set on prod (checkout says not configured).
 
 ## ONE USER, ONE WORKSPACE — DONE 2026-09-23 (plan: `Plan_Remove_Seats_LOB.md`)
 User decision: anyone who signs up becomes a tenant under the platform and is its ONLY user;

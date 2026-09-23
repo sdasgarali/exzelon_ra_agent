@@ -92,12 +92,31 @@ Without this, `NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000/api/v1`, 
 
 ## Database Migrations
 
-Migrations are **auto-applied on app startup** via `main.py` lifespan hooks (ad-hoc `ALTER TABLE` statements). No Alembic yet.
+**Alembic is live on prod** (stamped `0001_baseline` and upgraded to `0004` on 2026-09-23).
+The legacy idempotent block in `main.py`'s lifespan still runs on startup as a safety net
+(see `deploy/MIGRATIONS.md`); every NEW schema change is an Alembic revision.
 
-After adding a new migration hook:
-1. Add the migration in `backend/app/main.py` inside the `lifespan()` function
-2. Deploy normally — the migration runs when `exzelon-api` restarts
-3. Verify: `journalctl -u exzelon-api --since "5 min ago" | grep -i migrat`
+**`deploy.sh` does NOT run Alembic and takes NO database backup.** For any release that
+adds a revision, deploy by hand in this order (the old code keeps serving until step 4,
+and it cannot read a migrated schema, so migrate and restart back-to-back):
+
+```bash
+cd /opt/exzelon-ra-agent && git pull --ff-only origin master
+cd backend && source venv/bin/activate && pip install -r requirements.txt
+cd ../frontend && npm run build
+# 1. backup  (ra_user lacks PROCESS -> --no-tablespaces)
+mysqldump --single-transaction --no-tablespaces --routines --triggers exzelon_ra_agent | gzip > /opt/exzelon-ra-agent/backups/pre-migrate-$(date +%Y%m%d-%H%M%S).sql.gz
+# 2. migrate  (DATABASE_URL from settings)
+cd ../backend && alembic upgrade head && alembic current
+# 3. restart immediately
+systemctl restart exzelon-api exzelon-web
+```
+
+Backups live in `/opt/exzelon-ra-agent/backups/` (e.g. `pre-migrate-20260923-125816.sql.gz`).
+Rollback = restore the dump, `git checkout <previous>`, rebuild, restart.
+
+Known pre-existing startup noise: `demo_seeder` logs "Failed to seed demo data" (duplicate
+`client_info` for tenant 2) on every worker start — harmless, not a deploy failure.
 
 ## Systemd Service Files
 
