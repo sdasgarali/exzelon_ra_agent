@@ -54,7 +54,8 @@ def seed_users(db):
                 password_hash=get_password_hash(user_data["password"]),
                 full_name=user_data["full_name"],
                 role=user_data["role"],
-                is_active=True
+                is_active=True,
+                is_verified=True,
             )
             db.add(user)
             print(f"Created user: {user_data['email']}")

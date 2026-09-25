@@ -3,7 +3,7 @@
 # NeuraLeads AI Agent — Self-Contained Production Deployment Script
 # =============================================================================
 # Target: Ubuntu 24.04 VPS at 187.124.74.175
-# Domain: ra.partnerwithus.tech
+# Domain: neuraleads.ai
 # App Dir: /opt/exzelon-ra-agent
 # Run As: root (on VPS) or via SSH from local machine
 #
@@ -32,7 +32,7 @@ APP_DIR="/opt/exzelon-ra-agent"
 BACKEND_DIR="${APP_DIR}/backend"
 FRONTEND_DIR="${APP_DIR}/frontend"
 VENV_DIR="${BACKEND_DIR}/venv"
-DOMAIN="ra.partnerwithus.tech"
+DOMAIN="neuraleads.ai"
 HEALTH_URL="https://${DOMAIN}/health"
 API_DOCS_URL="https://${DOMAIN}/api/docs"
 GIT_BRANCH="master"

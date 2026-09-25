@@ -729,6 +729,7 @@ def plan_usage(
     meter component.
     """
     from app.api.deps.plan_limits import RESOURCE_COUNTERS, RESOURCE_LIMITS
+    from app.core.config import settings
     from app.core.plans import (
         PLAN_MATRIX, get_plan, is_custom, limits_for_tenant, normalize_plan,
         plan_features,
@@ -798,12 +799,19 @@ def plan_usage(
             "near_limit": bool(sends.get("limit")) and sends["used"] / sends["limit"] >= 0.8,
         },
         "resources": resources,
+        # Top-up offer, from config — the UI must not hardcode a price.
+        "topup": {
+            "block_size": settings.CREDIT_TOPUP_BLOCK_SIZE,
+            "block_price_cents": settings.CREDIT_TOPUP_BLOCK_PRICE_CENTS,
+            "validity_days": settings.CREDIT_TOPUP_VALIDITY_DAYS,
+            "available": plan_key != "free",
+        },
         "breakdown": get_usage_summary(db, tenant_id, days=30).get("usage", []),
     }
 
 
 class CreditTopupRequest(BaseModel):
-    """Buy credits in blocks. Default block: 1,000 credits for $10."""
+    """Buy credits in blocks. Default block: 1,000 credits for $20 (CREDIT_TOPUP_BLOCK_*)."""
     blocks: int = Field(default=1, ge=1, le=500)
     success_url: str = Field(default="")
     cancel_url: str = Field(default="")
@@ -818,9 +826,9 @@ def buy_credit_topup(
 ):
     """Start Checkout for a credit top-up.
 
-    Top-ups are priced at the same rate as the plan allowance ($0.01/credit) — running
-    out mid-month shouldn't cost more per credit than planning ahead did. They never
-    expire and are only drawn on once the monthly allowance is spent.
+    Top-ups cost more per credit than any plan ($0.02 vs Pro's $0.0165), so they cover
+    a short month rather than replace an upgrade. Each purchase is valid for
+    CREDIT_TOPUP_VALIDITY_DAYS and is only drawn on once the monthly allowance is spent.
 
     Credits are granted by the `checkout.session.completed` webhook, never here, so a
     user who abandons Checkout is not credited.

@@ -198,8 +198,10 @@ Worst-case burn = 8,333 lookups = **$83 COGS on $299 → 72% margin.** Typical ~
 
 ### Top-ups and rollover
 
-- **Top-up: $10 per 1,000 credits**, same rate as the plan — no penalty pricing. Top-up credits
-  **never expire** and are consumed only after the monthly allowance is exhausted.
+- **Top-up: $20 per 1,000 credits** (changed 2026-09-25 from $10 — at $10 top-ups were cheaper
+  per credit than Pro and Max monthly, so Pro + top-ups undercut a Max upgrade). Each purchase is
+  **valid 12 months**, consumed only after the monthly allowance is exhausted, soonest-expiry first.
+  See `Plan_Topup_Pricing_Expiry.md`.
 - **No rollover of monthly allowance** in v1 (Free included). Rollover is the single biggest source
   of credit-accounting bugs; ship it later if churn data demands it.
 - Free tier **cannot** buy top-ups — that is the upgrade trigger.

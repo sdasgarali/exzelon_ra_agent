@@ -1475,7 +1475,7 @@ export default function DocumentationPage() {
               <strong> credits</strong>, which pay for data enrichment, validation and AI (roughly six
               credits move one contact from sourced to ready-to-send), and a separate
               <strong> send allowance</strong>. They are independent — running out of one does not
-              affect the other — and extra credits can be bought at $10 per 1,000, which never expire.
+              affect the other — and extra credits can be bought on paid plans at $20 per 1,000, valid for 12 months.
             </p>
 
             <h3>Invoicing</h3>
