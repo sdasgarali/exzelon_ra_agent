@@ -44,6 +44,20 @@ structlog.configure(
 logger = structlog.get_logger()
 
 
+def backfill_legacy_verified_users(conn) -> int:
+    """Verify users that predate email verification. Returns the number updated.
+
+    Only rows never sent a verification email qualify: a self-signup always has
+    verification_sent_at set, and verifying it here would let anyone skip email
+    verification by waiting for the next restart/deploy.
+    """
+    from sqlalchemy import text
+    return conn.execute(text(
+        "UPDATE users SET is_verified = 1 "
+        "WHERE (is_verified = 0 OR is_verified IS NULL) AND verification_sent_at IS NULL"
+    )).rowcount
+
+
 def _seed_warmup_profiles():
     import json
     from app.db.base import SessionLocal
@@ -1376,13 +1390,12 @@ async def lifespan(app: FastAPI):
             except Exception as e4:
                 logger.debug(f"User tenant assignment: {e4}")
 
-            # 5. Mark all existing users as verified
+            # 5. Mark pre-verification-era users as verified (never self-signups)
             try:
-                conn.execute(sa_text_mt(
-                    "UPDATE users SET is_verified = 1 WHERE is_verified = 0 OR is_verified IS NULL"
-                ))
+                n_verified = backfill_legacy_verified_users(conn)
                 conn.commit()
-                logger.info("Migration: marked existing users as verified")
+                if n_verified:
+                    logger.info("Migration: marked legacy users as verified", count=n_verified)
             except Exception as e5:
                 logger.debug(f"User verification backfill: {e5}")
 
