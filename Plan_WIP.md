@@ -2,6 +2,11 @@
 
 ## SESSION_CONTEXT_RETRIEVAL
 > 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
+> 2026-09-25: prod on master dcf93de, Alembic head 0005. Shipped: Resend system mail (no-reply@neuraleads.ai),
+> signup-verification bypass fix (#119), top-ups $20/1k + 12-month expiry (#120, Plan_Topup_Pricing_Expiry.md).
+> WARNING: origin/master was force-reset to 7948bec TWICE on 2026-09-25 (16:18, 17:28 UTC) by an unknown
+> source under the sdasgarali account. Before any deploy, confirm `git log origin/master` still contains
+> dcf93de; if not, do NOT deploy from master (would drop migration 0005's code + domain + verify fix).
 > 2026-09-23 session ended. Prod was on master d620771+docs
 > (credit/pricing system, one-user workspaces, plan-change billing fixes, user-delete FK fix),
 > MySQL, Alembic head 0004. Full prod Playwright run: 54 pass / 24 fail / 25 not run / 2 skipped;
