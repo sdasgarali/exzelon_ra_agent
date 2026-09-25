@@ -72,7 +72,7 @@ def _domain_to_dict(td: TrackingDomain) -> dict:
 def _derive_cname_target() -> str:
     """Derive the CNAME target from the application's configured BASE_URL.
 
-    If BASE_URL is set (e.g. https://ra.partnerwithus.tech), extracts the
+    If BASE_URL is set (e.g. https://neuraleads.ai), extracts the
     hostname. Otherwise falls back to the HOST config value.
     """
     base_url = settings.EFFECTIVE_BASE_URL

@@ -150,6 +150,7 @@ async def create_user(
         role=user_in.role,
         is_active=user_in.is_active,
         tenant_id=target_tenant_id,
+        is_verified=True,  # Admin-created users are pre-verified
     )
     db.add(user)
     db.commit()
