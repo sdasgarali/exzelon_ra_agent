@@ -33,7 +33,7 @@ Stripe is not configured yet (deferred), so nobody has been charged; prod has ze
 - [x] 5. Frontend: billing panel reads price from API; marketing/docs copy
 - [x] 6. Tests: lot FIFO, expiry, refill keeps lots, price in API, migration idempotent
 - [x] 7. Docs: data-models.md, services.md, deploy/MIGRATIONS note; full test suite + frontend build
-- [ ] 8. PR, merge, deploy (backup + `alembic upgrade head` + rebuild) — needs user deploy authorization
+- [x] 8. PR #120 merged (dcf93de) + deployed 2026-09-25 18:03 UTC: backup backups/pre-topup-lots-20260925-180106.sql.gz, alembic 0004 -> 0005 (head), frontend rebuilt, health 200, `Daily Top-up Credit Expiry` job registered.
 
 ## Acceptance
 - 1,000 top-up credits cost $20 everywhere (API, billing UI, marketing, docs).
