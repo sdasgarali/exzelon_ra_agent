@@ -183,6 +183,12 @@ systemctl restart exzelon-api exzelon-web
 
 ## Domain cutover: ra.partnerwithus.tech -> neuraleads.ai
 
+**Done 2026-09-25.** Prod env keys live in the ROOT `/opt/exzelon-ra-agent/.env` with the `PROD_`
+prefix (`PROD_BASE_URL`, `PROD_CORS_ORIGINS`); `backend/.env` holds only a few unprefixed keys.
+The DB setting `warmup_tracking_base_url` also stores the host. `MS365_OAUTH_REDIRECT_URI` intentionally
+still points at the old host until the new URI is registered in Azure (the 301 preserves the query string).
+certbot has two ACME accounts on the box: pass `--account` taken from an existing renewal conf.
+
 Emails build links from `BASE_URL` alone (`settings.EFFECTIVE_FRONTEND_URL`), so the host
 change is config-only after the code change. Steps on the VPS:
 

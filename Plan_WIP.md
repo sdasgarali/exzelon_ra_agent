@@ -1,7 +1,8 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> 2026-09-23 session ended. Prod https://ra.partnerwithus.tech is on master d620771+docs
+> 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
+> 2026-09-23 session ended. Prod was on master d620771+docs
 > (credit/pricing system, one-user workspaces, plan-change billing fixes, user-delete FK fix),
 > MySQL, Alembic head 0004. Full prod Playwright run: 54 pass / 24 fail / 25 not run / 2 skipped;
 > all 10 new pricing/one-user tests PASS. Failures = outdated tests, except ONE real bug below.
@@ -10,10 +11,16 @@
 ## DOMAIN CHANGE -> neuraleads.ai (2026-09-25, branch chore/domain-neuraleads-ai)
 User: apex neuraleads.ai, old ra.partnerwithus.tech 301-redirects, code + prod cutover.
 - [x] 1. Code: EFFECTIVE_FRONTEND_URL replaces hardcoded host in verify/reset/deal emails; configs, deploy.sh, docs, tests
-- [ ] 2. PR + merge
-- [ ] 3. BLOCKED on DNS: Cloudflare A @ and www -> 187.124.74.175 (DNS-only). Was absent on 2026-09-25.
-- [ ] 4. VPS cutover per CLAUDE_REFERENCE/deployment.md "Domain cutover" (nginx, certbot, .env, rebuild)
-- [ ] 5. User: add new redirect URIs in Azure (MS365) + Google OAuth consoles
+- [x] 2. PR #117 squash-merged (29aff66)
+- [x] 3. DNS A @ + www -> 187.124.74.175 (DNS-only) added by user
+- [x] 4. VPS cutover DONE 2026-09-25: LE cert neuraleads.ai+www (exp 2026-12-24); nginx ra-app serves
+      neuraleads.ai, www + ra.partnerwithus.tech 301 -> https://neuraleads.ai$request_uri; root .env
+      PROD_BASE_URL/PROD_CORS_ORIGINS updated; frontend .env.local rebuilt; settings.warmup_tracking_base_url
+      updated. Backups: /root/nginx-backups/ra-app.bak-20260925-160709, /root/exzelon-{root,frontend}-env.bak-20260925-160709
+- [ ] 5. USER: add https://neuraleads.ai/dashboard/mailboxes as redirect URI in the Azure (MS365) app, then
+      set MS365_OAUTH_REDIRECT_URI to it in /opt/exzelon-ra-agent/.env + restart exzelon-api.
+      Until then it deliberately stays on ra.partnerwithus.tech (301 keeps ?code= and lands on the new host).
+- [ ] 6. Later: drop https://ra.partnerwithus.tech from PROD_CORS_ORIGINS once nothing uses it.
 
 ## Immediate TODO (pickup 2026-09-24)
 - [ ] 1. PROD: daily_send_limit is 30, must be 35 (e2e settings test changed it; my DB restore was
