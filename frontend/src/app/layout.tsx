@@ -14,7 +14,7 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://ra.partnerwithus.tech'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://neuraleads.ai'),
   title: {
     default: 'NeuraLeads — AI-Powered Sales Outreach Platform',
     template: '%s | NeuraLeads',

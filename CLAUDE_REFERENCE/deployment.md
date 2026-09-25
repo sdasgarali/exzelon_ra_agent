@@ -7,7 +7,7 @@
 | Item | Value |
 |------|-------|
 | **Host** | `187.124.74.175` (Hostinger, Ubuntu 24.04, 4 vCPU, 16GB RAM, 193GB disk) |
-| **Domain** | `ra.partnerwithus.tech` |
+| **Domain** | `neuraleads.ai` (was `ra.partnerwithus.tech` — 301-redirects to it; see "Domain cutover" below) |
 | **SSL** | Let's Encrypt (auto-renews via `certbot.timer`) |
 | **SSH** | `root@187.124.74.175` (password auth — see `~/.ssh/habib-hostinger/secrets.txt`) |
 | **Linux user** | `ra-user` (runs app services) |
@@ -79,14 +79,14 @@ systemctl restart exzelon-api exzelon-web
 
 # 5. Verify
 systemctl status exzelon-api exzelon-web
-curl -s https://ra.partnerwithus.tech/health
+curl -s https://neuraleads.ai/health
 ```
 
 ## Critical: Frontend `.env.local`
 
 The frontend **requires** `/opt/exzelon-ra-agent/frontend/.env.local` with:
 ```
-NEXT_PUBLIC_API_URL=https://ra.partnerwithus.tech/api/v1
+NEXT_PUBLIC_API_URL=https://neuraleads.ai/api/v1
 ```
 Without this, `NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000/api/v1`, which works for SSR but fails for browser-side API calls. This file is **NOT in git** — the deploy script auto-creates it if missing.
 
@@ -132,7 +132,7 @@ systemctl restart exzelon-api exzelon-web
 Template in `deploy/nginx.conf` (live file: `/etc/nginx/sites-enabled/ra-app`). To update on VPS:
 ```bash
 cp /opt/exzelon-ra-agent/deploy/nginx.conf /etc/nginx/sites-available/ra-app
-sed -i 's/YOUR_DOMAIN/ra.partnerwithus.tech/g' /etc/nginx/sites-available/ra-app
+sed -i 's/YOUR_DOMAIN/neuraleads.ai/g' /etc/nginx/sites-available/ra-app
 nginx -t && systemctl reload nginx
 ```
 
@@ -180,3 +180,29 @@ git checkout <commit-hash>      # Detached HEAD at that commit
 cd frontend && npm run build
 systemctl restart exzelon-api exzelon-web
 ```
+
+## Domain cutover: ra.partnerwithus.tech -> neuraleads.ai
+
+Emails build links from `BASE_URL` alone (`settings.EFFECTIVE_FRONTEND_URL`), so the host
+change is config-only after the code change. Steps on the VPS:
+
+1. **DNS (Cloudflare, zone neuraleads.ai):** A `@` -> 187.124.74.175 and A `www` -> 187.124.74.175,
+   both **DNS-only (grey cloud)** so certbot's HTTP-01 challenge reaches nginx.
+   Check: `dig +short neuraleads.ai @1.1.1.1` returns 187.124.74.175.
+2. **Backup:** `cp /etc/nginx/sites-available/ra-app /root/nginx-backups/ra-app.bak-<ts>`, `cp backend/.env{,.bak-<ts>}`,
+   `cp frontend/.env.local{,.bak-<ts>}`.
+3. **nginx:** in the ra-app site set `server_name neuraleads.ai www.neuraleads.ai;`, then
+   `certbot --nginx -d neuraleads.ai -d www.neuraleads.ai`. Add a separate server block for
+   `ra.partnerwithus.tech` (keep its existing cert) that does `return 301 https://neuraleads.ai$request_uri;`.
+   Add a `www` -> apex 301 too. `nginx -t && systemctl reload nginx`.
+4. **backend/.env:** `BASE_URL=https://neuraleads.ai`; add `https://neuraleads.ai,https://www.neuraleads.ai`
+   to `CORS_ORIGINS` (keep the old origin until the redirect is verified); update
+   `MS365_OAUTH_REDIRECT_URI` and any Google OAuth redirect URI to the new host.
+5. **frontend/.env.local:** `NEXT_PUBLIC_API_URL=https://neuraleads.ai/api/v1` (+ `NEXT_PUBLIC_SITE_URL`
+   if set). These are baked in at build time -> `npm run build`.
+6. `systemctl restart exzelon-api exzelon-web`; check `curl -fsS https://neuraleads.ai/health`
+   and `curl -sI https://ra.partnerwithus.tech/login` (expect 301 -> neuraleads.ai/login).
+7. **External consoles (manual):** add the new redirect URIs in Azure (MS365 app) and Google Cloud
+   OAuth clients, and the new webhook URL in Stripe once Stripe is set up.
+
+Rollback: restore the three `.bak-<ts>` files, rebuild frontend, restart services, reload nginx.
