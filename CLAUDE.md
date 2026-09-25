@@ -111,7 +111,7 @@ Tests use in-memory SQLite (overridden in `tests/conftest.py`). Fixtures provide
 
 | Item | Value |
 |------|-------|
-| **URL** | `https://ra.partnerwithus.tech` |
+| **URL** | `https://neuraleads.ai` |
 | **VPS** | `187.124.74.175` (Hostinger, Ubuntu 24.04) |
 | **App dir** | `/opt/exzelon-ra-agent/` |
 | **Deploy** | `./deploy/vps_ssh.sh "bash /opt/exzelon-ra-agent/deploy/deploy.sh"` |

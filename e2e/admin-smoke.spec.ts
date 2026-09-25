@@ -164,7 +164,7 @@ test.describe('Admin Smoke Tests', () => {
 
   // ---- API Health ----
   test('API health endpoint returns healthy', async ({ request }) => {
-    const response = await request.get('https://ra.partnerwithus.tech/health')
+    const response = await request.get('https://neuraleads.ai/health')
     expect(response.ok()).toBeTruthy()
     const body = await response.json()
     expect(body.status).toBe('healthy')

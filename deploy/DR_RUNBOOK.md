@@ -1,7 +1,7 @@
 # Disaster Recovery Runbook — Exzelon RA Agent (NeuraLeads)
 
 > Owner: platform team · Last updated: 2026-08-25 (ELR-018)
-> Scope: recover the production service (`ra.partnerwithus.tech`, VPS `187.124.74.175`)
+> Scope: recover the production service (`neuraleads.ai`, VPS `187.124.74.175`)
 > after data loss, VPS failure, or a bad deploy.
 
 ## Recovery objectives
@@ -40,7 +40,7 @@ SENTRY_DSN=<dsn>                   # error tracking (ELR-017), inert if unset
 5. **Restore**: prefer the admin API/`restore_backup()` (it snapshots first). Manual fallback:
    `gunzip -c b.sql.gz | mysql --host=127.0.0.1 --user=$DB_USER $DB_NAME` (MYSQL_PWD in env).
 6. **Restart + health-check**: `systemctl restart exzelon-api exzelon-web` then
-   `curl -fsS https://ra.partnerwithus.tech/health` (expects DB-ok). Watch Sentry for new errors.
+   `curl -fsS https://neuraleads.ai/health` (expects DB-ok). Watch Sentry for new errors.
 7. **Post-restore**: confirm the lifespan idempotent migrations ran (schema up to date), verify a
    tenant login + a dashboard load, and re-point DNS if the host changed.
 

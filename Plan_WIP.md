@@ -7,6 +7,14 @@
 > all 10 new pricing/one-user tests PASS. Failures = outdated tests, except ONE real bug below.
 > Resume with the "Immediate TODO" list.
 
+## DOMAIN CHANGE -> neuraleads.ai (2026-09-25, branch chore/domain-neuraleads-ai)
+User: apex neuraleads.ai, old ra.partnerwithus.tech 301-redirects, code + prod cutover.
+- [x] 1. Code: EFFECTIVE_FRONTEND_URL replaces hardcoded host in verify/reset/deal emails; configs, deploy.sh, docs, tests
+- [ ] 2. PR + merge
+- [ ] 3. BLOCKED on DNS: Cloudflare A @ and www -> 187.124.74.175 (DNS-only). Was absent on 2026-09-25.
+- [ ] 4. VPS cutover per CLAUDE_REFERENCE/deployment.md "Domain cutover" (nginx, certbot, .env, rebuild)
+- [ ] 5. User: add new redirect URIs in Azure (MS365) + Google OAuth consoles
+
 ## Immediate TODO (pickup 2026-09-24)
 - [ ] 1. PROD: daily_send_limit is 30, must be 35 (e2e settings test changed it; my DB restore was
       blocked by the auto-mode classifier). User sets it in Settings > Business Rules, or grants a

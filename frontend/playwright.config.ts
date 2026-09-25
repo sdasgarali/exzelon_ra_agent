@@ -11,7 +11,7 @@ export default defineConfig({
     ['json', { outputFile: 'e2e/test-results.json' }],
   ],
   use: {
-    baseURL: 'https://ra.partnerwithus.tech',
+    baseURL: 'https://neuraleads.ai',
     screenshot: 'on',
     trace: 'off',
     video: 'off',

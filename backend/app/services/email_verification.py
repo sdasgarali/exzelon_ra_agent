@@ -54,11 +54,8 @@ def send_verification_email(user: User, db: Session) -> bool:
     user.verification_sent_at = datetime.utcnow()
     db.commit()
 
-    base_url = settings.EFFECTIVE_BASE_URL
     # Use frontend URL for verification link (not API)
-    frontend_url = base_url.replace("/api/v1", "").replace(":8000", ":3000")
-    if "ra.partnerwithus.tech" in base_url:
-        frontend_url = "https://ra.partnerwithus.tech"
+    frontend_url = settings.EFFECTIVE_FRONTEND_URL
     verify_url = f"{frontend_url}/verify?token={token}"
 
     html_body = f"""
