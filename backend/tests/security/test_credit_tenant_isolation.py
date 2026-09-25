@@ -175,6 +175,25 @@ def test_usage_endpoint_is_scoped_to_the_caller(client, db_session, two_billed_t
     assert body["breakdown"] == []
 
 
+def test_usage_endpoint_reports_topup_offer_and_only_own_expiry(
+    client, db_session, two_billed_tenants
+):
+    """The billing UI reads the top-up price from here — it must not hardcode one — and
+    one tenant's expiring top-up must never surface on another tenant's screen."""
+    a, b = two_billed_tenants
+    grant_topup(db_session, a.tenant_id, 1_000, reference_id="cs_expiry_iso")
+    db_session.commit()
+
+    r = client.get("/api/v1/billing/usage",
+                   headers=_admin_headers(db_session, b, "iso-offer-b@test.com"))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["topup"]["block_size"] == 1000
+    assert body["topup"]["block_price_cents"] == 2000
+    assert body["topup"]["validity_days"] == 365
+    assert body["credits"]["topup_next_expiry"] is None
+
+
 def test_a_tenant_cannot_spend_via_another_tenants_header(
     client, db_session, two_billed_tenants
 ):

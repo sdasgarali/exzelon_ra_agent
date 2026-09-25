@@ -216,10 +216,14 @@ class Settings(BaseSettings):
     # Annual (billed yearly at the discounted per-month rate).
     STRIPE_PRICE_PRO_ANNUAL: str = ""
     STRIPE_PRICE_MAX_ANNUAL: str = ""
-    # One-time credit top-up: $10 per 1,000 credits, never expires.
+    # One-time credit top-up: $20 per 1,000 credits, valid 12 months from purchase.
+    # Deliberately dearer per credit than every plan (Pro monthly is $16.50/1k) so a
+    # top-up is a stopgap, never a cheaper substitute for upgrading. The Stripe price
+    # behind STRIPE_PRICE_CREDIT_TOPUP must match CREDIT_TOPUP_BLOCK_PRICE_CENTS.
     STRIPE_PRICE_CREDIT_TOPUP: str = ""
     CREDIT_TOPUP_BLOCK_SIZE: int = 1000
-    CREDIT_TOPUP_BLOCK_PRICE_CENTS: int = 1000
+    CREDIT_TOPUP_BLOCK_PRICE_CENTS: int = 2000
+    CREDIT_TOPUP_VALIDITY_DAYS: int = 365
     BILLING_COMPANY_NAME: str = ""
     BILLING_COMPANY_ADDRESS: str = ""
     BILLING_COMPANY_LOGO_PATH: str = ""

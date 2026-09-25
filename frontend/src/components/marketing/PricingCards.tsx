@@ -229,7 +229,7 @@ export default function PricingCards() {
           Send limits assume the 30 emails per mailbox per day that keeps your domain
           healthy — they are what you can actually send, not a headline that needs a
           hundred inboxes bought separately. Credits cover data and AI; extra credits are
-          $10 per 1,000 and never expire.
+          $20 per 1,000 on paid plans, valid for 12 months.
         </p>
       </ScrollReveal>
 
