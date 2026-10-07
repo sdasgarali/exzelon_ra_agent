@@ -14,6 +14,23 @@ from app.schemas.validation import ValidationResult, ValidationBulkRequest
 router = APIRouter(prefix="/validation", tags=["Email Validation"])
 
 
+def _scope_results(query, db: Session, tenant_id: Optional[int]):
+    """Limit an EmailValidationResult query to emails of ``tenant_id``'s contacts.
+
+    ``email_validation_results`` is a global cache with no tenant_id column, so a
+    tenant may only see results for addresses it holds as contacts (matched on
+    lower(email); results are stored lower-cased). A super admin with no tenant
+    selected (``tenant_id is None``) keeps the global view.
+    """
+    if tenant_id is None:
+        return query
+    tenant_emails = (
+        db.query(func.lower(ContactDetails.email))
+        .filter(ContactDetails.tenant_id == tenant_id)
+    )
+    return query.filter(EmailValidationResult.email.in_(tenant_emails))
+
+
 @router.get("/results", response_model=List[ValidationResult])
 async def list_validation_results(
     skip: int = Query(0, ge=0),
@@ -24,8 +41,8 @@ async def list_validation_results(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """List email validation results."""
-    query = db.query(EmailValidationResult)
+    """List email validation results (the caller's tenant's contacts only)."""
+    query = _scope_results(db.query(EmailValidationResult), db, tenant_id)
 
     if status_filter:
         query = query.filter(EmailValidationResult.status == status_filter)
@@ -43,10 +60,14 @@ async def get_validation_result(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """Get validation result for a specific email."""
-    result = db.query(EmailValidationResult).filter(
-        EmailValidationResult.email == email.lower()
-    ).order_by(EmailValidationResult.validated_at.desc()).first()
+    """Get validation result for a specific email (404 unless it is one of the
+    caller's tenant's contacts)."""
+    query = db.query(EmailValidationResult).filter(
+        EmailValidationResult.email == email.strip().lower()
+    )
+    result = _scope_results(query, db, tenant_id).order_by(
+        EmailValidationResult.validated_at.desc()
+    ).first()
 
     if not result:
         raise HTTPException(
@@ -68,12 +89,14 @@ async def validate_bulk(
     """Run bulk email validation (async)."""
     from app.services.pipelines.email_validation import run_email_validation_pipeline
 
-    # Start validation in background
+    # Start validation in background — under the caller's tenant (JobRun attribution,
+    # credit metering, and only this tenant's contacts get their status updated).
     background_tasks.add_task(
         run_email_validation_pipeline,
         emails=[str(e) for e in request.emails],
         provider=request.provider,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -108,7 +131,8 @@ async def validate_pending_contacts(
         run_email_validation_pipeline,
         emails=emails,
         provider=None,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -123,8 +147,8 @@ async def get_validation_stats(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """Get validation statistics summary."""
-    base = db.query(EmailValidationResult)
+    """Get validation statistics summary (the caller's tenant's contacts only)."""
+    base = _scope_results(db.query(EmailValidationResult), db, tenant_id)
     total = base.count()
 
     by_status = base.with_entities(
