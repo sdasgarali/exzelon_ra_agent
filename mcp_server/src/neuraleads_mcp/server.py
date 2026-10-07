@@ -14,25 +14,33 @@ from neuraleads_mcp.client import NeuraLeadsClient
 from neuraleads_mcp.config import Settings
 from neuraleads_mcp.runtime import Runtime
 
-TOOL_MODULES = ("account", "leads", "contacts", "mailboxes", "campaigns", "inbox", "reports")
+TOOL_MODULES = ("account", "leads", "contacts", "data", "mailboxes", "campaigns", "content", "outreach",
+                "inbox", "reports")
 
 INSTRUCTIONS = """\
 NeuraLeads is a cold-outreach platform. The pipeline is:
-1. Lead sourcing: job postings at target companies become leads (run_lead_sourcing, search_leads).
+1. Lead sourcing: job postings at target companies become leads (run_lead_sourcing, search_leads,
+   create_lead, import_google_sheet).
 2. Contact enrichment: decision-maker contacts are found for each lead (run_contact_enrichment).
 3. Email validation: only contacts whose email is 'valid' can be emailed (validate_contact_emails).
-4. Outreach: campaigns send multi-step email sequences from warmed-up sender mailboxes.
-5. Inbox: replies land in a unified inbox (list_inbox_threads, send_inbox_reply).
+4. Outreach: campaigns send multi-step email sequences from warmed-up sender mailboxes. Content
+   lives in email templates (create_email_template) and the review queue of personalised drafts
+   (list_email_drafts). send_lead_outreach emails a lead's contacts directly, outside campaigns.
+5. Inbox: replies land in a unified inbox (list_inbox_threads, send_inbox_reply, reply macros).
 
 Rules the platform enforces (you cannot override them): a daily send limit per mailbox, a cooldown
-between emails to the same contact, a cap on contacts per company per job, excluded companies, and
-valid-email-only outreach. Paid actions spend workspace credits; call get_credit_balance first when
-planning a large run.
+between emails to the same contact, a cap on contacts per company per job, excluded companies
+(list_company_exclusions), unsubscribes, and valid-email-only outreach. Paid actions spend workspace
+credits; call get_credit_balance first when planning a large run.
 
-Tools that send email, launch or change campaigns, or cost credits return
-status='confirmation_required' unless called with confirm=true. Always show the user what will
-happen and get their agreement before repeating the call with confirm=true. Never set confirm=true
-on your own initiative.
+Tools that send email, launch or change campaigns, change mailbox status, cost credits or delete
+data return status='confirmation_required' unless called with confirm=true. Always show the user
+what will happen and get their agreement before repeating the call with confirm=true. Never set
+confirm=true on your own initiative. Deletes also need an API key with 'admin' scope.
+Passwords and OAuth tokens never pass through these tools: mailboxes are connected in the web app
+(mailbox_oauth_link).
+whoami shows which workspace you act in. Super-admin keys pick one with list_workspaces and the
+X-Tenant-ID header (or NEURALEADS_TENANT_ID locally).
 List tools are paginated; ask for more pages rather than huge limits.
 """
 
@@ -91,8 +99,9 @@ def _register_prompts(mcp: MCPServer) -> None:
         return ("Check the health of my sender mailboxes. Use get_warmup_overview, "
                 "report_mailbox_health (sorted by bounce_count), list_warmup_alerts (unread_only=true) "
                 "and get_deliverability_summary. List mailboxes with failed connections, health below 70, "
-                "bounce rate above 3%, blacklistings or DNS problems, and propose a fix for each. "
-                "Ask me before pausing any mailbox or running checks.")
+                "bounce rate above 3%, blacklistings or DNS problems, and propose a fix for each "
+                "(e.g. set_mailbox_status to pause, start_warmup_recovery, or reconnecting via "
+                "mailbox_oauth_link). Ask me before pausing any mailbox, starting recovery or running checks.")
 
     @mcp.prompt(title="Launch a campaign for leads")
     def launch_campaign_for_leads(target: str = "my newest leads with valid contacts") -> str:
@@ -101,5 +110,19 @@ def _register_prompts(mcp: MCPServer) -> None:
                 "1. Find suitable leads with list_campaign_ready_leads.\n"
                 "2. Check credits with get_credit_balance and sending capacity with get_mailbox_stats.\n"
                 "3. Draft the campaign with create_campaign_from_leads (it returns a preview first).\n"
-                "4. Show me the sequence steps (get_campaign) and suggest subject lines.\n"
+                "4. Show me the sequence steps (get_campaign) and suggest subject lines; spam-check each "
+                "step with check_spam_with_suggestions and offer fixes.\n"
                 "5. Only after I approve, activate it with activate_campaign and confirm=true.")
+
+    @mcp.prompt(title="Content studio")
+    def content_studio(offer: str = "our staffing services", audience: str = "HR managers at mid-size companies") -> str:
+        """Draft a 3-step email sequence, spam-check it and save it as templates."""
+        return (f"Write a 3-step cold email sequence selling {offer} to {audience}.\n"
+                "1. Draft it yourself, or with generate_email_sequence (num_steps=3) — that one costs "
+                "credits, so ask me first. Keep each email under 120 words, one clear ask, and use merge "
+                "fields {{contact_first_name}}, {{company_name}}, {{job_title}} and {{sender_first_name}}.\n"
+                "2. Run check_spam_with_suggestions on every step; rewrite until each grades A or B and "
+                "show me the scores.\n"
+                "3. After I approve the copy, save step 1 with create_email_template (goal=cold_outreach) "
+                "and steps 2–3 with goal=follow_up, then preview each with preview_email_template.\n"
+                "4. Ask before making any of them active (activate_email_template). Send nothing.")

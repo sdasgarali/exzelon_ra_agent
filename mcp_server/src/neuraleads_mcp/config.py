@@ -31,6 +31,14 @@ def _get(name: str, default: Optional[str] = None) -> Optional[str]:
     return value if value not in (None, "") else default
 
 
+def parse_workspace_id(value: Optional[str]) -> Optional[int]:
+    """A positive integer workspace (tenant) id, or None if ``value`` isn't one."""
+    text = (value or "").strip()
+    if not text.isdigit() or len(text) > 9 or int(text) < 1:
+        return None
+    return int(text)
+
+
 def _bool(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -48,6 +56,9 @@ class Settings:
     # Host headers the HTTP transport accepts (DNS-rebinding protection).
     allowed_hosts: tuple = field(default_factory=lambda: ("127.0.0.1:*", "localhost:*"))
     log_level: str = "INFO"
+    # stdio mode: default workspace (sent as X-Tenant-ID) for super-admin keys. Hosted mode
+    # ignores it — each request may carry its own X-Tenant-ID header.
+    tenant_id: Optional[int] = None
 
     @classmethod
     def from_env(cls, env_file: Optional[str] = None) -> "Settings":
@@ -67,6 +78,13 @@ class Settings:
         except ValueError as exc:
             raise ConfigError(f"Invalid numeric setting: {exc}") from exc
 
+        tenant_raw = _get("NEURALEADS_TENANT_ID")
+        tenant_id = None
+        if tenant_raw is not None:
+            tenant_id = parse_workspace_id(tenant_raw)
+            if tenant_id is None:
+                raise ConfigError("NEURALEADS_TENANT_ID must be a positive workspace id")
+
         hosts_raw = _get("MCP_ALLOWED_HOSTS")
         hosts = tuple(h.strip() for h in hosts_raw.split(",") if h.strip()) if hosts_raw else cls.allowed_hosts_default()
 
@@ -80,6 +98,7 @@ class Settings:
             http_port=port,
             allowed_hosts=hosts,
             log_level=(_get("MCP_LOG_LEVEL", "INFO") or "INFO").upper(),
+            tenant_id=tenant_id,
         )
 
     @staticmethod

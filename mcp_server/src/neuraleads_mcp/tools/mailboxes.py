@@ -9,9 +9,11 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from neuraleads_mcp.runtime import (
-    EXTERNAL, READ, WRITE, WRITE_IDEMPOTENT, Runtime, confirmation_required, pick, pick_list,
+    DESTRUCTIVE, EXTERNAL, READ, WRITE, WRITE_IDEMPOTENT, Runtime, compact, confirmation_required, pick,
+    pick_list,
 )
 
 MAILBOX_FIELDS = (
@@ -21,6 +23,16 @@ MAILBOX_FIELDS = (
     "warmup_days_completed", "outreach_role_name", "last_sent_at",
 )
 WarmupStatus = Literal["warming_up", "cold_ready", "active", "paused", "inactive", "blacklisted"]
+
+
+def _connect_instructions(rt: Runtime, auth_method: str, provider: Optional[str]) -> str:
+    url = f"{rt.app_url}/dashboard/mailboxes"
+    if auth_method == "password" or provider in ("smtp", "other"):
+        how = "open the mailbox's Edit dialog and enter its SMTP/IMAP password (or app password)"
+    else:
+        how = "click 'Connect with Microsoft' or 'Connect with Google' on the mailbox and sign in"
+    return (f"Open {url}, {how}, then run test_mailbox_connection and set_mailbox_status "
+            "(warming_up) here. Credentials are entered only in the web app.")
 
 
 def register(mcp: MCPServer, rt: Runtime) -> None:
@@ -103,6 +115,74 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
             if daily_send_limit is not None and not (1 <= daily_send_limit <= 500):
                 return {"status": "rejected", "message": "daily_send_limit must be between 1 and 500."}
             return pick(await rt.put(ctx, f"/mailboxes/{mailbox_id}", json=body), MAILBOX_FIELDS)
+
+        # ── mailbox setup (never handles passwords or OAuth tokens) ─────
+        @mcp.tool(annotations=WRITE)
+        async def create_mailbox(
+            ctx: Context, email: str, provider: Literal["microsoft_365", "gmail", "smtp", "other"] = "microsoft_365",
+            auth_method: Literal["oauth2", "password"] = "oauth2",
+            display_name: Optional[str] = None, sender_first_name: Optional[str] = None,
+            sender_last_name: Optional[str] = None, daily_send_limit: int = 30,
+            smtp_host: Optional[str] = None, smtp_port: int = 587,
+            imap_host: Optional[str] = None, imap_port: int = 993, notes: Optional[str] = None,
+        ) -> dict:
+            """Register a sender mailbox WITHOUT credentials. It is created inactive and cannot send
+            until someone connects it in the NeuraLeads web app (Microsoft/Google sign-in, or the
+            password for SMTP). Passwords and tokens never pass through this connector. Microsoft 365
+            and Gmail server settings are filled in automatically. Needs a workspace admin; counts
+            towards the plan's mailbox limit."""
+            if not (1 <= daily_send_limit <= 500):
+                return {"status": "rejected", "message": "daily_send_limit must be between 1 and 500."}
+            if provider in ("smtp", "other") and not (smtp_host and imap_host):
+                raise ToolError("SMTP/other mailboxes need smtp_host and imap_host.")
+            body = compact({
+                "email": email, "provider": provider, "auth_method": auth_method, "display_name": display_name,
+                "sender_first_name": sender_first_name, "sender_last_name": sender_last_name,
+                "daily_send_limit": daily_send_limit, "smtp_host": smtp_host, "smtp_port": smtp_port,
+                "imap_host": imap_host, "imap_port": imap_port, "notes": notes,
+                "warmup_status": "inactive", "is_active": False})
+            mb = pick(await rt.post(ctx, "/mailboxes", json=body), MAILBOX_FIELDS + ("auth_method",))
+            mb["next_step"] = _connect_instructions(rt, auth_method, provider)
+            return mb
+
+        @mcp.tool(annotations=DESTRUCTIVE)
+        async def archive_mailbox(ctx: Context, mailbox_id: int, confirm: bool = False) -> dict:
+            """Archive a mailbox: it stops sending, is removed from campaign rotation and hidden from
+            lists. Only a super admin can restore it. Needs an admin-scoped key. Requires confirm=true."""
+            data = await rt.get(ctx, f"/mailboxes/{int(mailbox_id)}/detail")
+            mb = data.get("mailbox") if isinstance(data, dict) else None
+            mb = mb if isinstance(mb, dict) else {}
+            if not confirm:
+                campaigns = data.get("campaigns") if isinstance(data, dict) else None
+                return confirmation_required("archive_mailbox", {
+                    "mailbox": mb.get("email"), "warmup_status": mb.get("warmup_status"),
+                    "campaigns_using_it": [pick(c, ("campaign_id", "name", "status")) for c in campaigns or []][:20],
+                    "note": "Only a super admin can restore an archived mailbox."})
+            return await rt.delete(ctx, f"/mailboxes/{int(mailbox_id)}")
+
+        @mcp.tool(annotations=WRITE)
+        async def restore_mailbox(ctx: Context, mailbox_id: int, confirm: bool = False) -> dict:
+            """Restore an archived mailbox; it becomes active and can send again. Super admins only.
+            Requires confirm=true."""
+            mb = await owned_mailbox(ctx, mailbox_id)
+            if not confirm:
+                return confirmation_required("restore_mailbox", {
+                    "mailbox": mb.get("email"), "warmup_status": mb.get("warmup_status"),
+                    "note": "The mailbox is re-activated and may start sending in active campaigns."})
+            return await rt.post(ctx, f"/mailboxes/{int(mailbox_id)}/restore", errors={
+                403: "Restoring an archived mailbox is limited to super admins"})
+
+    @mcp.tool(annotations=READ)
+    async def mailbox_oauth_link(ctx: Context, mailbox_id: Optional[int] = None) -> dict:
+        """Where and how to connect (or reconnect) a mailbox with Microsoft 365 / Google sign-in or
+        a password. Connecting happens in the NeuraLeads web app, never through this connector."""
+        out = {"url": f"{rt.app_url}/dashboard/mailboxes",
+               "instructions": _connect_instructions(rt, "oauth2", None)}
+        if mailbox_id is not None:
+            mb = await owned_mailbox(ctx, mailbox_id)
+            out["mailbox"] = pick(mb, ("mailbox_id", "email", "provider", "auth_method", "connection_status",
+                                       "is_active", "warmup_status"))
+        return out
 
     # ── warmup ──────────────────────────────────────────────────────────
     @mcp.tool(annotations=READ)
