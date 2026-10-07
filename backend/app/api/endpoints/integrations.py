@@ -61,7 +61,8 @@ def create_api_key(
     """Create a new API key. The full key is returned only once."""
     raw_key = f"exz_{secrets.token_hex(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    key_prefix = raw_key[:12]
+    # Must fit api_keys.key_prefix (VARCHAR(8)); MySQL rejects longer values (SQLite does not).
+    key_prefix = raw_key[:ApiKey.__table__.c.key_prefix.type.length]
 
     api_key = ApiKey(
         name=data.name,

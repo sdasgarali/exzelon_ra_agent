@@ -20,6 +20,9 @@ def test_create_returns_key_once_and_lists_expiry(client, auth_headers):
     body = _create_key(client, auth_headers, ["read"], expires_in_days=30)
     assert body["key"].startswith("exz_")
     assert body["expires_at"] is not None
+    # Regression: the prefix was 12 chars for an 8-char column, so every create 500'd on MySQL.
+    assert len(body["key_prefix"]) <= ApiKey.__table__.c.key_prefix.type.length
+    assert body["key"].startswith(body["key_prefix"])
     listed = client.get("/api/v1/integrations/api-keys", headers=auth_headers).json()
     row = next(k for k in listed if k["key_id"] == body["key_id"])
     assert "key" not in row and row["expires_at"] == body["expires_at"]
