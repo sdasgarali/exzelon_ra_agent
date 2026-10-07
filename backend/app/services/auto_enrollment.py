@@ -48,6 +48,11 @@ def find_matching_contacts(
 
     query = db.query(ContactDetails.contact_id)
 
+    # Tenant isolation: only the campaign's own tenant's contacts are eligible.
+    # Without this, foreign-tenant matches used up the per-run limit (and were
+    # then rejected by enroll_contacts), starving the campaign of real matches.
+    query = query.filter(ContactDetails.tenant_id == campaign.tenant_id)
+
     # Must be active outreach status
     query = query.filter(ContactDetails.outreach_status == OutreachStatus.ACTIVE)
 
@@ -98,7 +103,8 @@ def find_matching_contacts(
         if keyword_filters:
             query = query.join(
                 LeadDetails,
-                LeadDetails.lead_id == ContactDetails.lead_id,
+                (LeadDetails.lead_id == ContactDetails.lead_id)
+                & (LeadDetails.tenant_id == campaign.tenant_id),
                 isouter=True,
             )
             query = query.filter(or_(*keyword_filters))
@@ -203,6 +209,9 @@ def preview_enrollment_matches(
 
     query = db.query(func.count(ContactDetails.contact_id))
 
+    # Tenant isolation: count only the campaign tenant's contacts.
+    query = query.filter(ContactDetails.tenant_id == campaign.tenant_id)
+
     # Must be active outreach status
     query = query.filter(ContactDetails.outreach_status == OutreachStatus.ACTIVE)
 
@@ -252,7 +261,8 @@ def preview_enrollment_matches(
         if keyword_filters:
             query = query.join(
                 LeadDetails,
-                LeadDetails.lead_id == ContactDetails.lead_id,
+                (LeadDetails.lead_id == ContactDetails.lead_id)
+                & (LeadDetails.tenant_id == campaign.tenant_id),
                 isouter=True,
             )
             query = query.filter(or_(*keyword_filters))

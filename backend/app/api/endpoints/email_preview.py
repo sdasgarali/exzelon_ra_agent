@@ -214,6 +214,13 @@ def update_draft(
     if data.body_text is not None:
         draft.body_text = data.body_text
     if data.mailbox_id is not None:
+        # The sending mailbox must belong to the draft's own tenant.
+        owned = db.query(SenderMailbox.mailbox_id).filter(
+            SenderMailbox.mailbox_id == data.mailbox_id,
+            SenderMailbox.tenant_id == draft.tenant_id,
+        ).first()
+        if not owned:
+            raise HTTPException(400, "Mailbox not found")
         draft.mailbox_id = data.mailbox_id
 
     # Re-run spam check on content changes
@@ -535,10 +542,12 @@ def preview_personalization(
         if cc_row and cc_row.lead_id:
             lead = db.query(LeadDetails).filter(
                 LeadDetails.lead_id == cc_row.lead_id,
+                LeadDetails.tenant_id == campaign.tenant_id,
             ).first()
         if not lead and contact.lead_id:
             lead = db.query(LeadDetails).filter(
                 LeadDetails.lead_id == contact.lead_id,
+                LeadDetails.tenant_id == campaign.tenant_id,
             ).first()
 
         # Process spintax

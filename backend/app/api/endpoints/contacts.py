@@ -573,6 +573,32 @@ async def get_contact(
     return _enrich_contact_with_lead_ids(db, contact)
 
 
+def _require_leads_in_tenant(db: Session, lead_ids, tenant_id: int) -> None:
+    """Reject (400) lead ids that don't exist in ``tenant_id``.
+
+    Without this a caller could link a contact to another tenant's lead (or a
+    non-existent one) just by passing its id. Foreign and missing ids get the same
+    message so the response doesn't reveal which ids exist in other tenants.
+    """
+    from app.db.models.lead import LeadDetails
+
+    wanted = {int(i) for i in lead_ids if i is not None}
+    if not wanted:
+        return
+    found = {
+        row[0] for row in db.query(LeadDetails.lead_id).filter(
+            LeadDetails.lead_id.in_(wanted),
+            LeadDetails.tenant_id == tenant_id,
+        ).all()
+    }
+    missing = sorted(wanted - found)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Lead(s) not found: {missing}",
+        )
+
+
 @router.post("", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact(
     contact_in: ContactCreate,
@@ -594,10 +620,14 @@ async def create_contact(
             detail="Contact with this email already exists"
         )
 
-    lead_ids = contact_in.lead_ids
+    write_tenant = ensure_tenant(tenant_id)
+    lead_ids = list(dict.fromkeys(contact_in.lead_ids or []))
+    _require_leads_in_tenant(
+        db, lead_ids + ([contact_in.lead_id] if contact_in.lead_id is not None else []), write_tenant,
+    )
     contact_data = contact_in.model_dump(exclude={"lead_ids"})
     contact = ContactDetails(**contact_data)
-    contact.tenant_id = ensure_tenant(tenant_id)
+    contact.tenant_id = write_tenant
 
     # Auto-resolve timezone: prefer contact's own state, fall back to client's timezone
     if contact.location_state:
@@ -643,6 +673,21 @@ async def update_contact(
         )
 
     update_data = contact_in.model_dump(exclude_unset=True)
+
+    # A lead link must stay inside the contact's own tenant.
+    if update_data.get("lead_id") is not None:
+        _require_leads_in_tenant(db, [update_data["lead_id"]], contact.tenant_id)
+
+    # A new address hasn't been verified: clear validation_status unless the same
+    # request sets it explicitly (manual override stays possible, as in bulk update).
+    new_email = update_data.get("email")
+    if (
+        new_email is not None
+        and "validation_status" not in update_data
+        and (contact.email or "").strip().lower() != str(new_email).strip().lower()
+    ):
+        update_data["validation_status"] = None
+
     for field, value in update_data.items():
         setattr(contact, field, value)
 

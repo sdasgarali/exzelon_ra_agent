@@ -2987,10 +2987,11 @@ async def run_outreach_for_lead(
     lead_id: int,
     dry_run: bool = Query(True),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Trigger outreach for contacts of a specific lead."""
+    """Trigger outreach for contacts of a specific lead. Admin/BDM only
+    (same gate as ``/bulk/outreach`` — recruiters must not trigger sends)."""
     outreach_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
     if tenant_id is not None:
         outreach_q = outreach_q.filter(LeadDetails.tenant_id == tenant_id)
