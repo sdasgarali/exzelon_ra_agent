@@ -3,8 +3,12 @@
 ## SESSION_CONTEXT_RETRIEVAL
 > 2026-10-07: MCP connector built on branch feature/mcp-connector (Plan_MCP_Connector.md, slices 1-5 done):
 > API-key scopes enforced, Settings "API Keys & MCP" tab, mcp_server/ package (82 tools, stdio + hosted HTTP).
-> NEXT: PR + merge; deploy hosted /mcp (needs VPS go-ahead; port 8010 must be checked free);
-> then fix the backend tenant-scoping gaps listed in CLAUDE_REFERENCE/mcp-connector.md.
+> DONE 2026-10-07: PR #122 merged (21ed0d5) and deployed; https://neuraleads.ai/mcp live (neuraleads-mcp, :8010).
+> origin/master had been force-reset to 7948bec a 3rd time (2026-09-25 18:38 UTC) — restored by fast-forward.
+> NEXT: (1) USER: find what force-pushes master (resets within ~30 min of merges, as sdasgarali) and add a
+> no-bypass "block force-push" ruleset (ruleset API returned 500 for me; changing it also needs user permission).
+> (2) fix backend tenant-scoping gaps in CLAUDE_REFERENCE/mcp-connector.md. (3) startup "Failed to seed demo
+> data" duplicate 'TechCorp Solutions' for tenant 2 on every API start (pre-existing, harmless, noisy).
 > 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
 > 2026-09-25: prod on master dcf93de, Alembic head 0005. Shipped: Resend system mail (no-reply@neuraleads.ai),
 > signup-verification bypass fix (#119), top-ups $20/1k + 12-month expiry (#120, Plan_Topup_Pricing_Expiry.md).

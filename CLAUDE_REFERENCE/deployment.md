@@ -145,7 +145,7 @@ server-level `add_header`s, the 5 security headers are re-declared inside `locat
 `ra-app.bak` there causes `duplicate upstream` and `nginx -t` fails. Keep backups in
 `/root/nginx-backups/`.
 
-## MCP connector (hosted `/mcp`) — NOT YET DEPLOYED (2026-10-07)
+## MCP connector (hosted `/mcp`) — LIVE since 2026-10-07 (master 21ed0d5)
 
 Optional service for AI tools; see `CLAUDE_REFERENCE/mcp-connector.md`.
 
@@ -160,7 +160,12 @@ Optional service for AI tools; see `CLAUDE_REFERENCE/mcp-connector.md`.
 | Logs | `journalctl -u neuraleads-mcp -f` |
 | Smoke test | `curl -s -X POST https://neuraleads.ai/mcp -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` |
 
-After the first deploy: add 8010 to the global VPS port table (`~/.claude/CLAUDE.md`).
+Installed 2026-10-07: venv + `.env` created by the script; nginx include added before `location /api/` in
+`/etc/nginx/sites-enabled/ra-app` (backup `/root/nginx-backups/ra-app.bak-20261007-152343`). Port 8010 is in
+the global VPS port table. Rollback: `systemctl disable --now neuraleads-mcp`, restore the nginx backup, reload.
+
+Note: `deploy.sh` health check can report 502 for ~15s after restart while the 4 uvicorn workers start;
+re-check `/health` before treating it as a failure.
 
 ## Viewing Logs
 
