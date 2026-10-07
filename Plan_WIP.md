@@ -1,6 +1,19 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
+> PICKUP 2026-10-08 (session ended 2026-10-07 ~19:00 UTC). Prod 138fb40 + docs, all services up.
+> Ratings given to user: launch readiness 62/100, bug-free 65/100. Agreed next steps, in order:
+>  1. Diagnose 454/503 mailboxes with connection_status=failed (read-only first), fix creds/OAuth;
+>     also "OAuth token refresh failed" in API logs. Then a small controlled send to prove deliverability.
+>  2. Verify the 02:00 UTC daily backup ran (first since 2026-08-12); check 03:00 tenant cleanup and
+>     04:30 retention purge results (6 empty Free tenants deactivated, 73 archived leads + 1 contact purged).
+>  3. Rebuild campaign 44 from fresh leads (paused; stale July leads, 7 test contacts, Pinnacle 14 > cap 5).
+>  4. Stripe (only when user says so), stale Playwright suite, Deals board 63-column bug, deploy.sh
+>     (wait for workers ~15s before health check + auto backup), find the master force-pusher.
+>  Open decisions: WarmupProfile/warmup config global; AI rewrite/spam suggestions not credit-metered.
+>  LOST LOCAL CHANGES (my error, git reset --hard on 2026-10-07): uncommitted edits to
+>  frontend/e2e/pricing-credits.spec.ts and frontend/next.config.js are gone; recover from VS Code
+>  Local History if needed. Never hard-reset with uncommitted work present.
 > 2026-10-07: MCP connector built on branch feature/mcp-connector (Plan_MCP_Connector.md, slices 1-5 done):
 > API-key scopes enforced, Settings "API Keys & MCP" tab, mcp_server/ package (82 tools, stdio + hosted HTTP).
 > DONE 2026-10-07: PR #122 merged (21ed0d5) and deployed; https://neuraleads.ai/mcp live (neuraleads-mcp, :8010).
