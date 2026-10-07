@@ -387,7 +387,18 @@ def send_reply(
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Send a reply in a thread."""
+    """Send a reply in a thread.
+
+    Refused (400) BEFORE anything is sent when: no tenant is selected (super admin),
+    the recipient is suppressed, the contact is unsubscribed/inactive, or the thread
+    is marked do-not-contact. Uses the unified send gate with ``is_reply=True``
+    (skips cooldown / fatigue / quota, keeps suppression and status checks).
+    """
+    # Resolve the tenant first: the sent message must be recorded under one, and a
+    # super admin without a selected tenant used to get this 400 only AFTER the
+    # email had already gone out.
+    reply_tenant_id = ensure_tenant(tenant_id)
+
     # Get thread context
     last_received_query = db.query(InboxMessage).filter(
         InboxMessage.thread_id == data.thread_id,
@@ -422,6 +433,15 @@ def send_reply(
     mailbox = mailbox_query.first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
+    if not mailbox.is_active or mailbox.connection_status == "failed" or mailbox.is_blacklisted:
+        raise HTTPException(status_code=400, detail="This mailbox can't send right now (inactive, failed "
+                            "connection or blacklisted). Choose another mailbox.")
+    if (mailbox.emails_sent_today or 0) >= (mailbox.daily_send_limit or 0):
+        raise HTTPException(status_code=400, detail="This mailbox has reached its daily send limit. "
+                            "Choose another mailbox.")
+
+    _check_reply_allowed(db, reply_tenant_id, data.thread_id, to_email,
+                         last_received.contact_id if last_received else None)
 
     # Send via SMTP
     from app.services.pipelines.outreach import send_outreach_email
@@ -453,12 +473,85 @@ def send_reply(
         in_reply_to=last_received.raw_message_id if last_received else None,
         received_at=datetime.utcnow(),
         is_read=True,
-        tenant_id=ensure_tenant(tenant_id),
+        tenant_id=reply_tenant_id,
     )
     db.add(sent_msg)
     db.commit()
 
     return {"message": "Reply sent", "message_id": result.get("message_id")}
+
+
+# Gate codes that do NOT block a manual reply. The person wrote to us, so their
+# address demonstrably works — an unvalidated status is no reason to refuse.
+# A reply answers someone who wrote to us: their address works (INVALID_EMAIL), and it is a
+# conversation, not cold volume, so recipient-domain caps (DOMAIN_THROTTLE) don't apply.
+_REPLY_GATE_IGNORED = {"INVALID_EMAIL", "DOMAIN_THROTTLE"}
+
+
+def _check_reply_allowed(db: Session, tenant_id: int, thread_id: str, to_email: str,
+                         contact_id: Optional[int]) -> None:
+    """Raise 400 when a reply to ``to_email`` must not be sent."""
+    from app.db.models.contact import OutreachStatus as ContactOutreachStatus
+    from app.db.models.suppression import SuppressionList
+
+    email_lc = (to_email or "").strip().lower()
+    if not email_lc:
+        raise HTTPException(status_code=400, detail="Thread has no recipient address")
+
+    # 1. Suppression — checked by address, so it also covers threads with no
+    #    linked contact. Global on email, same as the send gate (ELR-016).
+    suppressed = db.query(SuppressionList).filter(
+        SuppressionList.email == email_lc,  # stored lower-cased
+        (SuppressionList.expires_at.is_(None)
+         | (SuppressionList.expires_at > datetime.utcnow())),
+    ).first()
+    if suppressed:
+        raise HTTPException(status_code=400, detail={
+            "code": "SUPPRESSED",
+            "message": f"{to_email} is on the suppression list ({suppressed.reason or 'suppressed'}); reply not sent.",
+        })
+
+    # 2. Thread marked do-not-contact.
+    dnc = db.query(InboxMessage.message_id).filter(
+        InboxMessage.tenant_id == tenant_id,
+        InboxMessage.thread_id == thread_id,
+        InboxMessage.category == "do_not_contact",
+    ).first()
+    if dnc:
+        raise HTTPException(status_code=400, detail={
+            "code": "DO_NOT_CONTACT",
+            "message": "This conversation is marked do-not-contact; reply not sent.",
+        })
+
+    # 3. Contact status + the unified send gate (reply mode). Fall back to the
+    #    tenant's contact with that address when the thread is not linked.
+    contacts = []
+    if contact_id:
+        linked = db.query(ContactDetails).filter(
+            ContactDetails.contact_id == contact_id,
+            ContactDetails.tenant_id == tenant_id,
+        ).first()
+        if linked:
+            contacts.append(linked)
+    if not contacts:
+        contacts = db.query(ContactDetails).filter(
+            ContactDetails.tenant_id == tenant_id,
+            func.lower(ContactDetails.email) == email_lc,
+        ).all()
+
+    from app.services.send_gate import unified_send_gate
+    for contact in contacts:
+        if contact.outreach_status == ContactOutreachStatus.UNSUBSCRIBED:
+            raise HTTPException(status_code=400, detail={
+                "code": "UNSUBSCRIBED",
+                "message": f"{to_email} has unsubscribed; reply not sent.",
+            })
+        gate = unified_send_gate(db=db, contact=contact, tenant_id=tenant_id, is_reply=True)
+        if not gate.allowed and gate.reason_code not in _REPLY_GATE_IGNORED:
+            raise HTTPException(status_code=400, detail={
+                "code": gate.reason_code,
+                "message": gate.reason_message or "Reply blocked by the send gate.",
+            })
 
 
 # ─── AI Suggest Reply ─────────────────────────────────────────────

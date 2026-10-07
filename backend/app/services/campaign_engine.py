@@ -102,12 +102,24 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                  eligible_count=len(eligible_campaign_ids),
                  campaign_ids=eligible_campaign_ids)
 
-    # Get due contacts in batches
-    due_contacts = db.query(CampaignContact).filter(
-        CampaignContact.campaign_id.in_(eligible_campaign_ids),
-        CampaignContact.status == CampaignContactStatus.ACTIVE,
-        CampaignContact.next_send_at <= now,
-    ).limit(BATCH_SIZE).all()
+    # Get due contacts in batches: oldest-due first, with a fair share per campaign so one
+    # campaign whose contacts can't currently be sent (e.g. no eligible mailbox) cannot
+    # fill every batch and starve the others.
+    per_campaign = max(1, BATCH_SIZE // len(eligible_campaign_ids))
+    # Rotate the starting campaign each run so that, with more eligible campaigns than
+    # batch slots, every campaign still gets a turn over successive runs.
+    offset = int(now.timestamp() // 60) % len(eligible_campaign_ids)
+    rotated = eligible_campaign_ids[offset:] + eligible_campaign_ids[:offset]
+    due_contacts = []
+    for cid in rotated:
+        due_contacts.extend(db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == cid,
+            CampaignContact.status == CampaignContactStatus.ACTIVE,
+            CampaignContact.next_send_at <= now,
+        ).order_by(CampaignContact.next_send_at.asc(), CampaignContact.id.asc()).limit(per_campaign).all())
+        if len(due_contacts) >= BATCH_SIZE:
+            due_contacts = due_contacts[:BATCH_SIZE]
+            break
 
     if due_contacts:
         logger.info("campaign_processor_due_contacts",
@@ -865,7 +877,7 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
 
     try:
         from app.services.mailbox_selector import select_best_mailbox
-        return select_best_mailbox(mailbox_ids, db)
+        return select_best_mailbox(mailbox_ids, db, tenant_id=campaign.tenant_id)
     except Exception as e:
         logger.warning("Health-aware selector failed, using fallback", error=str(e))
         # Fallback to simple least-loaded
@@ -875,6 +887,7 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
             SenderMailbox.connection_status == "successful",
             SenderMailbox.is_blacklisted == False,  # noqa: E712 — mirror primary selector safety filter
+            SenderMailbox.tenant_id == campaign.tenant_id,
         )
         if mailbox_ids:
             query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
@@ -1053,12 +1066,31 @@ def enroll_contacts(
     contact_ids: List[int],
     db: Session,
 ) -> Dict[str, Any]:
-    """Enroll contacts into a campaign. Deduplicates against existing enrollments."""
+    """Enroll contacts into a campaign. Deduplicates against existing enrollments.
+
+    Only contacts of the campaign's own tenant are enrolled; any other id (another
+    tenant's contact, or one that does not exist) is skipped and counted under
+    ``foreign``. This is the last line of defence for every caller — the API
+    endpoint rejects such ids up front, and auto-enrollment relies on it.
+    """
     campaign = db.query(Campaign).filter(
         Campaign.campaign_id == campaign_id
     ).first()
     if not campaign:
         return {"error": "Campaign not found", "enrolled": 0, "duplicates": 0}
+
+    unique_ids = list(dict.fromkeys(contact_ids or []))
+    owned = {
+        row[0] for row in db.query(ContactDetails.contact_id).filter(
+            ContactDetails.contact_id.in_(unique_ids),
+            ContactDetails.tenant_id == campaign.tenant_id,
+        ).all()
+    } if unique_ids else set()
+    contact_ids = [cid for cid in unique_ids if cid in owned]
+    foreign = len(unique_ids) - len(contact_ids)
+    if foreign:
+        logger.warning("enroll_contacts_skipped_foreign", campaign_id=campaign_id,
+                       tenant_id=campaign.tenant_id, skipped=foreign)
 
     # Get first step
     first_step = db.query(SequenceStep).filter(
@@ -1142,7 +1174,8 @@ def enroll_contacts(
 
     db.commit()
 
-    return {"enrolled": enrolled, "re_enrolled": re_enrolled, "duplicates": duplicates, "suppressed": suppressed}
+    return {"enrolled": enrolled, "re_enrolled": re_enrolled, "duplicates": duplicates,
+            "suppressed": suppressed, "foreign": foreign}
 
 
 def handle_campaign_reply(event_id: int, db: Session):

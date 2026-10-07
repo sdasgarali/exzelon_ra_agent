@@ -47,6 +47,42 @@ router = APIRouter(prefix="/warmup", tags=["Warmup Engine"])
 
 
 # ---------------------------------------------------------------------------
+# Tenant scoping helpers
+#
+# Alerts, daily logs and peer warmup emails have no tenant_id of their own; they
+# belong to a tenant through their mailbox. ``tenant_id`` None means a super
+# admin's all-tenant view (no filter), the codebase-wide convention.
+# ---------------------------------------------------------------------------
+
+def _get_tenant_mailbox(db: Session, mailbox_id: int, tenant_id: Optional[int]) -> SenderMailbox:
+    """Return the mailbox if it belongs to the caller's tenant, else 404."""
+    q = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
+    if tenant_id is not None:
+        q = q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailbox = q.first()
+    if not mailbox:
+        raise HTTPException(status_code=404, detail="Mailbox not found")
+    return mailbox
+
+
+def _tenant_mailbox_ids(db: Session, tenant_id: int):
+    """Subquery of mailbox ids owned by ``tenant_id`` (for IN filters)."""
+    return db.query(SenderMailbox.mailbox_id).filter(SenderMailbox.tenant_id == tenant_id)
+
+
+def _scoped_alerts(db: Session, tenant_id: Optional[int]):
+    """WarmupAlert query limited to the tenant's mailboxes.
+
+    Alerts with no mailbox cannot be attributed to a tenant, so only the super
+    admin's global view sees them.
+    """
+    q = db.query(WarmupAlert)
+    if tenant_id is not None:
+        q = q.filter(WarmupAlert.mailbox_id.in_(_tenant_mailbox_ids(db, tenant_id)))
+    return q
+
+
+# ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
 
@@ -253,9 +289,14 @@ async def update_warmup_config(
 async def assess_all_mailboxes(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'overview', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Assess all active mailboxes."""
-    result = run_warmup_assessment(triggered_by=current_user.email)
+    """Assess the caller's tenant's active mailboxes.
+
+    A super admin without an impersonated tenant assesses every tenant (the
+    nightly scheduler does the same by calling the engine directly).
+    """
+    result = run_warmup_assessment(triggered_by=current_user.email, tenant_id=tenant_id, db=db)
     return WarmupAssessmentResult(**result)
 
 
@@ -268,13 +309,15 @@ async def assess_single_mailbox(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'overview', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Assess a single mailbox (synchronous)."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
-    result = run_warmup_assessment(triggered_by=current_user.email, mailbox_id=mailbox_id)
+    result = run_warmup_assessment(
+        triggered_by=current_user.email, mailbox_id=mailbox_id,
+        tenant_id=mailbox.tenant_id, db=db,
+    )
     return WarmupAssessmentResult(**result)
 
 
@@ -347,13 +390,18 @@ async def trigger_peer_warmup(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'emails', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger a peer-to-peer warmup cycle.
 
-    If mailbox_id is provided, only that mailbox participates.
-    Otherwise all eligible mailboxes are included.
+    If mailbox_id is provided, only that mailbox sends (it must belong to the
+    caller's tenant). Otherwise all of the tenant's eligible mailboxes send.
     """
-    result = run_peer_warmup_cycle(db, mailbox_id=mailbox_id)
+    if mailbox_id is not None:
+        _get_tenant_mailbox(db, mailbox_id, tenant_id)
+    result = run_peer_warmup_cycle(
+        db, mailbox_id=mailbox_id, tenant_id=tenant_id, sender_tenant_id=tenant_id,
+    )
     return {
         "message": "Peer warmup cycle completed",
         "result": result,
@@ -368,13 +416,14 @@ async def trigger_peer_warmup(
 async def trigger_auto_reply(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'emails', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Trigger an auto-reply cycle manually.
 
-    Finds warmup emails that were sent but never replied to,
-    and generates natural-looking replies to boost reply rates.
+    Finds warmup emails received by the tenant's mailboxes that were never
+    replied to, and generates natural-looking replies to boost reply rates.
     """
-    result = run_auto_reply_cycle(db)
+    result = run_auto_reply_cycle(db, tenant_id=tenant_id, replier_tenant_id=tenant_id)
     return {
         "message": "Auto-reply cycle completed",
         "result": result,
@@ -393,11 +442,22 @@ async def get_peer_history(
     direction: Optional[str] = Query(None, pattern="^(sent|received|all)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'emails', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get paginated peer warmup email history, optionally filtered by mailbox and direction."""
+    """Get paginated peer warmup email history, optionally filtered by mailbox and direction.
+
+    A tenant sees emails its own mailboxes sent or received.
+    """
     query = db.query(WarmupEmail).order_by(desc(WarmupEmail.sent_at))
+    if tenant_id is not None:
+        own_ids = _tenant_mailbox_ids(db, tenant_id)
+        query = query.filter(
+            WarmupEmail.sender_mailbox_id.in_(own_ids)
+            | WarmupEmail.receiver_mailbox_id.in_(own_ids)
+        )
 
     if mailbox_id is not None:
+        _get_tenant_mailbox(db, mailbox_id, tenant_id)
         if direction == "sent":
             query = query.filter(WarmupEmail.sender_mailbox_id == mailbox_id)
         elif direction == "received":
@@ -428,8 +488,12 @@ async def get_peer_email_detail(
     email_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'emails', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get full detail of a single warmup email including body content."""
+    """Get full detail of a single warmup email including body content.
+
+    Visible only when one of the tenant's mailboxes sent or received it.
+    """
     email_record = db.query(WarmupEmail).filter(WarmupEmail.id == email_id).first()
     if not email_record:
         raise HTTPException(status_code=404, detail="Warmup email not found")
@@ -438,9 +502,16 @@ async def get_peer_email_detail(
     sender_mb = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.sender_mailbox_id).first()
     receiver_mb = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == email_record.receiver_mailbox_id).first() if email_record.receiver_mailbox_id else None
 
+    def _visible(mb: Optional[SenderMailbox]) -> bool:
+        return mb is not None and (tenant_id is None or mb.tenant_id == tenant_id)
+
+    if not (_visible(sender_mb) or _visible(receiver_mb)):
+        raise HTTPException(status_code=404, detail="Warmup email not found")
+
     data = WarmupEmailDetailSchema.model_validate(email_record)
-    data.sender_email = sender_mb.email if sender_mb else None
-    data.receiver_email = receiver_mb.email if receiver_mb else None
+    # The peer pool is shared across tenants: don't reveal another tenant's address.
+    data.sender_email = sender_mb.email if _visible(sender_mb) else None
+    data.receiver_email = receiver_mb.email if _visible(receiver_mb) else None
     return data
 
 
@@ -454,13 +525,17 @@ async def get_analytics(
     mailbox_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'analytics', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get time-series warmup analytics data."""
+    """Get time-series warmup analytics data for the tenant's mailboxes."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     query = db.query(WarmupDailyLog).filter(WarmupDailyLog.log_date >= cutoff.date())
 
     if mailbox_id is not None:
+        _get_tenant_mailbox(db, mailbox_id, tenant_id)
         query = query.filter(WarmupDailyLog.mailbox_id == mailbox_id)
+    elif tenant_id is not None:
+        query = query.filter(WarmupDailyLog.mailbox_id.in_(_tenant_mailbox_ids(db, tenant_id)))
 
     logs = query.order_by(WarmupDailyLog.log_date).all()
 
@@ -500,10 +575,8 @@ async def run_dns_check(
 ):
     """Run DNS health check for one or all mailboxes."""
     if mailbox_id is not None:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-        if not mailbox:
-            raise HTTPException(status_code=404, detail="Mailbox not found")
-        result = run_dns_health_check(mailbox_id, db)
+        mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
+        result = run_dns_health_check(mailbox_id, db, tenant_id=mailbox.tenant_id)
         return {"message": "DNS check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
@@ -517,7 +590,7 @@ async def run_dns_check(
     results = []
     for mb in mailboxes:
         try:
-            r = run_dns_health_check(mb.mailbox_id, db)
+            r = run_dns_health_check(mb.mailbox_id, db, tenant_id=mb.tenant_id)
             results.append(r)
         except Exception as e:
             results.append({"mailbox_id": mb.mailbox_id, "error": str(e)})
@@ -533,11 +606,10 @@ async def get_dns_results(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'dns', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get latest DNS check result for a mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
     result = (
         db.query(DNSCheckResult)
@@ -569,10 +641,8 @@ async def run_blacklist_check_endpoint(
 ):
     """Run blacklist check for one or all mailboxes."""
     if mailbox_id is not None:
-        mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-        if not mailbox:
-            raise HTTPException(status_code=404, detail="Mailbox not found")
-        result = run_bl_check(mailbox_id, db)
+        mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
+        result = run_bl_check(mailbox_id, db, tenant_id=mailbox.tenant_id)
         return {"message": "Blacklist check completed", "mailbox_id": mailbox_id, "result": result}
 
     # Check all active mailboxes
@@ -586,7 +656,7 @@ async def run_blacklist_check_endpoint(
     results = []
     for mb in mailboxes:
         try:
-            r = run_bl_check(mb.mailbox_id, db)
+            r = run_bl_check(mb.mailbox_id, db, tenant_id=mb.tenant_id)
             results.append(r)
         except Exception as e:
             results.append({"mailbox_id": mb.mailbox_id, "error": str(e)})
@@ -602,11 +672,10 @@ async def get_blacklist_results(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'dns', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get latest blacklist check result for a mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
     result = (
         db.query(BlacklistCheckResult)
@@ -634,13 +703,12 @@ async def run_placement_test_endpoint(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'dns', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Run inbox placement test for a specific mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
-    result = run_placement_test(mailbox_id, db)
+    result = run_placement_test(mailbox_id, db, tenant_id=mailbox.tenant_id)
     return {"message": "Placement test completed", "mailbox_id": mailbox_id, "result": result}
 
 
@@ -656,9 +724,10 @@ async def get_alerts(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'alerts', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get paginated warmup alerts with optional filters."""
-    query = db.query(WarmupAlert)
+    """Get paginated warmup alerts (of the tenant's mailboxes) with optional filters."""
+    query = _scoped_alerts(db, tenant_id)
 
     if severity is not None:
         query = query.filter(WarmupAlert.severity == severity)
@@ -666,7 +735,7 @@ async def get_alerts(
         query = query.filter(WarmupAlert.is_read == is_read)
 
     total = query.count()
-    unread_count = db.query(WarmupAlert).filter(WarmupAlert.is_read == False).count()
+    unread_count = _scoped_alerts(db, tenant_id).filter(WarmupAlert.is_read == False).count()  # noqa: E712
 
     items = (
         query.order_by(desc(WarmupAlert.created_at))
@@ -691,9 +760,10 @@ async def mark_alert_read(
     alert_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'alerts', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Mark a single alert as read."""
-    alert = db.query(WarmupAlert).filter(WarmupAlert.id == alert_id).first()
+    alert = _scoped_alerts(db, tenant_id).filter(WarmupAlert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 
@@ -710,12 +780,13 @@ async def mark_alert_read(
 async def mark_all_alerts_read(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'alerts', 'read_write')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Mark all unread alerts as read."""
+    """Mark all of the tenant's unread alerts as read."""
     count = (
-        db.query(WarmupAlert)
-        .filter(WarmupAlert.is_read == False)
-        .update({"is_read": True})
+        _scoped_alerts(db, tenant_id)
+        .filter(WarmupAlert.is_read == False)  # noqa: E712
+        .update({"is_read": True}, synchronize_session=False)
     )
     db.commit()
     return {"message": f"Marked {count} alerts as read", "updated": count}
@@ -729,9 +800,10 @@ async def mark_all_alerts_read(
 async def get_unread_alert_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'alerts', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Get the count of unread alerts."""
-    count = db.query(WarmupAlert).filter(WarmupAlert.is_read == False).count()
+    """Get the count of the tenant's unread alerts."""
+    count = _scoped_alerts(db, tenant_id).filter(WarmupAlert.is_read == False).count()  # noqa: E712
     return {"unread_count": count}
 
 
@@ -833,15 +905,14 @@ async def apply_profile(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'profiles', 'full')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Apply a warmup profile to a specific mailbox."""
     profile = db.query(WarmupProfile).filter(WarmupProfile.id == profile_id).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    mailbox = _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
     mailbox.warmup_profile_id = profile_id
     db.commit()
@@ -861,11 +932,10 @@ async def start_recovery_endpoint(
     mailbox_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'settings', 'full')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Start auto-recovery for a specific mailbox."""
-    mailbox = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id).first()
-    if not mailbox:
-        raise HTTPException(status_code=404, detail="Mailbox not found")
+    _get_tenant_mailbox(db, mailbox_id, tenant_id)
 
     result = start_recovery(mailbox_id, db)
     return {
@@ -886,17 +956,20 @@ async def export_report(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('warmup', 'settings', 'full')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Export warmup report as CSV or JSON."""
+    """Export the tenant's warmup report as CSV or JSON."""
     parsed_ids: Optional[List[int]] = None
     if mailbox_ids:
         try:
             parsed_ids = [int(x.strip()) for x in mailbox_ids.split(",") if x.strip()]
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid mailbox_ids format")
+        for mid in parsed_ids:
+            _get_tenant_mailbox(db, mid, tenant_id)
 
     if format == "csv":
-        csv_data = export_csv(parsed_ids, days, db)
+        csv_data = export_csv(parsed_ids, days, db, tenant_id=tenant_id)
         stream = io.StringIO(csv_data)
         return StreamingResponse(
             iter([stream.getvalue()]),
@@ -904,7 +977,7 @@ async def export_report(
             headers={"Content-Disposition": "attachment; filename=warmup_report.csv"},
         )
     else:
-        json_data = export_json(parsed_ids, days, db)
+        json_data = export_json(parsed_ids, days, db, tenant_id=tenant_id)
         return StreamingResponse(
             iter([json_data]),
             media_type="application/json",

@@ -145,6 +145,7 @@ def calculate_mailbox_score(mailbox: SenderMailbox, engagement_rate: Optional[fl
 def select_best_mailbox(
     campaign_mailbox_ids: list[int],
     db: Session,
+    tenant_id: Optional[int] = None,
 ) -> Optional[SenderMailbox]:
     """Select the highest-scoring eligible mailbox for sending.
 
@@ -156,6 +157,9 @@ def select_best_mailbox(
         campaign_mailbox_ids: List of mailbox IDs assigned to the campaign.
             If empty, all eligible mailboxes are considered.
         db: SQLAlchemy database session.
+        tenant_id: The campaign's tenant. When given, only that tenant's mailboxes are
+            eligible — an assigned id from another tenant is ignored, and the automated
+            pool never crosses tenants.
 
     Returns:
         The highest-scoring SenderMailbox, or None if no mailbox is eligible.
@@ -167,6 +171,8 @@ def select_best_mailbox(
         SenderMailbox.connection_status == "successful",
         SenderMailbox.is_blacklisted == False,  # noqa: E712
     )
+    if tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == tenant_id)
 
     if campaign_mailbox_ids:
         # Explicit (manual) assignment — send from exactly these mailboxes regardless of role.

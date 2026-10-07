@@ -496,6 +496,42 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
     return True, "Eligible"
 
 
+def sendable_mailboxes_query(db, tenant_id: int):
+    """Mailboxes of ``tenant_id`` that may send cold outreach right now.
+
+    Cold Ready or Active, under their daily limit, with a successful connection, and not
+    blacklisted (mirrors ``mailbox_selector.select_best_mailbox``).
+    Always tenant-scoped: picking the least-loaded mailbox across all tenants sent one
+    tenant's outreach from another tenant's mailbox.
+    """
+    return db.query(SenderMailbox).filter(
+        SenderMailbox.tenant_id == tenant_id,
+        SenderMailbox.is_active == True,  # noqa: E712
+        SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+        SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
+        SenderMailbox.connection_status == "successful",
+        SenderMailbox.is_blacklisted == False,  # noqa: E712
+    )
+
+
+def lead_contacts_query(db, lead_id: int, tenant_id: int):
+    """Contacts of a lead (junction table + legacy FK), limited to ``tenant_id``.
+
+    The tenant filter matters: a junction row pointing at another tenant's contact
+    (bad import, tampering) must never turn into an email.
+    """
+    junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
+        LeadContactAssociation.lead_id == lead_id
+    ).all()]
+    query = db.query(ContactDetails).filter(ContactDetails.tenant_id == tenant_id)
+    if junction_cids:
+        return query.filter(
+            (ContactDetails.lead_id == lead_id)
+            | (ContactDetails.contact_id.in_(junction_cids))
+        )
+    return query.filter(ContactDetails.lead_id == lead_id)
+
+
 def run_outreach_mailmerge_pipeline(
     triggered_by: str = "system",
     tenant_id: Optional[int] = None,
@@ -510,18 +546,28 @@ def run_outreach_mailmerge_pipeline(
     2. Word template guide
 
     Args:
+        tenant_id: REQUIRED. Only this tenant's contacts are exported and the JobRun
+            is filed under it. ``None`` returns an error without doing anything (it
+            used to fall back to tenant 1 and export every tenant's contacts).
         lead_ids: If provided, only export contacts associated with these leads.
         existing_run_id: If provided, reuse this JobRun instead of creating a new one.
     """
-    db = SessionLocal()
     counters = {"eligible": 0, "skipped": 0, "exported": 0}
+    if tenant_id is None:
+        logger.error("outreach_mailmerge_refused_no_tenant", triggered_by=triggered_by)
+        return {"error": "tenant_id is required", **counters}
+
+    db = SessionLocal()
 
     # Use existing job run or create new one
     if existing_run_id:
-        job_run = db.query(JobRun).filter(JobRun.run_id == existing_run_id).first()
+        job_run = db.query(JobRun).filter(
+            JobRun.run_id == existing_run_id,
+            JobRun.tenant_id == tenant_id,
+        ).first()
         if not job_run:
             job_run = JobRun(
-                tenant_id=tenant_id or 1,
+                tenant_id=tenant_id,
                 pipeline_name="outreach_mailmerge",
                 status=JobStatus.RUNNING,
                 triggered_by=triggered_by,
@@ -530,7 +576,7 @@ def run_outreach_mailmerge_pipeline(
             db.commit()
     else:
         job_run = JobRun(
-            tenant_id=tenant_id or 1,
+            tenant_id=tenant_id,
             pipeline_name="outreach_mailmerge",
             status=JobStatus.RUNNING,
             triggered_by=triggered_by,
@@ -550,11 +596,9 @@ def run_outreach_mailmerge_pipeline(
         validation_enabled = get_tenant_setting_bool(
             db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
         )
-        query = db.query(ContactDetails)
+        query = db.query(ContactDetails).filter(ContactDetails.tenant_id == tenant_id)
         if validation_enabled:
             query = query.filter(ContactDetails.validation_status == "valid")
-        if tenant_id:
-            query = query.filter(ContactDetails.tenant_id == tenant_id)
         if lead_ids:
             contact_ids_sub = (
                 db.query(LeadContactAssociation.contact_id)
@@ -650,7 +694,7 @@ COMPLIANCE NOTES:
                 db.commit()
 
             event = OutreachEvent(
-                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
+                tenant_id=tenant_id,
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.MAILMERGE,
                 status=OutreachStatus.SENT,
@@ -703,15 +747,24 @@ def run_outreach_send_pipeline(
     Send emails programmatically with rate limiting.
 
     When preview_mode=True, generates OutreachDraft records instead of sending.
+
+    ``tenant_id`` is REQUIRED: contacts, mailboxes, template, settings, the daily
+    count and the JobRun are all scoped to it. ``None`` returns an error without
+    sending (it used to fall back to tenant 1 and mail every tenant's contacts from
+    any tenant's mailboxes).
     """
-    db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0}
+    if tenant_id is None:
+        logger.error("outreach_send_refused_no_tenant", triggered_by=triggered_by)
+        return {"error": "tenant_id is required", **counters}
+
+    db = SessionLocal()
     skip_reasons: Dict[str, int] = {"cooldown": 0, "daily_limit": 0, "no_mailbox": 0, "dry_run": 0, "not_eligible": 0}
     per_mailbox: Dict[str, Dict[str, int]] = {}
 
     # Create job run record
     job_run = JobRun(
-        tenant_id=tenant_id or 1,
+        tenant_id=tenant_id,
         pipeline_name="outreach_send",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -726,7 +779,7 @@ def run_outreach_send_pipeline(
         # Preview mode: generate drafts instead of sending
         if preview_mode:
             from app.services.email_preview_service import generate_pipeline_drafts
-            result = generate_pipeline_drafts(tenant_id or 1, limit, db)
+            result = generate_pipeline_drafts(tenant_id, limit, db)
             job_run.status = JobStatus.COMPLETED
             job_run.progress_pct = 100
             job_run.ended_at = datetime.utcnow()
@@ -740,6 +793,7 @@ def run_outreach_send_pipeline(
         # Check daily limit
         today = datetime.utcnow().date()
         today_sent = db.query(OutreachEvent).filter(
+            OutreachEvent.tenant_id == tenant_id,
             OutreachEvent.sent_at >= datetime.combine(today, datetime.min.time()),
             OutreachEvent.status == OutreachStatus.SENT,
             OutreachEvent.channel != OutreachChannel.MAILMERGE
@@ -761,7 +815,8 @@ def run_outreach_send_pipeline(
             db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
         )
         contacts_q = db.query(ContactDetails).filter(
-            ContactDetails.is_archived == False
+            ContactDetails.tenant_id == tenant_id,
+            ContactDetails.is_archived == False,  # noqa: E712
         )
         if validation_enabled:
             contacts_q = contacts_q.filter(ContactDetails.validation_status == "valid")
@@ -789,7 +844,7 @@ def run_outreach_send_pipeline(
 
             # Unified Send Gate: all safety checks in one call
             from app.services.send_gate import unified_send_gate
-            gate = unified_send_gate(db=db, contact=contact, tenant_id=tenant_id or 1)
+            gate = unified_send_gate(db=db, contact=contact, tenant_id=tenant_id)
             if not gate.allowed:
                 counters["skipped"] += 1
                 code_lower = gate.reason_code.lower()
@@ -801,13 +856,10 @@ def run_outreach_send_pipeline(
                     skip_reasons["not_eligible"] += 1
                 continue
 
-            # Get sending mailbox (Cold Ready or Active, least loaded, with successful connection)
-            sending_mailbox = db.query(SenderMailbox).filter(
-                SenderMailbox.is_active == True,
-                SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-                SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
-                SenderMailbox.connection_status == "successful"
-            ).order_by(SenderMailbox.emails_sent_today.asc()).first()
+            # Get this tenant's sending mailbox (least loaded, successful connection)
+            sending_mailbox = sendable_mailboxes_query(db, tenant_id).order_by(
+                SenderMailbox.emails_sent_today.asc()
+            ).first()
 
             if not sending_mailbox:
                 logger.warning("No available sender mailbox with successful connection")
@@ -821,7 +873,7 @@ def run_outreach_send_pipeline(
 
             # Pre-create event to get tracking_id for unsub link
             event = OutreachEvent(
-                tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
+                tenant_id=tenant_id,
                 contact_id=contact.contact_id,
                 channel=OutreachChannel.SMTP,
                 status=OutreachStatus.SKIPPED,
@@ -841,7 +893,8 @@ def run_outreach_send_pipeline(
             contact_lead = None
             if contact.lead_id:
                 contact_lead = db.query(LeadDetails).filter(
-                    LeadDetails.lead_id == contact.lead_id
+                    LeadDetails.lead_id == contact.lead_id,
+                    LeadDetails.tenant_id == tenant_id,
                 ).first()
 
             # Use template if available, otherwise fallback to hardcoded
@@ -988,6 +1041,12 @@ def run_outreach_for_lead(
 ) -> Dict[str, Any]:
     """
     Send outreach emails to contacts of a specific lead only.
+
+    Tenant scoping: when ``tenant_id`` is given the lead must belong to it ("Lead not
+    found" otherwise). When it is ``None`` (super admin acting without a selected
+    tenant) the lead's own tenant is used. Either way contacts, mailboxes, template,
+    settings and the send gate are all limited to that ONE tenant — the least-loaded
+    mailbox used to be picked across all tenants.
     """
     db = SessionLocal()
     counters = {"sent": 0, "skipped": 0, "errors": 0, "lead_id": lead_id}
@@ -996,9 +1055,13 @@ def run_outreach_for_lead(
         logger.info("Starting outreach for lead", lead_id=lead_id, dry_run=dry_run)
         clear_research_cache()
 
-        lead = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id).first()
+        lead_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
+        if tenant_id is not None:
+            lead_q = lead_q.filter(LeadDetails.tenant_id == tenant_id)
+        lead = lead_q.first()
         if not lead:
             return {"error": "Lead not found", "lead_id": lead_id}
+        tenant_id = lead.tenant_id
 
         # Skip closed or archived leads
         if is_closed_status(lead.lead_status):
@@ -1006,20 +1069,8 @@ def run_outreach_for_lead(
         if lead.is_archived:
             return {"message": "Lead is archived, skipping outreach", **counters}
 
-        # Get contacts via junction table + legacy FK
-        junction_cids = [row[0] for row in db.query(LeadContactAssociation.contact_id).filter(
-            LeadContactAssociation.lead_id == lead_id
-        ).all()]
-
-        if junction_cids:
-            contacts = db.query(ContactDetails).filter(
-                (ContactDetails.lead_id == lead_id) |
-                (ContactDetails.contact_id.in_(junction_cids))
-            ).all()
-        else:
-            contacts = db.query(ContactDetails).filter(
-                ContactDetails.lead_id == lead_id
-            ).all()
+        # Get contacts via junction table + legacy FK (this tenant's only)
+        contacts = lead_contacts_query(db, lead_id, tenant_id).all()
 
         if not contacts:
             return {"message": "No contacts found for this lead", **counters}
@@ -1032,7 +1083,7 @@ def run_outreach_for_lead(
             # Unified Send Gate: all safety checks in one call
             from app.services.send_gate import unified_send_gate
             gate = unified_send_gate(
-                db=db, contact=contact, tenant_id=tenant_id or 1, lead=lead,
+                db=db, contact=contact, tenant_id=tenant_id, lead=lead,
             )
             if not gate.allowed:
                 counters["skipped"] += 1
@@ -1046,12 +1097,7 @@ def run_outreach_for_lead(
             result = None
 
             while True:
-                mbx_query = db.query(SenderMailbox).filter(
-                    SenderMailbox.is_active == True,
-                    SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
-                    SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
-                    SenderMailbox.connection_status == "successful",
-                )
+                mbx_query = sendable_mailboxes_query(db, tenant_id)
                 if failed_mailbox_ids:
                     mbx_query = mbx_query.filter(SenderMailbox.mailbox_id.notin_(failed_mailbox_ids))
                 sending_mailbox = mbx_query.order_by(SenderMailbox.emails_sent_today.asc()).first()
@@ -1070,7 +1116,7 @@ def run_outreach_for_lead(
 
                 # Pre-create event to get tracking_id for unsub link
                 event = OutreachEvent(
-                    tenant_id=tenant_id or getattr(contact, 'tenant_id', None) or 1,
+                    tenant_id=tenant_id,
                     contact_id=contact.contact_id,
                     lead_id=lead_id,
                     channel=OutreachChannel.SMTP,

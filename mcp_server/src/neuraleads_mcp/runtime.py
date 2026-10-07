@@ -10,7 +10,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from neuraleads_mcp.client import NeuraLeadsClient, NeuraLeadsError
-from neuraleads_mcp.config import Settings
+from neuraleads_mcp.config import Settings, parse_workspace_id
 
 logger = logging.getLogger("neuraleads_mcp")
 
@@ -32,6 +32,9 @@ _SECRET_KEY_ALLOW = re.compile(r"(_set|_configured|_present|_connected|_enabled|
                                re.IGNORECASE)
 
 MAX_LIST_ITEMS = 100
+
+# Friendly message for deletes refused by key scope or role.
+NEEDS_ADMIN_KEY = {403: "Deleting needs an API key with 'admin' scope, owned by a workspace admin"}
 
 
 def sanitize(value: Any, _depth: int = 0) -> Any:
@@ -63,20 +66,49 @@ class Runtime:
         self.client = client or NeuraLeadsClient(
             settings.api_url, timeout=settings.timeout_seconds, max_retries=settings.max_retries)
 
-    # ── auth ────────────────────────────────────────────────────────────
-    def api_key_for(self, ctx: Optional[Context]) -> str:
-        """The caller's key: from request headers (hosted) or the environment (local).
+    @property
+    def app_url(self) -> str:
+        """Web app origin for links shown to the user (API URL without the ``/api/...`` path)."""
+        url = self.settings.api_url
+        idx = url.find("/api/")
+        return (url[:idx] if idx > 0 else url).rstrip("/")
 
-        In hosted mode a server-wide key is never used, so one user can never act
-        with another user's credentials.
-        """
+    # ── auth ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _headers(ctx: Optional[Context]) -> dict:
         headers: Mapping[str, str] = {}
         if ctx is not None:
             try:
                 headers = ctx.headers or {}
             except ValueError:
                 headers = {}
-        lower = {k.lower(): v for k, v in headers.items()}
+        return {k.lower(): v for k, v in headers.items()}
+
+    def tenant_for(self, ctx: Optional[Context]) -> Optional[int]:
+        """The workspace to act in, sent upstream as ``X-Tenant-ID``.
+
+        Only super-admin keys can switch workspace; the backend ignores the header for every
+        other key. Source: the incoming request's ``X-Tenant-ID`` header (either mode), else
+        ``NEURALEADS_TENANT_ID`` — local (stdio) mode only, since in hosted mode the server's
+        own settings must never decide anything for a caller.
+        """
+        raw = self._headers(ctx).get("x-tenant-id")
+        if raw is not None and str(raw).strip():
+            tid = parse_workspace_id(str(raw))
+            if tid is None:
+                raise ToolError("X-Tenant-ID must be a positive workspace id (see list_workspaces).")
+            return tid
+        if self.hosted:
+            return None
+        return self.settings.tenant_id
+
+    def api_key_for(self, ctx: Optional[Context]) -> str:
+        """The caller's key: from request headers (hosted) or the environment (local).
+
+        In hosted mode a server-wide key is never used, so one user can never act
+        with another user's credentials.
+        """
+        lower = self._headers(ctx)
         auth = lower.get("authorization", "")
         if auth.lower().startswith("bearer ") and auth[7:].strip():
             return auth[7:].strip()
@@ -92,25 +124,30 @@ class Runtime:
 
     # ── calls ───────────────────────────────────────────────────────────
     async def call(self, ctx: Optional[Context], method: str, path: str, *,
-                   params: Optional[Mapping[str, Any]] = None, json: Any = None) -> Any:
+                   params: Optional[Mapping[str, Any]] = None, json: Any = None,
+                   errors: Optional[Mapping[int, str]] = None) -> Any:
+        """Call the API as the caller. ``errors`` maps an HTTP status to a friendlier message."""
         key = self.api_key_for(ctx)
         try:
-            result = await self.client.request(key, method, path, params=params, json=json)
+            result = await self.client.request(key, method, path, params=params, json=json,
+                                               tenant_id=self.tenant_for(ctx))
         except NeuraLeadsError as exc:
+            if errors and exc.status in errors:
+                raise ToolError(f"{errors[exc.status]} ({exc})") from exc
             raise ToolError(str(exc)) from exc
         return sanitize(result)
 
-    async def get(self, ctx, path, **params):
-        return await self.call(ctx, "GET", path, params=params)
+    async def get(self, ctx, path, errors=None, **params):
+        return await self.call(ctx, "GET", path, params=params, errors=errors)
 
-    async def post(self, ctx, path, json=None, **params):
-        return await self.call(ctx, "POST", path, params=params, json=json)
+    async def post(self, ctx, path, json=None, errors=None, **params):
+        return await self.call(ctx, "POST", path, params=params, json=json, errors=errors)
 
-    async def put(self, ctx, path, json=None, **params):
-        return await self.call(ctx, "PUT", path, params=params, json=json)
+    async def put(self, ctx, path, json=None, errors=None, **params):
+        return await self.call(ctx, "PUT", path, params=params, json=json, errors=errors)
 
-    async def delete(self, ctx, path, json=None, **params):
-        return await self.call(ctx, "DELETE", path, params=params, json=json)
+    async def delete(self, ctx, path, json=None, errors=NEEDS_ADMIN_KEY, **params):
+        return await self.call(ctx, "DELETE", path, params=params, json=json, errors=errors)
 
 
 def confirmation_required(action: str, details: Mapping[str, Any], preview: Any = None) -> dict:
@@ -132,6 +169,34 @@ def pick(item: Any, fields: tuple) -> Any:
     if not isinstance(item, dict):
         return item
     return {f: item[f] for f in fields if f in item}
+
+
+def items_of(payload: Any, list_keys: tuple = ("items", "data", "results")) -> list:
+    """The item list of a paginated payload or a bare list."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in list_keys:
+            if isinstance(payload.get(key), list):
+                return payload[key]
+    return []
+
+
+def as_items(rows: Any, fields: Optional[tuple] = None) -> dict:
+    """Wrap a bare list as ``{"items": [...], "count": n}``.
+
+    A bare list result is serialised by MCP as one content block per element, which clients
+    show as many separate results; a dict is one block.
+    """
+    if not isinstance(rows, list):
+        return rows
+    items = [pick(r, fields) for r in rows] if fields else rows
+    return {"items": items, "count": len(items)}
+
+
+def compact(body: Mapping[str, Any]) -> dict:
+    """Drop None values (fields the caller didn't pass)."""
+    return {k: v for k, v in body.items() if v is not None}
 
 
 def pick_list(payload: Any, fields: tuple, list_keys: tuple = ("items", "data", "results")) -> Any:

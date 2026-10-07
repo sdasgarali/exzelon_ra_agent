@@ -98,12 +98,16 @@ class NeuraLeadsClient:
 
     async def request(self, api_key: str, method: str, path: str, *,
                       params: Optional[Mapping[str, Any]] = None,
-                      json: Any = None) -> Any:
+                      json: Any = None, tenant_id: Optional[int] = None) -> Any:
+        """Call the API as ``api_key``. ``tenant_id`` is sent as ``X-Tenant-ID``: it selects the
+        workspace for super-admin keys and is ignored by the backend for everyone else."""
         if not api_key:
             raise NeuraLeadsError(explain_error(401, None), status=401)
         method = method.upper()
         clean_params = {k: v for k, v in (params or {}).items() if v is not None}
         headers = {"X-API-Key": api_key}
+        if tenant_id is not None:
+            headers["X-Tenant-ID"] = str(int(tenant_id))
 
         # Only idempotent reads are retried: a POST that sends email or spends
         # credits must never run twice because a response got lost.

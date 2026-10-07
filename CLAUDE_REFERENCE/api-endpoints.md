@@ -130,3 +130,18 @@ Settings key `lob_lead_sources` tab includes:
 - `automation_intent_signals_enabled` — Enable/disable scheduled intent signal jobs
 
 Test-connection providers: `npi_registry`, `google_business`, `crunchbase`, `builtwith`, `github_org`, `pagespeed`
+
+## Contract changes — MCP phase 2 tenant fixes (2026-10-07)
+
+| Endpoint | Change |
+|---|---|
+| `POST /campaigns/{id}/contacts` | 400 `{message, invalid_contact_ids (≤20), invalid_count}` if any id is foreign/missing; nothing enrolled. `enroll_contacts` result adds `foreign`. |
+| `POST /inbox/reply` | 400 before sending if recipient suppressed, contact unsubscribed, thread `do_not_contact`, or the send gate (`is_reply=True`) blocks; `ensure_tenant` runs first. |
+| `POST /leads/bulk/outreach`, `POST /leads/{id}/outreach` | Admin/BDM only. Mailboxes, contacts, template, gate scoped to the lead's tenant. Preview lists only the tenant's connected mailboxes. |
+| `POST /outreach/send-emails`, `/run-mailmerge`, `/check-replies` | Run under the caller's tenant (pipelines refuse without one). |
+| `GET /validation/results[/{email}]`, `/stats/summary` | Limited to emails of the caller's tenant's contacts (super admin w/o tenant: global). |
+| `GET /deliverability/health-summary` | Real scores; adds `failed_connection_count`, `untested_connection_count`, `healthy_count`, `blacklisted_count`, `dns_unchecked_count`. Mailbox `/health` adds `connection_status`, 0 when failed. |
+| Mailbox responses | `can_send` false when `connection_status == "failed"`; `recovering` is a valid `warmup_status` (not client-settable). `/mailboxes/stats` capacity excludes failed connections. |
+| `/warmup/*` by id, alerts, analytics, peer history, export | 404 for another tenant's mailbox/alert. `POST /warmup/assess` assesses only the caller's tenant. |
+| `GET /contacts/stats` | `linked_to_leads` tenant-scoped; `by_priority`/`by_validation` keys are enum values (`p1_job_poster`, `valid`). |
+| `POST /saved-searches/{id}/execute` | Tenant-scoped (NL path), no longer 500s; allowed for read API keys. |

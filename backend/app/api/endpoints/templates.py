@@ -554,9 +554,14 @@ async def import_template_to_step(
             detail="Template not found",
         )
 
-    from app.db.models.campaign import SequenceStep
-    step = db.query(SequenceStep).filter(
+    from app.db.models.campaign import Campaign, SequenceStep
+    # The step's campaign must belong to the caller's tenant AND to the template's
+    # tenant (a super admin without impersonation can't copy content across tenants).
+    step = db.query(SequenceStep).join(
+        Campaign, Campaign.campaign_id == SequenceStep.campaign_id,
+    ).filter(
         SequenceStep.step_id == step_id,
+        Campaign.tenant_id == template.tenant_id,
     ).first()
     if not step:
         raise HTTPException(

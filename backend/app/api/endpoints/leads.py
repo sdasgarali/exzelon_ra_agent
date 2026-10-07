@@ -2669,24 +2669,22 @@ async def preview_bulk_outreach(
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
     from app.db.models.sender_mailbox import SenderMailbox
-    from app.services.pipelines.outreach import check_send_eligibility
+    from app.services.pipelines.outreach import (
+        check_send_eligibility, lead_contacts_query, resolve_business_rules,
+        sendable_mailboxes_query,
+    )
 
-    # Get available Cold Ready / Active mailboxes, least loaded first
-    available_mailboxes = db.query(SenderMailbox).filter(
-        SenderMailbox.is_active == True,
-        SenderMailbox.warmup_status.in_(["cold_ready", "active"]),
-        SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit
-    ).order_by(SenderMailbox.emails_sent_today.asc()).all()
-
-    mailbox_list = [
-        {"mailbox_id": m.mailbox_id, "email": m.email, "display_name": m.display_name,
-         "warmup_status": m.warmup_status.value if hasattr(m.warmup_status, 'value') else str(m.warmup_status),
-         "sent_today": m.emails_sent_today, "daily_limit": m.daily_send_limit}
-        for m in available_mailboxes
-    ]
+    # Mailboxes are only meaningful per tenant: a super admin without a selected
+    # tenant sees each lead's own tenant's mailboxes (resolved per lead below).
+    def _mailboxes_for(tid):
+        return sendable_mailboxes_query(db, tid).order_by(
+            SenderMailbox.emails_sent_today.asc()
+        ).all()
 
     assignments = []
-    mailbox_idx = 0
+    mailboxes_by_tenant = {tenant_id: _mailboxes_for(tenant_id)} if tenant_id is not None else {}
+    rules_by_tenant = {}
+    mailbox_idx = {}
 
     for lid in lead_ids:
         outreach_lead_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lid)
@@ -2697,24 +2695,22 @@ async def preview_bulk_outreach(
             assignments.append({"lead_id": lid, "error": "Lead not found", "contacts": [], "sender": None})
             continue
 
-        # Get contacts
-        junction_cids = [row[0] for row in db.query(LeadContactAssociation).with_entities(
-            LeadContactAssociation.contact_id
-        ).filter(
-            LeadContactAssociation.lead_id == lid
-        ).all()]
+        lead_tid = lead.tenant_id
+        if lead_tid not in mailboxes_by_tenant:
+            mailboxes_by_tenant[lead_tid] = _mailboxes_for(lead_tid)
+        if lead_tid not in rules_by_tenant:
+            rules_by_tenant[lead_tid] = resolve_business_rules(db, tenant_id=lead_tid)
+        lead_mailboxes = mailboxes_by_tenant[lead_tid]
 
-        if junction_cids:
-            contacts = db.query(ContactDetails).filter(
-                (ContactDetails.lead_id == lid) | (ContactDetails.contact_id.in_(junction_cids))
-            ).all()
-        else:
-            contacts = db.query(ContactDetails).filter(ContactDetails.lead_id == lid).all()
+        # Contacts (junction + legacy FK), limited to the lead's tenant
+        contacts = lead_contacts_query(db, lid, lead_tid).all()
 
         contact_previews = []
         eligible_count = 0
         for c in contacts:
-            eligible, reason = check_send_eligibility(db, c)
+            eligible, reason = check_send_eligibility(
+                db, c, business_rules=rules_by_tenant[lead_tid], tenant_id=lead_tid,
+            )
             contact_previews.append({
                 "contact_id": c.contact_id,
                 "name": f"{c.first_name} {c.last_name}".strip(),
@@ -2728,10 +2724,11 @@ async def preview_bulk_outreach(
 
         # Round-robin mailbox assignment for this lead
         sender = None
-        if eligible_count > 0 and available_mailboxes:
-            mb = available_mailboxes[mailbox_idx % len(available_mailboxes)]
+        if eligible_count > 0 and lead_mailboxes:
+            idx = mailbox_idx.get(lead_tid, 0)
+            mb = lead_mailboxes[idx % len(lead_mailboxes)]
             sender = {"mailbox_id": mb.mailbox_id, "email": mb.email, "display_name": mb.display_name}
-            mailbox_idx += 1
+            mailbox_idx[lead_tid] = idx + 1
 
         assignments.append({
             "lead_id": lid,
@@ -2741,6 +2738,13 @@ async def preview_bulk_outreach(
             "eligible_count": eligible_count,
             "sender": sender
         })
+
+    mailbox_list = [
+        {"mailbox_id": m.mailbox_id, "email": m.email, "display_name": m.display_name,
+         "warmup_status": m.warmup_status.value if hasattr(m.warmup_status, 'value') else str(m.warmup_status),
+         "sent_today": m.emails_sent_today, "daily_limit": m.daily_send_limit}
+        for mbxs in mailboxes_by_tenant.values() for m in mbxs
+    ]
 
     return {
         "assignments": assignments,
@@ -2753,10 +2757,15 @@ async def preview_bulk_outreach(
 async def bulk_outreach_leads(
     request: BulkOutreachRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Trigger outreach for contacts of multiple leads."""
+    """Trigger outreach for contacts of multiple leads. Admin/BDM only.
+
+    Each lead runs under the caller's tenant (or, for a super admin with no tenant
+    selected, the lead's own tenant): contacts, mailbox, template and send gate are
+    limited to that tenant inside ``run_outreach_for_lead``.
+    """
     lead_ids = request.lead_ids
     dry_run = request.dry_run
 
@@ -2784,7 +2793,8 @@ async def bulk_outreach_leads(
                     results.append({"lead_id": lid, "error": "Lead not found", "sent": 0, "skipped": 0, "errors": 1})
                     total_errors += 1
                     continue
-            result = _run(lead_id=lid, dry_run=dry_run, triggered_by=current_user.email)
+            result = _run(lead_id=lid, dry_run=dry_run, triggered_by=current_user.email,
+                          tenant_id=tenant_id)
             sent = result.get("sent", 0)
             skipped = result.get("skipped", 0)
             errors = result.get("errors", 0)
@@ -2836,16 +2846,19 @@ async def get_lead_detail(
 
     if junction_cids:
         contacts = db.query(ContactDetails).filter(
+            ContactDetails.tenant_id == lead.tenant_id,
             (ContactDetails.lead_id == lead_id) |
             (ContactDetails.contact_id.in_(junction_cids))
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
     else:
         contacts = db.query(ContactDetails).filter(
-            ContactDetails.lead_id == lead_id
+            ContactDetails.tenant_id == lead.tenant_id,
+            ContactDetails.lead_id == lead_id,
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
 
     # Get outreach events for this lead
     outreach_events = db.query(OutreachEvent).filter(
+        OutreachEvent.tenant_id == lead.tenant_id,
         OutreachEvent.lead_id == lead_id
     ).order_by(OutreachEvent.sent_at.desc()).all()
 
@@ -2977,10 +2990,11 @@ async def run_outreach_for_lead(
     lead_id: int,
     dry_run: bool = Query(True),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Trigger outreach for contacts of a specific lead."""
+    """Trigger outreach for contacts of a specific lead. Admin/BDM only
+    (same gate as ``/bulk/outreach`` — recruiters must not trigger sends)."""
     outreach_q = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
     if tenant_id is not None:
         outreach_q = outreach_q.filter(LeadDetails.tenant_id == tenant_id)

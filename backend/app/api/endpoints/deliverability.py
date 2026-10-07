@@ -59,50 +59,75 @@ async def get_health_summary(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Aggregate deliverability health across all mailboxes."""
+    """Aggregate deliverability health across the tenant's active mailboxes.
+
+    Computed from real SenderMailbox columns (the warmup engine's health score,
+    connection_status, dns_score/last_dns_check_at, is_blacklisted, send/bounce/
+    complaint counters). A mailbox whose connection test failed cannot send, so
+    it scores 0 and is never counted as healthy.
+    """
+    from app.services.pipelines.warmup_engine import load_warmup_config, calculate_health_score
+
     mailboxes = tenant_filter(
         db.query(SenderMailbox), SenderMailbox, tenant_id
-    ).filter(SenderMailbox.is_active == True).all()
+    ).filter(
+        SenderMailbox.is_active == True,  # noqa: E712
+        SenderMailbox.is_archived == False,  # noqa: E712
+    ).all()
 
     if not mailboxes:
         return {
             "avg_health_score": 0,
             "total_mailboxes": 0,
+            "healthy_count": 0,
+            "failed_connection_count": 0,
+            "untested_connection_count": 0,
+            "blacklisted_count": 0,
             "dns_issues_count": 0,
+            "dns_unchecked_count": 0,
             "avg_bounce_rate": 0,
             "avg_complaint_rate": 0,
             "bounce_trend": "stable",
             "send_gate_blocks_today": 0,
         }
 
+    config = load_warmup_config(db, tenant_id=tenant_id)
+    healthy_threshold = config.get("active_health_threshold", 70)
+    dns_ok_score = 70  # same threshold the warmup overview uses for "DNS issues"
+
     total = len(mailboxes)
-    health_scores = [getattr(m, 'health_score', 100) or 100 for m in mailboxes]
-    avg_health = sum(health_scores) / total if total else 0
-
-    # Bounce and complaint rates from mailbox stats
-    bounce_rates = []
-    complaint_rates = []
-    dns_issues = 0
+    health_scores = []
+    healthy = failed_conn = untested_conn = blacklisted = dns_issues = dns_unchecked = 0
+    sent_sum = bounce_sum = complaint_sum = 0
     for m in mailboxes:
-        sent = getattr(m, 'daily_emails_sent', 0) or 0
-        total_sent = max(sent, getattr(m, 'total_emails_sent', 0) or 0, 1)
-        bounce_count = getattr(m, 'bounce_count', 0) or 0
-        complaint_count = getattr(m, 'complaint_count', 0) or 0
-        bounce_rates.append(bounce_count / total_sent * 100 if total_sent > 0 else 0)
-        complaint_rates.append(complaint_count / total_sent * 100 if total_sent > 0 else 0)
-        # DNS issues — check if SPF/DKIM/DMARC fields exist and are failing
-        spf = getattr(m, 'spf_status', None)
-        dkim = getattr(m, 'dkim_status', None)
-        dmarc = getattr(m, 'dmarc_status', None)
-        if spf and spf != 'pass':
-            dns_issues += 1
-        if dkim and dkim != 'pass':
-            dns_issues += 1
-        if dmarc and dmarc != 'pass':
+        conn = (m.connection_status or "untested").lower()
+        if conn == "failed":
+            failed_conn += 1
+            score = 0.0
+        else:
+            if conn != "successful":
+                untested_conn += 1
+            score = float(calculate_health_score(m, config)["health_score"])
+        health_scores.append(score)
+
+        if m.is_blacklisted:
+            blacklisted += 1
+        if m.last_dns_check_at is None:
+            dns_unchecked += 1
+        elif (m.dns_score or 0) < dns_ok_score:
             dns_issues += 1
 
-    avg_bounce = sum(bounce_rates) / total if total else 0
-    avg_complaint = sum(complaint_rates) / total if total else 0
+        if conn != "failed" and not m.is_blacklisted and score >= healthy_threshold:
+            healthy += 1
+
+        sent_sum += m.total_emails_sent or 0
+        bounce_sum += m.bounce_count or 0
+        complaint_sum += m.complaint_count or 0
+
+    avg_health = sum(health_scores) / total
+    # Volume-weighted rates over mailboxes that actually sent.
+    avg_bounce = (bounce_sum / sent_sum * 100) if sent_sum else 0
+    avg_complaint = (complaint_sum / sent_sum * 100) if sent_sum else 0
 
     # Send gate blocks today — count OutreachEvents with status 'blocked' today
     from datetime import datetime, timedelta
@@ -149,7 +174,12 @@ async def get_health_summary(
     return {
         "avg_health_score": round(avg_health, 1),
         "total_mailboxes": total,
+        "healthy_count": healthy,
+        "failed_connection_count": failed_conn,
+        "untested_connection_count": untested_conn,
+        "blacklisted_count": blacklisted,
         "dns_issues_count": dns_issues,
+        "dns_unchecked_count": dns_unchecked,
         "avg_bounce_rate": round(avg_bounce, 2),
         "avg_complaint_rate": round(avg_complaint, 3),
         "bounce_trend": bounce_trend,
@@ -198,9 +228,19 @@ async def get_mailbox_health(
         isp = "other"
         isp_name = "Other"
 
-    health_score = getattr(mailbox, 'health_score', 100) or 100
-    total_sent = max(getattr(mailbox, 'total_emails_sent', 0) or 0, 1)
-    bounce_count = getattr(mailbox, 'bounce_count', 0) or 0
+    # SenderMailbox has no stored health score; compute it the way the warmup
+    # engine does. A failed connection means the mailbox cannot send at all.
+    from app.services.pipelines.warmup_engine import load_warmup_config, calculate_health_score
+    connection_status = (mailbox.connection_status or "untested").lower()
+    if connection_status == "failed":
+        health_score = 0.0
+        is_healthy = False
+    else:
+        health_score = float(calculate_health_score(
+            mailbox, load_warmup_config(db, tenant_id=mailbox.tenant_id)
+        )["health_score"])
+    total_sent = max(mailbox.total_emails_sent or 0, 1)
+    bounce_count = mailbox.bounce_count or 0
     bounce_rate = bounce_count / total_sent * 100
 
     # Health grade
@@ -223,6 +263,7 @@ async def get_mailbox_health(
         "complaint_rate_pct": round(complaint_rate * 100, 3),
         "engagement_rate": round(engagement.get("reply_rate", 0), 4),
         "is_healthy": is_healthy,
+        "connection_status": connection_status,
         "isp": isp,
         "isp_name": isp_name,
     }
@@ -555,7 +596,7 @@ def run_seed_test_endpoint(
     """Send test emails to seed accounts for inbox placement testing."""
     from app.services.seed_tester import run_seed_test
 
-    mailbox = tenant_filter(db.query(SenderMailbox), tenant_id).filter(
+    mailbox = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).filter(
         SenderMailbox.mailbox_id == mailbox_id
     ).first()
     if not mailbox:
@@ -563,14 +604,38 @@ def run_seed_test_endpoint(
     return run_seed_test(mailbox_id, db)
 
 
+def _require_seed_run_access(db: Session, test_run_id: str, tenant_id: Optional[int]) -> None:
+    """404 unless the seed-test run exists and every mailbox in it is the tenant's.
+
+    Seed results have no tenant_id; they belong to a tenant through their
+    mailbox. A super admin without a tenant (None) keeps the global view.
+    """
+    if tenant_id is None:
+        return
+    from app.db.models.seed_test import SeedTestResult
+    owners = {
+        row[0] for row in (
+            db.query(SenderMailbox.tenant_id)
+            .join(SeedTestResult, SeedTestResult.mailbox_id == SenderMailbox.mailbox_id)
+            .filter(SeedTestResult.test_run_id == test_run_id)
+            .distinct()
+            .all()
+        )
+    }
+    if owners != {tenant_id}:
+        raise HTTPException(status_code=404, detail="Seed test run not found")
+
+
 @router.post("/seed-test/{test_run_id}/check")
 def check_seed_results_endpoint(
     test_run_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Poll IMAP accounts to check inbox placement for a seed test run."""
     from app.services.seed_tester import check_seed_results
+    _require_seed_run_access(db, test_run_id, tenant_id)
     return check_seed_results(test_run_id, db)
 
 
@@ -579,7 +644,9 @@ def get_seed_test_results(
     test_run_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get results for a specific seed test run."""
     from app.services.seed_tester import get_test_results
+    _require_seed_run_access(db, test_run_id, tenant_id)
     return get_test_results(test_run_id, db)

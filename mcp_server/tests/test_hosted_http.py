@@ -64,6 +64,20 @@ async def test_x_api_key_header_also_works(hosted, backend):
     assert result_json(res)["tenant_id"] == backend["B"]["tenant_id"]
 
 
+async def test_x_tenant_id_header_selects_workspace_for_super_admin(hosted, backend):
+    res = await _whoami(hosted, {"Authorization": f"Bearer {backend['super']['key']}",
+                                 "X-Tenant-ID": str(backend["B"]["tenant_id"])})
+    assert not res.is_error
+    assert result_json(res)["effective_workspace_id"] == backend["B"]["tenant_id"]
+
+
+async def test_x_tenant_id_header_ignored_for_regular_key(hosted, backend):
+    res = await _whoami(hosted, {"Authorization": f"Bearer {backend['A']['keys']['read']}",
+                                 "X-Tenant-ID": str(backend["B"]["tenant_id"])})
+    out = result_json(res)
+    assert out["tenant_id"] == out["effective_workspace_id"] == backend["A"]["tenant_id"]
+
+
 async def test_missing_key_never_falls_back_to_server_key(hosted):
     res = await _whoami(hosted, {})
     assert res.is_error

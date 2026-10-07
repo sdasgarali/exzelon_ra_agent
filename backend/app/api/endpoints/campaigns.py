@@ -1464,8 +1464,27 @@ def enroll_contacts(
     if tenant_id is not None and campaign.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
+    # Every contact must belong to the campaign's tenant. Enrolling another tenant's
+    # contact ids would mean emailing them from this campaign. Missing and foreign
+    # ids are indistinguishable to the caller on purpose (no cross-tenant probing).
+    from app.db.models.contact import ContactDetails
+    requested_ids = list(dict.fromkeys(data.contact_ids))
+    owned_ids = {
+        row[0] for row in db.query(ContactDetails.contact_id).filter(
+            ContactDetails.contact_id.in_(requested_ids),
+            ContactDetails.tenant_id == campaign.tenant_id,
+        ).all()
+    } if requested_ids else set()
+    invalid_ids = [cid for cid in requested_ids if cid not in owned_ids]
+    if invalid_ids:
+        raise HTTPException(status_code=400, detail={
+            "message": "Some contacts were not found in this workspace; nothing was enrolled.",
+            "invalid_contact_ids": invalid_ids[:20],
+            "invalid_count": len(invalid_ids),
+        })
+
     from app.services.campaign_engine import enroll_contacts as _enroll
-    result = _enroll(campaign_id, data.contact_ids, db)
+    result = _enroll(campaign_id, requested_ids, db)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     return result

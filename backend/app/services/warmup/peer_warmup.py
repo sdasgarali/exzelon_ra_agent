@@ -60,7 +60,13 @@ def send_warmup_email(sender_mailbox: SenderMailbox, receiver_email: str, subjec
         return {"success": False, "error": str(e)}
 
 
-def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None) -> Dict[str, Any]:
+def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None, sender_tenant_id=None) -> Dict[str, Any]:
+    """Run one peer-warmup round.
+
+    ``sender_tenant_id`` restricts the SENDING mailboxes to one tenant (manual API
+    trigger by a tenant user). Receivers stay the shared peer pool. ``tenant_id``
+    only selects which tenant's settings apply (the scheduler passes it per tenant).
+    """
     from app.services.warmup.content_generator import generate_warmup_subject, generate_warmup_body, generate_ai_warmup_content
     from app.services.warmup.smart_scheduler import should_skip_weekend
 
@@ -78,6 +84,8 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None) -
     )
     if mailbox_id:
         query = query.filter(SenderMailbox.mailbox_id == mailbox_id)
+    if sender_tenant_id is not None:
+        query = query.filter(SenderMailbox.tenant_id == sender_tenant_id)
 
     mailboxes = query.all()
     results = {"total": 0, "sent": 0, "failed": 0, "details": []}
@@ -149,7 +157,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None) -
     return results
 
 
-def run_auto_reply_cycle(db: Session, tenant_id=None) -> Dict[str, Any]:
+def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) -> Dict[str, Any]:
     """Auto-reply to received warmup emails to boost reply rates and ISP reputation.
 
     Logic:
@@ -158,6 +166,10 @@ def run_auto_reply_cycle(db: Session, tenant_id=None) -> Dict[str, Any]:
     - The RECEIVER mailbox sends a reply back to the SENDER
     - Only reply to ~40-60% of emails (realistic reply rate)
     - Update replied_at, reply_count, warmup_replies counters
+
+    ``replier_tenant_id`` restricts replies to emails RECEIVED by that tenant's
+    mailboxes (manual API trigger by a tenant user), so a tenant can only make
+    its own mailboxes send.
     """
     from app.services.warmup.content_generator import generate_warmup_reply
     from app.services.warmup.smart_scheduler import should_skip_weekend
@@ -184,7 +196,13 @@ def run_auto_reply_cycle(db: Session, tenant_id=None) -> Dict[str, Any]:
         WarmupEmail.sent_at <= delay_cutoff,
         # Don't reply to emails older than 24h (already missed the window)
         WarmupEmail.sent_at >= now - timedelta(hours=24),
-    ).all()
+    )
+    if replier_tenant_id is not None:
+        tenant_mailbox_ids = db.query(SenderMailbox.mailbox_id).filter(
+            SenderMailbox.tenant_id == replier_tenant_id
+        )
+        unreplied = unreplied.filter(WarmupEmail.receiver_mailbox_id.in_(tenant_mailbox_ids))
+    unreplied = unreplied.all()
 
     results = {"total_candidates": len(unreplied), "replied": 0, "skipped": 0, "failed": 0, "details": []}
 

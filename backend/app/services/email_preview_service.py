@@ -305,7 +305,7 @@ def generate_pipeline_drafts(
         if drafts_created >= limit:
             break
 
-        eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
+        eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules, tenant_id=tenant_id)
         if not eligible:
             continue
 
@@ -383,14 +383,18 @@ def generate_broadcast_drafts(
     """Generate drafts for a broadcast send to specific contacts using a template."""
     from app.services.pipelines.outreach import render_template, render_signature_html
 
+    # Template, mailbox, contacts and leads are all limited to ``tenant_id`` so a
+    # caller can't render another tenant's template or send from its mailbox.
     template = db.query(EmailTemplate).filter(
-        EmailTemplate.template_id == template_id
+        EmailTemplate.template_id == template_id,
+        EmailTemplate.tenant_id == tenant_id,
     ).first()
     if not template:
         return {"error": "Template not found", "drafts_created": 0}
 
     mailbox = db.query(SenderMailbox).filter(
-        SenderMailbox.mailbox_id == mailbox_id
+        SenderMailbox.mailbox_id == mailbox_id,
+        SenderMailbox.tenant_id == tenant_id,
     ).first()
     if not mailbox:
         return {"error": "Mailbox not found", "drafts_created": 0}
@@ -411,7 +415,8 @@ def generate_broadcast_drafts(
         contact_lead = None
         if contact.lead_id:
             contact_lead = db.query(LeadDetails).filter(
-                LeadDetails.lead_id == contact.lead_id
+                LeadDetails.lead_id == contact.lead_id,
+                LeadDetails.tenant_id == tenant_id,
             ).first()
 
         subject, body_html, body_text = render_template(

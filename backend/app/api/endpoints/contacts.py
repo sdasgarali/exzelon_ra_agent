@@ -2,7 +2,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.api.deps.plan_limits import check_plan_limit
@@ -190,23 +190,35 @@ async def get_contact_stats(
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
-    with_lead = db.query(LeadContactAssociation).with_entities(
-        func.count(func.distinct(LeadContactAssociation.contact_id))
-    ).scalar() or 0
-    legacy_linked = base_query.with_entities(
+    # A contact is linked when it has the legacy lead_id FK OR a junction row. Count
+    # each of THIS tenant's contacts once — the junction table has no tenant_id, so it
+    # must only be consulted through the tenant-filtered contact query.
+    junction_link = (
+        db.query(LeadContactAssociation.id)
+        .filter(LeadContactAssociation.contact_id == ContactDetails.contact_id)
+        .exists()
+    )
+    linked = base_query.with_entities(
         func.count(ContactDetails.contact_id)
     ).filter(
-        ContactDetails.lead_id.isnot(None)
+        or_(ContactDetails.lead_id.isnot(None), junction_link)
     ).scalar() or 0
-    linked = max(with_lead, legacy_linked)
+    total = total or 0
 
     return {
         "total": total,
         "linked_to_leads": linked,
-        "unlinked": total - linked,
-        "by_priority": {str(p): c for p, c in by_priority if p},
-        "by_validation": {v: c for v, c in by_validation if v}
+        "unlinked": max(total - linked, 0),
+        # Keys are the stored values ("p1_job_poster", "valid"), not str(enum), which
+        # is "PriorityLevel.P1_JOB_POSTER" on Python 3.11+.
+        "by_priority": {_enum_key(p): c for p, c in by_priority if p},
+        "by_validation": {_enum_key(v): c for v, c in by_validation if v},
     }
+
+
+def _enum_key(value) -> str:
+    """Plain string key for a grouped column that may be an Enum or a str."""
+    return value.value if hasattr(value, "value") else str(value)
 
 
 @router.get("/by-lead/{lead_id}", tags=["Contacts"])
@@ -352,6 +364,11 @@ async def bulk_update_contacts(
 
     if not contacts:
         raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
+
+    if "lead_id" in filtered:
+        # The lead must live in each contact's own tenant (no cross-tenant links).
+        for contact_tenant in {c.tenant_id for c in contacts}:
+            _require_leads_in_tenant(db, [filtered["lead_id"]], contact_tenant)
 
     try:
         for contact in contacts:
@@ -561,6 +578,32 @@ async def get_contact(
     return _enrich_contact_with_lead_ids(db, contact)
 
 
+def _require_leads_in_tenant(db: Session, lead_ids, tenant_id: int) -> None:
+    """Reject (400) lead ids that don't exist in ``tenant_id``.
+
+    Without this a caller could link a contact to another tenant's lead (or a
+    non-existent one) just by passing its id. Foreign and missing ids get the same
+    message so the response doesn't reveal which ids exist in other tenants.
+    """
+    from app.db.models.lead import LeadDetails
+
+    wanted = {int(i) for i in lead_ids if i is not None}
+    if not wanted:
+        return
+    found = {
+        row[0] for row in db.query(LeadDetails.lead_id).filter(
+            LeadDetails.lead_id.in_(wanted),
+            LeadDetails.tenant_id == tenant_id,
+        ).all()
+    }
+    missing = sorted(wanted - found)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Lead(s) not found: {missing}",
+        )
+
+
 @router.post("", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact(
     contact_in: ContactCreate,
@@ -582,10 +625,14 @@ async def create_contact(
             detail="Contact with this email already exists"
         )
 
-    lead_ids = contact_in.lead_ids
+    write_tenant = ensure_tenant(tenant_id)
+    lead_ids = list(dict.fromkeys(contact_in.lead_ids or []))
+    _require_leads_in_tenant(
+        db, lead_ids + ([contact_in.lead_id] if contact_in.lead_id is not None else []), write_tenant,
+    )
     contact_data = contact_in.model_dump(exclude={"lead_ids"})
     contact = ContactDetails(**contact_data)
-    contact.tenant_id = ensure_tenant(tenant_id)
+    contact.tenant_id = write_tenant
 
     # Auto-resolve timezone: prefer contact's own state, fall back to client's timezone
     if contact.location_state:
@@ -631,6 +678,21 @@ async def update_contact(
         )
 
     update_data = contact_in.model_dump(exclude_unset=True)
+
+    # A lead link must stay inside the contact's own tenant.
+    if update_data.get("lead_id") is not None:
+        _require_leads_in_tenant(db, [update_data["lead_id"]], contact.tenant_id)
+
+    # A new address hasn't been verified: clear validation_status unless the same
+    # request sets it explicitly (manual override stays possible, as in bulk update).
+    new_email = update_data.get("email")
+    if (
+        new_email is not None
+        and "validation_status" not in update_data
+        and (contact.email or "").strip().lower() != str(new_email).strip().lower()
+    ):
+        update_data["validation_status"] = None
+
     for field, value in update_data.items():
         setattr(contact, field, value)
 
