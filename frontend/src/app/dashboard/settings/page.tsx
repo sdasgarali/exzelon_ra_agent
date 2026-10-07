@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import ApiKeysMcpTab from '@/components/settings/api-keys-mcp-tab'
 
 interface Setting {
   key: string
@@ -264,6 +265,13 @@ const TAB_PERM_MAP: Record<string, string> = {
   deliverability: 'deliverability',
   lobleadsources: 'lob_lead_sources',
   sourcetuning: 'source_tuning',
+}
+
+// Tabs whose permission key is optional in the role matrix: when the matrix has no
+// entry for the key the tab defaults to full access (the page itself is admin-only and
+// the backend enforces its own role checks). An explicit matrix value is honored.
+const OPTIONAL_TAB_PERM_MAP: Record<string, string> = {
+  apikeys: 'api_keys_mcp',
 }
 
 // Setting key to tab mapping (for All Settings filtering)
@@ -627,6 +635,8 @@ export default function SettingsPage() {
 
   const getTabAccess = (tabId: string): string => {
     if (isSuperAdmin) return 'full'
+    const optionalKey = OPTIONAL_TAB_PERM_MAP[tabId]
+    if (optionalKey) return tabPermissions[optionalKey] || 'full'
     const permKey = TAB_PERM_MAP[tabId]
     if (!permKey) return 'full' // 'all' tab doesn't have its own permission
     return tabPermissions[permKey] || 'no_access'
@@ -1198,6 +1208,7 @@ export default function SettingsPage() {
             { id: 'lobleadsources', label: '9. LOB Lead Sources', color: 'emerald' },
             { id: 'sourcetuning', label: '10. Source Tuning', color: 'amber' },
             { id: 'notifications', label: '11. Notifications', color: 'blue' },
+            { id: 'apikeys', label: '12. API Keys & MCP', color: 'indigo' },
             { id: 'all', label: 'All Settings', color: 'gray' },
           ]
             .filter(tab => {
@@ -5047,6 +5058,9 @@ export default function SettingsPage() {
           </div>
         </fieldset>
       )}
+
+      {/* Tab 12: API Keys & MCP */}
+      {activeTab === 'apikeys' && <ApiKeysMcpTab readOnly={!canWriteTab('apikeys')} />}
 
       {/* Tab: All Settings */}
       {activeTab === 'all' && (

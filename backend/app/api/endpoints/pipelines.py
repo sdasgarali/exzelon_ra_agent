@@ -629,6 +629,7 @@ async def run_email_validation_selected(
         emails=emails,
         provider=None,
         triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {

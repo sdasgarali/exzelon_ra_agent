@@ -145,6 +145,23 @@ server-level `add_header`s, the 5 security headers are re-declared inside `locat
 `ra-app.bak` there causes `duplicate upstream` and `nginx -t` fails. Keep backups in
 `/root/nginx-backups/`.
 
+## MCP connector (hosted `/mcp`) — NOT YET DEPLOYED (2026-10-07)
+
+Optional service for AI tools; see `CLAUDE_REFERENCE/mcp-connector.md`.
+
+| Item | Value |
+|---|---|
+| Code | `/opt/exzelon-ra-agent/mcp_server/` (own venv `.venv`, Python 3.11+) |
+| Service | `neuraleads-mcp` (`deploy/systemd/neuraleads-mcp.service`), user `ra-user` |
+| Port | **8010**, loopback only. Verify free first: `ss -tlnp \| grep :8010` |
+| Env | `/opt/exzelon-ra-agent/mcp_server/.env` (API URL `http://127.0.0.1:8000/api/v1`, port, `MCP_ALLOWED_HOSTS`). Holds no API keys. |
+| Nginx | include `deploy/mcp/nginx-mcp-location.conf` (`location = /mcp`) in the neuraleads.ai 443 block, `nginx -t`, reload |
+| Install/update | `bash /opt/exzelon-ra-agent/deploy/mcp/install_mcp.sh` (idempotent; health-checks `/healthz`) |
+| Logs | `journalctl -u neuraleads-mcp -f` |
+| Smoke test | `curl -s -X POST https://neuraleads.ai/mcp -H "Authorization: Bearer <key>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` |
+
+After the first deploy: add 8010 to the global VPS port table (`~/.claude/CLAUDE.md`).
+
 ## Viewing Logs
 
 ```bash

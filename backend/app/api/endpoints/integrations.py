@@ -8,11 +8,12 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
+from app.core.api_key_scopes import VALID_SCOPES, normalize_scopes
 from app.core.settings_resolver import get_tenant_setting
 from app.db.models.user import User, UserRole
 from app.db.models.api_key import ApiKey
@@ -27,8 +28,18 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 # ─── API Key Management ───────────────────────────────────────────
 
 class ApiKeyCreate(BaseModel):
-    name: str = Field(..., max_length=255)
+    name: str = Field(..., min_length=1, max_length=255)
     scopes: List[str] = ["read"]
+    expires_in_days: Optional[int] = Field(None, ge=1, le=3650)
+
+    @field_validator("scopes")
+    @classmethod
+    def _valid_scopes(cls, v: List[str]) -> List[str]:
+        cleaned = sorted(normalize_scopes(v))
+        unknown = {s.strip().lower() for s in v} - set(VALID_SCOPES)
+        if unknown or not cleaned:
+            raise ValueError(f"scopes must be a non-empty subset of {list(VALID_SCOPES)}")
+        return cleaned
 
 class ApiKeyResponse(BaseModel):
     key_id: int
@@ -60,6 +71,7 @@ def create_api_key(
         user_id=user.user_id,
         is_active=True,
         tenant_id=ensure_tenant(tenant_id),
+        expires_at=(datetime.utcnow() + timedelta(days=data.expires_in_days)) if data.expires_in_days else None,
     )
     db.add(api_key)
     db.commit()
@@ -71,6 +83,7 @@ def create_api_key(
         "key": raw_key,  # shown only once
         "key_prefix": key_prefix,
         "scopes": data.scopes,
+        "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
         "message": "Save this key — it will not be shown again.",
     }
 
@@ -96,6 +109,7 @@ def list_api_keys(
             "is_active": k.is_active,
             "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
             "created_at": k.created_at.isoformat() if k.created_at else None,
+            "expires_at": k.expires_at.isoformat() if k.expires_at else None,
         }
         for k in keys
     ]
