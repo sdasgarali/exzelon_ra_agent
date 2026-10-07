@@ -28,6 +28,62 @@ US_STATES = {
 # Reverse map: abbreviation → full name
 US_STATE_ABBREVS = {v: k.title() for k, v in US_STATES.items()}
 
+# State codes that are also everyday English words. Lowercase, these only count as a
+# state in a clear location context ("in pa", "Portland, or"); uppercase ("IN", "OR")
+# they count anywhere, but lose to an unambiguous code or a full state name.
+_AMBIGUOUS_CODES = frozenset({
+    "in", "or", "me", "hi", "ok", "oh", "pa", "de", "la", "co", "al", "ma", "md", "id",
+})
+# Words right before a token that mark it as a place.
+_LOCATION_PREPOSITIONS = frozenset({"in", "from", "near", "at", "across", "throughout", "within"})
+# Words right after "in <code>" that show the code was a function word ("in or around").
+_FUNCTION_WORDS_AFTER = frozenset({
+    "or", "and", "around", "near", "the", "a", "an", "to", "of", "out", "between",
+    "about", "on", "at", "by", "with", "for", "from",
+})
+
+# Full names, longest first so "west virginia" wins over "virginia" and "arkansas"
+# is not read as "kansas" (word boundaries handle the latter too).
+_STATE_NAME_RE = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in sorted(US_STATES, key=len, reverse=True)) + r")\b"
+)
+_TOKEN_RE = re.compile(r"[A-Za-z]+|[,;:()/]")
+
+
+def _detect_state(query: str) -> Optional[str]:
+    """Return the two-letter state code the query refers to, or None.
+
+    Precedence: a full state name (first one mentioned) > an unambiguous code or an
+    ambiguous code in a location context > an uppercase ambiguous code on its own.
+    Within a tier the first occurrence wins.
+    """
+    name_match = _STATE_NAME_RE.search(query.lower())
+    if name_match:
+        return US_STATES[name_match.group(1)]
+
+    tokens = _TOKEN_RE.findall(query)
+    best: Optional[tuple] = None  # (score, position, code)
+    for i, tok in enumerate(tokens):
+        code = tok.upper()
+        if len(tok) != 2 or code not in US_STATE_ABBREVS:
+            continue
+        prev = tokens[i - 1].lower() if i > 0 else ""
+        nxt = tokens[i + 1].lower() if i + 1 < len(tokens) else ""
+        in_location = prev in _LOCATION_PREPOSITIONS or prev == ","
+        if tok.lower() not in _AMBIGUOUS_CODES:
+            score = 2
+        elif in_location and nxt not in _FUNCTION_WORDS_AFTER:
+            score = 2
+        elif tok.isupper() and not query.isupper():
+            score = 1  # "nurses IN" — deliberate capitals in otherwise mixed-case text
+        elif tok.isupper() and in_location:
+            score = 1  # all-caps query: "NURSES IN IN"
+        else:
+            continue
+        if best is None or score > best[0]:
+            best = (score, i, code)
+    return best[2] if best else None
+
 
 def parse_natural_query(query: str) -> Dict[str, Any]:
     """Parse a natural language lead search query into structured filters.
@@ -53,14 +109,13 @@ def parse_natural_query(query: str) -> Dict[str, Any]:
     if salary_match2:
         filters["salary_min"] = int(salary_match2.group(1) + salary_match2.group(2))
 
-    # Extract state
-    for state_name, abbrev in US_STATES.items():
-        if state_name in query_lower or f" {abbrev.lower()} " in f" {query_lower} ":
-            filters["state"] = abbrev
-            break
+    # Extract state. Word-aware: the word "in" is not Indiana, "me" is not Maine.
+    state = _detect_state(query)
+    if state:
+        filters["state"] = state
 
     # Extract city (pattern: "in CityName, STATE" or "in CityName")
-    city_match = re.search(r'in\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', query)
+    city_match = re.search(r'\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', query)
     if city_match and city_match.group(1).lower() not in US_STATES:
         filters["city"] = city_match.group(1)
 
