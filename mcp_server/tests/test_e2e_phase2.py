@@ -259,7 +259,6 @@ async def test_mailbox_oauth_link_checks_workspace(backend):
 
 # ── read-scope allowlist (backend fix in progress) ──────────────────────
 
-@pytest.mark.xfail(reason="needs backend fix read-scope allowlist (ai-suggest-subjects)", strict=False)
 async def test_read_key_can_suggest_subject_lines(backend):
     a = backend["A"]
     camp = await call(_server(backend, a["keys"]["write"]), "create_campaign_from_leads", lead_ids=[a["lead_id"]])
@@ -268,7 +267,6 @@ async def test_read_key_can_suggest_subject_lines(backend):
     assert "__error__" not in out and "read-only" not in json.dumps(out)
 
 
-@pytest.mark.xfail(reason="needs backend fix read-scope allowlist (compute-only content POSTs)", strict=False)
 async def test_read_key_can_preview_template(backend):
     a = backend["A"]
     t = await call(_server(backend, a["keys"]["write"]), "create_email_template", name=f"RO {_tag()}",
