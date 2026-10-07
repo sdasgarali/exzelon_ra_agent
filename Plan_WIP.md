@@ -9,6 +9,13 @@
 > no-bypass "block force-push" ruleset (ruleset API returned 500 for me; changing it also needs user permission).
 > (2) fix backend tenant-scoping gaps in CLAUDE_REFERENCE/mcp-connector.md. (3) startup "Failed to seed demo
 > data" duplicate 'TechCorp Solutions' for tenant 2 on every API start (pre-existing, harmless, noisy).
+> 2026-10-07 LIVE TEST (prod 7e5759c): 70/70 pass — REST scope enforcement (9), all 52 read tools via
+> https://neuraleads.ai/mcp, read-key refusals, confirm gates. Used temp keys 2,3 on sandbox tenant 12 (revoked).
+> Fixed+deployed #124: API-key creation 500'd on MySQL (12-char prefix, VARCHAR(8)). 4th force-reset of master
+> at 15:44 UTC; new ruleset 24662252 "Block force-push on master (no bypass)" now blocks it. Source still unknown.
+> Follow-ups: (a) GET /contacts/stats leaks a cross-tenant `linked_to_leads` count (unlinked goes negative);
+> (b) /leads/ai-search parses the word "in" as state IN (Indiana); (c) suggest_reply / suggest_subject_lines
+> are POSTs, so read keys can't use them — allowlist or re-annotate as write.
 > 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
 > 2026-09-25: prod on master dcf93de, Alembic head 0005. Shipped: Resend system mail (no-reply@neuraleads.ai),
 > signup-verification bypass fix (#119), top-ups $20/1k + 12-month expiry (#120, Plan_Topup_Pricing_Expiry.md).
