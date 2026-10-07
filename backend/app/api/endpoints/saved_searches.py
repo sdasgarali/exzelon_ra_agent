@@ -124,7 +124,8 @@ def execute_saved_search(
     from app.services.ai_lead_search import execute_ai_search
     # If the saved filter has a "query" key, use AI search
     if "query" in filters:
-        return execute_ai_search(query=filters["query"], db=db, limit=limit, offset=offset)
+        return execute_ai_search(query=filters["query"], db=db, limit=limit, offset=offset,
+                                 tenant_id=tenant_id)
 
     # Otherwise apply filters directly
     from app.db.models.lead import LeadDetails
@@ -148,7 +149,7 @@ def execute_saved_search(
     if filters.get("salary_min"):
         q = q.filter(LeadDetails.salary_min >= int(filters["salary_min"]))
     if filters.get("status"):
-        q = q.filter(LeadDetails.status == filters["status"])
+        q = q.filter(LeadDetails.lead_status == filters["status"])
     if filters.get("source"):
         q = q.filter(LeadDetails.source.ilike(f"%{filters['source']}%"))
     if filters.get("days_ago"):
@@ -165,14 +166,14 @@ def execute_saved_search(
         "results": [
             {
                 "lead_id": r.lead_id,
-                "company_name": r.company_name,
+                "company_name": r.client_name,
                 "job_title": r.job_title,
                 "state": r.state,
-                "city": getattr(r, "city", None),
+                "city": r.city,
                 "industry": r.industry,
                 "salary_min": r.salary_min,
                 "salary_max": r.salary_max,
-                "status": r.status,
+                "status": getattr(r.lead_status, "value", r.lead_status),
                 "source": r.source,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }

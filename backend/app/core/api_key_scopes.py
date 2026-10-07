@@ -41,8 +41,7 @@ _READ_ONLY_POST_SUFFIXES = (
 # Compute-only POSTs whose path has an id in the middle; matched against the full path.
 _READ_ONLY_POST_PATTERNS = (
     re.compile(r"^/api/v1/templates/\d+/preview$"),
-    # Not /saved-searches/{id}/execute yet: it saves nothing, but its natural-language
-    # path searches every tenant's leads (no tenant_id passed). Add it once that is fixed.
+    re.compile(r"^/api/v1/saved-searches/\d+/execute$"),
 )
 
 # Account administration — off-limits to write-scoped keys.
