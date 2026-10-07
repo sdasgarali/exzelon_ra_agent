@@ -203,7 +203,10 @@ def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> Sender
         connection_status=mailbox.connection_status or "untested",
         last_connection_test_at=mailbox.last_connection_test_at,
         connection_error=mailbox.connection_error,
-        can_send=mailbox.can_send,
+        # The model property ignores connection health; a mailbox whose last
+        # connection test failed cannot actually send (the campaign engine's
+        # selector already requires connection_status == "successful").
+        can_send=bool(mailbox.can_send) and (mailbox.connection_status or "untested") != "failed",
         remaining_daily_quota=mailbox.remaining_daily_quota,
         email_signature_json=mailbox.email_signature_json,
         is_archived=mailbox.is_archived,
@@ -294,8 +297,14 @@ async def get_mailbox_stats(
     warming_up = sum(1 for m in mailboxes if m.warmup_status == WarmupStatus.WARMING_UP)
     paused = sum(1 for m in mailboxes if m.warmup_status == WarmupStatus.PAUSED)
 
-    # Calculate daily capacity for active, ready mailboxes
-    ready_mailboxes = [m for m in mailboxes if m.warmup_status in [WarmupStatus.COLD_READY, WarmupStatus.ACTIVE] and m.is_active]
+    # Calculate daily capacity for active, ready mailboxes that can connect
+    # (a failed connection contributes no real sending capacity).
+    ready_mailboxes = [
+        m for m in mailboxes
+        if m.warmup_status in [WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]
+        and m.is_active
+        and (m.connection_status or "untested") != "failed"
+    ]
     total_daily_capacity = sum(m.daily_send_limit for m in ready_mailboxes)
     used_today = sum(m.emails_sent_today for m in ready_mailboxes)
 
@@ -977,6 +986,11 @@ async def update_mailbox_status(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Update warmup status of a mailbox (Admin only)."""
+    if new_status == WarmupStatusEnum.RECOVERING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'recovering' is set by the recovery flow; use POST /warmup/recovery/{mailbox_id}/start",
+        )
     query = db.query(SenderMailbox).filter(SenderMailbox.mailbox_id == mailbox_id)
     if tenant_id is not None:
         query = query.filter(SenderMailbox.tenant_id == tenant_id)

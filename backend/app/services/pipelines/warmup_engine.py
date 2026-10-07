@@ -247,13 +247,35 @@ def assess_mailbox(mailbox: SenderMailbox, config: Dict[str, Any], db) -> Dict[s
 def run_warmup_assessment(
     triggered_by: str = "system",
     mailbox_id: Optional[int] = None,
+    tenant_id: Optional[int] = None,
+    db=None,
 ) -> Dict[str, Any]:
-    """Pipeline entry: assess all or one mailbox. Creates a JobRun record."""
-    db = SessionLocal()
+    """Pipeline entry: assess all or one mailbox. Creates a JobRun record.
+
+    Scope:
+    - ``tenant_id`` set: only that tenant's mailboxes are assessed and the JobRun
+      is recorded against that tenant (API call by a tenant user, or a super
+      admin impersonating a tenant).
+    - ``tenant_id`` None: every tenant's mailboxes are assessed (nightly
+      scheduler, super admin global view). The JobRun is attributed to the
+      mailbox's tenant when ``mailbox_id`` is given, else to tenant 1
+      (JobRun.tenant_id is NOT NULL).
+
+    ``db``: optional caller-owned session (API request). When omitted a private
+    session is opened and closed here (scheduler).
+    """
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
     job = None
     try:
+        job_tenant_id = tenant_id
+        if job_tenant_id is None and mailbox_id:
+            job_tenant_id = db.query(SenderMailbox.tenant_id).filter(
+                SenderMailbox.mailbox_id == mailbox_id
+            ).scalar()
         job = JobRun(
-            tenant_id=1,
+            tenant_id=job_tenant_id if job_tenant_id is not None else 1,
             pipeline_name="warmup_assessment",
             started_at=datetime.utcnow(),
             status=JobStatus.RUNNING,
@@ -263,18 +285,21 @@ def run_warmup_assessment(
         db.commit()
         db.refresh(job)
 
-        config = load_warmup_config(db)
+        config = load_warmup_config(db, tenant_id=tenant_id)
 
         if mailbox_id:
-            mailboxes = db.query(SenderMailbox).filter(
+            q = db.query(SenderMailbox).filter(
                 SenderMailbox.mailbox_id == mailbox_id,
                 SenderMailbox.connection_status == "successful",
-            ).all()
+            )
         else:
-            mailboxes = db.query(SenderMailbox).filter(
-                SenderMailbox.is_active == True,
+            q = db.query(SenderMailbox).filter(
+                SenderMailbox.is_active == True,  # noqa: E712
                 SenderMailbox.connection_status == "successful",
-            ).all()
+            )
+        if tenant_id is not None:
+            q = q.filter(SenderMailbox.tenant_id == tenant_id)
+        mailboxes = q.all()
 
         counters = {
             "assessed": 0,
@@ -319,6 +344,7 @@ def run_warmup_assessment(
     except Exception as e:
         logger.error("warmup_assessment_failed", error=str(e))
         try:
+            db.rollback()  # clear a failed flush so the JobRun update can commit
             if job:
                 job.status = JobStatus.FAILED
                 job.ended_at = datetime.utcnow()
@@ -328,7 +354,8 @@ def run_warmup_assessment(
             pass
         raise
     finally:
-        db.close()
+        if owns_session:
+            db.close()
 
 
 def build_warmup_schedule(config: Dict[str, Any]) -> Dict[str, Any]:
