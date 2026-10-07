@@ -72,10 +72,22 @@ def _workspace(db, tag):
             "client_id": client.client_id, "contact_ids": contacts, "keys": keys}
 
 
+def _super_admin(db, home_tenant_id):
+    """A platform super admin (home workspace A) with an admin-scoped key, for workspace selection."""
+    user = User(email="root@mcp-e2e.example.com", password_hash=get_password_hash("SecurePass123!"),
+                full_name="Super Admin", role=UserRole.SUPER_ADMIN, is_active=True, is_verified=True,
+                tenant_id=home_tenant_id)
+    db.add(user)
+    db.flush()
+    tenant = db.get(Tenant, home_tenant_id)
+    return {"user_id": user.user_id, "key": _key(db, tenant, user, ["admin"])}
+
+
 def main():
     db = SessionLocal()
     try:
         out = {"A": _workspace(db, "A"), "B": _workspace(db, "B")}
+        out["super"] = _super_admin(db, out["A"]["tenant_id"])
         db.commit()
     finally:
         db.close()

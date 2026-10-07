@@ -58,13 +58,14 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
         """AI reply drafts awaiting approval for a thread."""
         return await rt.get(ctx, f"/inbox/threads/{thread_id}/drafts")
 
-    if not write:
-        return
-
+    # Compute-only POST: offered in read-only mode too (read-scoped keys may call it).
     @mcp.tool(annotations=READ)
     async def suggest_reply(ctx: Context, thread_id: str) -> dict:
         """An AI-suggested reply for a thread (subject + body). Saves and sends nothing."""
         return await rt.post(ctx, f"/inbox/threads/{thread_id}/suggest-reply")
+
+    if not write:
+        return
 
     @mcp.tool(annotations=WRITE_IDEMPOTENT)
     async def mark_thread_read(ctx: Context, thread_id: str) -> dict:

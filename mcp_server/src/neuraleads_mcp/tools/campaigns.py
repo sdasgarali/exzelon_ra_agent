@@ -13,8 +13,8 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from neuraleads_mcp.runtime import (
-    EXTERNAL, READ, WRITE, WRITE_IDEMPOTENT, Runtime, clamp_limit, confirmation_required, pick,
-    pick_list,
+    EXTERNAL, READ, WRITE, WRITE_IDEMPOTENT, Runtime, as_items, clamp_limit, confirmation_required,
+    pick, pick_list,
 )
 
 CAMPAIGN_FIELDS = ("campaign_id", "name", "description", "status", "timezone", "send_window_start",
@@ -64,9 +64,9 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
         return await rt.get(ctx, f"/campaigns/{campaign_id}/health")
 
     @mcp.tool(annotations=READ)
-    async def get_campaign_mailbox_stats(ctx: Context, campaign_id: int) -> list:
+    async def get_campaign_mailbox_stats(ctx: Context, campaign_id: int) -> dict:
         """Per sender mailbox results for a campaign (sent, opens, replies, bounces and rates)."""
-        return await rt.get(ctx, f"/campaigns/{campaign_id}/mailbox-stats")
+        return as_items(await rt.get(ctx, f"/campaigns/{campaign_id}/mailbox-stats"))
 
     @mcp.tool(annotations=READ)
     async def list_campaign_contacts(
@@ -112,6 +112,13 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
                  "job_title_keywords": job_title_keywords or [], "sources": sources or [],
                  "min_lead_score": min_lead_score}
         return await rt.post(ctx, f"/campaigns/{campaign_id}/enrollment-preview", json={"rules": rules})
+
+    # Compute-only POST: saves nothing, so it is offered in read-only mode too (the backend lets
+    # read-scoped keys call it).
+    @mcp.tool(annotations=READ)
+    async def suggest_subject_lines(ctx: Context, campaign_id: int) -> dict:
+        """Five AI subject-line ideas based on the campaign's enrolled leads. Saves nothing."""
+        return await rt.post(ctx, f"/campaigns/{campaign_id}/ai-suggest-subjects")
 
     if not write:
         return
@@ -263,8 +270,3 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
                 "campaign": c.get("name"), "status": c.get("status"),
                 "note": "A completed campaign cannot be restarted."})
         return await rt.post(ctx, f"/campaigns/{campaign_id}/complete")
-
-    @mcp.tool(annotations=READ)
-    async def suggest_subject_lines(ctx: Context, campaign_id: int) -> dict:
-        """Five AI subject-line ideas based on the campaign's enrolled leads. Saves nothing."""
-        return await rt.post(ctx, f"/campaigns/{campaign_id}/ai-suggest-subjects")
