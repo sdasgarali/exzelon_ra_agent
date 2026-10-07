@@ -122,10 +122,7 @@ def _email_assignee(db, tenant_id, assignee, deal: Deal, actor_name: str, link_p
             return
         from app.services.system_mailer import send_system_email
         from app.core.config import settings
-        base = settings.EFFECTIVE_BASE_URL
-        frontend = "https://ra.partnerwithus.tech" if "ra.partnerwithus.tech" in base \
-            else base.replace("/api/v1", "").replace(":8000", ":3000")
-        link = f"{frontend}{link_path}"
+        link = f"{settings.EFFECTIVE_FRONTEND_URL}{link_path}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color:#2563eb;">A deal was assigned to you</h2>
@@ -147,10 +144,7 @@ def _email_reps(db, tenant_id, reps: list, deal: Deal) -> None:
     try:
         from app.services.system_mailer import send_system_email
         from app.core.config import settings
-        base = settings.EFFECTIVE_BASE_URL
-        frontend = "https://ra.partnerwithus.tech" if "ra.partnerwithus.tech" in base \
-            else base.replace("/api/v1", "").replace(":8000", ":3000")
-        link = f"{frontend}{_DEALS_LINK}"
+        link = f"{settings.EFFECTIVE_FRONTEND_URL}{_DEALS_LINK}"
         html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color:#2563eb;">New lead to claim</h2>

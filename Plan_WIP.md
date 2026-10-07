@@ -1,11 +1,39 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
-> 2026-09-23 session ended. Prod https://ra.partnerwithus.tech is on master d620771+docs
+> 2026-10-07: MCP connector built on branch feature/mcp-connector (Plan_MCP_Connector.md, slices 1-5 done):
+> API-key scopes enforced, Settings "API Keys & MCP" tab, mcp_server/ package (82 tools, stdio + hosted HTTP).
+> DONE 2026-10-07: PR #122 merged (21ed0d5) and deployed; https://neuraleads.ai/mcp live (neuraleads-mcp, :8010).
+> origin/master had been force-reset to 7948bec a 3rd time (2026-09-25 18:38 UTC) — restored by fast-forward.
+> NEXT: (1) USER: find what force-pushes master (resets within ~30 min of merges, as sdasgarali) and add a
+> no-bypass "block force-push" ruleset (ruleset API returned 500 for me; changing it also needs user permission).
+> (2) fix backend tenant-scoping gaps in CLAUDE_REFERENCE/mcp-connector.md. (3) startup "Failed to seed demo
+> data" duplicate 'TechCorp Solutions' for tenant 2 on every API start (pre-existing, harmless, noisy).
+> 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
+> 2026-09-25: prod on master dcf93de, Alembic head 0005. Shipped: Resend system mail (no-reply@neuraleads.ai),
+> signup-verification bypass fix (#119), top-ups $20/1k + 12-month expiry (#120, Plan_Topup_Pricing_Expiry.md).
+> WARNING: origin/master was force-reset to 7948bec TWICE on 2026-09-25 (16:18, 17:28 UTC) by an unknown
+> source under the sdasgarali account. Before any deploy, confirm `git log origin/master` still contains
+> dcf93de; if not, do NOT deploy from master (would drop migration 0005's code + domain + verify fix).
+> 2026-09-23 session ended. Prod was on master d620771+docs
 > (credit/pricing system, one-user workspaces, plan-change billing fixes, user-delete FK fix),
 > MySQL, Alembic head 0004. Full prod Playwright run: 54 pass / 24 fail / 25 not run / 2 skipped;
 > all 10 new pricing/one-user tests PASS. Failures = outdated tests, except ONE real bug below.
 > Resume with the "Immediate TODO" list.
+
+## DOMAIN CHANGE -> neuraleads.ai (2026-09-25, branch chore/domain-neuraleads-ai)
+User: apex neuraleads.ai, old ra.partnerwithus.tech 301-redirects, code + prod cutover.
+- [x] 1. Code: EFFECTIVE_FRONTEND_URL replaces hardcoded host in verify/reset/deal emails; configs, deploy.sh, docs, tests
+- [x] 2. PR #117 squash-merged (29aff66)
+- [x] 3. DNS A @ + www -> 187.124.74.175 (DNS-only) added by user
+- [x] 4. VPS cutover DONE 2026-09-25: LE cert neuraleads.ai+www (exp 2026-12-24); nginx ra-app serves
+      neuraleads.ai, www + ra.partnerwithus.tech 301 -> https://neuraleads.ai$request_uri; root .env
+      PROD_BASE_URL/PROD_CORS_ORIGINS updated; frontend .env.local rebuilt; settings.warmup_tracking_base_url
+      updated. Backups: /root/nginx-backups/ra-app.bak-20260925-160709, /root/exzelon-{root,frontend}-env.bak-20260925-160709
+- [ ] 5. USER: add https://neuraleads.ai/dashboard/mailboxes as redirect URI in the Azure (MS365) app, then
+      set MS365_OAUTH_REDIRECT_URI to it in /opt/exzelon-ra-agent/.env + restart exzelon-api.
+      Until then it deliberately stays on ra.partnerwithus.tech (301 keeps ?code= and lands on the new host).
+- [ ] 6. Later: drop https://ra.partnerwithus.tech from PROD_CORS_ORIGINS once nothing uses it.
 
 ## Immediate TODO (pickup 2026-09-24)
 - [ ] 1. PROD: daily_send_limit is 30, must be 35 (e2e settings test changed it; my DB restore was
@@ -20,6 +48,11 @@
       shown twice (6), UI/layout drift (5), intended behaviour changes (3: SA must pick tenant to
       create template; create-user has tenant+role selects; admins have no Add User), mailbox
       count now 1,012 (1), empty sandbox tenant data (4).
+      2026-10-01 re-run on neuraleads.ai (read-only subset, 18 data-changing tests excluded):
+      54 pass / 20 fail / 2 skip / 11 not run. All 20 = stale tests or the Free-plan admin account
+      (masumkabirbiswas@ is Free; pricing spec expects Max) — no new real bugs. Extra stale causes:
+      inbox/email-preview panel class is now md:w-[3x0px]; users spec role list lacks bdm/recruiter;
+      deals "Avg Deal Size" card removed; mailboxes expects 5 (now 503); leads search parses wrong <p>.
 - [ ] 5. Optional cleanup: old "E2E Test Deal ..." / "E2E Test Template ... (Copy)" rows in prod
       from months-old test runs. Exzelon has 1,012 mailboxes vs its 999 limit (FYI).
 - [ ] 6. Make deploy.sh take a backup + run `alembic upgrade head` (today done by hand; see

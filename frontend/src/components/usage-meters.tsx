@@ -32,6 +32,8 @@ export interface UsageResponse {
   credits?: {
     allowance: number
     topup: number
+    topup_next_expiry?: string | null
+    topup_next_expiry_credits?: number
     total: number
     period_spent: number
     plan_allowance: number
@@ -54,6 +56,12 @@ export interface UsageResponse {
     percent: number | null
     near_limit: boolean
   }>
+  topup?: {
+    block_size: number
+    block_price_cents: number
+    validity_days: number
+    available: boolean
+  }
 }
 
 const fmt = (n: number) => n.toLocaleString()

@@ -61,10 +61,7 @@ def generate_and_send_reset(email: str, db: Session) -> bool:
     db.commit()
 
     # Build frontend reset URL
-    base_url = settings.EFFECTIVE_BASE_URL
-    frontend_url = base_url.replace("/api/v1", "").replace(":8000", ":3000")
-    if "ra.partnerwithus.tech" in base_url:
-        frontend_url = "https://ra.partnerwithus.tech"
+    frontend_url = settings.EFFECTIVE_FRONTEND_URL
     reset_url = f"{frontend_url}/reset-password?token={token}"
 
     html_body = f"""

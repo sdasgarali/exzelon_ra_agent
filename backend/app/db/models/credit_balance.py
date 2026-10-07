@@ -39,9 +39,10 @@ class TenantCreditBalance(Base):
     # Remaining credits from this month's plan grant. Does NOT roll over.
     allowance_credits = Column(Float, nullable=False, default=0.0)
 
-    # Remaining purchased credits. These never expire and are spent only once the
-    # monthly allowance is exhausted, so a top-up is never wasted on a month the
-    # allowance would have covered anyway.
+    # Remaining purchased credits: the cached sum of live `credit_topup_lots`. Spent
+    # only once the monthly allowance is exhausted, so a top-up is never wasted on a
+    # month the allowance would have covered anyway. Each lot expires 12 months after
+    # purchase (CREDIT_TOPUP_VALIDITY_DAYS); the monthly refill never touches them.
     topup_credits = Column(Float, nullable=False, default=0.0)
 
     # Running totals, for reporting without re-aggregating the ledger.

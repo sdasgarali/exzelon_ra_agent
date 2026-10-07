@@ -93,6 +93,8 @@ def init_scheduler():
 
         # Credits — refill monthly allowances just after midnight on the 1st.
         _scheduler.add_job(job_refill_credit_allowances, CronTrigger(day=1, hour=0, minute=5), id="credit_refill", name="Monthly Credit Refill", replace_existing=True)
+        # Credits — lapse top-up lots past their 12-month validity, daily.
+        _scheduler.add_job(job_expire_topup_credits, CronTrigger(hour=0, minute=15), id="credit_topup_expiry", name="Daily Top-up Credit Expiry", replace_existing=True)
 
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
@@ -802,6 +804,30 @@ def _job_refill_credit_allowances_inner():
         logger.error("Monthly credit refill failed", error=str(e))
     finally:
         db.close()
+
+
+def job_expire_topup_credits():
+    """Lapse top-up credit lots past their validity (daily).
+
+    A spend already expires a tenant's due lots before drawing on them; this keeps
+    dormant tenants' balances and usage screens correct too.
+    """
+    if not _is_job_enabled("credit_topup_expiry"):
+        logger.info("Job credit_topup_expiry skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("credit_topup_expiry") as acquired:
+        if not acquired:
+            return
+        db = _get_db()
+        try:
+            from app.services.credit_metering import expire_topup_lots
+            lapsed = expire_topup_lots(db)
+            logger.info("Top-up credit expiry complete", credits_lapsed=lapsed)
+        except Exception as e:
+            logger.error("Top-up credit expiry failed", error=str(e))
+        finally:
+            db.close()
 
 
 def job_generate_monthly_invoices():

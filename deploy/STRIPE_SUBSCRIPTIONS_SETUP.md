@@ -15,8 +15,9 @@ each **two** recurring prices, monthly and yearly:
 | Pro  | $99 (`unit_amount=9900`, `interval=month`) | $948 (`unit_amount=94800`, `interval=year`) — $79/mo |
 | Max  | $299 (`unit_amount=29900`, `interval=month`) | $2,868 (`unit_amount=286800`, `interval=year`) — $239/mo |
 
-Also create a **one-time** price for credit top-ups: $10 per 1,000 credits
-(`unit_amount=1000`, no `recurring`).
+Also create a **one-time** price for credit top-ups: $20 per 1,000 credits
+(`unit_amount=2000`, no `recurring`). It must match `CREDIT_TOPUP_BLOCK_PRICE_CENTS`
+(the billing UI displays that value; Stripe charges this price).
 
 (Or via CLI: `stripe products create --name "Pro"` then
 `stripe prices create --product <prod_id> --unit-amount 9900 --currency usd --recurring interval=month`.)

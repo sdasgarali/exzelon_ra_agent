@@ -129,11 +129,20 @@ class Settings(BaseSettings):
             return self.BASE_URL.rstrip("/")
         return f"http://{self.HOST}:{self.PORT}"
 
+    @property
+    def EFFECTIVE_FRONTEND_URL(self) -> str:
+        """Public web-app URL for links in emails (verify, reset, deal links).
+
+        In prod BASE_URL is the site itself (nginx serves web + /api on one host);
+        in local dev it points at the API on :8000, so map it to the Next.js port.
+        """
+        return self.EFFECTIVE_BASE_URL.replace("/api/v1", "").replace(":8000", ":3000")
+
     # Microsoft 365 OAuth2
     MS365_OAUTH_CLIENT_ID: str = ""
     MS365_OAUTH_CLIENT_SECRET: str = ""
     MS365_OAUTH_TENANT_ID: str = "common"  # "common" for multi-tenant
-    MS365_OAUTH_REDIRECT_URI: str = ""  # e.g. https://ra.partnerwithus.tech/dashboard/mailboxes
+    MS365_OAUTH_REDIRECT_URI: str = ""  # e.g. https://neuraleads.ai/dashboard/mailboxes
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -207,10 +216,14 @@ class Settings(BaseSettings):
     # Annual (billed yearly at the discounted per-month rate).
     STRIPE_PRICE_PRO_ANNUAL: str = ""
     STRIPE_PRICE_MAX_ANNUAL: str = ""
-    # One-time credit top-up: $10 per 1,000 credits, never expires.
+    # One-time credit top-up: $20 per 1,000 credits, valid 12 months from purchase.
+    # Deliberately dearer per credit than every plan (Pro monthly is $16.50/1k) so a
+    # top-up is a stopgap, never a cheaper substitute for upgrading. The Stripe price
+    # behind STRIPE_PRICE_CREDIT_TOPUP must match CREDIT_TOPUP_BLOCK_PRICE_CENTS.
     STRIPE_PRICE_CREDIT_TOPUP: str = ""
     CREDIT_TOPUP_BLOCK_SIZE: int = 1000
-    CREDIT_TOPUP_BLOCK_PRICE_CENTS: int = 1000
+    CREDIT_TOPUP_BLOCK_PRICE_CENTS: int = 2000
+    CREDIT_TOPUP_VALIDITY_DAYS: int = 365
     BILLING_COMPANY_NAME: str = ""
     BILLING_COMPANY_ADDRESS: str = ""
     BILLING_COMPANY_LOGO_PATH: str = ""

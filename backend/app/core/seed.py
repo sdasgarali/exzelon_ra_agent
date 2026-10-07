@@ -47,6 +47,7 @@ def seed_admin_user(db: Session) -> None:
         full_name="Super Administrator",
         role=UserRole.SUPER_ADMIN,
         is_active=True,
+        is_verified=True,
     )
     db.add(admin)
     db.commit()

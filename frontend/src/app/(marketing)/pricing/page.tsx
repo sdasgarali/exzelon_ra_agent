@@ -32,7 +32,7 @@ const pricingFAQ = [
   },
   {
     question: 'What happens when I run out of credits or sends?',
-    answer: 'They are two separate budgets. Running out of credits pauses data and AI work — buy a top-up at $10 per 1,000 credits, which never expire. Running out of monthly sends pauses campaigns until the 1st, or until you upgrade. Day-to-day, each mailbox is also paced at 30 emails a day to protect your domain.',
+    answer: 'They are two separate budgets. Running out of credits pauses data and AI work — buy a top-up on a paid plan at $20 per 1,000 credits, valid for 12 months (or upgrade for a better per-credit rate). Running out of monthly sends pauses campaigns until the 1st, or until you upgrade. Day-to-day, each mailbox is also paced at 30 emails a day to protect your domain.',
   },
   {
     question: 'Do you offer annual billing discounts?',

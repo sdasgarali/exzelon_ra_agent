@@ -44,6 +44,7 @@ from app.db.models.objection_template import ObjectionTemplate
 from app.db.models.calendar_booking import CalendarBooking
 from app.db.models.credit_usage import CreditUsage
 from app.db.models.credit_balance import TenantCreditBalance
+from app.db.models.credit_topup_lot import CreditTopupLot
 from app.db.models.goal_target import GoalTarget
 from app.db.models.notification import NotificationEntry
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus, DraftSource
@@ -125,6 +126,7 @@ __all__ = [
     "CalendarBooking",
     "CreditUsage",
     "TenantCreditBalance",
+    "CreditTopupLot",
     "GoalTarget",
     "NotificationEntry",
     "OutreachDraft",

@@ -29,6 +29,7 @@ from sqlalchemy import func
 
 from app.core.credit_costs import cost_for, label_for
 from app.db.models.credit_balance import TenantCreditBalance
+from app.db.models.credit_topup_lot import CreditTopupLot
 from app.db.models.credit_usage import CreditUsage
 from app.db.query_helpers import tenant_filter
 
@@ -241,9 +242,13 @@ def available_credits(db: Session, tenant_id: Optional[int]) -> dict:
 
     tenant = _load_tenant(db, tenant_id)
     balance = get_balance(db, tenant_id, tenant=tenant)
+    next_lot = _live_lots(db, tenant_id).first()
     return {
         "allowance": round(float(balance.allowance_credits or 0), 2),
         "topup": round(float(balance.topup_credits or 0), 2),
+        # The soonest top-up lapse, so the UI can warn before credits disappear.
+        "topup_next_expiry": next_lot.expires_at.isoformat() if next_lot else None,
+        "topup_next_expiry_credits": round(float(next_lot.credits_remaining), 2) if next_lot else 0,
         "total": round(balance.total_available, 2),
         "period_start": balance.period_start.isoformat() if balance.period_start else None,
         "period_spent": round(float(balance.period_spent or 0), 2),
@@ -252,12 +257,57 @@ def available_credits(db: Session, tenant_id: Optional[int]) -> dict:
     }
 
 
-def _debit(balance: TenantCreditBalance, credits: float) -> float:
+def _live_lots(db: Session, tenant_id: int):
+    """A tenant's unexpired top-up lots with credit left, soonest expiry first."""
+    return db.query(CreditTopupLot).filter(
+        CreditTopupLot.tenant_id == tenant_id,
+        CreditTopupLot.expired_at.is_(None),
+        CreditTopupLot.credits_remaining > 0,
+    ).order_by(CreditTopupLot.expires_at, CreditTopupLot.lot_id)
+
+
+def _expire_due_lots(db: Session, balance: TenantCreditBalance,
+                     now: Optional[datetime] = None) -> float:
+    """Zero this tenant's lots past their expiry. Caller holds the balance lock.
+
+    Returns the credits that lapsed. They leave `topup_credits` without a ledger entry:
+    the ledger records consumption, and an expiry is not work anyone did — the lot row
+    (`expired_at`) is the record.
+    """
+    now = now or datetime.utcnow()
+    due = _live_lots(db, balance.tenant_id).filter(CreditTopupLot.expires_at <= now).all()
+    lapsed = 0.0
+    for lot in due:
+        lapsed += float(lot.credits_remaining or 0)
+        lot.credits_remaining = 0.0
+        lot.expired_at = now
+    if lapsed:
+        balance.topup_credits = max(0.0, float(balance.topup_credits or 0) - lapsed)
+        logger.info("credit_topup_expired", tenant_id=balance.tenant_id,
+                    credits=lapsed, lots=len(due))
+    return lapsed
+
+
+def _drain_lots(db: Session, tenant_id: int, credits: float) -> None:
+    """Take `credits` off the tenant's live lots, soonest-expiring first, so the
+    credits closest to lapsing are the ones that get used."""
+    remaining = credits
+    for lot in _live_lots(db, tenant_id).all():
+        if remaining <= 0:
+            break
+        take = min(float(lot.credits_remaining), remaining)
+        lot.credits_remaining = float(lot.credits_remaining) - take
+        remaining -= take
+
+
+def _debit(balance: TenantCreditBalance, credits: float,
+           db: Optional[Session] = None) -> float:
     """Draw `credits` off a balance. Returns the shortfall (0 when fully covered).
 
     Allowance first, top-ups second. Any shortfall is pushed onto `allowance_credits`
     as a negative, so an overage stays visible in the data until the next refill
-    rather than being clamped to zero and forgotten.
+    rather than being clamped to zero and forgotten. With `db`, the top-up share is
+    also drained from the per-purchase lots (see :func:`_drain_lots`).
     """
     allowance = float(balance.allowance_credits or 0)
     topup = float(balance.topup_credits or 0)
@@ -269,6 +319,8 @@ def _debit(balance: TenantCreditBalance, credits: float) -> float:
 
     balance.allowance_credits = allowance - from_allowance - shortfall
     balance.topup_credits = topup - from_topup
+    if db is not None and from_topup > 0:
+        _drain_lots(db, balance.tenant_id, from_topup)
     balance.period_spent = float(balance.period_spent or 0) + credits
     balance.lifetime_spent = float(balance.lifetime_spent or 0) + credits
     balance.last_spend_at = datetime.utcnow()
@@ -309,7 +361,8 @@ def spend(
         try:
             with db.begin_nested():  # SAVEPOINT: a failure can't poison the caller
                 balance = get_balance(db, tenant_id, lock=True)
-                shortfall = _debit(balance, credits)
+                _expire_due_lots(db, balance)  # never spend a credit that has lapsed
+                shortfall = _debit(balance, credits, db)
 
                 entry = CreditUsage(
                     tenant_id=tenant_id,
@@ -386,10 +439,25 @@ def grant_topup(
     description: Optional[str] = None,
     commit: bool = True,
 ) -> TenantCreditBalance:
-    """Add purchased credits. These never expire and survive the monthly refill."""
+    """Add purchased credits as a new lot, valid CREDIT_TOPUP_VALIDITY_DAYS.
+
+    They survive the monthly refill; only :func:`expire_topup_lots` (or a spend that
+    finds the lot past its date) removes them.
+    """
+    from app.core.config import settings
+
+    now = datetime.utcnow()
     balance = get_balance(db, tenant_id, lock=True)
     balance.topup_credits = float(balance.topup_credits or 0) + float(credits)
     balance.lifetime_purchased = float(balance.lifetime_purchased or 0) + float(credits)
+    db.add(CreditTopupLot(
+        tenant_id=tenant_id,
+        credits_purchased=float(credits),
+        credits_remaining=float(credits),
+        purchased_at=now,
+        expires_at=now + timedelta(days=int(settings.CREDIT_TOPUP_VALIDITY_DAYS)),
+        reference_id=reference_id,
+    ))
 
     db.add(CreditUsage(
         tenant_id=tenant_id,
@@ -424,6 +492,32 @@ def refill_all_balances(db: Session) -> int:
         db.commit()
         logger.info("credit_balances_refilled", count=refilled, period=str(current))
     return refilled
+
+
+def expire_topup_lots(db: Session, now: Optional[datetime] = None) -> float:
+    """Lapse every top-up lot past its expiry. Driven by the daily scheduler job.
+
+    Spends already expire a tenant's due lots before drawing on them; this sweep keeps
+    dormant tenants' balances and the usage screens honest. One commit per tenant, each
+    under that tenant's balance lock. Returns the total credits that lapsed.
+    """
+    now = now or datetime.utcnow()
+    tenant_ids = [tid for (tid,) in db.query(CreditTopupLot.tenant_id).filter(
+        CreditTopupLot.expired_at.is_(None),
+        CreditTopupLot.credits_remaining > 0,
+        CreditTopupLot.expires_at <= now,
+    ).distinct().all()]
+
+    total = 0.0
+    for tid in tenant_ids:
+        try:
+            balance = get_balance(db, tid, lock=True)
+            total += _expire_due_lots(db, balance, now)
+            db.commit()
+        except Exception as e:  # one tenant's failure must not stop the sweep
+            db.rollback()
+            logger.error("credit_topup_expiry_failed", tenant_id=tid, error=str(e))
+    return total
 
 
 def check_credit_budget(
@@ -511,7 +605,8 @@ def record_usage(
     # failure must not lose the ledger entry, which is the audit record.
     try:
         balance = get_balance(db, tenant_id, lock=True)
-        _debit(balance, credits)
+        _expire_due_lots(db, balance)
+        _debit(balance, credits, db)
     except Exception as e:
         logger.warning("Failed to debit credit balance", tenant_id=tenant_id,
                        usage_type=usage_type, error=str(e))

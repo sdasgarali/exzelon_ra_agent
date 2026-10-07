@@ -591,9 +591,10 @@ async def delete_client(
 
     # Soft delete: archive client and cascade to linked contacts
     client.is_archived = True
-    # Archive all contacts belonging to this company
+    # Archive this company's contacts — matched by name, within the client's own tenant only
     db.query(ContactDetails).filter(
-        ContactDetails.company_name == client.company_name
+        ContactDetails.client_name == client.client_name,
+        ContactDetails.tenant_id == client.tenant_id,
     ).update({ContactDetails.is_archived: True}, synchronize_session=False)
     db.commit()
 

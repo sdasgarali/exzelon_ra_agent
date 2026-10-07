@@ -131,6 +131,10 @@ export default function PlanUsagePanel() {
   if (!data?.metered || !data.plan || !data.credits || !data.sends) return null
 
   const { plan, credits, sends } = data
+  // Price and validity come from the API (config), never hardcoded here.
+  const topupOffer = data.topup ?? {
+    block_size: 1000, block_price_cents: 2000, validity_days: 365, available: plan.key !== 'free',
+  }
   const resources = (data.resources || []).filter((r) => !HIDDEN_RESOURCES.has(r.resource))
   // Max's published numbers, mirrored from PLAN_MATRIX — also enforced server-side.
   const floors: Record<string, number> = {
@@ -192,11 +196,19 @@ export default function PlanUsagePanel() {
           />
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {fmt(credits.allowance)} allowance left
-            {credits.topup > 0 && ` · ${fmt(credits.topup)} purchased (never expire)`}
+            {credits.topup > 0 && ` · ${fmt(credits.topup)} purchased`}
           </p>
+          {credits.topup_next_expiry && (credits.topup_next_expiry_credits ?? 0) > 0 && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {fmt(credits.topup_next_expiry_credits!)} purchased credits expire on{' '}
+              {new Date(credits.topup_next_expiry).toLocaleDateString()}
+            </p>
+          )}
 
-          {/* Top-up. Same $0.01/credit as the plan — running out mid-month should not
-              cost more per credit than planning ahead did. */}
+          {/* Top-up. Priced above every plan's per-credit rate on purpose: it covers a
+              short month, it is not a cheaper substitute for upgrading. */}
+          {topupOffer.available && (
+          <>
           <div className="mt-3 flex items-center gap-2">
             <select
               value={blocks}
@@ -206,7 +218,7 @@ export default function PlanUsagePanel() {
             >
               {[1, 2, 5, 10, 25].map((b) => (
                 <option key={b} value={b}>
-                  {fmt(b * 1000)} credits — ${b * 10}
+                  {fmt(b * topupOffer.block_size)} credits — ${fmt((b * topupOffer.block_price_cents) / 100)}
                 </option>
               ))}
             </select>
@@ -219,6 +231,12 @@ export default function PlanUsagePanel() {
               Buy credits
             </button>
           </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Purchased credits are used after your monthly allowance and are valid for{' '}
+            {Math.round(topupOffer.validity_days / 30.4)} months.
+          </p>
+          </>
+          )}
         </div>
 
         <div>

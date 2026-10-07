@@ -8,7 +8,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
-    baseURL: 'https://ra.partnerwithus.tech',
+    baseURL: 'https://neuraleads.ai',
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },

@@ -60,6 +60,7 @@ Detailed documentation lives in `CLAUDE_REFERENCE/`. **Read the relevant file be
 | API endpoints (adding/modifying routes) | `CLAUDE_REFERENCE/api-endpoints.md` | All endpoint prefixes, files, purposes |
 | Deployment, VPS, SSH, nginx, systemd | `CLAUDE_REFERENCE/deployment.md` | Server details, deploy script, logs, rollback |
 | Multi-tenancy, plan limits, tenant isolation | `CLAUDE_REFERENCE/multi-tenancy.md` | Tenant model, plan limits, key dependencies |
+| MCP connector (`mcp_server/`), API-key scopes, AI-tool access | `CLAUDE_REFERENCE/mcp-connector.md` | Separate venv, tool rules, confirm gate, backend tenant gaps it works around |
 
 ### Global Standards (in `~/.claude/CLAUDE_REFERENCE/`)
 
@@ -111,7 +112,7 @@ Tests use in-memory SQLite (overridden in `tests/conftest.py`). Fixtures provide
 
 | Item | Value |
 |------|-------|
-| **URL** | `https://ra.partnerwithus.tech` |
+| **URL** | `https://neuraleads.ai` |
 | **VPS** | `187.124.74.175` (Hostinger, Ubuntu 24.04) |
 | **App dir** | `/opt/exzelon-ra-agent/` |
 | **Deploy** | `./deploy/vps_ssh.sh "bash /opt/exzelon-ra-agent/deploy/deploy.sh"` |
