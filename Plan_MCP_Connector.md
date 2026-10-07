@@ -76,7 +76,7 @@ Exact endpoint ↔ tool mapping is verified against the route signatures during 
       end-to-end through the MCP in-memory client; MCP Inspector smoke run.
 - [x] 5. Docs: `mcp_server/README.md` (install + client configs), `CLAUDE_REFERENCE/mcp-connector.md`,
       fix `api-endpoints.md` (`/integrations/api-keys`), CLAUDE.md table row, `.env.example` keys.
-- [ ] 6. Deploy (needs your explicit VPS go-ahead): systemd unit `neuraleads-mcp` on a free
+- [x] 6. (DONE 2026-10-07, PR #122 -> 21ed0d5) Deploy (needs your explicit VPS go-ahead): systemd unit `neuraleads-mcp` on a free
       loopback port (checked with `ss -tlnp` first; proposing 8010), nginx `location /mcp` on
       neuraleads.ai, health check; update port table + `deployment.md`.
 - [ ] 7. Phase 2 (later, separate approval): OAuth 2.1 for one-click "Add connector" in claude.ai /
