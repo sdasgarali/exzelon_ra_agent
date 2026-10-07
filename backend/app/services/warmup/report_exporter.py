@@ -10,12 +10,18 @@ from app.db.models.warmup_daily_log import WarmupDailyLog
 from app.db.models.sender_mailbox import SenderMailbox
 
 
-def build_report_data(mailbox_ids: Optional[List[int]], days: int, db: Session) -> List[Dict[str, Any]]:
+def build_report_data(
+    mailbox_ids: Optional[List[int]], days: int, db: Session, tenant_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Daily warmup log rows. ``tenant_id`` limits rows to that tenant's mailboxes (None = all)."""
     start_date = (datetime.utcnow() - timedelta(days=days)).date()
     query = db.query(WarmupDailyLog).filter(WarmupDailyLog.log_date >= start_date)
 
     if mailbox_ids:
         query = query.filter(WarmupDailyLog.mailbox_id.in_(mailbox_ids))
+    if tenant_id is not None:
+        tenant_mailbox_ids = db.query(SenderMailbox.mailbox_id).filter(SenderMailbox.tenant_id == tenant_id)
+        query = query.filter(WarmupDailyLog.mailbox_id.in_(tenant_mailbox_ids))
 
     logs = query.order_by(WarmupDailyLog.log_date, WarmupDailyLog.mailbox_id).all()
 
@@ -44,8 +50,8 @@ def build_report_data(mailbox_ids: Optional[List[int]], days: int, db: Session) 
     return data
 
 
-def export_csv(mailbox_ids: Optional[List[int]], days: int, db: Session) -> str:
-    data = build_report_data(mailbox_ids, days, db)
+def export_csv(mailbox_ids: Optional[List[int]], days: int, db: Session, tenant_id: Optional[int] = None) -> str:
+    data = build_report_data(mailbox_ids, days, db, tenant_id=tenant_id)
     if not data:
         return "No data available for export"
 
@@ -56,6 +62,6 @@ def export_csv(mailbox_ids: Optional[List[int]], days: int, db: Session) -> str:
     return output.getvalue()
 
 
-def export_json(mailbox_ids: Optional[List[int]], days: int, db: Session) -> str:
-    data = build_report_data(mailbox_ids, days, db)
+def export_json(mailbox_ids: Optional[List[int]], days: int, db: Session, tenant_id: Optional[int] = None) -> str:
+    data = build_report_data(mailbox_ids, days, db, tenant_id=tenant_id)
     return json.dumps({"report": data, "generated_at": str(datetime.utcnow()), "days": days, "total_records": len(data)}, indent=2)

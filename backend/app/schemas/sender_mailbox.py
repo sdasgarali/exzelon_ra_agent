@@ -35,6 +35,24 @@ class WarmupStatusEnum(str, Enum):
     PAUSED = "paused"
     INACTIVE = "inactive"
     BLACKLISTED = "blacklisted"
+    # Set only by the auto-recovery flow (POST /warmup/recovery/{id}/start or the
+    # nightly recovery check), never directly by a client; see
+    # _reject_system_only_status. Must exist here so responses serialize.
+    RECOVERING = "recovering"
+
+
+# Statuses a client may not set directly; they carry side-state (recovery
+# ramp, auto_recovery_started_at) that only the warmup engine manages.
+SYSTEM_ONLY_WARMUP_STATUSES = frozenset({WarmupStatusEnum.RECOVERING})
+
+
+def _reject_system_only_status(value):
+    if value is not None and WarmupStatusEnum(value) in SYSTEM_ONLY_WARMUP_STATUSES:
+        raise ValueError(
+            "warmup_status 'recovering' is set by the recovery flow; "
+            "use POST /warmup/recovery/{mailbox_id}/start"
+        )
+    return value
 
 
 class EmailProviderEnum(str, Enum):
@@ -71,6 +89,7 @@ class SenderMailboxCreate(SenderMailboxBase):
     auth_method: str = "password"  # "password" | "oauth2"
     oauth_tenant_id: Optional[str] = None
     warmup_status: WarmupStatusEnum = WarmupStatusEnum.INACTIVE
+    _check_warmup_status = field_validator("warmup_status")(lambda cls, v: _reject_system_only_status(v))
     is_active: bool = True
     outreach_role_id: Optional[int] = None
     # For personal (non-auto_outbound) mailboxes: the SYSTEM LOGIN password used to
@@ -99,6 +118,7 @@ class SenderMailboxUpdate(BaseModel):
     imap_host: Optional[str] = None
     imap_port: Optional[int] = None
     warmup_status: Optional[WarmupStatusEnum] = None
+    _check_warmup_status = field_validator("warmup_status")(lambda cls, v: _reject_system_only_status(v))
     is_active: Optional[bool] = None
     daily_send_limit: Optional[int] = None
     notes: Optional[str] = None
