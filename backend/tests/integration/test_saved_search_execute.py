@@ -8,11 +8,9 @@ from datetime import date
 
 import pytest
 
-from app.core.security import create_access_token, get_password_hash
 from app.db.models.lead import LeadDetails, LeadStatus
 from app.db.models.saved_search import SavedSearch
 from app.db.models.tenant import Tenant, TenantPlan
-from app.db.models.user import User, UserRole
 
 pytestmark = pytest.mark.integration
 
