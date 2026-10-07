@@ -2,7 +2,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, ensure_tenant
 from app.api.deps.plan_limits import check_plan_limit
@@ -190,23 +190,35 @@ async def get_contact_stats(
         func.count(ContactDetails.contact_id)
     ).group_by(ContactDetails.validation_status).all()
 
-    with_lead = db.query(LeadContactAssociation).with_entities(
-        func.count(func.distinct(LeadContactAssociation.contact_id))
-    ).scalar() or 0
-    legacy_linked = base_query.with_entities(
+    # A contact is linked when it has the legacy lead_id FK OR a junction row. Count
+    # each of THIS tenant's contacts once — the junction table has no tenant_id, so it
+    # must only be consulted through the tenant-filtered contact query.
+    junction_link = (
+        db.query(LeadContactAssociation.id)
+        .filter(LeadContactAssociation.contact_id == ContactDetails.contact_id)
+        .exists()
+    )
+    linked = base_query.with_entities(
         func.count(ContactDetails.contact_id)
     ).filter(
-        ContactDetails.lead_id.isnot(None)
+        or_(ContactDetails.lead_id.isnot(None), junction_link)
     ).scalar() or 0
-    linked = max(with_lead, legacy_linked)
+    total = total or 0
 
     return {
         "total": total,
         "linked_to_leads": linked,
-        "unlinked": total - linked,
-        "by_priority": {str(p): c for p, c in by_priority if p},
-        "by_validation": {v: c for v, c in by_validation if v}
+        "unlinked": max(total - linked, 0),
+        # Keys are the stored values ("p1_job_poster", "valid"), not str(enum), which
+        # is "PriorityLevel.P1_JOB_POSTER" on Python 3.11+.
+        "by_priority": {_enum_key(p): c for p, c in by_priority if p},
+        "by_validation": {_enum_key(v): c for v, c in by_validation if v},
     }
+
+
+def _enum_key(value) -> str:
+    """Plain string key for a grouped column that may be an Enum or a str."""
+    return value.value if hasattr(value, "value") else str(value)
 
 
 @router.get("/by-lead/{lead_id}", tags=["Contacts"])
