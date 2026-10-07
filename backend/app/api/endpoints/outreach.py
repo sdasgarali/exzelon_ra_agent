@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Background
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id
+from app.api.deps import get_db, get_current_active_user, require_role, get_current_tenant_id, require_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.contact import ContactDetails
@@ -138,9 +138,30 @@ async def create_outreach_event(
     current_user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id)
 ):
-    """Create an outreach event."""
+    """Create an outreach event.
+
+    Written to the caller's tenant only: a super admin must impersonate a tenant
+    first (400 otherwise — previously this silently wrote into tenant 1), and the
+    referenced contact / lead / template must belong to that same tenant.
+    """
+    from app.db.models.contact import ContactDetails
+    from app.db.models.lead import LeadDetails
+    from app.db.models.email_template import EmailTemplate
+
+    write_tenant = ensure_tenant(tenant_id)
+    refs = (
+        (ContactDetails, ContactDetails.contact_id, event_in.contact_id, "Contact"),
+        (LeadDetails, LeadDetails.lead_id, event_in.lead_id, "Lead"),
+        (EmailTemplate, EmailTemplate.template_id, event_in.template_id, "Template"),
+    )
+    for model, pk, value, label in refs:
+        if value is None:
+            continue
+        if not db.query(pk).filter(pk == value, model.tenant_id == write_tenant).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} not found")
+
     event = OutreachEvent(**event_in.model_dump())
-    event.tenant_id = tenant_id or 1
+    event.tenant_id = write_tenant
     db.add(event)
     db.commit()
     db.refresh(event)

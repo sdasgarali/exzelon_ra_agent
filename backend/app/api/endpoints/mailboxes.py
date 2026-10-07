@@ -497,14 +497,23 @@ async def create_mailbox(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new sender mailbox (Admin only)."""
+    write_tenant = ensure_tenant(tenant_id)
     check_plan_limit(db, tenant_id, "mailboxes")
 
-    # Check if email already exists
+    # sender_mailboxes.email is globally UNIQUE in the schema, so the lookup must stay
+    # global — but only a match inside the caller's own tenant may be named. A match in
+    # another tenant gets a generic message so this endpoint can't be used to discover
+    # which addresses other tenants have connected.
     existing = db.query(SenderMailbox).filter(SenderMailbox.email == mailbox_in.email).first()
     if existing:
+        if existing.tenant_id == write_tenant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Mailbox with email {mailbox_in.email} already exists"
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Mailbox with email {mailbox_in.email} already exists"
+            detail="This email address can't be added"
         )
 
     # Set default SMTP/IMAP hosts based on provider
@@ -525,11 +534,12 @@ async def create_mailbox(
     if role_id is not None:
         role = db.query(OutreachRole).filter(
             OutreachRole.role_id == role_id,
+            OutreachRole.tenant_id == write_tenant,
             OutreachRole.is_archived == False,
         ).first()
     if role is None:
         role = db.query(OutreachRole).filter(
-            OutreachRole.tenant_id == (ensure_tenant(tenant_id)),
+            OutreachRole.tenant_id == write_tenant,
             OutreachRole.role_name == "RA",
             OutreachRole.is_archived == False,
         ).first()
@@ -542,16 +552,23 @@ async def create_mailbox(
         from app.services.mailbox_user_link import (
             create_or_link_user, map_outreach_role_to_rbac, MailboxUserLinkError,
         )
+        # Users are only ever linked within the mailbox's own tenant.
+        email_user = db.query(User.user_id, User.tenant_id).filter(User.email == mailbox_in.email).first()
         if mailbox_in.user_id is not None:
             # Explicit link (e.g. "add my email as a mailbox" from the Users module).
-            linked = db.query(User).filter(User.user_id == mailbox_in.user_id).first()
+            linked = db.query(User).filter(
+                User.user_id == mailbox_in.user_id,
+                User.tenant_id == write_tenant,
+            ).first()
             if not linked:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Linked user not found")
             linked_user_id = linked.user_id
-        elif (
-            current_user.role != UserRole.SUPER_ADMIN
-            and not db.query(User.user_id).filter(User.email == mailbox_in.email).first()
-        ):
+        elif email_user is not None and email_user.tenant_id != write_tenant:
+            # A login with this email exists outside this tenant (another tenant or a
+            # global super admin). Never link to it, and don't try to create a second
+            # user with the same (globally unique) email. The mailbox has no login.
+            linked_user_id = None
+        elif current_user.role != UserRole.SUPER_ADMIN and email_user is None:
             # Team seats are not sold: a tenant admin's personal mailbox must not mint a
             # second login user. The mailbox is still created and can send; it just has
             # no login attached. Linking to an EXISTING user (their own email) is fine.
@@ -563,7 +580,7 @@ async def create_mailbox(
                     email=mailbox_in.email,
                     full_name=mailbox_in.display_name or mailbox_in.sender_first_name,
                     login_password=mailbox_in.login_password,
-                    tenant_id=ensure_tenant(tenant_id),
+                    tenant_id=write_tenant,
                     rbac_role=map_outreach_role_to_rbac(role.role_name),
                 )
             except MailboxUserLinkError as e:
@@ -590,7 +607,7 @@ async def create_mailbox(
         daily_send_limit=mailbox_in.daily_send_limit,
         notes=mailbox_in.notes,
         email_signature_json=mailbox_in.email_signature_json,
-        tenant_id=ensure_tenant(tenant_id),
+        tenant_id=write_tenant,
         outreach_role_id=role_id,
         user_id=linked_user_id,
     )
