@@ -217,7 +217,8 @@ async def run_mailmerge_export(
 
     background_tasks.add_task(
         run_outreach_mailmerge_pipeline,
-        triggered_by=current_user.email
+        triggered_by=current_user.email,
+        tenant_id=tenant_id,
     )
 
     return {
@@ -244,6 +245,7 @@ async def send_emails(
         dry_run=dry_run,
         limit=limit,
         triggered_by=current_user.email,
+        tenant_id=tenant_id,
         preview_mode=preview_mode,
     )
 
@@ -261,14 +263,18 @@ async def check_replies(
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: int = Depends(require_tenant_id)
 ):
-    """Manually trigger reply checking for all mailboxes."""
+    """Manually trigger reply checking for the caller's tenant's mailboxes.
+
+    (The scheduler job calls ``check_all_mailbox_replies`` without a tenant and
+    still covers every tenant.)
+    """
     from app.services.reply_tracker import check_all_mailbox_replies
     from app.db.base import SessionLocal
 
     def _run_check():
         check_db = SessionLocal()
         try:
-            check_all_mailbox_replies(check_db)
+            check_all_mailbox_replies(check_db, tenant_id=tenant_id)
         finally:
             check_db.close()
 

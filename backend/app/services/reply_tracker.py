@@ -299,20 +299,27 @@ def check_replies_for_mailbox(mailbox: SenderMailbox, db: Session) -> Dict[str, 
     return result
 
 
-def check_all_mailbox_replies(db: Session) -> Dict[str, Any]:
-    """Check all active mailboxes with IMAP configured for replies.
+def check_all_mailbox_replies(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
+    """Check active mailboxes with IMAP configured for replies.
+
+    ``tenant_id=None`` (the scheduler job) checks every tenant's mailboxes; a
+    tenant id (the manual ``POST /outreach/check-replies``) limits it to that
+    tenant's mailboxes.
 
     Returns summary dict: {checked, replies_found, unsubscribes, errors, details}.
     """
     summary = {"checked": 0, "replies_found": 0, "unsubscribes": 0, "errors": 0, "details": []}
 
-    mailboxes = db.query(SenderMailbox).filter(
-        SenderMailbox.is_active == True,
+    mailbox_q = db.query(SenderMailbox).filter(
+        SenderMailbox.is_active == True,  # noqa: E712
         SenderMailbox.warmup_status.in_([
             WarmupStatus.COLD_READY, WarmupStatus.ACTIVE,
             WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING
         ])
-    ).all()
+    )
+    if tenant_id is not None:
+        mailbox_q = mailbox_q.filter(SenderMailbox.tenant_id == tenant_id)
+    mailboxes = mailbox_q.all()
 
     if not mailboxes:
         logger.info("No active mailboxes found for reply checking")

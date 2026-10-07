@@ -1053,12 +1053,31 @@ def enroll_contacts(
     contact_ids: List[int],
     db: Session,
 ) -> Dict[str, Any]:
-    """Enroll contacts into a campaign. Deduplicates against existing enrollments."""
+    """Enroll contacts into a campaign. Deduplicates against existing enrollments.
+
+    Only contacts of the campaign's own tenant are enrolled; any other id (another
+    tenant's contact, or one that does not exist) is skipped and counted under
+    ``foreign``. This is the last line of defence for every caller — the API
+    endpoint rejects such ids up front, and auto-enrollment relies on it.
+    """
     campaign = db.query(Campaign).filter(
         Campaign.campaign_id == campaign_id
     ).first()
     if not campaign:
         return {"error": "Campaign not found", "enrolled": 0, "duplicates": 0}
+
+    unique_ids = list(dict.fromkeys(contact_ids or []))
+    owned = {
+        row[0] for row in db.query(ContactDetails.contact_id).filter(
+            ContactDetails.contact_id.in_(unique_ids),
+            ContactDetails.tenant_id == campaign.tenant_id,
+        ).all()
+    } if unique_ids else set()
+    contact_ids = [cid for cid in unique_ids if cid in owned]
+    foreign = len(unique_ids) - len(contact_ids)
+    if foreign:
+        logger.warning("enroll_contacts_skipped_foreign", campaign_id=campaign_id,
+                       tenant_id=campaign.tenant_id, skipped=foreign)
 
     # Get first step
     first_step = db.query(SequenceStep).filter(
@@ -1142,7 +1161,8 @@ def enroll_contacts(
 
     db.commit()
 
-    return {"enrolled": enrolled, "re_enrolled": re_enrolled, "duplicates": duplicates, "suppressed": suppressed}
+    return {"enrolled": enrolled, "re_enrolled": re_enrolled, "duplicates": duplicates,
+            "suppressed": suppressed, "foreign": foreign}
 
 
 def handle_campaign_reply(event_id: int, db: Session):

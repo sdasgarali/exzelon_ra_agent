@@ -128,7 +128,7 @@ def run_email_validation_pipeline(
 
                 if existing:
                     # Update contact with existing status
-                    update_contact_validation_status(db, email, existing.status)
+                    update_contact_validation_status(db, email, existing.status, tenant_id=tenant_id)
                     counters["validated"] += 1
                     continue
 
@@ -146,7 +146,7 @@ def run_email_validation_pipeline(
                 db.add(validation)
 
                 # Update contact
-                update_contact_validation_status(db, email, result["status"])
+                update_contact_validation_status(db, email, result["status"], tenant_id=tenant_id)
 
                 # Update counters
                 counters["validated"] += 1
@@ -166,7 +166,7 @@ def run_email_validation_pipeline(
         db.commit()
 
         # Update leads that have validated contacts
-        update_lead_validation_status(db)
+        update_lead_validation_status(db, tenant_id=tenant_id)
 
         # Calculate bounce rate
         total_validated = counters["valid"] + counters["invalid"] + counters["catch_all"] + counters["unknown"]
@@ -226,22 +226,32 @@ def run_email_validation_pipeline(
         db.close()
 
 
-def update_contact_validation_status(db, email: str, status: ValidationStatus):
-    """Update contact validation status."""
-    contacts = db.query(ContactDetails).filter(
-        ContactDetails.email == email
-    ).all()
+def update_contact_validation_status(db, email: str, status: ValidationStatus,
+                                     tenant_id: Optional[int] = None):
+    """Update contact validation status.
 
-    for contact in contacts:
+    With ``tenant_id`` only that tenant's contacts are touched — a validation run
+    started by one tenant must not write to another tenant's rows that happen to
+    share the address. ``None`` keeps the legacy all-tenants behaviour.
+    """
+    query = db.query(ContactDetails).filter(ContactDetails.email == email)
+    if tenant_id is not None:
+        query = query.filter(ContactDetails.tenant_id == tenant_id)
+
+    for contact in query.all():
         contact.validation_status = status.value
 
 
-def update_lead_validation_status(db):
-    """Update leads that have validated contact emails."""
-    leads = db.query(LeadDetails).filter(
+def update_lead_validation_status(db, tenant_id: Optional[int] = None):
+    """Update leads that have validated contact emails (scoped to ``tenant_id``
+    when given)."""
+    query = db.query(LeadDetails).filter(
         LeadDetails.lead_status == LeadStatus.ENRICHED,
         LeadDetails.contact_email.isnot(None)
-    ).all()
+    )
+    if tenant_id is not None:
+        query = query.filter(LeadDetails.tenant_id == tenant_id)
+    leads = query.all()
 
     for lead in leads:
         validation = db.query(EmailValidationResult).filter(
