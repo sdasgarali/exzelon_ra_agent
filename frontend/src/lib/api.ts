@@ -1885,13 +1885,44 @@ export const deliverabilityApi = {
   },
 }
 
+export type ApiKeyScope = 'read' | 'write' | 'admin'
+
+export interface ApiKeyRecord {
+  key_id: number
+  name: string
+  key_prefix: string
+  scopes: string[]
+  is_active: boolean
+  last_used_at: string | null
+  created_at: string | null
+  expires_at?: string | null
+}
+
+export interface ApiKeyCreatePayload {
+  name: string
+  scopes: ApiKeyScope[]
+  /** 1–3650; null/omitted = never expires */
+  expires_in_days?: number | null
+}
+
+export interface ApiKeyCreated {
+  key_id: number
+  name: string
+  /** Full secret — returned ONLY by the create call. Never persist or log it. */
+  key: string
+  key_prefix: string
+  scopes: string[]
+  expires_at?: string | null
+  message?: string
+}
+
 export const integrationsApi = {
-  // API Keys
-  listApiKeys: async () => {
+  // API Keys (tenant admins / super_admin with a tenant selected)
+  listApiKeys: async (): Promise<ApiKeyRecord[]> => {
     const response = await api.get('/integrations/api-keys')
     return response.data
   },
-  createApiKey: async (data: { name: string; scopes?: string[]; expires_in_days?: number }) => {
+  createApiKey: async (data: ApiKeyCreatePayload): Promise<ApiKeyCreated> => {
     const response = await api.post('/integrations/api-keys', data)
     return response.data
   },
