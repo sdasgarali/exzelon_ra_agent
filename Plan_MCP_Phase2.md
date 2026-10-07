@@ -33,8 +33,11 @@ Integration (main session): merge the 4 branches, full backend suite + MCP suite
 - [x] B3 misc fixes + tests
 - [x] M  MCP phase-2 tools + tests
 - [x] Integrate, full suites green, docs
-- [ ] PR + merge (+ watch master, ruleset 24662252 blocks force-push)
-- [ ] Deploy (deploy.sh + `install_mcp.sh` for the MCP package) + live test on sandbox tenant 12
+- [x] PR #126 squash-merged (138fb40)
+- [x] Deployed 2026-10-07 (backup backups/pre-mcp-phase2-20261007-175756.sql.gz). Live test on sandbox
+      tenant 12: 72/72 read tools, 26/26 confirm-gated write tools did not act, REST scope checks pass.
+      Temp keys 5,6 revoked. Watch warmup volume for 7 days: per-mailbox peer volume drops to the
+      configured level (scheduler no longer runs each mailbox once per tenant) — expected.
 
 ## Acceptance
 - Every endpoint the connector calls is tenant-scoped server-side (regression test per fix: tenant A

@@ -9,6 +9,10 @@
 > no-bypass "block force-push" ruleset (ruleset API returned 500 for me; changing it also needs user permission).
 > (2) fix backend tenant-scoping gaps in CLAUDE_REFERENCE/mcp-connector.md. (3) startup "Failed to seed demo
 > data" duplicate 'TechCorp Solutions' for tenant 2 on every API start (pre-existing, harmless, noisy).
+> 2026-10-07 PHASE 2 LIVE (prod 138fb40, PR #126): MCP 148 tools + platform-wide tenant-isolation fixes
+> (Plan_MCP_Phase2.md). Startup demo seeding removed (user). OPEN DECISIONS: (1) automation_master_enabled=false
+> since 2026-08-12 => NO campaign sends anywhere (campaign 44 overdue since July); (2) WarmupProfile + warmup
+> config are global; (3) AI calls in email-preview rewrite/spam suggestions not credit-metered.
 > 2026-10-07 LIVE TEST (prod 7e5759c): 70/70 pass — REST scope enforcement (9), all 52 read tools via
 > https://neuraleads.ai/mcp, read-key refusals, confirm gates. Used temp keys 2,3 on sandbox tenant 12 (revoked).
 > Fixed+deployed #124: API-key creation 500'd on MySQL (12-char prefix, VARCHAR(8)). 4th force-reset of master
