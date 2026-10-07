@@ -92,3 +92,53 @@ def test_normalize_and_parse():
     assert parse_scopes_json("not json") == []
     assert parse_scopes_json('{"a": 1}') == []
     assert parse_scopes_json(None) == []
+
+
+# ── MCP phase 2: more compute-only POSTs reachable with read keys ──────────────
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/inbox/threads/abc-123/suggest-reply",
+    "/api/v1/campaigns/12/ai-suggest-subjects",
+    "/api/v1/templates/score",
+    "/api/v1/templates/fixes",
+    "/api/v1/templates/apply-fixes",
+    "/api/v1/templates/42/preview",
+    "/api/v1/email-preview/spam-check",
+    "/api/v1/leads/import/google-sheet/preview",
+])
+def test_read_scope_allows_phase2_compute_only_posts(path):
+    assert check_scope(["read"], "POST", path)[0] is True
+
+
+@pytest.mark.parametrize("path", [
+    # These persist data or spend credits, so they stay write-only.
+    "/api/v1/email-preview/drafts/5/ai-rewrite",       # rewrites the stored draft
+    "/api/v1/email-preview/deliverability-score",      # stores a DNS check + mailbox dns_score
+    "/api/v1/email-preview/preview-personalization",   # meters AI credits
+    "/api/v1/sequence-generator/generate",             # meters AI credits
+    "/api/v1/leads/import/google-sheet",               # the real import
+    "/api/v1/templates/42/duplicate",
+    "/api/v1/templates/42/activate",
+    "/api/v1/inbox/threads/abc/generate-draft",
+    "/api/v1/saved-searches",
+    "/api/v1/saved-searches/9/execute",  # saves nothing, but searches all tenants today
+])
+def test_read_scope_still_blocks_persisting_posts(path):
+    assert check_scope(["read"], "POST", path)[0] is False
+
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/templates/abc/preview",           # id must be numeric
+    "/api/v1/templates/42/preview/extra",
+    "/api/v1/v2/templates/42/preview",         # pattern is anchored at the start too
+    "/api/v1/campaigns/12/ai-suggest-subjects/apply",
+    "/api/v1/inbox/threads/x/suggest-reply/send",
+])
+def test_phase2_allowlist_is_anchored(path):
+    assert check_scope(["read"], "POST", path)[0] is False
+
+
+def test_phase2_allowlist_is_post_only():
+    for method in ("PUT", "PATCH", "DELETE"):
+        assert check_scope(["read"], method, "/api/v1/templates/42/preview")[0] is False
+        assert check_scope(["read"], method, "/api/v1/campaigns/12/ai-suggest-subjects")[0] is False
