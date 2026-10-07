@@ -11,7 +11,12 @@
 > data" duplicate 'TechCorp Solutions' for tenant 2 on every API start (pre-existing, harmless, noisy).
 > 2026-10-07 PHASE 2 LIVE (prod 138fb40, PR #126): MCP 148 tools + platform-wide tenant-isolation fixes
 > (Plan_MCP_Phase2.md). Startup demo seeding removed (user). OPEN DECISIONS: (1) automation_master_enabled=false
-> since 2026-08-12 => NO campaign sends anywhere (campaign 44 overdue since July); (2) WarmupProfile + warmup
+> since 2026-08-12 => RESOLVED 2026-10-07 18:50 UTC (user): campaign 44 PAUSED first (stale 2026-07-17 leads,
+> 7 test contacts enrolled, Pinnacle 14 contacts > cap 5), then master switch ON. Verified: campaign job runs,
+> 0 sends. Resumed: daily backup 02:00 UTC (none since 08-12), billing/credits/inbox jobs. First night:
+> 03:00 deactivates 6 empty Free tenants (7,8,9 demo; 10,11 mkb; 13 masum); 04:30 purges 73 archived leads +
+> 1 contact (>180d). Lead sourcing stays off (own toggle). TODO: rebuild campaign 44 from fresh leads;
+> verify tomorrow that the 02:00 backup ran. (2) WarmupProfile + warmup
 > config are global; (3) AI calls in email-preview rewrite/spam suggestions not credit-metered.
 > 2026-10-07 LIVE TEST (prod 7e5759c): 70/70 pass — REST scope enforcement (9), all 52 read tools via
 > https://neuraleads.ai/mcp, read-key refusals, confirm gates. Used temp keys 2,3 on sandbox tenant 12 (revoked).
