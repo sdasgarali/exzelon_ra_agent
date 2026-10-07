@@ -212,7 +212,6 @@ async def test_warmup_recovery_refuses_other_workspace(backend):
     assert "__error__" in out
 
 
-@pytest.mark.xfail(reason="needs backend fix recovering enum (WarmupStatusEnum lacks 'recovering')", strict=False)
 async def test_warmup_recovery_then_mailbox_still_readable(backend):
     b = backend["B"]  # workspace B's mailbox: other tests rely on A's being cold_ready
     # Recovery needs the warmup/settings "full" permission, which only super admins have by default.
