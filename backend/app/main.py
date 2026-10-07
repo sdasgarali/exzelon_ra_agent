@@ -2245,25 +2245,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to seed admin user", error=str(e))
 
-    # Seed demo data for Neuraforz and Medeoan tenants (if they have no data yet)
-    try:
-        from app.services.demo_seeder import seed_demo_data
-        from app.db.base import SessionLocal as _DemoSeedSession
-        from sqlalchemy import text as _demo_text
-        _demo_db = _DemoSeedSession()
-        try:
-            for _slug in ("neuraforz", "medeoan"):
-                _tid = _demo_db.execute(_demo_text(
-                    "SELECT tenant_id FROM tenants WHERE slug = :s"
-                ), {"s": _slug}).scalar()
-                if _tid:
-                    _result = seed_demo_data(_tid, _demo_db)
-                    if any(v > 0 for v in _result.values()):
-                        logger.info(f"Demo data seeded for {_slug}", **_result)
-        finally:
-            _demo_db.close()
-    except Exception as e:
-        logger.warning(f"Demo data seeding: {e}")
+    # Startup demo seeding for existing tenants was removed (2026-10-07, user decision):
+    # it re-created demo rows in live workspaces on every deploy. New Starter tenants still
+    # get demo data once, on email verification (services/email_verification.py).
 
     # ── Migration: Change contact_details.lead_id FK from CASCADE to SET NULL ──
     # Contacts must survive lead deletion to preserve the database
