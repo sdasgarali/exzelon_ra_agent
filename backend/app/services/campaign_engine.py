@@ -102,12 +102,20 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
                  eligible_count=len(eligible_campaign_ids),
                  campaign_ids=eligible_campaign_ids)
 
-    # Get due contacts in batches
-    due_contacts = db.query(CampaignContact).filter(
-        CampaignContact.campaign_id.in_(eligible_campaign_ids),
-        CampaignContact.status == CampaignContactStatus.ACTIVE,
-        CampaignContact.next_send_at <= now,
-    ).limit(BATCH_SIZE).all()
+    # Get due contacts in batches: oldest-due first, with a fair share per campaign so one
+    # campaign whose contacts can't currently be sent (e.g. no eligible mailbox) cannot
+    # fill every batch and starve the others.
+    per_campaign = max(1, BATCH_SIZE // len(eligible_campaign_ids))
+    due_contacts = []
+    for cid in eligible_campaign_ids:
+        due_contacts.extend(db.query(CampaignContact).filter(
+            CampaignContact.campaign_id == cid,
+            CampaignContact.status == CampaignContactStatus.ACTIVE,
+            CampaignContact.next_send_at <= now,
+        ).order_by(CampaignContact.next_send_at.asc(), CampaignContact.id.asc()).limit(per_campaign).all())
+        if len(due_contacts) >= BATCH_SIZE:
+            due_contacts = due_contacts[:BATCH_SIZE]
+            break
 
     if due_contacts:
         logger.info("campaign_processor_due_contacts",
@@ -865,7 +873,7 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
 
     try:
         from app.services.mailbox_selector import select_best_mailbox
-        return select_best_mailbox(mailbox_ids, db)
+        return select_best_mailbox(mailbox_ids, db, tenant_id=campaign.tenant_id)
     except Exception as e:
         logger.warning("Health-aware selector failed, using fallback", error=str(e))
         # Fallback to simple least-loaded
@@ -875,6 +883,7 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
             SenderMailbox.connection_status == "successful",
             SenderMailbox.is_blacklisted == False,  # noqa: E712 — mirror primary selector safety filter
+            SenderMailbox.tenant_id == campaign.tenant_id,
         )
         if mailbox_ids:
             query = query.filter(SenderMailbox.mailbox_id.in_(mailbox_ids))
