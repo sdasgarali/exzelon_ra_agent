@@ -499,7 +499,8 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
 def sendable_mailboxes_query(db, tenant_id: int):
     """Mailboxes of ``tenant_id`` that may send cold outreach right now.
 
-    Cold Ready or Active, under their daily limit, with a successful connection.
+    Cold Ready or Active, under their daily limit, with a successful connection, and not
+    blacklisted (mirrors ``mailbox_selector.select_best_mailbox``).
     Always tenant-scoped: picking the least-loaded mailbox across all tenants sent one
     tenant's outreach from another tenant's mailbox.
     """
@@ -509,6 +510,7 @@ def sendable_mailboxes_query(db, tenant_id: int):
         SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
         SenderMailbox.connection_status == "successful",
+        SenderMailbox.is_blacklisted == False,  # noqa: E712
     )
 
 

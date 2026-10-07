@@ -98,3 +98,51 @@ def test_due_contacts_shared_fairly_across_campaigns(db_session, test_tenant, mo
     picked_campaigns = [cid for (_id, cid, _step) in captured["steps"]]
     assert len(picked_campaigns) == 4
     assert picked_campaigns.count(camps[1].campaign_id) == 2  # small campaign not starved
+
+
+class _StopAfterSelection(Exception):
+    pass
+
+
+def test_no_campaign_permanently_starved_when_more_campaigns_than_slots(db_session, test_tenant, monkeypatch):
+    """With more eligible campaigns than batch slots, rotation gives every campaign a turn."""
+    monkeypatch.setattr(campaign_engine, "BATCH_SIZE", 2)
+    monkeypatch.setattr(campaign_engine, "_is_within_send_window", lambda *a, **k: True)
+    old = datetime.utcnow() - timedelta(days=1)
+    ids = []
+    for n in range(5):
+        c = Campaign(tenant_id=test_tenant.tenant_id, name=f"c{n}", status=CampaignStatus.ACTIVE)
+        db_session.add(c)
+        db_session.flush()
+        ct = ContactDetails(tenant_id=test_tenant.tenant_id, client_name="Acme", first_name="F",
+                            last_name=f"L{n}", email=f"rot{n}@acme.example.com")
+        db_session.add(ct)
+        db_session.flush()
+        db_session.add(CampaignContact(campaign_id=c.campaign_id, contact_id=ct.contact_id,
+                                       status=CampaignContactStatus.ACTIVE, current_step=1, next_send_at=old))
+        ids.append(c.campaign_id)
+    db_session.commit()
+
+    picked = set()
+    orig_info = campaign_engine.logger.info
+
+    def capture(event, **kw):
+        if event == "campaign_processor_due_contacts":
+            picked.update(cid for (_id, cid, _s) in kw["contact_steps"])
+            raise _StopAfterSelection  # leave contacts untouched so each run sees the same queue
+        return orig_info(event, **kw)
+
+    monkeypatch.setattr(campaign_engine.logger, "info", capture)
+    real_dt = campaign_engine.datetime
+    base = real_dt.utcnow()
+    for minute in range(5):
+        class _DT(real_dt):
+            @classmethod
+            def utcnow(cls, _m=minute):
+                return base + timedelta(minutes=_m)
+        monkeypatch.setattr(campaign_engine, "datetime", _DT)
+        try:
+            campaign_engine.process_campaign_queue(db_session)
+        except _StopAfterSelection:
+            pass
+    assert picked == set(ids)

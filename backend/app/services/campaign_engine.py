@@ -106,8 +106,12 @@ def process_campaign_queue(db: Session) -> Dict[str, Any]:
     # campaign whose contacts can't currently be sent (e.g. no eligible mailbox) cannot
     # fill every batch and starve the others.
     per_campaign = max(1, BATCH_SIZE // len(eligible_campaign_ids))
+    # Rotate the starting campaign each run so that, with more eligible campaigns than
+    # batch slots, every campaign still gets a turn over successive runs.
+    offset = int(now.timestamp() // 60) % len(eligible_campaign_ids)
+    rotated = eligible_campaign_ids[offset:] + eligible_campaign_ids[:offset]
     due_contacts = []
-    for cid in eligible_campaign_ids:
+    for cid in rotated:
         due_contacts.extend(db.query(CampaignContact).filter(
             CampaignContact.campaign_id == cid,
             CampaignContact.status == CampaignContactStatus.ACTIVE,

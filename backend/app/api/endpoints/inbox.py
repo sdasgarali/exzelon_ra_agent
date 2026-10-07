@@ -433,6 +433,12 @@ def send_reply(
     mailbox = mailbox_query.first()
     if not mailbox:
         raise HTTPException(status_code=404, detail="Mailbox not found")
+    if not mailbox.is_active or mailbox.connection_status == "failed" or mailbox.is_blacklisted:
+        raise HTTPException(status_code=400, detail="This mailbox can't send right now (inactive, failed "
+                            "connection or blacklisted). Choose another mailbox.")
+    if (mailbox.emails_sent_today or 0) >= (mailbox.daily_send_limit or 0):
+        raise HTTPException(status_code=400, detail="This mailbox has reached its daily send limit. "
+                            "Choose another mailbox.")
 
     _check_reply_allowed(db, reply_tenant_id, data.thread_id, to_email,
                          last_received.contact_id if last_received else None)
@@ -477,7 +483,9 @@ def send_reply(
 
 # Gate codes that do NOT block a manual reply. The person wrote to us, so their
 # address demonstrably works — an unvalidated status is no reason to refuse.
-_REPLY_GATE_IGNORED = {"INVALID_EMAIL"}
+# A reply answers someone who wrote to us: their address works (INVALID_EMAIL), and it is a
+# conversation, not cold volume, so recipient-domain caps (DOMAIN_THROTTLE) don't apply.
+_REPLY_GATE_IGNORED = {"INVALID_EMAIL", "DOMAIN_THROTTLE"}
 
 
 def _check_reply_allowed(db: Session, tenant_id: int, thread_id: str, to_email: str,

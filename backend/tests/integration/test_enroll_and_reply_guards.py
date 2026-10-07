@@ -218,3 +218,39 @@ def test_reply_other_tenants_thread_not_found(client, auth_headers, db_session, 
     r = _reply(client, auth_headers, reply_env["mailbox"].mailbox_id, thread_id="thr-b")
     assert r.status_code == 404
     assert reply_env["sends"] == []
+
+
+# ---- deliverability review follow-ups (2026-10-07) -------------------------------
+
+def test_reply_not_blocked_by_cold_domain_throttle(client, auth_headers, reply_env, monkeypatch):
+    """A domain cap filled by cold outreach must not block answering an inbound email."""
+    from app.services.send_gate import SendGateResult
+
+    monkeypatch.setattr("app.services.send_gate.unified_send_gate",
+                        lambda **kw: SendGateResult(allowed=False, reason_code="DOMAIN_THROTTLE"))
+    r = _reply(client, auth_headers, reply_env["mailbox"].mailbox_id)
+    assert r.status_code == 200, r.text
+    assert reply_env["sends"] == ["lead@client-a.com"]
+
+
+@pytest.mark.parametrize("change", [
+    {"connection_status": "failed"}, {"is_blacklisted": True}, {"is_active": False},
+    {"emails_sent_today": 30, "daily_send_limit": 30},
+])
+def test_reply_refuses_unhealthy_or_capped_mailbox(client, auth_headers, db_session, reply_env, change):
+    mb = reply_env["mailbox"]
+    for k, v in change.items():
+        setattr(mb, k, v)
+    db_session.commit()
+    r = _reply(client, auth_headers, mb.mailbox_id)
+    assert r.status_code == 400, r.text
+    assert reply_env["sends"] == []
+
+
+def test_sendable_mailboxes_exclude_blacklisted(db_session, test_tenant, sample_mailbox):
+    from app.services.pipelines.outreach import sendable_mailboxes_query
+
+    assert sendable_mailboxes_query(db_session, test_tenant.tenant_id).count() == 1
+    sample_mailbox.is_blacklisted = True
+    db_session.commit()
+    assert sendable_mailboxes_query(db_session, test_tenant.tenant_id).count() == 0
