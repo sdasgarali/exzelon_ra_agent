@@ -88,6 +88,14 @@ async def get_current_user(
             # Check expiry
             if api_key.expires_at and api_key.expires_at < datetime.utcnow():
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="API key expired")
+            # Enforce the key's scopes (read / write / admin) before anything else runs.
+            from app.core.api_key_scopes import check_scope, parse_scopes_json
+            scopes = parse_scopes_json(api_key.scopes_json)
+            allowed, reason = check_scope(scopes, request.method, request.url.path)
+            if not allowed:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+            request.state.api_key_id = api_key.key_id
+            request.state.api_key_scopes = scopes
             # Update last used
             api_key.last_used_at = datetime.utcnow()
             db.commit()
