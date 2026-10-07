@@ -64,12 +64,17 @@ def run_email_validation_pipeline(
         provider: Email validation provider name
         triggered_by: Who triggered the pipeline
     """
-    db = SessionLocal()
     counters = {"validated": 0, "valid": 0, "invalid": 0, "catch_all": 0, "unknown": 0, "errors": 0}
+    if tenant_id is None:
+        # Never fall back to tenant 1: the run, its credits and the contacts it updates
+        # all belong to one tenant (same rule as the outreach pipelines).
+        logger.error("email validation pipeline called without tenant_id")
+        return {"error": "tenant_id is required", **counters}
+    db = SessionLocal()
 
     # Create job run record
     job_run = JobRun(
-        tenant_id=tenant_id or 1,
+        tenant_id=tenant_id,
         pipeline_name="email_validation",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,

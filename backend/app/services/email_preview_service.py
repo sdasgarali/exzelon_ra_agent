@@ -305,7 +305,7 @@ def generate_pipeline_drafts(
         if drafts_created >= limit:
             break
 
-        eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules)
+        eligible, reason = check_send_eligibility(db, contact, business_rules=biz_rules, tenant_id=tenant_id)
         if not eligible:
             continue
 

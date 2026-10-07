@@ -2846,16 +2846,19 @@ async def get_lead_detail(
 
     if junction_cids:
         contacts = db.query(ContactDetails).filter(
+            ContactDetails.tenant_id == lead.tenant_id,
             (ContactDetails.lead_id == lead_id) |
             (ContactDetails.contact_id.in_(junction_cids))
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
     else:
         contacts = db.query(ContactDetails).filter(
-            ContactDetails.lead_id == lead_id
+            ContactDetails.tenant_id == lead.tenant_id,
+            ContactDetails.lead_id == lead_id,
         ).order_by(ContactDetails.priority_level, ContactDetails.created_at).all()
 
     # Get outreach events for this lead
     outreach_events = db.query(OutreachEvent).filter(
+        OutreachEvent.tenant_id == lead.tenant_id,
         OutreachEvent.lead_id == lead_id
     ).order_by(OutreachEvent.sent_at.desc()).all()
 
