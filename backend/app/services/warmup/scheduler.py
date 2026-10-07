@@ -201,7 +201,9 @@ def job_peer_warmup_cycle():
         db = _get_db()
         try:
             from app.services.warmup.peer_warmup import run_peer_warmup_cycle
-            result = run_peer_warmup_cycle(db, tenant_id=tid)
+            # sender_tenant_id: each tenant's mailboxes send once per cycle under their own
+            # tenant's settings (without it every mailbox ran once per active tenant).
+            result = run_peer_warmup_cycle(db, tenant_id=tid, sender_tenant_id=tid)
             logger.info("Peer warmup cycle complete", tenant_id=tid, result=result)
         except Exception as e:
             logger.error("Peer warmup cycle failed", tenant_id=tid, error=str(e))
@@ -218,7 +220,7 @@ def job_auto_reply_cycle():
         db = _get_db()
         try:
             from app.services.warmup.peer_warmup import run_auto_reply_cycle
-            result = run_auto_reply_cycle(db, tenant_id=tid)
+            result = run_auto_reply_cycle(db, tenant_id=tid, replier_tenant_id=tid)
             logger.info("Auto-reply cycle complete", tenant_id=tid, result=result)
         except Exception as e:
             logger.error("Auto-reply cycle failed", tenant_id=tid, error=str(e))
