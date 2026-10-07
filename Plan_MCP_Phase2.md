@@ -28,11 +28,11 @@ Integration (main session): merge the 4 branches, full backend suite + MCP suite
 (`CLAUDE_REFERENCE/mcp-connector.md`, `api-endpoints.md`, README), PR, merge, deploy, live test.
 
 ## Checklist
-- [ ] B1 warmup/deliverability fixes + tests
-- [ ] B2 outreach/validation/enroll/inbox fixes + tests
-- [ ] B3 misc fixes + tests
-- [ ] M  MCP phase-2 tools + tests
-- [ ] Integrate, full suites green, docs
+- [x] B1 warmup/deliverability fixes + tests
+- [x] B2 outreach/validation/enroll/inbox fixes + tests
+- [x] B3 misc fixes + tests
+- [x] M  MCP phase-2 tools + tests
+- [x] Integrate, full suites green, docs
 - [ ] PR + merge (+ watch master, ruleset 24662252 blocks force-push)
 - [ ] Deploy (deploy.sh + `install_mcp.sh` for the MCP package) + live test on sandbox tenant 12
 
