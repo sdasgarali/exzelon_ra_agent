@@ -24,14 +24,18 @@ credits and send rules are enforced by the backend, never re-implemented. User d
 | `src/neuraleads_mcp/client.py` | httpx client; HTTP status → actionable message; retries **GET only** |
 | `src/neuraleads_mcp/runtime.py` | Key resolution, `sanitize()` (strips credential fields), annotation presets, `confirmation_required()`, `pick/pick_list` |
 | `src/neuraleads_mcp/server.py` | `build_server()` — registers tool modules + prompts + `/healthz` |
-| `src/neuraleads_mcp/tools/*.py` | One module per area; each has `register(mcp, rt)` |
+| `src/neuraleads_mcp/tools/*.py` | One module per area (`account`, `leads`, `contacts`, `mailboxes`, `campaigns`, `inbox`, `reports`, `content`, `data`, `outreach`); each has `register(mcp, rt)`. 148 tools (73 read-only). |
 | `src/neuraleads_mcp/__main__.py` | CLI; `build_http_app()` for hosted mode |
 | `tests/` | unit (respx), e2e vs the real API, hosted HTTP, stdio entry point |
 
 ## API-key scopes (backend, `app/core/api_key_scopes.py`)
 Checked in `get_current_user` for every API-key request (403 with a clear reason):
 - `read` — GET/HEAD/OPTIONS + compute-only POSTs (`/leads/ai-search`, `/leads/database-search`,
-  `*/preview`, `*/enrollment-preview`, `/campaigns/compare`, `/spam-check`).
+  `*/preview`, `*/enrollment-preview`, `/campaigns/compare`, `/spam-check`, `/suggest-reply`,
+  `/ai-suggest-subjects`, `/templates/score|fixes|apply-fixes`, `/templates/{id}/preview`,
+  `/leads/import/google-sheet/preview`, `/saved-searches/{id}/execute`). Not allowed (they write or
+  spend credits): email-preview ai-rewrite, deliverability-score, preview-personalization,
+  sequence-generator.
 - `write` — all but DELETE; never `/auth`, `/users`, `/roles`, `/admin`, `/billing`, `/gdpr`,
   `/backups`, `/activity`, `/integrations/api-keys`.
 - `admin` — everything the owner can do.
@@ -50,26 +54,33 @@ Checked in `get_current_user` for every API-key request (403 with a clear reason
    a tenant-scoped GET first; a 404 there stops the tool.
 5. If a POST only reads, add its path to `_READ_ONLY_POST_SUFFIXES` so read keys can use it.
 
-## Backend gaps the connector works around (fix in the backend, then simplify)
-Found 2026-10-07 while specifying the tools; **not yet fixed**:
-- `/warmup/*` by mailbox id (`assess/{id}`, `analytics`, `alerts`, `alerts/{id}/read`,
-  `profiles/{p}/apply/{m}`, `recovery/{id}/start`, `dns/{id}`, `blacklist/{id}`) has no tenant
-  check; `POST /warmup/assess` (no id) assesses **all tenants**. Connector: ownership pre-check,
-  never calls `/warmup/assess`, filters alerts to own mailboxes.
-- `POST /campaigns/{id}/contacts` doesn't check contact ownership. Connector: verifies each id.
-- `POST /outreach/send-emails`, `/outreach/run-mailmerge`, `/leads/bulk/outreach[/preview]`,
-  `/outreach/check-replies` run without the caller's tenant (fall back to tenant 1 / all
-  mailboxes); `/leads/bulk/outreach` has no role check. Connector: **does not expose them**;
-  outreach goes through campaigns (scheduler) only.
-- `POST /validation/validate-bulk` and `/validate-pending-contacts` don't pass tenant_id;
-  `/validation/results` and `/stats/summary` are global. Connector: uses
-  `/pipelines/email-validation/run[-selected]` and `/contacts/stats` instead.
-- `POST /inbox/reply` bypasses the send gate. Connector: refuses unsubscribed / do_not_contact
-  and requires confirm; prefers `approve_reply_draft` (gated).
-- Mailbox status `recovering` isn't in `WarmupStatusEnum` → mailbox serialisation 500s after
-  `POST /warmup/recovery/{id}/start`. Connector: does not expose recovery.
-Fixed in this branch: `DELETE /clients/{id}` (500 + cross-tenant cascade) and
-`/pipelines/email-validation/run-selected` tenant attribution.
+## Tenant isolation history (phase 2, 2026-10-07)
+The phase-1 connector worked around backend routes that ignored the caller's tenant. Phase 2
+(`Plan_MCP_Phase2.md`) fixed them server-side, each with an A-cannot-touch-B regression test:
+- warmup by-id routes, alerts, analytics, peer history, export, dns/blacklist checks; `/warmup/assess`
+  scoped to the caller (scheduler still assesses all); `recovering` added to `WarmupStatusEnum`
+- deliverability: real health summary (`failed_connection_count`, …); mailbox `can_send` false when
+  the connection failed; seed-test scoped
+- outreach send / mail-merge / bulk outreach (+ role check) / check-replies run under the caller's
+  tenant; validation pipelines + results/stats scoped
+- enrollment rejects foreign contacts (400); `enroll_contacts` + auto-enroll filter by tenant
+- inbox reply refuses suppressed / unsubscribed / do_not_contact before sending
+- contacts/stats leak; saved-search execute; campaign engine mailbox selection (`select_best_mailbox`
+  takes `tenant_id`) + fair due-contact batching; peer warmup scheduler ran each mailbox N times
+- wave 2 (B4): contacts create/update lead ownership, templates import-to-step, broadcast drafts,
+  `POST /mailboxes` duplicate/role/user lookups, single-lead outreach role check, `POST /outreach/events`
+The connector keeps its ownership pre-checks as defence in depth.
+
+**Still open (need a model/product decision):** `WarmupProfile` and `PUT /warmup/config` are global
+across tenants (no tenant_id); peer-warmup pairing is a shared cross-tenant pool (looks
+deliberate); AI calls in email-preview rewrite / spam suggestions / suggest-reply are not
+credit-metered.
+
+## Workspace selection (super-admin keys)
+A super-admin key without `X-Tenant-ID` sees ALL tenants (the key's stored tenant_id is
+bookkeeping only). The connector forwards an incoming `X-Tenant-ID` header (hosted) or
+`NEURALEADS_TENANT_ID` (stdio only). Non-super-admin keys always get their own tenant; the header
+is ignored. `list_workspaces` = `GET /admin/tenants` (super admin).
 
 ## Run / test
 ```bash
