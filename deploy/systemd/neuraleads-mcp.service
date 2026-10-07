@@ -1,0 +1,28 @@
+[Unit]
+Description=NeuraLeads MCP connector (Streamable HTTP, behind nginx at /mcp)
+After=network.target exzelon-api.service
+Wants=exzelon-api.service
+
+[Service]
+Type=simple
+User=ra-user
+Group=ra-user
+WorkingDirectory=/opt/exzelon-ra-agent/mcp_server
+Environment="PATH=/opt/exzelon-ra-agent/mcp_server/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+# NEURALEADS_API_URL, MCP_HTTP_PORT, MCP_ALLOWED_HOSTS, ... (no API key: hosted mode uses each caller's key)
+EnvironmentFile=/opt/exzelon-ra-agent/mcp_server/.env
+ExecStart=/opt/exzelon-ra-agent/mcp_server/.venv/bin/neuraleads-mcp --transport http
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neuraleads-mcp
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

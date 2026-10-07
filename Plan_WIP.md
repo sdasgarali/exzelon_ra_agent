@@ -1,6 +1,10 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
+> 2026-10-07: MCP connector built on branch feature/mcp-connector (Plan_MCP_Connector.md, slices 1-5 done):
+> API-key scopes enforced, Settings "API Keys & MCP" tab, mcp_server/ package (82 tools, stdio + hosted HTTP).
+> NEXT: PR + merge; deploy hosted /mcp (needs VPS go-ahead; port 8010 must be checked free);
+> then fix the backend tenant-scoping gaps listed in CLAUDE_REFERENCE/mcp-connector.md.
 > 2026-09-25: prod moved to https://neuraleads.ai (old host 301s; see DOMAIN CHANGE below).
 > 2026-09-25: prod on master dcf93de, Alembic head 0005. Shipped: Resend system mail (no-reply@neuraleads.ai),
 > signup-verification bypass fix (#119), top-ups $20/1k + 12-month expiry (#120, Plan_Topup_Pricing_Expiry.md).
@@ -40,6 +44,11 @@ User: apex neuraleads.ai, old ra.partnerwithus.tech 301-redirects, code + prod c
       shown twice (6), UI/layout drift (5), intended behaviour changes (3: SA must pick tenant to
       create template; create-user has tenant+role selects; admins have no Add User), mailbox
       count now 1,012 (1), empty sandbox tenant data (4).
+      2026-10-01 re-run on neuraleads.ai (read-only subset, 18 data-changing tests excluded):
+      54 pass / 20 fail / 2 skip / 11 not run. All 20 = stale tests or the Free-plan admin account
+      (masumkabirbiswas@ is Free; pricing spec expects Max) — no new real bugs. Extra stale causes:
+      inbox/email-preview panel class is now md:w-[3x0px]; users spec role list lacks bdm/recruiter;
+      deals "Avg Deal Size" card removed; mailboxes expects 5 (now 503); leads search parses wrong <p>.
 - [ ] 5. Optional cleanup: old "E2E Test Deal ..." / "E2E Test Template ... (Copy)" rows in prod
       from months-old test runs. Exzelon has 1,012 mailboxes vs its 999 limit (FYI).
 - [ ] 6. Make deploy.sh take a backup + run `alembic upgrade head` (today done by hand; see
