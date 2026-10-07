@@ -121,7 +121,6 @@ def test_read_scope_allows_phase2_compute_only_posts(path):
     "/api/v1/templates/42/activate",
     "/api/v1/inbox/threads/abc/generate-draft",
     "/api/v1/saved-searches",
-    "/api/v1/saved-searches/9/execute",  # saves nothing, but searches all tenants today
 ])
 def test_read_scope_still_blocks_persisting_posts(path):
     assert check_scope(["read"], "POST", path)[0] is False

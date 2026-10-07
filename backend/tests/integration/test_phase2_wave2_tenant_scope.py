@@ -464,3 +464,31 @@ def test_cors_allows_api_key_and_tenant_headers():
     assert cors, "CORSMiddleware not installed"
     allowed = {h.lower() for h in cors[0].kwargs["allow_headers"]}
     assert {"x-api-key", "x-tenant-id", "authorization", "content-type"} <= allowed
+
+
+def test_bulk_update_rejects_foreign_lead_link(client, db_session, sa_headers, test_tenant):
+    """PUT /contacts/bulk/update must not link contacts to another tenant's lead."""
+    from datetime import date as _date
+
+    from app.db.models.contact import ContactDetails as _C
+    from app.db.models.lead import LeadDetails as _L, LeadStatus as _S
+    from app.db.models.tenant import Tenant as _T, TenantPlan as _P
+
+    other = _T(name="Other BU", slug="other-bulk-upd", plan=_P.ENTERPRISE)
+    db_session.add(other)
+    db_session.flush()
+    foreign = _L(tenant_id=other.tenant_id, client_name="X", job_title="Y", state="TX",
+                 posting_date=_date.today(), source="manual", lead_status=_S.NEW)
+    mine = _L(tenant_id=test_tenant.tenant_id, client_name="X", job_title="Y", state="TX",
+              posting_date=_date.today(), source="manual", lead_status=_S.NEW)
+    c = _C(tenant_id=test_tenant.tenant_id, client_name="X", first_name="A", last_name="B",
+           email="bulk.upd@x.example.com")
+    db_session.add_all([foreign, mine, c])
+    db_session.commit()
+
+    bad = client.put("/api/v1/contacts/bulk/update", headers=sa_headers,
+                     json={"contact_ids": [c.contact_id], "updates": {"lead_id": foreign.lead_id}})
+    assert bad.status_code == 400
+    ok = client.put("/api/v1/contacts/bulk/update", headers=sa_headers,
+                    json={"contact_ids": [c.contact_id], "updates": {"lead_id": mine.lead_id}})
+    assert ok.status_code == 200, ok.text

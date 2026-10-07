@@ -365,6 +365,11 @@ async def bulk_update_contacts(
     if not contacts:
         raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
 
+    if "lead_id" in filtered:
+        # The lead must live in each contact's own tenant (no cross-tenant links).
+        for contact_tenant in {c.tenant_id for c in contacts}:
+            _require_leads_in_tenant(db, [filtered["lead_id"]], contact_tenant)
+
     try:
         for contact in contacts:
             for field, value in filtered.items():
