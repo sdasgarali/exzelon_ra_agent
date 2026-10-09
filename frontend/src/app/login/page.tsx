@@ -51,7 +51,7 @@ function LoginContent() {
         <div className="card">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-5">
-              <BrandLogo on="light" height={44} />
+              <BrandLogo on="auto" height={44} />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">Sign in to your account</h1>
             <p className="text-gray-500 mt-2 text-sm">AI-Powered Cold Email & Lead Generation</p>

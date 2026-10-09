@@ -48,8 +48,9 @@ describe('LoginPage', () => {
 
   test('renders brand logo and sign-in heading', () => {
     render(<LoginPage />)
-    // Brand is the NeuraLeads lockup image; the heading states the page's purpose.
-    expect(screen.getByAltText('NeuraLeads')).toBeInTheDocument()
+    // Brand is the NeuraLeads lockup image (light + dark variants, swapped by theme);
+    // the heading states the page's purpose.
+    expect(screen.getAllByAltText('NeuraLeads').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Sign in to your account')).toBeInTheDocument()
   })
 

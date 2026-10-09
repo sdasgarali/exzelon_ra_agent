@@ -29,7 +29,7 @@ const jsonLd = {
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`${archivo.variable} font-archivo marketing-gradient-bg min-h-screen`}>
+    <div className={`${archivo.variable} light-only font-archivo marketing-gradient-bg min-h-screen`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

@@ -36,7 +36,7 @@ function VerifyContent() {
       <div className="w-full max-w-md">
         <div className="card text-center">
           <div className="flex items-center justify-center mb-6">
-            <BrandLogo on="light" height={36} />
+            <BrandLogo on="auto" height={36} />
           </div>
           {status === 'loading' && (
             <>
