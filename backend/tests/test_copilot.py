@@ -119,19 +119,25 @@ class TestCopilotChat:
         rows = db_session.query(CopilotMessage).all()
         assert len(rows) == 2 and all(m.tenant_id == test_tenant.tenant_id for m in rows)
 
-    def test_super_admin_without_tenant_answers_but_does_not_persist(
-        self, client, sa_headers, db_session, fake_adapter,
+    def test_super_admin_without_tenant_persists_under_null_tenant(
+        self, client, sa_headers, super_admin_user, test_tenant, db_session, fake_adapter,
     ):
         r = client.post(CHAT, json={"message": "hi"}, headers=sa_headers)
         assert r.status_code == 200
         assert r.json()["response"] == fake_adapter.reply
         _, kwargs = fake_adapter.factory.call_args
         assert kwargs.get("tenant_id") is None
-        assert db_session.query(CopilotMessage).count() == 0
+        rows = db_session.query(CopilotMessage).all()
+        assert len(rows) == 2
+        assert all(m.tenant_id is None and m.user_id == super_admin_user.user_id for m in rows)
+        # Remembered across requests ("All Tenants" view).
         h = client.get(HISTORY, headers=sa_headers)
-        assert h.status_code == 200 and h.json() == {"messages": []}
-        d = client.delete(HISTORY, headers=sa_headers)
-        assert d.json() == {"deleted": 0}
+        assert [m["content"] for m in h.json()["messages"]] == ["hi", fake_adapter.reply]
+        # Kept separate from the same user's conversation inside a workspace.
+        in_tenant = {**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)}
+        assert client.get(HISTORY, headers=in_tenant).json() == {"messages": []}
+        assert client.delete(HISTORY, headers=in_tenant).json() == {"deleted": 0}
+        assert client.delete(HISTORY, headers=sa_headers).json() == {"deleted": 2}
 
     def test_history_is_sent_to_provider(self, client, auth_headers, fake_adapter):
         client.post(CHAT, json={"message": "first question"}, headers=auth_headers)

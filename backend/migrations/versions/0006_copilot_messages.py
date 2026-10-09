@@ -28,7 +28,7 @@ def upgrade() -> None:
     op.create_table(
         TABLE,
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("tenant_id", sa.Integer(), nullable=False),
+        sa.Column("tenant_id", sa.Integer(), nullable=True),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),

@@ -65,17 +65,18 @@ def _storage_tenant_id(user: User, tenant_id: Optional[int]) -> Optional[int]:
     """Tenant a conversation is stored under.
 
     The effective (possibly impersonated) tenant when there is one; otherwise the
-    user's own tenant. A global super admin with nothing selected has neither — then
-    the chat is answered but not persisted.
+    user's own tenant. A global super admin with nothing selected has neither — that
+    conversation is stored with tenant_id NULL, still scoped to the user.
     """
     return tenant_id if tenant_id is not None else user.tenant_id
 
 
-def _history_query(db: Session, user: User, storage_tid: int):
-    return db.query(CopilotMessage).filter(
-        CopilotMessage.tenant_id == storage_tid,
-        CopilotMessage.user_id == user.user_id,
+def _history_query(db: Session, user: User, storage_tid: Optional[int]):
+    tenant_clause = (
+        CopilotMessage.tenant_id.is_(None) if storage_tid is None
+        else CopilotMessage.tenant_id == storage_tid
     )
+    return db.query(CopilotMessage).filter(tenant_clause, CopilotMessage.user_id == user.user_id)
 
 
 def _workspace_stats(db: Session, tenant_id: Optional[int]) -> dict:
@@ -147,14 +148,12 @@ def copilot_chat(
         business_rules=load_business_rules(db, tenant_id),
     )
 
-    history: List[CopilotMessage] = []
-    if storage_tid is not None:
-        history = list(reversed(
-            _history_query(db, user, storage_tid)
-            .order_by(CopilotMessage.created_at.desc(), CopilotMessage.id.desc())
-            .limit(HISTORY_TURNS_FOR_PROMPT)
-            .all()
-        ))
+    history: List[CopilotMessage] = list(reversed(
+        _history_query(db, user, storage_tid)
+        .order_by(CopilotMessage.created_at.desc(), CopilotMessage.id.desc())
+        .limit(HISTORY_TURNS_FOR_PROMPT)
+        .all()
+    ))
 
     ai_messages = [{"role": "system", "content": system_prompt}]
     ai_messages += [
@@ -180,23 +179,22 @@ def copilot_chat(
         raise HTTPException(status_code=502, detail="AI provider error — please try again")
 
     # Persist both turns only on success, so a failed attempt can be retried cleanly.
-    if storage_tid is not None:
-        now = datetime.utcnow()
-        db.add(CopilotMessage(
-            tenant_id=storage_tid, user_id=user.user_id, role="user",
-            content=data.message, context_page=context_page, created_at=now, updated_at=now,
-        ))
-        db.add(CopilotMessage(
-            tenant_id=storage_tid, user_id=user.user_id, role="assistant",
-            content=reply, context_page=context_page, created_at=now, updated_at=now,
-        ))
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.error("copilot_persist_failed", tenant_id=storage_tid, user_id=user.user_id,
-                         exc_info=True)
-            # The answer is still valid; only the memory write failed.
+    now = datetime.utcnow()
+    db.add(CopilotMessage(
+        tenant_id=storage_tid, user_id=user.user_id, role="user",
+        content=data.message, context_page=context_page, created_at=now, updated_at=now,
+    ))
+    db.add(CopilotMessage(
+        tenant_id=storage_tid, user_id=user.user_id, role="assistant",
+        content=reply, context_page=context_page, created_at=now, updated_at=now,
+    ))
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error("copilot_persist_failed", tenant_id=storage_tid, user_id=user.user_id,
+                     exc_info=True)
+        # The answer is still valid; only the memory write failed.
 
     return {"response": reply}
 
@@ -210,8 +208,6 @@ def copilot_history(
 ):
     """The current user's most recent ``limit`` copilot messages, oldest → newest."""
     storage_tid = _storage_tenant_id(user, tenant_id)
-    if storage_tid is None:
-        return {"messages": []}
     rows = (
         _history_query(db, user, storage_tid)
         .order_by(CopilotMessage.created_at.desc(), CopilotMessage.id.desc())
@@ -240,8 +236,6 @@ def clear_copilot_history(
 ):
     """Delete the current user's copilot conversation (in the effective tenant only)."""
     storage_tid = _storage_tenant_id(user, tenant_id)
-    if storage_tid is None:
-        return {"deleted": 0}
     deleted = _history_query(db, user, storage_tid).delete(synchronize_session=False)
     db.commit()
     logger.info("copilot_history_cleared", tenant_id=storage_tid, user_id=user.user_id, deleted=deleted)

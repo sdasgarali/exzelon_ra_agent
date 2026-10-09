@@ -19,7 +19,8 @@ class CopilotMessage(Base):
     tenant_id = Column(
         Integer,
         ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
-        nullable=False,
+        # NULL = a global super admin chatting with no workspace selected.
+        nullable=True,
         index=True,
     )
     user_id = Column(
