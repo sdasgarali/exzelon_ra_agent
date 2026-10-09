@@ -36,7 +36,7 @@ BODY_TEMPLATES = {
 def get_ai_adapter(db: Session, tenant_id=None):
     """Load configured AI provider from settings."""
     provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
-    api_key_map = {"groq": "groq_api_key", "openai": "openai_api_key", "anthropic": "anthropic_api_key", "gemini": "gemini_api_key"}
+    api_key_map = {"groq": "groq_api_key", "openai": "openai_api_key", "anthropic": "anthropic_api_key", "gemini": "gemini_api_key", "deepseek": "deepseek_api_key"}
     api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
     if not api_key:
         return None
@@ -54,6 +54,9 @@ def get_ai_adapter(db: Session, tenant_id=None):
         elif provider == "gemini":
             from app.services.adapters.ai.gemini import GeminiAdapter
             adapter = GeminiAdapter(api_key=api_key)
+        elif provider == "deepseek":
+            from app.services.adapters.ai.deepseek import DeepSeekAdapter
+            adapter = DeepSeekAdapter(api_key=api_key)
         if adapter is not None:
             adapter._cost_db = db
             adapter._cost_tenant_id = tenant_id

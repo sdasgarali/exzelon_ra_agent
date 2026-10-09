@@ -78,6 +78,7 @@ All endpoints are mounted under `/api/v1`.
 | `/dfy` | `dfy.py` | Done-For-You setup (domain suggestions, DNS setup, warmup estimates) |
 | `/templates` | `templates.py` | Email template CRUD, activate, preview, duplicate, seed-library, import-to-step |
 | `/email-preview` | `email_preview.py` | Draft generation, CRUD, approve/reject, batch send, AI rewrite, deliverability score, spam check + AI suggestions, spam fix (13 endpoints) |
+| `/copilot` | `copilot.py` | AI Copilot (any authenticated role). `POST /copilot/chat` body `{message (1-4000 chars), context?}` (legacy `{messages:[...], context?}` still accepted — last user message used) → `{response}`; prompt from `services/copilot_knowledge.py` + the user's last 20 stored turns; adapter via `get_ai_adapter(db, tenant_id=effective)`; 503 not configured, 502 `"AI provider error — please try again"` (logged, never leaks provider text); both turns persisted only on success. `GET /copilot/history?limit=50` (1-200) → `{messages:[{id, role, content, context_page, created_at}]}` oldest→newest. `DELETE /copilot/history` → `{deleted}`. All scoped to current user + effective tenant (super admin: X-Tenant-ID, else own tenant; global SA with neither → answered but not stored, history empty). |
 
 ## Campaign-Specific Endpoints
 

@@ -61,6 +61,8 @@ AI_MODEL_PRICING = {
     "llama-3.1-8b-instant":    (0.0, 0.0),
     "meta-llama/llama-4-scout-17b-16e-instruct": (0.0, 0.0),
     "qwen/qwen3-32b": (0.0, 0.0),
+    # DeepSeek
+    "deepseek-chat": (0.27, 1.10),
 }
 
 # Fallback per-provider rate (input, output) when a model id is unknown.
@@ -69,6 +71,7 @@ AI_PROVIDER_FALLBACK = {
     "openai":    (0.15, 0.60),
     "anthropic": (0.80, 4.00),
     "gemini":    (0.075, 0.30),
+    "deepseek":  (0.27, 1.10),
 }
 
 

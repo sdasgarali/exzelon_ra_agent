@@ -21,6 +21,7 @@ def get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
         "openai": "openai_api_key",
         "anthropic": "anthropic_api_key",
         "gemini": "gemini_api_key",
+        "deepseek": "deepseek_api_key",
     }
     api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
     if not api_key:
@@ -39,6 +40,9 @@ def get_ai_adapter(db: Session, tenant_id: Optional[int] = None):
         elif provider == "gemini":
             from app.services.adapters.ai.gemini import GeminiAdapter
             adapter = GeminiAdapter(api_key=api_key, model=model or None)
+        elif provider == "deepseek":
+            from app.services.adapters.ai.deepseek import DeepSeekAdapter
+            adapter = DeepSeekAdapter(api_key=api_key, model=model or None)
         if adapter is not None:
             # Enable automatic AI cost tracking (uses this session via SAVEPOINT).
             adapter._cost_db = db

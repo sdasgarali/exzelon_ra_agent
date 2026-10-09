@@ -1,0 +1,229 @@
+"""DeepSeek AI adapter - Low-cost, OpenAI-compatible LLM inference."""
+from typing import List, Dict, Any, Optional
+import json
+import re
+import httpx
+from app.services.adapters.base import AIAdapter
+from app.core.config import settings
+
+
+class DeepSeekAdapter(AIAdapter):
+    """Adapter for DeepSeek API - OpenAI-compatible chat completions.
+
+    DeepSeek offers strong models at low per-token pricing:
+    - deepseek-chat: general purpose (DeepSeek-V3)
+    - deepseek-reasoner: reasoning model (DeepSeek-R1)
+
+    To use:
+    1. Sign up at https://platform.deepseek.com/
+    2. Create API key
+    3. Configure in Settings → AI/LLM → DeepSeek API Key
+    """
+
+    BASE_URL = "https://api.deepseek.com/v1"
+    PROVIDER_NAME = "deepseek"
+
+    # Available models
+    MODELS = {
+        "deepseek-chat": "DeepSeek Chat (V3) - Best balance",
+        "deepseek-reasoner": "DeepSeek Reasoner (R1) - Strong reasoning",
+    }
+
+    DEFAULT_MODEL = "deepseek-chat"
+
+    def __init__(self, api_key: str = None, model: str = None):
+        self.api_key = api_key or getattr(settings, 'DEEPSEEK_API_KEY', None)
+        self.model = model or self.DEFAULT_MODEL
+        self._last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    def test_connection(self) -> bool:
+        """Test connection to DeepSeek API."""
+        if not self.api_key:
+            return False
+
+        try:
+            with httpx.Client() as client:
+                response = client.get(
+                    f"{self.BASE_URL}/models",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                    },
+                    timeout=10
+                )
+                return response.status_code == 200
+        except Exception:
+            return False
+
+    def _call_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 1000, system: str = None) -> str:
+        """Make API call to DeepSeek with retry on transient failures."""
+        import time
+
+        if not self.api_key:
+            raise ValueError("DeepSeek API key not configured")
+
+        # Prepend system message if provided separately
+        if system:
+            messages = [{"role": "system", "content": system}] + list(messages)
+
+        last_error = None
+        for attempt in range(3):
+            try:
+                with httpx.Client() as client:
+                    response = client.post(
+                        f"{self.BASE_URL}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens
+                        },
+                        timeout=60
+                    )
+                    # Retry on rate limit (429) or server errors (5xx)
+                    if response.status_code == 429 or response.status_code >= 500:
+                        last_error = httpx.HTTPStatusError(
+                            f"HTTP {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                        if attempt < 2:
+                            time.sleep(1.0 * (2 ** attempt))
+                            continue
+                    response.raise_for_status()
+                    data = response.json()
+                    usage = data.get("usage", {})
+                    self._last_usage = {
+                        "input_tokens": usage.get("prompt_tokens", 0),
+                        "output_tokens": usage.get("completion_tokens", 0),
+                    }
+                    self._track_ai_cost()
+                    return data["choices"][0]["message"]["content"]
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                last_error = e
+                if attempt < 2:
+                    time.sleep(1.0 * (2 ** attempt))
+                    continue
+        raise last_error
+
+    def research_company(
+        self,
+        company_name: str,
+        domain: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Research a company using DeepSeek LLM."""
+        system_prompt = "You are a business research assistant. Return ONLY valid JSON with no markdown formatting, no code blocks, no explanation."
+        hints = f"Company name: {company_name}"
+        if domain:
+            hints += f"\nKnown domain: {domain}"
+        if location:
+            hints += f"\nLocation: {location}"
+        user_prompt = f"""{hints}
+
+Return a JSON object with these fields (use null for any field you are not confident about):
+{{"website": "company website URL or null", "linkedin_url": "LinkedIn company page URL like https://www.linkedin.com/company/company-name or null", "industry": "primary industry or null", "description": "1-2 sentence company description or null", "company_size": "employee range like 1-50, 51-200, 201-500, 501-1000, 1001-5000, 5000+ or null", "headquarters": "city, state or null", "founded_year": year_as_integer_or_null, "employee_count": approximate_integer_or_null}}"""
+        try:
+            result = self._call_api([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ], temperature=0.3, max_tokens=500)
+            cleaned = re.sub(r"```(?:json)?\s*", "", result).strip().rstrip("`")
+            return json.loads(cleaned)
+        except Exception:
+            return {}
+
+    def generate_email(
+        self,
+        contact_name: str,
+        contact_title: str,
+        company_name: str,
+        job_title: str,
+        template: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Generate personalized cold email content using shared outreach prompts."""
+        from app.services.adapters.ai.prompts import (
+            OUTREACH_SYSTEM_PROMPT,
+            build_outreach_user_prompt,
+            parse_ai_email_response,
+        )
+
+        context = context or {}
+        step_number = context.get("step_number", 1)
+
+        user_prompt = build_outreach_user_prompt(
+            contact_name=contact_name,
+            contact_title=contact_title,
+            company_name=company_name,
+            job_title=job_title,
+            context=context,
+            step_number=step_number,
+        )
+
+        if template:
+            user_prompt += f"\n\nUse this template as a guide: {template}"
+
+        try:
+            result = self._call_api([
+                {"role": "system", "content": OUTREACH_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ])
+            return parse_ai_email_response(result, contact_name, job_title)
+        except Exception as e:
+            return {
+                "subject": f"Regarding your {job_title} opening",
+                "body_html": f"<p>Hi {contact_name},</p><p>I noticed your {job_title} posting and wanted to reach out about how our staffing services could help.</p><p>Best regards</p>",
+                "body_text": f"Hi {contact_name},\n\nI noticed your {job_title} posting and wanted to reach out about how our staffing services could help.\n\nBest regards",
+                "error": str(e)
+            }
+
+    def generate_subject_variations(
+        self,
+        base_subject: str,
+        count: int = 3
+    ) -> List[str]:
+        """Generate subject line variations for A/B testing."""
+        try:
+            result = self._call_api([
+                {"role": "system", "content": "You are an email marketing expert. Generate compelling subject line variations."},
+                {"role": "user", "content": f"Generate {count} variations of this subject line. Make them engaging and different from each other. Return only the subject lines, one per line:\n\nOriginal: {base_subject}"}
+            ], temperature=0.9, max_tokens=200)
+
+            lines = [line.strip() for line in result.strip().split("\n") if line.strip()]
+            return lines[:count]
+        except Exception:
+            return [base_subject]
+
+    def analyze_response(
+        self,
+        email_content: str,
+        response_content: str
+    ) -> Dict[str, Any]:
+        """Analyze an email response to determine intent."""
+        try:
+            result = self._call_api([
+                {"role": "system", "content": "You are an email analyst. Analyze responses to determine sender intent."},
+                {"role": "user", "content": f"""Analyze this email response:
+
+Original email:
+{email_content}
+
+Response:
+{response_content}
+
+Respond in this exact JSON format:
+{{"sentiment": "positive|negative|neutral", "intent": "interested|not_interested|question|out_of_office|bounce", "suggested_action": "follow_up|archive|respond|escalate"}}"""}
+            ], temperature=0.3, max_tokens=100)
+
+            import json
+            return json.loads(result)
+        except Exception:
+            return {
+                "sentiment": "neutral",
+                "intent": "unknown",
+                "suggested_action": "review"
+            }

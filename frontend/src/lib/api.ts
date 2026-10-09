@@ -1342,10 +1342,27 @@ export const automationApi = {
   },
 }
 
-// AI Copilot API
+// AI Copilot API — the server persists the conversation, so chat sends only
+// the new message. LLM calls can be slow, hence the longer per-request timeout.
+export interface CopilotMessage {
+  id: number
+  role: 'user' | 'assistant'
+  content: string
+  context_page: string | null
+  created_at: string
+}
+
 export const copilotApi = {
-  chat: async (messages: { role: string; content: string }[], context?: string) => {
-    const response = await api.post('/copilot/chat', { messages, context })
+  chat: async (message: string, context?: string): Promise<{ response: string }> => {
+    const response = await api.post('/copilot/chat', { message, context }, { timeout: 60000 })
+    return response.data
+  },
+  history: async (limit = 50): Promise<{ messages: CopilotMessage[] }> => {
+    const response = await api.get('/copilot/history', { params: { limit } })
+    return response.data
+  },
+  clearHistory: async (): Promise<{ deleted: number }> => {
+    const response = await api.delete('/copilot/history')
     return response.data
   },
 }

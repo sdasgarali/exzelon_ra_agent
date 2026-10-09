@@ -67,6 +67,7 @@
 - **CreditUsage** — credit/usage metering per tenant (usage_type, credits_used, reference tracking). Monthly allowance per plan comes from `PLAN_MATRIX` via `credit_metering.plan_credit_limit()`; `CREDIT_LIMIT_{FREE,PRO,MAX}_OVERRIDE` are deployment-only overrides (0 = use the matrix). NOTE: `record_usage()` is still wired at only one call site (`sms.py`) — instrumenting the rest is Phase 2.3.
 - **GoalTarget** — KPI goal tracking (metric targets: leads/emails/deals/revenue, period tracking)
 - **NotificationEntry** — notification center entries (category, priority, link, read status, per-user/broadcast)
+- **CopilotMessage** — one turn of a user's AI Copilot conversation (`copilot_messages`, migration `0006`, 2026-10-09). Columns: `id` PK, `tenant_id` (FK tenants CASCADE, NOT NULL, idx), `user_id` (FK users CASCADE, NOT NULL, idx), `role` String(16) (`user`|`assistant`), `content` Text, `context_page` String(64) NULL, `created_at` (idx). Composite index `(tenant_id, user_id, created_at)`. **Private to its author** — always queried by tenant AND user, never by tenant alone. Rows written only after a successful AI reply (both turns together).
 - **TenantLOBAssignment** — maps which LOB types each tenant can access (`tenant_lob_assignments` table: tenant_id FK, lob_type String(50), assigned_by, UQ(tenant_id, lob_type)). Super Admin managed. Backward compatible: no records = all LOBs visible.
 
 ## Key Relationships

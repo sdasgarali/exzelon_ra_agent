@@ -81,6 +81,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'openai_api_key': 'ai_llm',
     'anthropic_api_key': 'ai_llm',
     'gemini_api_key': 'ai_llm',
+    'deepseek_api_key': 'ai_llm',
     'ai_model': 'ai_llm',
     'ai_personalize_emails': 'ai_llm',
     'ai_personalization_prompt': 'ai_llm',
@@ -1156,6 +1157,7 @@ PROVIDER_TAB_MAP: Dict[str, str] = {
     'openai': 'ai_llm',
     'anthropic': 'ai_llm',
     'gemini': 'ai_llm',
+    'deepseek': 'ai_llm',
     # LOB Lead Source Providers
     'npi_registry': 'lob_lead_sources',
     'google_business': 'lob_lead_sources',
@@ -1307,6 +1309,15 @@ async def test_provider_connection(
                 return {"status": "error", "message": "Gemini API key not configured", "provider": provider}
             from app.services.adapters.ai.gemini import GeminiAdapter
             adapter = GeminiAdapter(api_key=api_key)
+            result = adapter.test_connection()
+            return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
+
+        elif provider == "deepseek":
+            api_key = _gs("deepseek_api_key")
+            if not api_key:
+                return {"status": "error", "message": "DeepSeek API key not configured", "provider": provider}
+            from app.services.adapters.ai.deepseek import DeepSeekAdapter
+            adapter = DeepSeekAdapter(api_key=api_key)
             result = adapter.test_connection()
             return {"status": "success" if result else "failed", "message": "Connection successful!" if result else "Connection failed", "provider": provider}
 

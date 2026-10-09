@@ -66,15 +66,29 @@ class AnthropicAdapter(AIAdapter):
         if not self.api_key:
             raise ValueError("Anthropic API key not configured")
 
+        # Anthropic rejects role="system" inside `messages`; it must be sent as
+        # the top-level `system` parameter. Pull any system entries out (callers
+        # written for OpenAI-style APIs pass them inline) and merge them with an
+        # explicitly supplied `system`.
+        system_parts = [system] if system else []
+        chat_messages = []
+        for msg in messages or []:
+            if msg.get("role") == "system":
+                content = msg.get("content")
+                if content:
+                    system_parts.append(content)
+            else:
+                chat_messages.append(msg)
+
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": chat_messages,
             "max_tokens": max_tokens,
             "temperature": temperature
         }
 
-        if system:
-            payload["system"] = system
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
 
         with httpx.Client() as client:
             response = client.post(

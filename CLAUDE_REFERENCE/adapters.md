@@ -16,11 +16,25 @@ All external integrations implement abstract base classes from `services/adapter
 | **Email Validation** | NeverBounce, ZeroBounce, Hunter, Clearout, Emailable, MailboxValidator, Reacher | `EMAIL_VALIDATION_PROVIDER` |
 | **Email Sending** (campaign / cold outreach) | SMTP, Mock | `EMAIL_SEND_MODE` |
 | **Transactional Mail** (system email) | Resend, SMTP | `SYSTEM_MAIL_PROVIDER`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` |
-| **AI Content** | Groq, OpenAI, Anthropic, Gemini | Per-adapter API keys, shared factory in `adapters/ai_content.py` |
+| **AI Content** | Groq, OpenAI, Anthropic, Gemini, DeepSeek | `ai_provider` + per-adapter API key (`groq_api_key`, `openai_api_key`, `anthropic_api_key`, `gemini_api_key`, `deepseek_api_key`), shared factory in `adapters/ai_content.py` |
 | **CRM** | HubSpot, Salesforce | `HUBSPOT_API_KEY`, `SALESFORCE_CLIENT_ID` |
 | **Notifications** | Slack, Microsoft Teams | Webhook URLs in settings |
 | **Communications** | Twilio (SMS + Calling) | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
 | **LOB Lead Sources** | NPI Registry, Google Business, Crunchbase, BuiltWith, PageSpeed, GitHub Org, Hiring Signal, News Signal | `GOOGLE_PLACES_API_KEY`, `CRUNCHBASE_API_KEY`, `BUILTWITH_API_KEY`, `GITHUB_TOKEN` (per-tenant via settings or config.py) |
+
+## AI Content Adapters (`services/adapters/ai/`)
+
+Factory: `get_ai_adapter(db, tenant_id)` in `adapters/ai_content.py` reads `ai_provider` (fallback `warmup_ai_provider`, default `groq`), optional `ai_model`, and `<provider>_api_key` via `get_tenant_setting`; returns `None` when the key is empty. Settings live in the `ai_llm` category; `POST /settings/test-connection/{provider}` covers all five.
+
+| Provider | File | `ai_provider` | Key setting | Default model | Notes |
+|---|---|---|---|---|---|
+| Groq | `groq.py` | `groq` | `groq_api_key` | `llama-3.3-70b-versatile` | OpenAI-compatible, 3 attempts w/ backoff on 429/5xx/timeouts |
+| OpenAI | `openai_adapter.py` | `openai` | `openai_api_key` | see `MODELS` | |
+| Anthropic | `anthropic_adapter.py` | `anthropic` | `anthropic_api_key` | `claude-3-5-sonnet-20241022` | `{"role":"system"}` entries in `messages` are lifted into the top-level `system` param (joined with blank lines, after any explicit `system=`) |
+| Gemini | `gemini.py` | `gemini` | `gemini_api_key` | `gemini-1.5-flash` | `_call_api` takes a str prompt **or** a `[{role, content}]` list (system → `systemInstruction`, assistant → `model`); `messages=`/`system=` accepted as aliases |
+| DeepSeek | `deepseek.py` | `deepseek` | `deepseek_api_key` | `deepseek-chat` (also `deepseek-reasoner`) | OpenAI-compatible at `https://api.deepseek.com/v1`, same retry/backoff as Groq. Pricing in `cost_tracker.AI_MODEL_PRICING`: $0.27 in / $1.10 out per 1M tokens |
+
+**Known gap:** `services/ai_resilience.py` (fallback chain), `services/company_enrichment.py` and `services/warmup/content_generator.py` have their own factories keyed on `warmup_ai_provider` and do not yet know `deepseek`. Setting `ai_provider=deepseek` does not affect them; setting `warmup_ai_provider=deepseek` would make warmup/company-enrichment return no adapter and the resilience chain skip to the other providers.
 
 ## LOB Lead Source Adapters (`services/adapters/lead_sources/`)
 

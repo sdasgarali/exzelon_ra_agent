@@ -1,5 +1,5 @@
 """Google Gemini adapter for email content generation."""
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Union
 import json
 import re
 import httpx
@@ -51,17 +51,63 @@ class GeminiAdapter(AIAdapter):
         except Exception:
             return False
 
-    def _call_api(self, prompt: str, system_instruction: str = None, temperature: float = 0.7, max_tokens: int = 1000) -> str:
-        """Make API call to Gemini."""
+    @staticmethod
+    def _build_contents(
+        prompt: Union[str, List[Dict], None],
+        system_instruction: Optional[str] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """Convert a str prompt or OpenAI-style messages into Gemini contents.
+
+        Accepts either a plain prompt string (single user turn) or a list of
+        {"role", "content"} dicts. Roles map: system -> systemInstruction,
+        assistant -> "model", anything else -> "user". Returns
+        (contents, merged_system_instruction).
+        """
+        system_parts = [system_instruction] if system_instruction else []
+        if isinstance(prompt, (list, tuple)):
+            contents = []
+            for msg in prompt:
+                role = (msg.get("role") or "user").lower()
+                text = msg.get("content") or ""
+                if role == "system":
+                    if text:
+                        system_parts.append(text)
+                    continue
+                gemini_role = "model" if role in ("assistant", "model") else "user"
+                contents.append({"role": gemini_role, "parts": [{"text": text}]})
+        else:
+            contents = [{"parts": [{"text": prompt or ""}]}]
+        merged_system = "\n\n".join(system_parts) if system_parts else None
+        return contents, merged_system
+
+    def _call_api(
+        self,
+        prompt: Union[str, List[Dict], None] = None,
+        system_instruction: str = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1000,
+        messages: Optional[List[Dict]] = None,
+        system: Optional[str] = None,
+    ) -> str:
+        """Make API call to Gemini.
+
+        `prompt` may be a str (single user turn) or a list of
+        {"role", "content"} messages, so Gemini can be used interchangeably
+        with the OpenAI-style adapters. `messages` / `system` are accepted as
+        keyword aliases for `prompt` / `system_instruction`.
+        """
         if not self.api_key:
             raise ValueError("Gemini API key not configured")
 
+        if prompt is None:
+            prompt = messages
+        if system_instruction is None:
+            system_instruction = system
+
+        contents, system_instruction = self._build_contents(prompt, system_instruction)
+
         payload = {
-            "contents": [
-                {
-                    "parts": [{"text": prompt}]
-                }
-            ],
+            "contents": contents,
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens

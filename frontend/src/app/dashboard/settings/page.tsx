@@ -57,6 +57,7 @@ interface AIConfig {
   openai_api_key: string
   anthropic_api_key: string
   gemini_api_key: string
+  deepseek_api_key: string
   ai_model: string
   ai_personalize_emails: string
   ai_personalization_prompt: string
@@ -288,7 +289,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   searchapi_api_key: 'job_source_apis', usajobs_api_key: 'job_source_apis', usajobs_email: 'job_source_apis',
   jooble_api_key: 'job_source_apis', jobdatafeeds_api_key: 'job_source_apis', coresignal_api_key: 'job_source_apis',
   ai_provider: 'ai_llm', groq_api_key: 'ai_llm', openai_api_key: 'ai_llm',
-  anthropic_api_key: 'ai_llm', gemini_api_key: 'ai_llm', ai_model: 'ai_llm',
+  anthropic_api_key: 'ai_llm', gemini_api_key: 'ai_llm', deepseek_api_key: 'ai_llm', ai_model: 'ai_llm',
   ai_personalize_emails: 'ai_llm', ai_personalization_prompt: 'ai_llm',
   contact_provider: 'contacts', contact_providers: 'contacts', seamless_api_key: 'contacts',
   email_validation_provider: 'validation', neverbounce_api_key: 'validation',
@@ -434,6 +435,7 @@ export default function SettingsPage() {
     openai_api_key: '',
     anthropic_api_key: '',
     gemini_api_key: '',
+    deepseek_api_key: '',
     ai_model: 'llama-3.1-70b-versatile',
     ai_personalize_emails: 'yes',
     ai_personalization_prompt: DEFAULT_AI_PERSONALIZATION_PROMPT,
@@ -726,6 +728,7 @@ export default function SettingsPage() {
         openai_api_key: settingsMap.openai_api_key || '',
         anthropic_api_key: settingsMap.anthropic_api_key || '',
         gemini_api_key: settingsMap.gemini_api_key || '',
+        deepseek_api_key: settingsMap.deepseek_api_key || '',
         ai_model: settingsMap.ai_model || 'llama-3.1-70b-versatile',
         ai_personalize_emails: settingsMap.ai_personalize_emails || 'yes',
         ai_personalization_prompt: settingsMap.ai_personalization_prompt || DEFAULT_AI_PERSONALIZATION_PROMPT,
@@ -1000,6 +1003,7 @@ export default function SettingsPage() {
           saveSetting('openai_api_key', aiConfig.openai_api_key),
           saveSetting('anthropic_api_key', aiConfig.anthropic_api_key),
           saveSetting('gemini_api_key', aiConfig.gemini_api_key),
+          saveSetting('deepseek_api_key', aiConfig.deepseek_api_key),
           saveSetting('ai_model', aiConfig.ai_model),
           saveSetting('ai_personalize_emails', aiConfig.ai_personalize_emails),
           saveSetting('ai_personalization_prompt', aiConfig.ai_personalization_prompt),
@@ -1163,6 +1167,11 @@ export default function SettingsPage() {
           { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Recommended)' },
           { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Faster)' },
           { value: 'gemini-1.0-pro', label: 'Gemini 1.0 Pro' },
+        ]
+      case 'deepseek':
+        return [
+          { value: 'deepseek-chat', label: 'DeepSeek Chat V3 (Recommended)' },
+          { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner R1 (Reasoning)' },
         ]
       default:
         return []
@@ -2910,12 +2919,14 @@ export default function SettingsPage() {
                   <option value="openai">OpenAI</option>
                   <option value="anthropic">Anthropic (Claude)</option>
                   <option value="gemini">Google (Gemini)</option>
+                  <option value="deepseek">DeepSeek</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {aiConfig.ai_provider === 'groq' && 'Free tier with fast inference using Llama models'}
                   {aiConfig.ai_provider === 'openai' && 'Industry-leading GPT models (paid)'}
                   {aiConfig.ai_provider === 'anthropic' && 'Claude models known for safety (paid)'}
                   {aiConfig.ai_provider === 'gemini' && 'Google\'s multimodal AI (free tier available)'}
+                  {aiConfig.ai_provider === 'deepseek' && 'Strong, low-cost models (OpenAI-compatible, paid)'}
                 </p>
               </div>
 
@@ -3050,6 +3061,36 @@ export default function SettingsPage() {
                   {testResults.gemini && (
                     <p className={`text-sm mt-1 ${testResults.gemini.success ? 'text-green-600' : 'text-red-600'}`}>
                       {testResults.gemini.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {aiConfig.ai_provider === 'deepseek' && (
+                <div>
+                  <label className="label">DeepSeek API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={aiConfig.deepseek_api_key}
+                      onChange={(e) => setAIConfig({ ...aiConfig, deepseek_api_key: e.target.value })}
+                      placeholder="sk-..."
+                      className="input flex-1"
+                    />
+                    <button
+                      onClick={() => testConnection('deepseek')}
+                      disabled={testing === 'deepseek' || !aiConfig.deepseek_api_key}
+                      className="btn-secondary text-sm"
+                    >
+                      {testing === 'deepseek' ? 'Testing...' : 'Test'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Get key at <a href="https://platform.deepseek.com/api_keys" target="_blank" className="text-blue-600 underline">platform.deepseek.com</a>
+                  </p>
+                  {testResults.deepseek && (
+                    <p className={`text-sm mt-1 ${testResults.deepseek.success ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResults.deepseek.message}
                     </p>
                   )}
                 </div>

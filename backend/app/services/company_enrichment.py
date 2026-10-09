@@ -95,7 +95,7 @@ def enrich_from_leads(db: Session, client: ClientInfo) -> dict:
 
 # Providers billed per-token. Used by ``free_only`` callers that must never
 # incur AI spend (e.g. resolving unknowns purely to AVOID a paid contact API).
-PAID_AI_PROVIDERS = {"openai", "anthropic", "gemini"}
+PAID_AI_PROVIDERS = {"openai", "anthropic", "gemini", "deepseek"}
 
 
 def _get_ai_adapter(
@@ -114,6 +114,7 @@ def _get_ai_adapter(
         "openai": "openai_api_key",
         "anthropic": "anthropic_api_key",
         "gemini": "gemini_api_key",
+        "deepseek": "deepseek_api_key",
     }
     api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
     if not api_key:
@@ -132,6 +133,9 @@ def _get_ai_adapter(
         elif provider == "gemini":
             from app.services.adapters.ai.gemini import GeminiAdapter
             adapter = GeminiAdapter(api_key=api_key)
+        elif provider == "deepseek":
+            from app.services.adapters.ai.deepseek import DeepSeekAdapter
+            adapter = DeepSeekAdapter(api_key=api_key)
         if adapter is not None:
             adapter._cost_db = db
             adapter._cost_tenant_id = tenant_id

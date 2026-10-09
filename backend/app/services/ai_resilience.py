@@ -86,7 +86,7 @@ def call_ai_with_fallback(
     primary = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
 
     # Define fallback order (primary first, then alternatives)
-    all_providers = ["groq", "openai", "anthropic", "gemini"]
+    all_providers = ["groq", "openai", "anthropic", "gemini", "deepseek"]
     provider_order = [primary] + [p for p in all_providers if p != primary]
 
     for provider in provider_order:
@@ -125,6 +125,7 @@ def _try_get_adapter(db, tenant_id: Optional[int], provider: str):
         "openai": "openai_api_key",
         "anthropic": "anthropic_api_key",
         "gemini": "gemini_api_key",
+        "deepseek": "deepseek_api_key",
     }
     key_setting = api_key_map.get(provider)
     if not key_setting:
@@ -147,6 +148,9 @@ def _try_get_adapter(db, tenant_id: Optional[int], provider: str):
         elif provider == "gemini":
             from app.services.adapters.ai.gemini import GeminiAdapter
             return GeminiAdapter(api_key=api_key)
+        elif provider == "deepseek":
+            from app.services.adapters.ai.deepseek import DeepSeekAdapter
+            return DeepSeekAdapter(api_key=api_key)
     except Exception:
         return None
     return None

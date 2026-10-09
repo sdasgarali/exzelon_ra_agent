@@ -17,18 +17,24 @@
 4. Refuse off-topic questions (only NeuraLeads / cold outreach / lead gen / deliverability / platform usage).
 
 ## Tasks
-- [ ] 1. Backend: `DeepSeekAdapter` (OpenAI-compatible, base `https://api.deepseek.com/v1`, model `deepseek-chat`, retries like Groq);
+- [x] 1. Backend: `DeepSeekAdapter` (OpenAI-compatible, base `https://api.deepseek.com/v1`, model `deepseek-chat`, retries like Groq);
       factory + `deepseek_api_key` setting registration + Settings test-connection + cost pricing.
-- [ ] 2. Backend copilot: pass tenant_id; feature-catalog + guardrail system prompt; persisted memory
+- [x] 2. Backend copilot: pass tenant_id; feature-catalog + guardrail system prompt; persisted memory
       (`copilot_messages` table, Alembic revision, GET/DELETE `/copilot/history`); system prompt passed in a
       provider-safe way (fix Anthropic/Gemini paths).
-- [ ] 3. Frontend copilot: load history on open, show real error detail, suggested prompts per page,
+- [x] 3. Frontend copilot: load history on open, show real error detail, suggested prompts per page,
       clear-history button, request timeout, links to recommended pages.
-- [ ] 4. Tests (pytest: adapter, factory, copilot endpoint incl. off-topic prompt contract, history isolation per user/tenant;
+- [x] 4. Tests (pytest: adapter, factory, copilot endpoint incl. off-topic prompt contract, history isolation per user/tenant;
       jest: widget), build.
 - [ ] 5. PR, merge, deploy with Alembic (DB backup first — deploy.sh does not migrate), set prod
       `ai_provider=deepseek` + `deepseek_api_key` (global), live test.
-- [ ] 6. Docs: CLAUDE_REFERENCE adapters.md, services.md, data-models.md, api-endpoints.md.
+- [x] 6. Docs: CLAUDE_REFERENCE adapters.md, services.md, data-models.md, api-endpoints.md.
+
+## Results (2026-10-09)
+- pytest full suite 1994/1994; jest 91/91; tsc OK; next build OK.
+- DeepSeek also wired into the 3 standalone factories (warmup content, company enrichment, AI fallback chain).
+- Prod settings to apply at deploy: global ai_provider=deepseek, warmup_ai_provider=deepseek, ai_model=deepseek-chat,
+  deepseek_api_key=<user key>; tenant 1/2/3 overrides ai_provider/warmup_ai_provider/ai_model -> deepseek (user approved 'DeepSeek everywhere').
 
 ## Acceptance
 - Copilot answers on prod via DeepSeek; feature questions get a concrete page recommendation;

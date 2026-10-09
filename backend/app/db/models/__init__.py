@@ -55,6 +55,7 @@ from app.db.models.company_exclusion import CompanyExclusion
 from app.db.models.resource_pool_attribution import ResourcePoolAttribution
 from app.db.models.soft_bounce import SoftBounceTracker
 from app.db.models.subscription import SubscriptionRecord, SubscriptionStatus
+from app.db.models.copilot_message import CopilotMessage
 
 __all__ = [
     "User",
@@ -138,4 +139,5 @@ __all__ = [
     "LOBStatus",
     "TenantLOBAssignment",
     "CompanyExclusion",
+    "CopilotMessage",
 ]
