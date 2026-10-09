@@ -76,7 +76,7 @@ export default function SignupPage() {
         <div className="card">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <BrandLogo on="light" height={40} />
+              <BrandLogo on="auto" height={40} />
             </div>
             <h1 className="text-2xl font-bold text-gray-800">Get Started Free</h1>
             <p className="text-gray-500 mt-2 text-sm">Create your NeuraLeads account</p>
