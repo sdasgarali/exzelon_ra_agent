@@ -1,3 +1,8 @@
+// Generated palette references — see gen-mono-theme.js / globals.css.
+const SHADES = ["50","100","200","300","400","500","600","700","800","900","950"]
+const cssVarPalette = (name) =>
+  Object.fromEntries(SHADES.map((s) => [s, `rgb(var(--c-${name}-${s}) / <alpha-value>)`]))
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
@@ -9,27 +14,24 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9',
-          // Darkened 600/700 for WCAG AA: white-on-primary-600 and text-primary-600
-          // on white now meet 4.5:1 (was #0284c7 ≈ 3.8:1). Scale shifted to keep
-          // hover (700) darker than base (600).
-          600: '#0369a1',
-          700: '#075985',
-          800: '#0c4a6e',
-          900: '#082f45',
-        },
-        navy: {
-          900: '#0a0e27',
-          800: '#111631',
-          700: '#1a1f3d',
-          600: '#232952',
-        },
+        // Minimal black & white theme: these palettes resolve through CSS variables
+        // (globals.css). The app gets neutrals; the .light-only marketing surface
+        // gets the original colors. Status palettes (red/green/amber/...) are untouched.
+        gray: cssVarPalette('gray'),
+        slate: cssVarPalette('slate'),
+        zinc: cssVarPalette('zinc'),
+        blue: cssVarPalette('blue'),
+        indigo: cssVarPalette('indigo'),
+        violet: cssVarPalette('violet'),
+        purple: cssVarPalette('purple'),
+        fuchsia: cssVarPalette('fuchsia'),
+        pink: cssVarPalette('pink'),
+        sky: cssVarPalette('sky'),
+        cyan: cssVarPalette('cyan'),
+        teal: cssVarPalette('teal'),
+        primary: cssVarPalette('primary'),
+        navy: cssVarPalette('navy'),
+
         // Brand palette, sampled from the NeuraLeads master lockup. Used by the
         // marketing surface. Four roles, each with a job:
         //   brand  = the flow / primary action   ink    = type

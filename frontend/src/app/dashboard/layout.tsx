@@ -65,50 +65,50 @@ import {
 
 const navigation = [
   // Home
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-sky-400' },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, iconColor: 'text-gray-400' },
 
   // Step 1: Setup — mailboxes & warmup
-  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-purple-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-mailboxes' },
-  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-orange-500', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'warmup' },
+  { name: 'Mailboxes', href: '/dashboard/mailboxes', icon: Inbox, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-mailboxes' },
+  { name: 'Warmup Engine', href: '/dashboard/warmup', icon: Flame, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'warmup' },
 
   // Step 2: Source — pipeline execution & lead results
-  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-blue-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-indigo-400', tourId: 'nav-leads' },
-  { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-slate-400' },
+  { name: 'Pipelines', href: '/dashboard/pipelines', icon: BarChart3, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Leads', href: '/dashboard/leads', icon: FileText, iconColor: 'text-gray-400', tourId: 'nav-leads' },
+  { name: 'Clients', href: '/dashboard/clients', icon: Building, iconColor: 'text-gray-400' },
 
   // Step 3: Enrich & Step 4: Validate
-  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-violet-400', tourId: 'nav-contacts' },
-  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-emerald-400', tourId: 'nav-validation' },
+  { name: 'Contacts', href: '/dashboard/contacts', icon: Users, iconColor: 'text-gray-400', tourId: 'nav-contacts' },
+  { name: 'Validation', href: '/dashboard/validation', icon: CheckCircle, iconColor: 'text-gray-400', tourId: 'nav-validation' },
 
   // Step 5: Campaign — targeting, templates, sequences, outreach
-  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-rose-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'icp_wizard' },
-  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-blue-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-amber-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-campaigns' },
-  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-orange-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'email_preview' },
+  { name: 'ICP Wizard', href: '/dashboard/icp-wizard', icon: Target, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'icp_wizard' },
+  { name: 'Email Templates', href: '/dashboard/templates', icon: FileEdit, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Campaigns', href: '/dashboard/campaigns', icon: Zap, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-campaigns' },
+  { name: 'Outreach', href: '/dashboard/outreach', icon: Mail, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Email Preview', href: '/dashboard/email-preview', icon: FileSearch, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'email_preview' },
 
   // Step 6: Engage & Close
-  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-teal-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-inbox' },
-  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-green-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-deals' },
+  { name: 'Inbox', href: '/dashboard/inbox', icon: MessageSquare, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-inbox' },
+  { name: 'Deals', href: '/dashboard/deals', icon: DollarSign, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[], tourId: 'nav-deals' },
 
   // Reporting & Monitoring
-  { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-emerald-500', roles: ['super_admin', 'admin', 'bdm'] as string[] },
-  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-cyan-400', roles: ['super_admin', 'admin'] as string[] , feature: 'analytics' },
-  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'attribution' },
-  { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] , feature: 'visitors' },
-  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-lime-400', roles: ['super_admin', 'admin'] as string[] , feature: 'automation' },
+  { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Analytics', href: '/dashboard/analytics', icon: TrendingUp, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'analytics' },
+  { name: 'Attribution', href: '/dashboard/attribution', icon: CircleDollarSign, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] , feature: 'attribution' },
+  { name: 'Visitors', href: '/dashboard/visitors', icon: Eye, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'visitors' },
+  { name: 'Automation', href: '/dashboard/automation', icon: ListChecks, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'automation' },
 
   // Administration
-  { name: 'Activity Log', href: '/dashboard/activity-log', icon: ScrollText, iconColor: 'text-cyan-400', roles: ['super_admin'] as string[] },
-  { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-pink-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-yellow-400', roles: ['super_admin'] as string[] , feature: 'custom_roles' },
-  { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-red-400', roles: ['super_admin'] as string[] },
-  { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-emerald-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
+  { name: 'Activity Log', href: '/dashboard/activity-log', icon: ScrollText, iconColor: 'text-gray-400', roles: ['super_admin'] as string[] },
+  { name: 'User Management', href: '/dashboard/users', icon: UserCog, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Roles & Permissions', href: '/dashboard/roles', icon: Shield, iconColor: 'text-gray-400', roles: ['super_admin'] as string[] , feature: 'custom_roles' },
+  { name: 'Tenant Management', href: '/dashboard/tenants', icon: Building2, iconColor: 'text-gray-400', roles: ['super_admin'] as string[] },
+  { name: 'Billing', href: '/dashboard/billing', icon: Receipt, iconColor: 'text-gray-400', roles: ['super_admin', 'admin', 'bdm'] as string[] },
   { name: 'Data Backups', href: '/dashboard/backups', icon: HardDrive, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] , feature: 'backups' },
   // Lines of business are not a customer feature — super admin only (2026-09-23).
-  { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-violet-400', roles: ['super_admin'] as string[] },
-  { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-red-400', roles: ['super_admin', 'admin'] as string[] },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-zinc-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Lines of Business', href: '/dashboard/lob', icon: Layers, iconColor: 'text-gray-400', roles: ['super_admin'] as string[] },
+  { name: 'Excluded Companies', href: '/dashboard/settings/excluded-companies', icon: Ban, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
+  { name: 'Settings', href: '/dashboard/settings', icon: Settings, iconColor: 'text-gray-400', roles: ['super_admin', 'admin'] as string[] },
 ]
 
 export default function DashboardLayout({
