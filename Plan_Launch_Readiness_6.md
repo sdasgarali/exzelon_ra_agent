@@ -58,8 +58,8 @@ Branch: `feature/launch-readiness-6` (from `master` ef42e31). Source: launch aud
   browser QA, PR, deploy only on user's go. No campaign unpause as part of this work.
 
 ## Decisions (user, 2026-10-12)
-1. Public support address: **info@neuraleads.ai** (`SUPPORT_EMAIL`; user to forward it via Cloudflare Email Routing).
-   Alerts: user's personal Gmail — set ONLY in prod `.env` as `PROD_ALERT_EMAIL` at deploy (not committed).
+1. **info@neuraleads.ai for everything** — public support (`SUPPORT_EMAIL`) AND system alerts (`ALERT_EMAIL`).
+   User's personal email is NOT used anywhere (user, 2026-10-12).
 2. Off-site backups: **new private Backblaze B2 bucket** — user creates bucket + scoped app key and pastes
    `BACKUP_S3_*` into the server .env themselves.
 3. Legal pages: **config-driven, fill later** (`LEGAL_*` empty => neutral "operated by NeuraLeads" line).
