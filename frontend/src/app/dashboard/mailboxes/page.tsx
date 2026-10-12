@@ -48,6 +48,9 @@ interface Mailbox {
   complaint_count: number
   warmup_days_completed: number
   can_send: boolean
+  // Outreach warmup gate (MIN_WARMUP_DAYS + MIN_WARMUP_EMAILS). Optional for older APIs.
+  outreach_eligible?: boolean
+  outreach_block_reason?: string | null
   remaining_daily_quota: number
   notes: string | null
   created_at: string
@@ -1258,6 +1261,15 @@ export default function MailboxesPage() {
                   <span className={`text-xs px-2 py-1 rounded-full cursor-help ${WARMUP_STATUS_LABELS[mailbox.warmup_status]?.color || 'bg-gray-100'}`} title={WARMUP_STATUS_LABELS[mailbox.warmup_status]?.tooltip || ''}>
                     {WARMUP_STATUS_LABELS[mailbox.warmup_status]?.label || mailbox.warmup_status}
                   </span>
+                  {mailbox.outreach_eligible === false && mailbox.outreach_block_reason && (
+                    <span
+                      data-testid={`outreach-gate-${mailbox.mailbox_id}`}
+                      className="mt-1 block w-fit text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800 cursor-help"
+                      title="This mailbox can't send outreach yet. Campaigns only use mailboxes that have finished warmup (minimum days and warmup emails)."
+                    >
+                      {mailbox.outreach_block_reason}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   {mailbox.outreach_role_name ? (
