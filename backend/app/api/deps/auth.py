@@ -440,6 +440,10 @@ async def require_tenant_with_budget(
     paid pipelines (lead sourcing, enrichment, validation, outreach). Raises 402
     when credit enforcement is enabled and the tenant is over its monthly ceiling;
     a no-op otherwise. (ELR-009b)
+
+    This only proves the tenant has *a* credit. An endpoint that launches a run of
+    known size must also gate on the run's estimate — see `_gate_run_estimate` in
+    `api/endpoints/pipelines.py` and `core.credit_costs.estimate_run_credits` (C2).
     """
     from app.services.credit_metering import check_credit_budget
     check_credit_budget(db, tenant_id)

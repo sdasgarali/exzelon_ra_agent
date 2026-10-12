@@ -139,7 +139,9 @@ def get_balance(
 
     if not lock and _is_stale(balance):
         # populate_existing: refresh the identity-map copy from the locked read
-        # instead of handing back the attributes we loaded unlocked.
+        # instead of handing back the attributes we loaded unlocked. Flush first so
+        # no pending in-session change to the row is discarded by that refresh.
+        db.flush()
         balance = q.with_for_update().populate_existing().first()
     refill_if_new_period(db, balance, tenant=tenant)
     return balance
