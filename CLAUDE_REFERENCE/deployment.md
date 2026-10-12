@@ -90,6 +90,19 @@ NEXT_PUBLIC_API_URL=https://neuraleads.ai/api/v1
 ```
 Without this, `NEXT_PUBLIC_API_URL` defaults to `http://localhost:8000/api/v1`, which works for SSR but fails for browser-side API calls. This file is **NOT in git** — the deploy script auto-creates it if missing.
 
+## Backend `.env` keys added 2026-10-12 (credit loopholes)
+
+Add to `/opt/exzelon-ra-agent/backend/.env` before deploying `bugfix/credit-loopholes`:
+
+| Key | Prod value | Why |
+|---|---|---|
+| `RATE_LIMIT_STORAGE_URI` | `redis://localhost:6379/1` | Shares rate limits across the uvicorn workers; empty = per-process memory (limits multiply by worker count) |
+| `MAX_DAILY_SEND_LIMIT_PER_MAILBOX` | `50` | Upper bound on any mailbox/tenant daily send limit |
+| `MAX_IMPORT_ROWS` | `5000` | Row cap for CSV / Google-Sheet imports |
+| `BLOCKED_SIGNUP_DOMAINS` | *(optional)* | Extra disposable domains to block at signup |
+
+No schema change. `CREDIT_ENFORCEMENT_ENABLED` is untouched (still opt-in).
+
 ## Database Migrations
 
 **Alembic is live on prod** (stamped `0001_baseline` and upgraded to `0004` on 2026-09-23).
