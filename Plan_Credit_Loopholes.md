@@ -60,6 +60,13 @@ new `tests/unit/test_loopholes_credits.py`.
 - [ ] C7 Stripe top-up: grant only when `payment_status == "paid"`; handle `async_payment_succeeded`
 - [ ] C8 Fix `ai_icp_wizard` `get_ai_adapter()` call missing `db`
 
+### Main session — credit meter + history (user request 2026-10-12)
+Owns: `api/endpoints/credits.py`, frontend `components/credit-meter.tsx`, `lib/credit-ledger.ts`,
+`app/dashboard/billing/credits/page.tsx`, `app/dashboard/layout.tsx`, `app/dashboard/billing/page.tsx`, `lib/api.ts`.
+- [x] M1 `/credits/usage` + `/credits/summary` return `label`/`category`; summary excludes top-up grants (490b428)
+- [x] M2 Top-bar credit meter (desktop + mobile), refreshes every 60s, popover with allowance/top-up/sends (55390ab)
+- [x] M3 `/dashboard/billing/credits` history page: filters, pagination, monthly breakdown, CSV (55390ab)
+
 ## Integration (main session)
 - [ ] I1 Merge A, B, C branches into `bugfix/credit-loopholes`
 - [ ] I2 Full backend suite — zero regressions
