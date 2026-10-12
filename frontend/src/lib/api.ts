@@ -1664,7 +1664,13 @@ export const creditsApi = {
     const response = await api.get('/credits/balance')
     return response.data
   },
-  usage: async (params?: { usage_type?: string; page?: number; page_size?: number }) => {
+  usage: async (params?: {
+    usage_type?: string
+    from_date?: string // YYYY-MM-DD
+    to_date?: string // YYYY-MM-DD
+    page?: number
+    page_size?: number
+  }) => {
     const response = await api.get('/credits/usage', { params })
     return response.data
   },

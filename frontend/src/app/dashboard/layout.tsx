@@ -16,6 +16,7 @@ import { useTour } from '@/hooks/use-tour'
 import { CopilotChat } from '@/components/copilot-chat'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
+import { CreditMeter } from '@/components/credit-meter'
 import { LobSelector } from '@/components/lob-selector'
 import { useLobStore } from '@/lib/lob-store'
 import BrandLogo from '@/components/brand-logo'
@@ -503,10 +504,11 @@ export default function DashboardLayout({
           <h1 className="flex-1 flex items-center">
             <BrandLogo height={24} />
           </h1>
+          <CreditMeter compact />
           <NotificationCenter />
         </div>
 
-        {/* Desktop top bar — search, notifications, and profile pinned to the top-right. */}
+        {/* Desktop top bar — search, credits, notifications, and profile pinned to the top-right. */}
         <div className="hidden lg:flex items-center justify-end gap-3 sticky top-0 z-30 px-8 py-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
           {/* Search (opens the command palette). bubbles:true so the synthetic event
               reaches CommandPalette's window-level keydown listener (real Ctrl+K bubbles). */}
@@ -520,6 +522,9 @@ export default function DashboardLayout({
             <span>Search...</span>
             <kbd className="ml-auto text-[10px] font-mono text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-600 px-1 py-0.5 rounded">Ctrl+K</kbd>
           </button>
+
+          {/* Credit balance — refreshes every minute so background runs show up */}
+          <CreditMeter />
 
           {/* Notifications */}
           <NotificationCenter />

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import PlanUsagePanel from '@/components/plan-usage-panel'
 import { useAuthStore } from '@/lib/store'
 import { billingApi } from '@/lib/api'
@@ -19,6 +20,7 @@ import {
   Search,
   FileText,
   Zap,
+  History,
 } from 'lucide-react'
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -305,6 +307,16 @@ export default function BillingPage() {
           Renders nothing for super admins, who have no plan of their own — the
           invoice tools below are what they came for. */}
       <PlanUsagePanel />
+
+      {/* Ledger of every credit charged or added on this workspace. */}
+      <div className="flex justify-end">
+        <Link
+          href="/dashboard/billing/credits"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+        >
+          <History className="h-4 w-4" aria-hidden="true" /> View credit history
+        </Link>
+      </div>
 
       {/* Alerts */}
       {error && (
