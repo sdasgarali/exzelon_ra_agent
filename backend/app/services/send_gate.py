@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.contact import ContactDetails, OutreachStatus as ContactOutreachStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus
-from app.db.models.email_validation import EmailValidationResult, ValidationStatus
+from app.db.models.email_validation import ValidationStatus
 from app.db.models.suppression import SuppressionList
 from app.db.models.campaign import Campaign
 from app.db.models.lead import LeadDetails

@@ -17,7 +17,7 @@ from app.db.base import SessionLocal
 from app.db.models.lead import LeadDetails, is_closed_status
 from app.db.models.contact import ContactDetails
 from app.db.models.lead_contact import LeadContactAssociation
-from app.db.models.email_validation import EmailValidationResult, ValidationStatus
+from app.db.models.email_validation import ValidationStatus
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.suppression import SuppressionList
 from app.db.models.job_run import JobRun, JobStatus

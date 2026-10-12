@@ -699,12 +699,18 @@ async def update_contact(
         if "validation_status" in update_data:
             new_vs = update_data["validation_status"]
             cur_vs = contact.validation_status
-            if str(new_vs or "").lower() != str(cur_vs or "").lower():
+            # Clearing the status is always allowed: it only makes the contact LESS
+            # sendable (it must be validated again). The MCP connector does this when
+            # it changes an email. Setting any other value is the bypass.
+            if new_vs is None or str(new_vs).strip() == "":
+                update_data["validation_status"] = None
+            elif str(new_vs).lower() != str(cur_vs or "").lower():
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Email validation status is set by the validation pipeline; run validation instead",
                 )
-            update_data.pop("validation_status", None)
+            else:
+                update_data.pop("validation_status", None)
 
     # A lead link must stay inside the contact's own tenant.
     if update_data.get("lead_id") is not None:

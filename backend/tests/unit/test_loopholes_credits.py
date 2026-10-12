@@ -13,7 +13,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Query
 
 from app.core.credit_costs import CREDIT_COSTS, cost_for, estimate_run_credits
-from app.db.models.credit_balance import TenantCreditBalance
 from app.db.models.credit_usage import CreditUsage
 from app.services.credit_metering import (
     check_credit_budget, get_balance, has_credit_budget, refill_all_balances,

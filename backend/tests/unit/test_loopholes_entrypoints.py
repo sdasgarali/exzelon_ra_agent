@@ -170,6 +170,19 @@ class TestB2ContactBypassFields:
         assert r.status_code == 200, r.text
         assert r.json()["validation_status"] is None
 
+    def test_admin_can_clear_validation_status(self, client, db_session, auth_headers, test_tenant):
+        """Clearing only makes a contact less sendable, so it stays allowed. The MCP
+        connector's update_contact clears it with an email change (its e2e suite
+        caught this)."""
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status="valid")
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers,
+                       json={"email": "moved@acme-corp.com", "validation_status": None})
+        assert r.status_code == 200, r.text
+        assert r.json()["validation_status"] is None
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers,
+                       json={"validation_status": None})
+        assert r.status_code == 200, r.text
+
     def test_super_admin_can_set_bypass_fields(self, client, db_session, sa_headers, test_tenant):
         c = _make_contact(db_session, test_tenant.tenant_id)
         r = client.put(f"{API}/contacts/{c.contact_id}", headers=sa_headers,
