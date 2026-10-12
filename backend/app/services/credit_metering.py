@@ -600,13 +600,19 @@ def check_credit_budget(
         spent = float(balance.period_spent or 0)
         logger.warning("credit_budget_exceeded", tenant_id=tenant_id,
                        available=available, needed=credits_needed, ceiling=ceiling)
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
+        if available > 0:
+            # Some credits left, just not enough for this action — "out of credits"
+            # would contradict the balance on screen.
+            detail = (
+                f"Not enough credits: this needs about {credits_needed:,.0f} and you have "
+                f"{available:,.0f} left. Upgrade your plan or buy a top-up to continue."
+            )
+        else:
+            detail = (
                 f"Out of credits ({int(spent)}/{int(ceiling)} used this month). "
                 "Upgrade your plan or buy a top-up to continue."
-            ),
-        )
+            )
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=detail)
 
 
 def has_credit_budget(

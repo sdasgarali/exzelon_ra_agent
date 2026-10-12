@@ -127,3 +127,20 @@ def test_scheduled_intent_scan_runs_with_credits(db_session, test_tenant, monkey
     scheduler = _intent_scheduler(monkeypatch, test_tenant.tenant_id, calls)
     getattr(scheduler, job)()
     assert [c[0] for c in calls] == [test_tenant.tenant_id]
+
+
+def test_402_message_states_need_and_balance_when_some_credits_left(db_session, test_tenant, monkeypatch):
+    """Browser QA: with 30 credits left a 50-credit run said "Out of credits"."""
+    from fastapi import HTTPException
+    from app.services.credit_metering import check_credit_budget
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 30)
+    with pytest.raises(HTTPException) as exc:
+        check_credit_budget(db_session, test_tenant.tenant_id, credits_needed=50)
+    assert exc.value.status_code == 402
+    assert "needs about 50" in exc.value.detail and "30 left" in exc.value.detail
+
+    _set_available(db_session, test_tenant.tenant_id, 0)
+    with pytest.raises(HTTPException) as exc:
+        check_credit_budget(db_session, test_tenant.tenant_id, credits_needed=50)
+    assert exc.value.detail.startswith("Out of credits")
