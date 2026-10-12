@@ -24,7 +24,7 @@ _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 # Matched as path suffixes under /api/v1.
 _READ_ONLY_POST_SUFFIXES = (
     "/leads/ai-search",
-    "/leads/database-search",
+    # NOT /leads/database-search: it calls a paid contact provider and spends credits.
     "/leads/bulk/enrich/preview",
     "/leads/bulk/outreach/preview",
     "/enrollment-preview",
@@ -55,6 +55,7 @@ _ADMIN_ONLY_PREFIXES = (
     "/api/v1/gdpr",
     "/api/v1/backups",
     "/api/v1/activity",
+    "/api/v1/settings",   # feature flags, business rules, provider keys, notification sender
 )
 
 _KEY_MANAGEMENT_PREFIX = "/api/v1/integrations/api-keys"

@@ -1758,6 +1758,40 @@ async def preview_csv_import(
     }
 
 
+def _remaining_plan_capacity(db: Session, tenant_id: int, resource: str) -> Optional[int]:
+    """How many more ``resource`` rows the tenant's plan allows (None = no tenant row)."""
+    from app.api.deps.plan_limits import RESOURCE_COUNTERS, RESOURCE_LIMITS
+    from app.core.plans import limits_for_tenant
+    from app.db.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+    if tenant is None:
+        return None
+    max_allowed = limits_for_tenant(tenant).get(RESOURCE_LIMITS[resource], 0)
+    return max(0, int(max_allowed) - int(RESOURCE_COUNTERS[resource](db, tenant_id)))
+
+
+def _guard_import(db: Session, tenant_id: Optional[int], rows: list) -> tuple[int, Optional[int], Optional[int]]:
+    """Pre-flight for bulk lead imports: tenant required, row cap, plan limits.
+
+    Returns ``(tenant_id, remaining_leads, remaining_contacts)``; the remaining
+    counts cap how many rows the import may create.
+    """
+    from app.core.config import settings as app_settings
+    tenant_id = ensure_tenant(tenant_id)
+    max_rows = max(1, int(app_settings.MAX_IMPORT_ROWS))
+    if len(rows) > max_rows:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Import has {len(rows)} rows; the maximum per import is {max_rows}. Split the file and retry.",
+        )
+    check_plan_limit(db, tenant_id, "leads")  # 403 when already at the cap
+    return (
+        tenant_id,
+        _remaining_plan_capacity(db, tenant_id, "leads"),
+        _remaining_plan_capacity(db, tenant_id, "contacts"),
+    )
+
+
 def _parse_and_import_lead_rows(
     rows: list[dict],
     existing_links: set,
@@ -1765,8 +1799,14 @@ def _parse_and_import_lead_rows(
     source_default: str,
     tenant_id: Optional[int],
     db: Session,
+    max_new_leads: Optional[int] = None,
+    max_new_contacts: Optional[int] = None,
 ) -> dict:
     """Shared helper to parse CSV/Google Sheet rows and import leads.
+
+    ``max_new_leads`` / ``max_new_contacts`` (remaining plan capacity) stop the
+    import from creating more rows than the tenant's plan allows; rows past the
+    cap are skipped and reported. ``None`` = no cap.
 
     Returns dict with imported, skipped, errors, imported_lead_ids.
     """
@@ -1777,6 +1817,7 @@ def _parse_and_import_lead_rows(
     skipped = 0
     excluded = 0
     contacts_created = 0
+    plan_limited = 0
     errors = []
     imported_lead_ids = []
 
@@ -1819,10 +1860,16 @@ def _parse_and_import_lead_rows(
                 row_lower.get('url') or ""
             ).strip()
 
+            if skip_duplicates and job_link and job_link in existing_links:
+                skipped += 1
+                continue
+
+            if max_new_leads is not None and imported >= max_new_leads:
+                plan_limited += 1
+                skipped += 1
+                continue
+
             if skip_duplicates and job_link:
-                if job_link in existing_links:
-                    skipped += 1
-                    continue
                 existing_links.add(job_link)
 
             posting_date_str = (
@@ -1937,8 +1984,10 @@ def _parse_and_import_lead_rows(
             imported_lead_ids.append(lead.lead_id)
             imported += 1
 
-            # Create contact if email is provided
-            if contact_email:
+            # Create contact if email is provided (and the plan has room for it)
+            if contact_email and max_new_contacts is not None and contacts_created >= max_new_contacts:
+                errors.append(f"Row {row_num}: contact not created — plan contact limit reached")
+            elif contact_email:
                 try:
                     contact = ContactDetails(
                         tenant_id=tenant_id,
@@ -1969,10 +2018,14 @@ def _parse_and_import_lead_rows(
 
     db.commit()
 
+    if plan_limited:
+        errors.insert(0, f"{plan_limited} row(s) not imported — plan lead limit reached")
+
     return {
         "imported": imported,
         "skipped": skipped,
         "excluded": excluded,
+        "plan_limited": plan_limited,
         "contacts_created": contacts_created,
         "errors": errors[:10] if errors else [],
         "imported_lead_ids": imported_lead_ids,
@@ -1995,10 +2048,10 @@ async def import_leads_csv(
     file: UploadFile = File(...),
     skip_duplicates: bool = Query(True, description="Skip leads with duplicate job_link"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Import leads from CSV file."""
+    """Import leads from CSV file (admin/BDM; capped by MAX_IMPORT_ROWS and plan limits)."""
     if not file.filename.endswith('.csv'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2009,6 +2062,7 @@ async def import_leads_csv(
     decoded = content.decode('utf-8')
     rows = list(csv.DictReader(io.StringIO(decoded)))
 
+    tenant_id, remaining_leads, remaining_contacts = _guard_import(db, tenant_id, rows)
     existing_links = _get_existing_links(db, tenant_id) if skip_duplicates else set()
 
     result = _parse_and_import_lead_rows(
@@ -2018,6 +2072,8 @@ async def import_leads_csv(
         source_default="import",
         tenant_id=tenant_id,
         db=db,
+        max_new_leads=remaining_leads,
+        max_new_contacts=remaining_contacts,
     )
 
     return {
@@ -2167,14 +2223,16 @@ async def preview_google_sheet_import(
 async def import_google_sheet(
     request: GoogleSheetRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Import leads from a public Google Sheet."""
+    """Import leads from a public Google Sheet (admin/BDM; capped by MAX_IMPORT_ROWS and plan limits)."""
+    ensure_tenant(tenant_id)
     sheet_id, gid = _extract_google_sheet_id(request.sheet_url)
     csv_text = await _fetch_google_sheet_csv(sheet_id, gid)
 
     rows = list(csv.DictReader(io.StringIO(csv_text)))
+    tenant_id, remaining_leads, remaining_contacts = _guard_import(db, tenant_id, rows)
     existing_links = _get_existing_links(db, tenant_id) if request.skip_duplicates else set()
 
     result = _parse_and_import_lead_rows(
@@ -2184,6 +2242,8 @@ async def import_google_sheet(
         source_default="google_sheet",
         tenant_id=tenant_id,
         db=db,
+        max_new_leads=remaining_leads,
+        max_new_contacts=remaining_contacts,
     )
 
     return {

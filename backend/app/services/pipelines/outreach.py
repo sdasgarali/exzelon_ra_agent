@@ -401,15 +401,15 @@ def resolve_business_rules(db, tenant_id: Optional[int] = None) -> dict:
     """Resolve business rules from DB settings table, falling back to config.py defaults.
 
     This ensures UI-configured settings (Settings page) are respected at runtime.
+    Values are clamped to the platform range (cooldown >= 1 day, per-job contact
+    cap and daily send limit no higher than the platform ceiling) so a stale or
+    abusive tenant override cannot switch the safety rules off.
     """
-    from app.core.settings_resolver import get_tenant_setting
-    cooldown = get_tenant_setting(db, 'cooldown_days', tenant_id=tenant_id, default=None)
-    max_contacts = get_tenant_setting(db, 'max_contacts_per_company_job', tenant_id=tenant_id, default=None)
-    daily_limit = get_tenant_setting(db, 'daily_send_limit', tenant_id=tenant_id, default=None)
+    from app.services.send_gate import resolve_business_rule
     return {
-        'cooldown_days': int(cooldown) if cooldown is not None else settings.COOLDOWN_DAYS,
-        'max_contacts_per_company_job': int(max_contacts) if max_contacts is not None else settings.MAX_CONTACTS_PER_COMPANY_PER_JOB,
-        'daily_send_limit': int(daily_limit) if daily_limit is not None else settings.DAILY_SEND_LIMIT,
+        'cooldown_days': resolve_business_rule(db, tenant_id, 'cooldown_days'),
+        'max_contacts_per_company_job': resolve_business_rule(db, tenant_id, 'max_contacts_per_company_job'),
+        'daily_send_limit': resolve_business_rule(db, tenant_id, 'daily_send_limit'),
     }
 
 
@@ -454,13 +454,10 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
     validation_enabled = get_tenant_setting_bool(
         db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True
     )
-    if validation_enabled and contact.validation_status not in ["valid", "Valid"]:
-        validation = db.query(EmailValidationResult).filter(
-            EmailValidationResult.email == email
-        ).order_by(EmailValidationResult.validated_at.desc()).first()
-
-        if not validation or validation.status != ValidationStatus.VALID:
-            return False, "Email not validated or invalid"
+    # Only the contact's own (tenant-scoped) status counts — the global
+    # EmailValidationResult cache has no tenant_id (see send_gate check 3).
+    if validation_enabled and (contact.validation_status or "").lower() != ValidationStatus.VALID.value:
+        return False, "Email not validated or invalid"
 
     # Check cooldown period for this specific contact
     cooldown_date = datetime.utcnow() - timedelta(days=cooldown_days)
@@ -503,12 +500,19 @@ def sendable_mailboxes_query(db, tenant_id: int):
     blacklisted (mirrors ``mailbox_selector.select_best_mailbox``).
     Always tenant-scoped: picking the least-loaded mailbox across all tenants sent one
     tenant's outreach from another tenant's mailbox.
+
+    The per-mailbox limit is also capped at the platform ceiling, so a mailbox
+    whose ``daily_send_limit`` was set above it (before the schema bound, or via a
+    path that skips the schema) cannot send past it.
     """
+    from app.services.send_gate import business_rule_ceiling
+    platform_cap = business_rule_ceiling(db, "daily_send_limit")
     return db.query(SenderMailbox).filter(
         SenderMailbox.tenant_id == tenant_id,
         SenderMailbox.is_active == True,  # noqa: E712
         SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
+        SenderMailbox.emails_sent_today < platform_cap,
         SenderMailbox.connection_status == "successful",
         SenderMailbox.is_blacklisted == False,  # noqa: E712
     )

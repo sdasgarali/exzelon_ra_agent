@@ -42,12 +42,13 @@ class TestCompleteWorkflow:
         contact = contact_response.json()
         contact_id = contact["contact_id"]
 
-        update_response = client.put(
-            f"/api/v1/contacts/{contact_id}",
-            headers=auth_headers,
-            json={"validation_status": "valid"}
-        )
-        assert update_response.status_code == 200
+        # validation_status is written by the validation pipeline, not by tenant
+        # admins (loophole B2) — simulate a completed validation run.
+        from app.db.models.contact import ContactDetails
+        db_session.query(ContactDetails).filter(
+            ContactDetails.contact_id == contact_id
+        ).update({ContactDetails.validation_status: "valid"})
+        db_session.commit()
 
         lead_update_response = client.put(
             f"/api/v1/leads/{lead_id}",
