@@ -310,6 +310,7 @@ def generate_pipeline_drafts(
             continue
 
         mailbox = db.query(SenderMailbox).filter(
+            SenderMailbox.tenant_id == tenant_id,
             SenderMailbox.is_active == True,
             SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
@@ -322,7 +323,8 @@ def generate_pipeline_drafts(
         contact_lead = None
         if contact.lead_id:
             contact_lead = db.query(LeadDetails).filter(
-                LeadDetails.lead_id == contact.lead_id
+                LeadDetails.lead_id == contact.lead_id,
+                LeadDetails.tenant_id == tenant_id,
             ).first()
 
         signature_html = ""
@@ -850,7 +852,8 @@ def send_single_draft(draft_id: int, db: Session, tenant_id: int) -> Dict[str, A
         return {"error": "Draft not found or not approved"}
 
     mailbox = db.query(SenderMailbox).filter(
-        SenderMailbox.mailbox_id == draft.mailbox_id
+        SenderMailbox.mailbox_id == draft.mailbox_id,
+        SenderMailbox.tenant_id == tenant_id,
     ).first()
     if not mailbox:
         return {"error": "Mailbox not found"}
