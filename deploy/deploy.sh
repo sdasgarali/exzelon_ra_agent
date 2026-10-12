@@ -14,16 +14,21 @@
 #   ./deploy/vps_ssh.sh "bash /opt/exzelon-ra-agent/deploy/deploy.sh"
 #
 # What this script does:
-#   1. Pulls latest code from git (master branch)
-#   2. Installs backend dependencies (if requirements.txt changed)
-#   3. Runs database migrations (auto-applied on app startup)
+#   1. Takes a pre-deploy DB backup (mysqldump | gzip) — aborts if it fails
+#   2. Pulls latest code from git (master branch)
+#   3. Installs backend dependencies
 #   4. Builds frontend (Next.js)
-#   5. Restarts services (exzelon-api, exzelon-web)
-#   6. Runs health checks
-#   7. Shows service status
+#   5. Runs Alembic migrations (`alembic upgrade head`) — aborts BEFORE restart
+#      if they fail, so the running services stay on the old code
+#   6. Restarts services (exzelon-api, exzelon-web)
+#   7. Waits up to 60s for /health, then prints /api/v1/ready
+#   8. Prints the exact rollback commands (previous SHA + pre-deploy dump)
+#
+# Optional env overrides: DEPLOY_DB_NAME, PREDEPLOY_BACKUP_DIR, HEALTH_WAIT_SECONDS,
+#   PREDEPLOY_KEEP (number of pre-deploy dumps to keep, default 10)
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail  # -E: ERR trap (rollback hint) also fires inside functions
 
 # ---------------------------------------------------------------------------
 # Connection & Path Constants (self-contained — no external config needed)
@@ -34,9 +39,22 @@ FRONTEND_DIR="${APP_DIR}/frontend"
 VENV_DIR="${BACKEND_DIR}/venv"
 DOMAIN="neuraleads.ai"
 HEALTH_URL="https://${DOMAIN}/health"
+READY_URL="https://${DOMAIN}/api/v1/ready"
 API_DOCS_URL="https://${DOMAIN}/api/docs"
 GIT_BRANCH="master"
 LINUX_USER="ra-user"
+
+# Database + pre-deploy backup (root on the VPS dumps via the MySQL socket)
+DB_NAME="${DEPLOY_DB_NAME:-exzelon_ra_agent}"
+PREDEPLOY_BACKUP_DIR="${PREDEPLOY_BACKUP_DIR:-${APP_DIR}/backups}"
+PREDEPLOY_KEEP="${PREDEPLOY_KEEP:-10}"
+HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-60}"
+
+# Filled in as the deploy runs (used by the rollback instructions)
+PREV_SHA=""
+NEW_SHA=""
+PREDEPLOY_DUMP=""
+SERVICES_RESTARTED=false
 
 # Services
 API_SERVICE="exzelon-api"
@@ -66,6 +84,35 @@ check_root() {
         log_fail "This script must be run as root"
         exit 1
     fi
+}
+
+print_rollback() {
+    local prev="${PREV_SHA:-<previous-sha>}"
+    echo ""
+    echo "---------------------------- ROLLBACK ----------------------------"
+    echo "Code (previous commit ${prev:0:12}):"
+    echo "  cd ${APP_DIR} && git checkout ${prev}"
+    echo "  cd ${BACKEND_DIR} && source venv/bin/activate && pip install -r requirements.txt"
+    echo "  cd ${FRONTEND_DIR} && npm run build"
+    echo "  systemctl restart ${API_SERVICE} ${WEB_SERVICE}"
+    if [ -n "$PREDEPLOY_DUMP" ]; then
+        echo "Database (ONLY if a migration changed/damaged data — restores the pre-deploy state,"
+        echo "anything written since ${PREDEPLOY_DUMP##*/} is lost):"
+        echo "  systemctl stop ${API_SERVICE}"
+        echo "  gunzip -c ${PREDEPLOY_DUMP} | mysql ${DB_NAME}"
+        echo "  systemctl start ${API_SERVICE}"
+    fi
+    echo "Then: curl -s ${HEALTH_URL} && curl -s ${READY_URL}"
+    echo "------------------------------------------------------------------"
+}
+
+on_error() {
+    local line="$1"
+    log_fail "Deploy aborted (line ${line})."
+    if [ "$SERVICES_RESTARTED" = false ]; then
+        log_warn "Services were NOT restarted — production is still running the previous code."
+    fi
+    print_rollback
 }
 
 # ---------------------------------------------------------------------------
@@ -107,6 +154,41 @@ preflight() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 1a: Pre-deploy database backup (abort the deploy if it fails)
+# ---------------------------------------------------------------------------
+predeploy_backup() {
+    log_step "Pre-deploy database backup (${DB_NAME})"
+    PREV_SHA="$(cd "$APP_DIR" && git rev-parse HEAD)"
+    mkdir -p "$PREDEPLOY_BACKUP_DIR"
+    chmod 700 "$PREDEPLOY_BACKUP_DIR"
+
+    local ts dump
+    ts="$(date -u +%Y%m%d-%H%M%S)"
+    dump="${PREDEPLOY_BACKUP_DIR}/pre-deploy-${ts}.sql.gz"
+
+    # pipefail (set above) makes a mysqldump failure fail the whole pipeline.
+    # --no-tablespaces: ra_user lacks PROCESS; harmless when run as root.
+    if ! mysqldump --single-transaction --no-tablespaces --routines --triggers "$DB_NAME" \
+            | gzip > "$dump"; then
+        rm -f "$dump"
+        log_fail "mysqldump failed — aborting deploy (nothing changed)"
+        exit 1
+    fi
+    if ! gzip -t "$dump" || ! gunzip -c "$dump" | tail -n 3 | grep -q "Dump completed"; then
+        rm -f "$dump"
+        log_fail "Pre-deploy dump failed its integrity check — aborting deploy (nothing changed)"
+        exit 1
+    fi
+    chmod 600 "$dump"
+    PREDEPLOY_DUMP="$dump"
+    log_ok "Backup written: ${dump} ($(du -h "$dump" | cut -f1)) — previous commit ${PREV_SHA:0:7}"
+
+    # Keep the newest $PREDEPLOY_KEEP pre-deploy dumps (pre-migrate-* dumps are left alone).
+    ls -1t "${PREDEPLOY_BACKUP_DIR}"/pre-deploy-*.sql.gz 2>/dev/null \
+        | tail -n +"$((PREDEPLOY_KEEP + 1))" | xargs -r rm -f -- || true
+}
+
+# ---------------------------------------------------------------------------
 # Step 1: Pull Latest Code
 # ---------------------------------------------------------------------------
 pull_code() {
@@ -132,6 +214,7 @@ pull_code() {
         log_ok "Updated: ${LOCAL:0:7} → ${NEW:0:7}"
         CHANGES=true
     fi
+    NEW_SHA="$(git rev-parse HEAD)"
 }
 
 # ---------------------------------------------------------------------------
@@ -171,19 +254,42 @@ build_frontend() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 3b: Database migrations (Alembic) — right before the restart, because the
+# old code still serving traffic cannot read a migrated schema for long.
+# ---------------------------------------------------------------------------
+run_migrations() {
+    log_step "Running database migrations (alembic upgrade head)"
+    cd "$BACKEND_DIR"
+    local before after
+    before="$("${VENV_DIR}/bin/alembic" current 2>/dev/null | tail -n 1 || true)"
+    echo "  alembic current (before): ${before:-<none>}"
+
+    if ! "${VENV_DIR}/bin/alembic" upgrade head; then
+        log_fail "alembic upgrade head FAILED — services NOT restarted (still on old code)."
+        echo "  Inspect:  cd ${BACKEND_DIR} && venv/bin/alembic current && venv/bin/alembic history | head"
+        if [ -n "$PREDEPLOY_DUMP" ]; then
+            echo "  If the migration left the schema half-applied, restore the pre-deploy dump:"
+            echo "    gunzip -c ${PREDEPLOY_DUMP} | mysql ${DB_NAME}"
+        fi
+        exit 1
+    fi
+
+    after="$("${VENV_DIR}/bin/alembic" current 2>/dev/null | tail -n 1 || true)"
+    log_ok "alembic current: ${after:-<unknown>}"
+}
+
+# ---------------------------------------------------------------------------
 # Step 4: Restart Services
 # ---------------------------------------------------------------------------
 restart_services() {
     log_step "Restarting services"
 
+    SERVICES_RESTARTED=true
     systemctl restart "$API_SERVICE"
     log_ok "Restarted $API_SERVICE"
 
     systemctl restart "$WEB_SERVICE"
     log_ok "Restarted $WEB_SERVICE"
-
-    # Give services time to start
-    sleep 3
 }
 
 # ---------------------------------------------------------------------------
@@ -203,22 +309,46 @@ health_checks() {
         fi
     done
 
-    # HTTP health check (retry up to 5 times)
-    for i in 1 2 3 4 5; do
-        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" 2>/dev/null || echo "000")
+    # HTTP health check — 4 uvicorn workers run the startup lifespan (seeds,
+    # legacy migrations) before accepting traffic, so nginx returns 502 for a
+    # while after every restart. Poll for up to $HEALTH_WAIT_SECONDS.
+    local waited=0 HTTP_CODE="000"
+    while [ "$waited" -lt "$HEALTH_WAIT_SECONDS" ]; do
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" 2>/dev/null || true)
+        [ -n "$HTTP_CODE" ] || HTTP_CODE="000"
         if [ "$HTTP_CODE" = "200" ]; then
-            log_ok "Health endpoint returned 200"
             break
-        else
-            if [ "$i" -lt 5 ]; then
-                log_warn "Health check attempt $i returned $HTTP_CODE — retrying in 3s..."
-                sleep 3
-            else
-                log_fail "Health check failed after 5 attempts (last: $HTTP_CODE)"
-                return 1
-            fi
         fi
+        sleep 2
+        waited=$((waited + 2))
     done
+    if [ "$HTTP_CODE" = "200" ]; then
+        log_ok "Health endpoint returned 200 after ~${waited}s"
+    else
+        log_fail "Health check did not return 200 within ${HEALTH_WAIT_SECONDS}s (last: $HTTP_CODE)"
+        journalctl -u "$API_SERVICE" --since "-2min" --no-pager | tail -30 || true
+        return 1
+    fi
+
+    # Readiness (DB, Redis, scheduler heartbeat, disk, backup age). Printed for
+    # the operator; a 503 here is a warning, not a failed deploy (e.g. a brand-new
+    # box has no daily backup yet). The watchdog alerts if it stays failing.
+    local ready_file ready_code
+    ready_file="$(mktemp)"
+    ready_code=$(curl -s -o "$ready_file" -w "%{http_code}" --max-time 15 "$READY_URL" 2>/dev/null || true)
+    echo "  ${READY_URL} -> ${ready_code:-000}"
+    if command -v python3 &>/dev/null; then
+        python3 -m json.tool < "$ready_file" 2>/dev/null || cat "$ready_file"
+    else
+        cat "$ready_file"
+    fi
+    echo ""
+    rm -f "$ready_file"
+    if [ "$ready_code" = "200" ]; then
+        log_ok "Readiness: ready"
+    else
+        log_warn "Readiness returned ${ready_code:-000} — check the 'failed' list above"
+    fi
 
     # Check nginx
     if systemctl is-active --quiet nginx; then
@@ -248,7 +378,8 @@ summary() {
     echo "  Domain:    https://${DOMAIN}"
     echo "  Health:    ${HEALTH_URL}"
     echo "  API Docs:  ${API_DOCS_URL}"
-    echo "  Commit:    $(cd $APP_DIR && git rev-parse --short HEAD)"
+    echo "  Commit:    $(cd $APP_DIR && git rev-parse --short HEAD) (previous: ${PREV_SHA:0:7})"
+    echo "  DB backup: ${PREDEPLOY_DUMP:-<none>}"
     echo "  Branch:    ${GIT_BRANCH}"
     echo "  Time:      $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo "----------------------------------------------"
@@ -275,14 +406,20 @@ main() {
     echo " $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo "=============================================="
 
+    trap 'on_error $LINENO' ERR
+
     preflight
+    predeploy_backup
     pull_code
     install_backend_deps
     build_frontend
+    run_migrations
     restart_services
     health_checks
     summary
 
+    trap - ERR
+    print_rollback
     echo ""
     log_ok "Deployment complete!"
 }
