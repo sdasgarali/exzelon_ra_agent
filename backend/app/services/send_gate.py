@@ -90,6 +90,10 @@ _MESSAGES = {
     "BILLING_SUSPENDED": (
         "Account suspended for non-payment. Settle outstanding invoices to resume sending."
     ),
+    "NO_POSTAL_ADDRESS": (
+        "Add your company's postal address in Settings → Business Rules → Company Profile before sending; "
+        "it's required in every outreach email (CAN-SPAM)."
+    ),
 }
 
 
@@ -172,6 +176,20 @@ def _tenant_billing_suspended(db: Session, tenant_id: Optional[int]) -> bool:
     return suspended is True or suspended == 1
 
 
+def tenant_has_postal_address(db: Session, tenant_id: Optional[int]) -> bool:
+    """True when the workspace has a non-blank postal address on its company profile.
+
+    CAN-SPAM §5(a)(5) requires the SENDER's valid physical postal address in every
+    commercial email. This deliberately does NOT fall back to the platform's
+    BILLING_COMPANY_ADDRESS — that is NeuraLeads' address, not the customer's.
+    """
+    if tenant_id is None:
+        return False
+    from app.db.models.tenant import Tenant
+    address = db.query(Tenant.company_address).filter(Tenant.tenant_id == tenant_id).scalar()
+    return bool((address or "").strip())
+
+
 def _resolve_company_cap(db: Session, tenant_id: Optional[int]) -> int:
     """Return the company-level contact cap from tenant settings or config defaults."""
     try:
@@ -250,6 +268,25 @@ def unified_send_gate(
         checks.append(GateCheckResult("billing", False, "tenant billing suspended"))
         return _blocked("BILLING_SUSPENDED", checks)
     checks.append(GateCheckResult("billing", True))
+
+    # ── -0.5. Sender postal address (CAN-SPAM, tenant-level) ──────
+    # Outreach is commercial email, so the workspace's own postal address must be
+    # in the footer. Replies are conversations the recipient started and are not
+    # blocked. Dry runs ARE checked so the preflight endpoint surfaces the problem.
+    # Warmup and transactional/system mail never call this gate. Fails CLOSED: a
+    # compliance requirement must not be skipped because a lookup failed.
+    if not is_reply:
+        try:
+            has_address = tenant_has_postal_address(db, tenant_id)
+        except Exception as e:
+            logger.warning("send_gate_postal_address_error", tenant_id=tenant_id, error=str(e))
+            has_address = False
+        if not has_address:
+            checks.append(GateCheckResult("postal_address", False, "workspace has no postal address"))
+            return _blocked("NO_POSTAL_ADDRESS", checks)
+        checks.append(GateCheckResult("postal_address", True))
+    else:
+        checks.append(GateCheckResult("postal_address", True, "skipped (reply)"))
 
     # ── 0. Monthly send quota (tenant-level) ──────────────────────
     # Runs FIRST rather than last: it is the only tenant-level check here, so when it
