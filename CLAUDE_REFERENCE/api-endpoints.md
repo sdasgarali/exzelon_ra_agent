@@ -29,7 +29,8 @@ All endpoints are mounted under `/api/v1`.
 
 | Prefix | File | Purpose |
 |--------|------|---------|
-| `/auth/signup` | `auth.py` | Self-service signup (creates tenant + admin user, sends verification email) |
+| `/auth/signup` | `auth.py` | Self-service signup (creates tenant + admin user, sends verification email). Body requires `accept_terms: true` (else **400** "You must accept the Terms of Service and Privacy Policy"); records `users.terms_accepted_at` + `terms_version` (= `TERMS_VERSION`). |
+| `/settings/company-profile` | `settings.py` | Admin, tenant-scoped `GET`/`PUT` of the workspace name/website/industry/**company_address** (trimmed; blank clears). The address is required by the send gate for outreach (CAN-SPAM, `NO_POSTAL_ADDRESS`). |
 | `/auth/me/notification-preferences` | `auth.py` | **Self-service** (any active user) `PATCH` of own notification master toggles `notify_inapp_enabled` / `notify_email_enabled` (partial — only provided fields change). Surfaced on `/dashboard/profile`. |
 | `/settings/notifications/sender` | `settings.py` | Per-tenant notification **sender** config (admin). `GET` returns email/name/host/port/user/security + `password_set` + `effective_source` (tenant\|global\|none) — never the password. `PUT` upserts (password Fernet-encrypted; blank keeps existing; requires tenant). `POST /settings/notifications/sender/test` sends a test email. Two-segment path avoids the `/settings/{key}` catch-all. Backed by `services/system_mailer.py`. Settings UI tab "11. Notifications". |
 | `/auth/verify` | `auth.py` | Email verification via JWT token |
@@ -44,6 +45,7 @@ All endpoints are mounted under `/api/v1`.
 | `/spam-check` | `spam_check.py` | Email spam score checking |
 | `/tracking-domains` | `tracking_domains.py` | Custom tracking domain CRUD + verify |
 | `/gdpr` | `gdpr.py` | GDPR data-subject rights (admin, tenant-scoped): `GET /gdpr/export?email=` (Right-to-Access — all PII: contacts, outreach events, inbox, visits, suppression status); `POST /gdpr/erase {email}` (Right-to-Erasure — anonymises contact PII, keeps rows for FK integrity, suppresses the address, audits; requires impersonated tenant) (ELR-024) |
+| `/public/site-info` | `public.py` | **No auth**, rate-limited 120/min, `Cache-Control: public, max-age=300`. Returns `{support_email, privacy_email (falls back to SUPPORT_EMAIL), legal_entity_name, legal_address, legal_jurisdiction, terms_version, payments_enabled}` from config. `payments_enabled` = `BILLING_ENABLED` and `STRIPE_SECRET_KEY` and a Pro monthly price (`STRIPE_PRICE_PRO`) — same conditions as subscription checkout. Consumed by `frontend/src/lib/site-info.ts` (legal pages, footer, billing buttons). |
 
 > **Plan gating (Phase 3):** several routers are mounted in `api/router.py` with
 > `dependencies=[Depends(require_feature(...))]` and return **402** with a structured body
