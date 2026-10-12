@@ -181,3 +181,79 @@ class TestB2ContactBypassFields:
                        json={"is_test": True, "validation_status": "valid"})
         assert r.status_code == 200, r.text
         assert r.json()["is_test"] is True and r.json()["validation_status"] == "valid"
+
+
+# ---------------------------------------------------------------------------
+# B3 — /leads/database-search is budget-gated and metered
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fake_apollo(monkeypatch):
+    calls = []
+
+    class _FakeApollo:
+        def __init__(self, *a, **k):
+            pass
+
+        def search_contacts(self, company_name, job_title=None, state=None, limit=25, **k):
+            calls.append(limit)
+            return [{"first_name": f"P{i}", "last_name": "X", "email": f"p{i}@acme-corp.com"}
+                    for i in range(min(limit, 4))]
+
+    import app.services.adapters.contact_discovery.apollo as apollo_mod
+    monkeypatch.setattr(apollo_mod, "ApolloAdapter", _FakeApollo)
+    return calls
+
+
+class TestB3DatabaseSearch:
+
+    def test_results_are_metered_and_committed(self, client, db_session, auth_headers, test_tenant, fake_apollo):
+        from app.db.models.credit_usage import CreditUsage
+        from app.core.credit_costs import cost_for
+        r = client.post(f"{API}/leads/database-search", headers=auth_headers,
+                        json={"company": "Acme Manufacturing", "job_title": "HR Manager", "limit": 10})
+        assert r.status_code == 200, r.text
+        assert r.json()["count"] == 4
+        db_session.expire_all()
+        rows = db_session.query(CreditUsage).filter(
+            CreditUsage.tenant_id == test_tenant.tenant_id,
+            CreditUsage.usage_type == "contact_enriched",
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].credits_used == pytest.approx(cost_for("contact_enriched", 4))
+
+    def test_budget_gate_uses_worst_case_and_blocks(self, client, auth_headers, fake_apollo, monkeypatch):
+        from fastapi import HTTPException
+        import app.services.credit_metering as cm
+        seen = {}
+
+        def _deny(db, tenant_id, plan=None, credits_needed=1.0):
+            seen["needed"] = credits_needed
+            raise HTTPException(status_code=402, detail="Out of credits")
+
+        monkeypatch.setattr(cm, "check_credit_budget", _deny)
+        r = client.post(f"{API}/leads/database-search", headers=auth_headers,
+                        json={"company": "Acme Manufacturing", "limit": 20})
+        assert r.status_code == 402
+        from app.core.credit_costs import cost_for
+        assert seen["needed"] == pytest.approx(20 * cost_for("contact_enriched"))
+        assert fake_apollo == []  # provider never called
+
+    def test_suspended_tenant_blocked(self, client, db_session, auth_headers, test_tenant, fake_apollo):
+        test_tenant.billing_suspended = True
+        db_session.commit()
+        r = client.post(f"{API}/leads/database-search", headers=auth_headers,
+                        json={"company": "Acme Manufacturing"})
+        assert r.status_code == 402
+        assert fake_apollo == []
+
+    def test_super_admin_without_tenant_is_not_metered(self, client, db_session, sa_headers, fake_apollo):
+        from app.db.models.credit_usage import CreditUsage
+        r = client.post(f"{API}/leads/database-search", headers=sa_headers,
+                        json={"company": "Acme Manufacturing", "limit": 5})
+        assert r.status_code == 200, r.text
+        assert db_session.query(CreditUsage).count() == 0
+
+    def test_read_scoped_api_key_cannot_call_it(self):
+        from app.core.api_key_scopes import check_scope
+        assert check_scope(["read"], "POST", "/api/v1/leads/database-search")[0] is False
