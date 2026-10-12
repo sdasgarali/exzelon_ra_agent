@@ -297,6 +297,13 @@ async def get_run_summary(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # A forced regenerate is a charged AI call (ai_suggestion); the first summary is
+    # free. Gate it so a tenant out of credits can't regenerate without limit.
+    if regenerate and tenant_id is not None:
+        from app.core.credit_costs import cost_for
+        from app.services.credit_metering import check_credit_budget
+        check_credit_budget(db, tenant_id, credits_needed=cost_for("ai_suggestion", db=db))
+
     # Generate new summary
     from app.services.pipeline_summary import generate_pipeline_summary
     summary = generate_pipeline_summary(db, run)
@@ -690,6 +697,9 @@ async def run_outreach(
             raise HTTPException(status_code=403, detail="Outreach is disabled for your organization")
 
     lead_ids = body.lead_ids if body else None
+    # Outreach personalises each email with AI; size the gate to the run (one
+    # credit was the old threshold, so a tenant with 1 credit could launch it).
+    _gate_run_estimate(db, tenant_id, "outreach", units=len(lead_ids) if lead_ids else None)
 
     if mode == "mailmerge":
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline

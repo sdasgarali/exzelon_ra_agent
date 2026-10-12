@@ -115,6 +115,10 @@ RUN_ESTIMATE_SOURCING_LEADS = 50
 RUN_ESTIMATE_ENRICHMENT_DEFAULT_LEADS = 10
 RUN_ESTIMATE_VALIDATION_DEFAULT_EMAILS = 25
 RUN_ESTIMATE_MAX_CREDITS = 1_000
+#: * outreach    = ai_personalization × selected leads (or RUN_ESTIMATE_OUTREACH_DEFAULT_LEADS)
+#: * intent_scan = intent_scan × RUN_ESTIMATE_INTENT_SIGNALS (one scheduled scan)
+RUN_ESTIMATE_OUTREACH_DEFAULT_LEADS = 25
+RUN_ESTIMATE_INTENT_SIGNALS = 10
 
 
 def _overrides(db) -> dict:
@@ -167,7 +171,8 @@ def estimate_run_credits(
     """Conservative pre-flight credit estimate for a pipeline run (see the
     ``RUN_ESTIMATE_*`` constants above for the formulas).
 
-    `pipeline` is ``lead_sourcing`` | ``contact_enrichment`` | ``email_validation``.
+    `pipeline` is ``lead_sourcing`` | ``contact_enrichment`` | ``email_validation`` |
+    ``outreach`` | ``intent_scan``.
     `units` is the number of selected leads / emails when the caller knows it; None
     means "whatever is eligible" and uses the documented default. For enrichment,
     `per_unit_multiplier` is the max contacts per lead.
@@ -181,6 +186,11 @@ def estimate_run_credits(
     elif pipeline == "email_validation":
         emails = units if units else RUN_ESTIMATE_VALIDATION_DEFAULT_EMAILS
         est = cost_for("email_validated", emails, db=db)
+    elif pipeline == "outreach":
+        leads = units if units else RUN_ESTIMATE_OUTREACH_DEFAULT_LEADS
+        est = cost_for("ai_personalization", leads, db=db)
+    elif pipeline == "intent_scan":
+        est = cost_for("intent_scan", RUN_ESTIMATE_INTENT_SIGNALS, db=db)
     else:
         return 1.0
     return min(est, float(RUN_ESTIMATE_MAX_CREDITS))

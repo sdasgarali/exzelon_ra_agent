@@ -1135,6 +1135,12 @@ def job_intent_signals_daily():
         logger.info("Running daily intent signal check")
         for tid in _get_active_tenant_ids():
             try:
+                _db = _get_db()
+                try:
+                    if not _tenant_can_afford(_db, tid, "intent_scan"):
+                        continue
+                finally:
+                    _db.close()
                 from app.services.intent_engine import run_intent_engine
                 result = run_intent_engine(tenant_id=tid, schedule_type="daily")
                 logger.info(
@@ -1170,6 +1176,12 @@ def job_intent_signals_weekly():
         logger.info("Running weekly intent signal deep scan")
         for tid in _get_active_tenant_ids():
             try:
+                _db = _get_db()
+                try:
+                    if not _tenant_can_afford(_db, tid, "intent_scan"):
+                        continue
+                finally:
+                    _db.close()
                 from app.services.intent_engine import run_intent_engine
                 result = run_intent_engine(tenant_id=tid, schedule_type="weekly")
                 logger.info(
