@@ -82,6 +82,24 @@ def run_email_validation_pipeline(
     db.add(job_run)
     db.commit()
 
+    # Incremental metering: every commit that stores provider results also bills
+    # them (call immediately BEFORE the commit). `billable` counts results the
+    # provider returned and we stored; `metered` prevents double charging.
+    billable = {"count": 0}
+    metered = {"count": 0}
+
+    def _meter_validations() -> None:
+        delta = billable["count"] - metered["count"]
+        if delta <= 0:
+            return
+        try:
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "email_validated", delta,
+                  reference_id=str(job_run.run_id))
+        except Exception as meter_err:  # metering must never break the pipeline
+            logger.warning(f"Failed to meter validation credits: {meter_err}")
+        metered["count"] += delta
+
     try:
         logger.info("Starting email validation pipeline")
 
@@ -120,9 +138,11 @@ def run_email_validation_pipeline(
                 logger.info("Email validation cancelled by user", processed=idx)
                 break
 
-            # Update progress every 10 items
+            # Update progress every 10 items. Results are committed here, so the
+            # validations they hold are billed in the same transaction.
             if total_emails > 0 and idx % 10 == 0:
                 job_run.progress_pct = int((idx / total_emails) * 100)
+                _meter_validations()
                 db.commit()
 
             try:
@@ -132,26 +152,34 @@ def run_email_validation_pipeline(
                 ).first()
 
                 if existing:
-                    # Update contact with existing status
-                    update_contact_validation_status(db, email, existing.status, tenant_id=tenant_id)
+                    # Update contact with existing status (cache hit: free)
+                    with db.begin_nested():
+                        update_contact_validation_status(db, email, existing.status, tenant_id=tenant_id)
                     counters["validated"] += 1
                     continue
 
-                # Validate email
+                # Validate email (no DB work — kept outside the savepoint)
                 result = adapter.validate_email(email)
 
-                # Store result
-                validation = EmailValidationResult(
-                    email=email,
-                    provider=provider or settings.EMAIL_VALIDATION_PROVIDER,
-                    status=result["status"],
-                    sub_status=str(result.get("sub_status")),
-                    raw_response_json=json.dumps(result.get("raw_response", {})),
-                )
-                db.add(validation)
+                # Per-email SAVEPOINT: a storage failure undoes only this email and
+                # never poisons the rows already flushed for earlier emails.
+                with db.begin_nested():
+                    validation = EmailValidationResult(
+                        email=email,
+                        provider=provider or settings.EMAIL_VALIDATION_PROVIDER,
+                        status=result["status"],
+                        sub_status=str(result.get("sub_status")),
+                        raw_response_json=json.dumps(result.get("raw_response", {})),
+                    )
+                    db.add(validation)
 
-                # Update contact
-                update_contact_validation_status(db, email, result["status"], tenant_id=tenant_id)
+                    # Update contact
+                    update_contact_validation_status(db, email, result["status"], tenant_id=tenant_id)
+
+                # Billable: the provider answered AND the result is stored. A provider
+                # exception is not billed — adapters do not tell us whether the
+                # provider charged for a failed call, so we absorb those.
+                billable["count"] += 1
 
                 # Update counters
                 counters["validated"] += 1
@@ -168,6 +196,7 @@ def run_email_validation_pipeline(
                 logger.error("Error validating email", error=str(e), email=email)
                 counters["errors"] += 1
 
+        _meter_validations()
         db.commit()
 
         # Update leads that have validated contacts
@@ -196,15 +225,10 @@ def run_email_validation_pipeline(
             "error_message": None,
         }]
 
-        # Meter credits on emails actually sent to the provider. `errors` are not
-        # charged — a provider timeout is our problem, not the customer's.
-        try:
-            from app.services.credit_metering import meter
-            if total_validated > 0:
-                meter(db, tenant_id, "email_validated", total_validated,
-                      reference_id=str(job_run.run_id))
-        except Exception as e:
-            logger.warning(f"Failed to meter validation credits: {e}")
+        # Credits were metered incrementally (checkpoints + the commit after the
+        # loop) on emails actually answered by the provider and stored; cache hits
+        # and `errors` are not charged. No-op unless something was added since.
+        _meter_validations()
 
         # Update job run
         db.refresh(job_run)
@@ -225,7 +249,19 @@ def run_email_validation_pipeline(
         job_run.status = JobStatus.FAILED
         job_run.error_message = str(e)
         job_run.ended_at = datetime.utcnow()
-        db.commit()
+        try:
+            # This commit also persists results stored since the last checkpoint —
+            # bill them in it, exactly once.
+            _meter_validations()
+            db.commit()
+        except Exception as commit_err:
+            # Session unusable: unbilled results roll back together with the charge.
+            logger.error("Could not commit failed validation run", error=str(commit_err))
+            db.rollback()
+            job_run.status = JobStatus.FAILED
+            job_run.error_message = str(e)
+            job_run.ended_at = datetime.utcnow()
+            db.commit()
         raise
     finally:
         db.close()

@@ -203,9 +203,11 @@ def _resolve_domain(db, lead) -> str | None:
         return domain
     # 2. Fall back to ClientInfo.domain or website
     if lead.client_name:
-        client = db.query(ClientInfo).filter(
-            ClientInfo.client_name == lead.client_name
-        ).first()
+        cq = db.query(ClientInfo).filter(ClientInfo.client_name == lead.client_name)
+        if getattr(lead, "tenant_id", None) is not None:
+            # Another tenant's ClientInfo row must never steer this tenant's lookup.
+            cq = cq.filter(ClientInfo.tenant_id == lead.tenant_id)
+        client = cq.first()
         if client:
             if client.domain:
                 return _extract_domain(client.domain) or client.domain.lower().strip()
@@ -312,7 +314,13 @@ def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | Non
     if not conditions:
         return 0
 
-    query = db.query(ContactDetails).filter(or_(*conditions))
+    # Tenant isolation: only ever reuse THIS tenant's contacts. Matching on email
+    # domain / company name alone would link another tenant's contacts (names,
+    # emails, phones) to this tenant's lead — a cross-tenant data leak.
+    query = db.query(ContactDetails).filter(
+        ContactDetails.tenant_id == lead.tenant_id,
+        or_(*conditions),
+    )
     if existing_cids:
         query = query.filter(~ContactDetails.contact_id.in_(list(existing_cids)))
     reusable = query.limit(needed).all()
@@ -320,15 +328,19 @@ def _reuse_existing_contacts(db, lead, max_contacts: int, lead_domain: str | Non
     reused = 0
     for contact in reusable:
         try:
-            assoc = LeadContactAssociation(
-                lead_id=lead.lead_id,
-                contact_id=contact.contact_id,
-            )
-            db.add(assoc)
-            db.flush()
+            # SAVEPOINT per link: a failed insert undoes only this link, never the
+            # caller's earlier (not yet committed) work.
+            with db.begin_nested():
+                assoc = LeadContactAssociation(
+                    lead_id=lead.lead_id,
+                    contact_id=contact.contact_id,
+                )
+                db.add(assoc)
+                db.flush()
             reused += 1
         except Exception:
-            db.rollback()
+            logger.debug("Contact reuse link failed", lead_id=lead.lead_id,
+                         contact_id=contact.contact_id)
     return reused
 
 
@@ -400,12 +412,18 @@ def _update_lead_from_contacts(db, lead):
         lead.lead_status = LeadStatus.ENRICHED
 
 
-def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters, lead_domain: str | None = None):
+def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts, lead_results, counters, lead_domain: str | None = None, tenant_id: Optional[int] = None):
     """Find all unenriched leads at the same company and auto-link cached contacts.
 
     Uses domain-based matching (employer_website) in addition to exact client_name
     to catch leads for the same company under different name variations.
+
+    Scoped to ``tenant_id``: only this tenant's sibling leads are touched, and
+    ``_reuse_existing_contacts`` only links this tenant's contacts.
     """
+    if tenant_id is None:
+        # Never touch leads without knowing whose they are.
+        return
     from sqlalchemy import or_
     conditions = [LeadDetails.client_name == client_name]
     # Also find siblings whose employer_website resolves to the same domain
@@ -413,6 +431,7 @@ def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts,
         conditions.append(LeadDetails.employer_website.like(f"%{lead_domain}%"))
 
     sibling_leads = db.query(LeadDetails).filter(
+        LeadDetails.tenant_id == tenant_id,
         or_(*conditions),
         LeadDetails.first_name.is_(None),
         ~LeadDetails.lead_status.in_(CLOSED_STATUSES),
@@ -427,6 +446,9 @@ def _auto_enrich_company_siblings(db, client_name, batch_lead_ids, max_contacts,
             _update_lead_from_contacts(db, sibling)
             counters["auto_enriched_leads"] += 1
             counters["contacts_found"] += reused
+            # Linked from cache, not discovered: counted as reused so it is never
+            # billed as a newly discovered contact.
+            counters["contacts_reused"] += reused
             counters["leads_enriched"] += 1
             lead_results.append({
                 "lead_id": sibling.lead_id, "client_name": sibling.client_name,
@@ -466,7 +488,9 @@ def run_contact_enrichment_pipeline(
     # (super-admin) settings — matching the convention of the other pipelines.
     tenant_id = tenant_id if tenant_id is not None else 1
     db = SessionLocal()
-    counters = {"contacts_found": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0, "excluded": 0}
+    # contacts_found = new + reused (what the lead now has); contacts_new = only the
+    # contacts this run DISCOVERED and stored — the one number that is billed.
+    counters = {"contacts_found": 0, "contacts_new": 0, "leads_enriched": 0, "skipped": 0, "errors": 0, "contacts_reused": 0, "api_calls_saved": 0, "auto_enriched_leads": 0, "waterfall_skipped": 0, "excluded": 0}
     lead_results = []
     auto_enriched_companies = set()  # tracks client_name AND domain to avoid re-processing
     adapter_stats: Dict[str, Dict[str, int]] = {}  # per-adapter call/result tracking
@@ -487,6 +511,24 @@ def run_contact_enrichment_pipeline(
         job_run = JobRun(tenant_id=tenant_id or 1, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
         db.add(job_run)
         db.commit()
+
+    # Incremental metering. Contacts are committed at every progress checkpoint, so
+    # they are billed at that same checkpoint (in the same transaction) — a run that
+    # crashes later still pays for what it stored, and `metered` makes sure nothing
+    # is ever billed twice. Call this immediately BEFORE a commit.
+    metered = {"contacts": 0}
+
+    def _meter_new_contacts() -> None:
+        delta = int(counters.get("contacts_new", 0) or 0) - metered["contacts"]
+        if delta <= 0:
+            return
+        try:
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "contact_enriched", delta,
+                  reference_id=str(job_run.run_id))
+        except Exception as meter_err:  # metering must never break the pipeline
+            logger.warning(f"Failed to meter contact-discovery credits: {meter_err}")
+        metered["contacts"] += delta
 
     try:
         logger.info("Starting contact enrichment pipeline")
@@ -542,229 +584,243 @@ def run_contact_enrichment_pipeline(
             # Update progress every 5 items
             if total_leads > 0 and idx % 5 == 0:
                 job_run.progress_pct = int((idx / total_leads) * 100)
+                _meter_new_contacts()  # bill the contacts this checkpoint commits
                 db.commit()
+            # Per-lead SAVEPOINT. A failure undoes only THIS lead's rows; the
+            # counters and results it touched are restored from the snapshot, so
+            # what we report (and bill) always matches what is actually stored.
+            # (A plain db.rollback() here used to discard every earlier lead since
+            # the last checkpoint while their counters stayed incremented.)
+            _snap_counters = {k: v for k, v in counters.items() if isinstance(v, int)}
+            _snap_results = len(lead_results)
+            _snap_companies = set(auto_enriched_companies)
             try:
-                # Exclusion gate FIRST — before any DB/API work. An out-of-scope
-                # lead is marked terminal (EXCLUDED) so it never re-enters the
-                # queue and never reaches a paid adapter.
-                eligible, reason = gate.check(lead)
-                if not eligible:
-                    lead.lead_status = LeadStatus.EXCLUDED
-                    lead.skip_reason = f"excluded: {reason}"
-                    counters["excluded"] += 1
+                with db.begin_nested():
+                    # Exclusion gate FIRST — before any DB/API work. An out-of-scope
+                    # lead is marked terminal (EXCLUDED) so it never re-enters the
+                    # queue and never reaches a paid adapter.
+                    eligible, reason = gate.check(lead)
+                    if not eligible:
+                        lead.lead_status = LeadStatus.EXCLUDED
+                        lead.skip_reason = f"excluded: {reason}"
+                        counters["excluded"] += 1
+                        lead_results.append({
+                            "lead_id": lead.lead_id, "client_name": lead.client_name,
+                            "status": "excluded", "contacts_found": 0, "contacts_reused": 0,
+                            "adapter_used": None, "reason": f"Out of scope ({reason})",
+                        })
+                        logger.info("Lead excluded by gate — no API call", lead_id=lead.lead_id, reason=reason)
+                        continue
+
+                    existing_count = db.query(ContactDetails).filter(
+                        ContactDetails.lead_id == lead.lead_id
+                    ).count()
+
+                    if existing_count >= max_contacts_per_job:
+                        counters["skipped"] += 1
+                        lead_results.append({
+                            "lead_id": lead.lead_id, "client_name": lead.client_name,
+                            "status": "skipped", "contacts_found": 0, "contacts_reused": 0,
+                            "adapter_used": None,
+                            "reason": f"Already at max contacts ({existing_count}/{max_contacts_per_job})"
+                        })
+                        logger.debug("Lead already has max contacts", lead_id=lead.lead_id, count=existing_count)
+                        continue
+
+                    lead_domain = _resolve_domain(db, lead)
+
+                    reused = _reuse_existing_contacts(db, lead, max_contacts_per_job, lead_domain=lead_domain)
+                    counters["contacts_reused"] += reused
+                    counters["contacts_found"] += reused
+
+                    existing_count += reused
+                    if existing_count >= max_contacts_per_job:
+                        counters["api_calls_saved"] += 1
+                        if not lead.first_name:
+                            _update_lead_from_contacts(db, lead)
+                        counters["leads_enriched"] += 1
+                        lead_results.append({
+                            "lead_id": lead.lead_id, "client_name": lead.client_name,
+                            "status": "cache_only", "contacts_found": 0, "contacts_reused": reused,
+                            "adapter_used": None, "reason": "Fully satisfied from cache"
+                        })
+                        company_key = lead_domain or lead.client_name
+                        if company_key and company_key not in auto_enriched_companies:
+                            auto_enriched_companies.add(company_key)
+                            if lead.client_name:
+                                auto_enriched_companies.add(lead.client_name)
+                            _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain, tenant_id=lead.tenant_id)
+                        continue
+
+                    needed = max_contacts_per_job - existing_count
+                    contacts = []
+                    adapters_used_for_lead = []
+                    for adapter_name, adapter in adapters:
+                        if adapter_name not in adapter_stats:
+                            adapter_stats[adapter_name] = {"calls": 0, "contacts_returned": 0, "no_results": 0, "errors": 0, "waterfall_skipped": 0}
+                        # Waterfall: skip remaining adapters once we have enough
+                        remaining_needed = needed - len(contacts)
+                        if remaining_needed <= 0:
+                            adapter_stats[adapter_name]["waterfall_skipped"] = adapter_stats[adapter_name].get("waterfall_skipped", 0) + 1
+                            counters["waterfall_skipped"] += 1
+                            continue
+                        try:
+                            adapter_stats[adapter_name]["calls"] += 1
+                            adapters_used_for_lead.append(adapter_name)
+                            search_company = clean_company_name_for_search(lead.client_name)
+                            result = adapter.search_contacts(
+                                company_name=search_company,
+                                job_title=lead.job_title,
+                                state=lead.state,
+                                limit=remaining_needed,
+                                domain=lead_domain,
+                                db=db,
+                                lead_domain=lead_domain,
+                            )
+                            for c in result:
+                                c["source"] = c.get("source", adapter_name)
+                            contacts.extend(result)
+                            adapter_stats[adapter_name]["contacts_returned"] += len(result)
+                            if len(result) == 0:
+                                adapter_stats[adapter_name]["no_results"] += 1
+                            logger.debug(f"Adapter {adapter_name} returned {len(result)} contacts for {lead.client_name}")
+                        except ApolloCreditsExhaustedError:
+                            adapter_stats[adapter_name]["errors"] += 1
+                            adapter_errors[adapter_name] = "Apollo credits exhausted"
+                            logger.warning("Apollo credits exhausted — skipping to next adapter for this lead")
+                            continue
+                        except CreditsExhaustedError as e:
+                            logger.warning(f"Adapter {adapter_name} credits exhausted, skipping to next: {e}")
+                            adapter_stats[adapter_name]["errors"] += 1
+                            adapter_errors[adapter_name] = str(e)[:200]
+                            continue
+                        except Exception as e:
+                            logger.error(f"Adapter {adapter_name} failed for {lead.client_name}: {e}")
+                            adapter_stats[adapter_name]["errors"] += 1
+                            adapter_errors[adapter_name] = str(e)[:200]
+                            counters["errors"] += 1
+
+                    # Remove exhausted adapters so remaining leads skip them entirely
+                    if adapter_errors.get("apollo") and "credits exhausted" in adapter_errors["apollo"].lower():
+                        adapters = [(n, a) for n, a in adapters if n != "apollo"]
+
+                    seen_emails = set()
+                    unique_contacts = []
+                    for c in contacts:
+                        if c["email"] not in seen_emails:
+                            seen_emails.add(c["email"])
+                            unique_contacts.append(c)
+                    contacts = unique_contacts[:needed]
+
+                    if not contacts:
+                        counters["skipped"] += 1
+                        adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
+                        # Mark lead as skipped so it doesn't re-enter the queue on
+                        # subsequent runs — prevents the same un-enrichable leads
+                        # from consuming batch capacity every time.
+                        lead.lead_status = LeadStatus.SKIPPED
+                        lead.skip_reason = f"No contacts found via {adapter_names}"
+                        lead_results.append({
+                            "lead_id": lead.lead_id, "client_name": lead.client_name,
+                            "status": "skipped", "contacts_found": 0, "contacts_reused": reused,
+                            "adapter_used": adapter_names, "reason": "No results from API"
+                        })
+                        continue
+
+                    contacts_added = 0
+                    for contact_data in contacts:
+                        existing = db.query(ContactDetails).filter(
+                            ContactDetails.lead_id == lead.lead_id,
+                            ContactDetails.email == contact_data["email"]
+                        ).first()
+
+                        if existing:
+                            continue
+
+                        contact_source = contact_data.get("source")
+                        if contact_source in ("apollo", "seamless"):
+                            val_status = "valid"
+                        else:
+                            val_status = "pending"
+
+                            # Defensive: skip contacts missing required fields
+                        c_first = contact_data.get("first_name") or ""
+                        c_last = contact_data.get("last_name") or ""
+                        c_email = contact_data.get("email")
+                        if not c_email:
+                            continue
+                        # Ensure at least one name part exists
+                        if not c_first and not c_last:
+                            c_first = c_email.split("@")[0].capitalize()
+
+                        contact = ContactDetails(
+                            tenant_id=tenant_id or lead.tenant_id or 1,
+                            lead_id=lead.lead_id,
+                            client_name=lead.client_name,
+                            first_name=c_first,
+                            last_name=c_last,
+                            title=contact_data.get("title"),
+                            email=c_email,
+                            location_state=contact_data.get("location_state") or lead.state,
+                            phone=contact_data.get("phone"),
+                            source=contact_source,
+                            priority_level=contact_data.get("priority_level"),
+                            validation_status=val_status,
+                        )
+                        db.add(contact)
+                        db.flush()
+
+                        assoc = LeadContactAssociation(
+                            lead_id=lead.lead_id,
+                            contact_id=contact.contact_id,
+                        )
+                        db.add(assoc)
+
+                        counters["contacts_found"] += 1
+                        counters["contacts_new"] += 1
+                        contacts_added += 1
+
+                    if contacts:
+                        first_contact = contacts[0]
+                        lead.first_name = first_contact.get("first_name") or first_contact.get("email", "").split("@")[0].capitalize()
+                        lead.last_name = first_contact.get("last_name") or ""
+                        lead.contact_title = first_contact.get("title")
+                        lead.contact_email = first_contact.get("email")
+                        lead.contact_phone = first_contact.get("phone")
+                        lead.contact_source = first_contact.get("source")
+                        lead.lead_status = LeadStatus.ENRICHED
+                        counters["leads_enriched"] += 1
+
+                        # Update ClientInfo with org data from first contact (free from Apollo)
+                        org_data = first_contact.get("_organization")
+                        if org_data:
+                            _update_client_from_org_data(db, lead, org_data)
+
+                    adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
                     lead_results.append({
                         "lead_id": lead.lead_id, "client_name": lead.client_name,
-                        "status": "excluded", "contacts_found": 0, "contacts_reused": 0,
-                        "adapter_used": None, "reason": f"Out of scope ({reason})",
+                        "status": "enriched", "contacts_found": contacts_added,
+                        "contacts_reused": reused, "adapter_used": adapter_names,
+                        "reason": None
                     })
-                    logger.info("Lead excluded by gate — no API call", lead_id=lead.lead_id, reason=reason)
-                    continue
 
-                existing_count = db.query(ContactDetails).filter(
-                    ContactDetails.lead_id == lead.lead_id
-                ).count()
+                    logger.info("Enriched lead with contacts",
+                               lead_id=lead.lead_id,
+                               client=lead.client_name,
+                               contacts_added=contacts_added)
 
-                if existing_count >= max_contacts_per_job:
-                    counters["skipped"] += 1
-                    lead_results.append({
-                        "lead_id": lead.lead_id, "client_name": lead.client_name,
-                        "status": "skipped", "contacts_found": 0, "contacts_reused": 0,
-                        "adapter_used": None,
-                        "reason": f"Already at max contacts ({existing_count}/{max_contacts_per_job})"
-                    })
-                    logger.debug("Lead already has max contacts", lead_id=lead.lead_id, count=existing_count)
-                    continue
-
-                lead_domain = _resolve_domain(db, lead)
-
-                reused = _reuse_existing_contacts(db, lead, max_contacts_per_job, lead_domain=lead_domain)
-                counters["contacts_reused"] += reused
-                counters["contacts_found"] += reused
-
-                existing_count += reused
-                if existing_count >= max_contacts_per_job:
-                    counters["api_calls_saved"] += 1
-                    if not lead.first_name:
-                        _update_lead_from_contacts(db, lead)
-                    counters["leads_enriched"] += 1
-                    lead_results.append({
-                        "lead_id": lead.lead_id, "client_name": lead.client_name,
-                        "status": "cache_only", "contacts_found": 0, "contacts_reused": reused,
-                        "adapter_used": None, "reason": "Fully satisfied from cache"
-                    })
                     company_key = lead_domain or lead.client_name
                     if company_key and company_key not in auto_enriched_companies:
                         auto_enriched_companies.add(company_key)
                         if lead.client_name:
                             auto_enriched_companies.add(lead.client_name)
-                        _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain)
-                    continue
-
-                needed = max_contacts_per_job - existing_count
-                contacts = []
-                adapters_used_for_lead = []
-                for adapter_name, adapter in adapters:
-                    if adapter_name not in adapter_stats:
-                        adapter_stats[adapter_name] = {"calls": 0, "contacts_returned": 0, "no_results": 0, "errors": 0, "waterfall_skipped": 0}
-                    # Waterfall: skip remaining adapters once we have enough
-                    remaining_needed = needed - len(contacts)
-                    if remaining_needed <= 0:
-                        adapter_stats[adapter_name]["waterfall_skipped"] = adapter_stats[adapter_name].get("waterfall_skipped", 0) + 1
-                        counters["waterfall_skipped"] += 1
-                        continue
-                    try:
-                        adapter_stats[adapter_name]["calls"] += 1
-                        adapters_used_for_lead.append(adapter_name)
-                        search_company = clean_company_name_for_search(lead.client_name)
-                        result = adapter.search_contacts(
-                            company_name=search_company,
-                            job_title=lead.job_title,
-                            state=lead.state,
-                            limit=remaining_needed,
-                            domain=lead_domain,
-                            db=db,
-                            lead_domain=lead_domain,
-                        )
-                        for c in result:
-                            c["source"] = c.get("source", adapter_name)
-                        contacts.extend(result)
-                        adapter_stats[adapter_name]["contacts_returned"] += len(result)
-                        if len(result) == 0:
-                            adapter_stats[adapter_name]["no_results"] += 1
-                        logger.debug(f"Adapter {adapter_name} returned {len(result)} contacts for {lead.client_name}")
-                    except ApolloCreditsExhaustedError:
-                        adapter_stats[adapter_name]["errors"] += 1
-                        adapter_errors[adapter_name] = "Apollo credits exhausted"
-                        logger.warning("Apollo credits exhausted — skipping to next adapter for this lead")
-                        continue
-                    except CreditsExhaustedError as e:
-                        logger.warning(f"Adapter {adapter_name} credits exhausted, skipping to next: {e}")
-                        adapter_stats[adapter_name]["errors"] += 1
-                        adapter_errors[adapter_name] = str(e)[:200]
-                        continue
-                    except Exception as e:
-                        logger.error(f"Adapter {adapter_name} failed for {lead.client_name}: {e}")
-                        adapter_stats[adapter_name]["errors"] += 1
-                        adapter_errors[adapter_name] = str(e)[:200]
-                        counters["errors"] += 1
-
-                # Remove exhausted adapters so remaining leads skip them entirely
-                if adapter_errors.get("apollo") and "credits exhausted" in adapter_errors["apollo"].lower():
-                    adapters = [(n, a) for n, a in adapters if n != "apollo"]
-
-                seen_emails = set()
-                unique_contacts = []
-                for c in contacts:
-                    if c["email"] not in seen_emails:
-                        seen_emails.add(c["email"])
-                        unique_contacts.append(c)
-                contacts = unique_contacts[:needed]
-
-                if not contacts:
-                    counters["skipped"] += 1
-                    adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
-                    # Mark lead as skipped so it doesn't re-enter the queue on
-                    # subsequent runs — prevents the same un-enrichable leads
-                    # from consuming batch capacity every time.
-                    lead.lead_status = LeadStatus.SKIPPED
-                    lead.skip_reason = f"No contacts found via {adapter_names}"
-                    lead_results.append({
-                        "lead_id": lead.lead_id, "client_name": lead.client_name,
-                        "status": "skipped", "contacts_found": 0, "contacts_reused": reused,
-                        "adapter_used": adapter_names, "reason": "No results from API"
-                    })
-                    continue
-
-                contacts_added = 0
-                for contact_data in contacts:
-                    existing = db.query(ContactDetails).filter(
-                        ContactDetails.lead_id == lead.lead_id,
-                        ContactDetails.email == contact_data["email"]
-                    ).first()
-
-                    if existing:
-                        continue
-
-                    contact_source = contact_data.get("source")
-                    if contact_source in ("apollo", "seamless"):
-                        val_status = "valid"
-                    else:
-                        val_status = "pending"
-
-                        # Defensive: skip contacts missing required fields
-                    c_first = contact_data.get("first_name") or ""
-                    c_last = contact_data.get("last_name") or ""
-                    c_email = contact_data.get("email")
-                    if not c_email:
-                        continue
-                    # Ensure at least one name part exists
-                    if not c_first and not c_last:
-                        c_first = c_email.split("@")[0].capitalize()
-
-                    contact = ContactDetails(
-                        tenant_id=tenant_id or lead.tenant_id or 1,
-                        lead_id=lead.lead_id,
-                        client_name=lead.client_name,
-                        first_name=c_first,
-                        last_name=c_last,
-                        title=contact_data.get("title"),
-                        email=c_email,
-                        location_state=contact_data.get("location_state") or lead.state,
-                        phone=contact_data.get("phone"),
-                        source=contact_source,
-                        priority_level=contact_data.get("priority_level"),
-                        validation_status=val_status,
-                    )
-                    db.add(contact)
-                    db.flush()
-
-                    assoc = LeadContactAssociation(
-                        lead_id=lead.lead_id,
-                        contact_id=contact.contact_id,
-                    )
-                    db.add(assoc)
-
-                    counters["contacts_found"] += 1
-                    contacts_added += 1
-
-                if contacts:
-                    first_contact = contacts[0]
-                    lead.first_name = first_contact.get("first_name") or first_contact.get("email", "").split("@")[0].capitalize()
-                    lead.last_name = first_contact.get("last_name") or ""
-                    lead.contact_title = first_contact.get("title")
-                    lead.contact_email = first_contact.get("email")
-                    lead.contact_phone = first_contact.get("phone")
-                    lead.contact_source = first_contact.get("source")
-                    lead.lead_status = LeadStatus.ENRICHED
-                    counters["leads_enriched"] += 1
-
-                    # Update ClientInfo with org data from first contact (free from Apollo)
-                    org_data = first_contact.get("_organization")
-                    if org_data:
-                        _update_client_from_org_data(db, lead, org_data)
-
-                adapter_names = ", ".join(adapters_used_for_lead) if adapters_used_for_lead else ", ".join(a[0] for a in adapters)
-                lead_results.append({
-                    "lead_id": lead.lead_id, "client_name": lead.client_name,
-                    "status": "enriched", "contacts_found": contacts_added,
-                    "contacts_reused": reused, "adapter_used": adapter_names,
-                    "reason": None
-                })
-
-                logger.info("Enriched lead with contacts",
-                           lead_id=lead.lead_id,
-                           client=lead.client_name,
-                           contacts_added=contacts_added)
-
-                company_key = lead_domain or lead.client_name
-                if company_key and company_key not in auto_enriched_companies:
-                    auto_enriched_companies.add(company_key)
-                    if lead.client_name:
-                        auto_enriched_companies.add(lead.client_name)
-                    _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain)
+                        _auto_enrich_company_siblings(db, lead.client_name, batch_lead_ids, max_contacts_per_job, lead_results, counters, lead_domain=lead_domain, tenant_id=lead.tenant_id)
 
             except Exception as e:
-                db.rollback()  # Rollback dirty session state from failed flush/insert
+                counters.update(_snap_counters)
+                del lead_results[_snap_results:]
+                auto_enriched_companies.clear()
+                auto_enriched_companies.update(_snap_companies)
                 logger.error("Error enriching lead", error=str(e), lead_id=lead.lead_id)
                 counters["errors"] += 1
                 lead_results.append({
@@ -773,6 +829,8 @@ def run_contact_enrichment_pipeline(
                     "adapter_used": None, "reason": str(e)[:200]
                 })
 
+        # Bill the remainder in the same transaction that stores it.
+        _meter_new_contacts()
         db.commit()
 
         db.refresh(job_run)
@@ -829,16 +887,11 @@ def run_contact_enrichment_pipeline(
         except Exception as e:
             logger.warning(f"Failed to record contact-discovery costs: {e}")
 
-        # Meter credits on contacts actually discovered and stored — not on API calls,
-        # which vary by provider and by how many waterfall steps it took.
-        try:
-            from app.services.credit_metering import meter
-            discovered = int(counters.get("contacts_found", 0) or 0)
-            if discovered > 0:
-                meter(db, tenant_id, "contact_enriched", discovered,
-                      reference_id=str(job_run.run_id))
-        except Exception as e:
-            logger.warning(f"Failed to meter contact-discovery credits: {e}")
+        # Credits are metered on contacts actually DISCOVERED and stored — not on API
+        # calls (which vary by provider and waterfall depth) and never on contacts
+        # reused from this tenant's own cache. Already billed at the checkpoints and
+        # the commit above; this is a no-op unless something was added since.
+        _meter_new_contacts()
 
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
@@ -866,7 +919,22 @@ def run_contact_enrichment_pipeline(
         counters["api_diagnostics"] = api_diag
         job_run.counters_json = json.dumps(counters)
         job_run.lead_results_json = json.dumps(lead_results)
-        db.commit()
+        try:
+            # This commit also persists any contacts flushed since the last
+            # checkpoint, so bill them in it — exactly once (see `metered`).
+            _meter_new_contacts()
+            db.commit()
+        except Exception as commit_err:
+            # Session is unusable: the unbilled contacts are rolled back together
+            # with their charge. Still record the failure on the run.
+            logger.error("Could not commit failed enrichment run", error=str(commit_err))
+            db.rollback()
+            job_run.status = JobStatus.FAILED
+            job_run.error_message = str(e)
+            job_run.ended_at = datetime.utcnow()
+            job_run.counters_json = json.dumps(counters)
+            job_run.lead_results_json = json.dumps(lead_results)
+            db.commit()
         raise
     finally:
         db.close()
