@@ -5270,7 +5270,8 @@ export default function CampaignsPage() {
                       <option value="condition">Condition</option>
                       <option value="sms">SMS</option>
                       <option value="call">Call</option>
-                      <option value="linkedin">LinkedIn</option>
+                      {/* LinkedIn steps are not supported yet: only shown so an existing one can be edited or retyped. */}
+                      {stepForm.step_type === 'linkedin' && <option value="linkedin">LinkedIn (not supported)</option>}
                     </select>
                   </div>
 
@@ -5458,9 +5459,9 @@ export default function CampaignsPage() {
                   {stepForm.step_type === 'linkedin' && (
                     <div className="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-lg p-3">
                       <p className="text-sm text-sky-700 dark:text-sky-300 flex items-center gap-2">
-                        <Linkedin className="w-4 h-4" /> LinkedIn automation requires a browser extension (coming soon)
+                        <Linkedin className="w-4 h-4" /> LinkedIn steps aren&apos;t supported
                       </p>
-                      <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">The campaign engine will skip this step and advance to the next one until the extension is configured.</p>
+                      <p className="text-xs text-sky-600 dark:text-sky-400 mt-1">The campaign engine skips this step and moves to the next one. Change the step type above or delete this step.</p>
                     </div>
                   )}
 

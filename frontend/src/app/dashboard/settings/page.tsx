@@ -2497,7 +2497,8 @@ export default function SettingsPage() {
                     onChange={(e) => setJobSourceConfig({ ...jobSourceConfig, job_source_provider: e.target.value })}
                     className="input"
                   >
-                    <option value="mock">Mock (Development - Free)</option>
+                    {/* Mock (sample data) is a developer tool — only super admins see it, unless already selected. */}
+                    {(isSuperAdmin || jobSourceConfig.job_source_provider === 'mock') && <option value="mock">Mock (Development - Free)</option>}
                     <option value="jsearch">JSearch API (LinkedIn, Indeed, Glassdoor)</option>
                     <option value="indeed">Indeed Publisher API</option>
                   </select>
@@ -2639,11 +2640,14 @@ export default function SettingsPage() {
                         <span className="text-xs text-gray-500">from $95/mo</span>
                         {jobSourceConfig.fantastic_jobs_api_key && <span className="text-xs text-green-600">Key configured</span>}
                       </label>
+                      {/* Mock test data: super admins only (still shown if already enabled, so it can be turned off). */}
+                      {(isSuperAdmin || jobSourceConfig.lead_sources.includes('mock')) && (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={jobSourceConfig.lead_sources.includes('mock')} onChange={(e) => { if (e.target.checked) { setJobSourceConfig({ ...jobSourceConfig, lead_sources: [...jobSourceConfig.lead_sources, 'mock'] }) } else { setJobSourceConfig({ ...jobSourceConfig, lead_sources: jobSourceConfig.lead_sources.filter(s => s !== 'mock') }) } }} className="w-4 h-4"  aria-label="Toggle source mock" />
                         <span className="text-sm font-medium">Mock (Test Data)</span>
                         {isLocalhost && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Auto-enabled on localhost</span>}
                       </label>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       {jobSourceConfig.lead_sources.length === 0 && <span className="text-red-500">Select at least one source</span>}
@@ -4980,19 +4984,19 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From email</label>
-                <input aria-label="From email" type="email" className="input w-full" placeholder="Hr@exzelon.com"
+                <input aria-label="From email" type="email" className="input w-full" placeholder="you@yourdomain.com"
                   value={notifSender.sender_email}
                   onChange={e => setNotifSender(s => ({ ...s, sender_email: e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From name (optional)</label>
-                <input aria-label="From name (optional)" type="text" className="input w-full" placeholder="Exzelon Notifications"
+                <input aria-label="From name (optional)" type="text" className="input w-full" placeholder="Your Company Notifications"
                   value={notifSender.sender_name}
                   onChange={e => setNotifSender(s => ({ ...s, sender_name: e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">SMTP host</label>
-                <input aria-label="SMTP host" type="text" className="input w-full" placeholder="smtp.office365.com"
+                <input aria-label="SMTP host" type="text" className="input w-full" placeholder="smtp.yourdomain.com"
                   value={notifSender.smtp_host}
                   onChange={e => setNotifSender(s => ({ ...s, smtp_host: e.target.value }))} />
               </div>
@@ -5014,7 +5018,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">SMTP username</label>
-                <input aria-label="SMTP username" type="text" className="input w-full" placeholder="Hr@exzelon.com" autoComplete="off"
+                <input aria-label="SMTP username" type="text" className="input w-full" placeholder="you@yourdomain.com" autoComplete="off"
                   value={notifSender.smtp_user}
                   onChange={e => setNotifSender(s => ({ ...s, smtp_user: e.target.value }))} />
               </div>

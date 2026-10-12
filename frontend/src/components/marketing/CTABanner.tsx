@@ -14,7 +14,7 @@ export default function CTABanner({
   headline = 'Ready to Outperform Your Competition?',
   subtext = 'No credit card required. Self-hosted. Full control over your data.',
   ctaText = 'Get Started Free',
-  ctaHref = '/login',
+  ctaHref = '/signup',
 }: CTABannerProps) {
   return (
     <section className="relative py-24 overflow-hidden">
