@@ -58,6 +58,11 @@ class User(Base):
     # Onboarding
     onboarding_dismissed_at = Column(DateTime, nullable=True)
 
+    # Terms of Service / Privacy Policy acceptance at signup (Alembic 0006).
+    # NULL for users created before acceptance was recorded, or by an admin invite.
+    terms_accepted_at = Column(DateTime, nullable=True)
+    terms_version = Column(String(50), nullable=True)
+
     # Calendar link (Calendly/Cal.com)
     calendar_link = Column(String(500), nullable=True)
 

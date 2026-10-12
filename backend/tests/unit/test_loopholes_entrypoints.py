@@ -479,7 +479,7 @@ def _signup(client, email):
     with patch("app.services.email_verification._send_email", return_value=True):
         return client.post(f"{API}/auth/signup", json={
             "email": email, "password": "SecurePass123!",
-            "full_name": "Jane Doe", "company_name": f"Co {email}",
+            "full_name": "Jane Doe", "company_name": f"Co {email}", "accept_terms": True,
         })
 
 
