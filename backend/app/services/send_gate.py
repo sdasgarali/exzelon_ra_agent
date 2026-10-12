@@ -87,6 +87,9 @@ _MESSAGES = {
         "Daily email limit reached for @{domain} ({n}/{max} today)."
     ),
     "AI_BLOCKED": "AI safety agent blocked this send: {reasons}",
+    "BILLING_SUSPENDED": (
+        "Account suspended for non-payment. Settle outstanding invoices to resume sending."
+    ),
 }
 
 
@@ -94,30 +97,79 @@ _MESSAGES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_cooldown_days(db: Session, tenant_id: Optional[int]) -> int:
-    """Return the cooldown window in days from tenant settings or config defaults."""
+# Send-safety business rules a tenant may tune, with the platform default and the
+# config value that caps a tenant override. The effective ceiling is the larger of
+# that config value and the super admin's global setting (so raising the global
+# value raises it for everyone). Values stored before the range checks existed
+# (e.g. cooldown_days=0, max_contacts_per_company_job=999) are clamped on read.
+_RULE_FLOOR = {"cooldown_days": 1, "max_contacts_per_company_job": 1, "daily_send_limit": 1}
+
+
+def _rule_default(key: str) -> int:
+    return {
+        "cooldown_days": settings.COOLDOWN_DAYS,
+        "max_contacts_per_company_job": settings.MAX_CONTACTS_PER_COMPANY_PER_JOB,
+        "daily_send_limit": settings.DAILY_SEND_LIMIT,
+    }[key]
+
+
+def _rule_config_cap(key: str) -> Optional[int]:
+    return {
+        "cooldown_days": 365,
+        "max_contacts_per_company_job": settings.MAX_CONTACTS_PER_COMPANY_PER_JOB,
+        "daily_send_limit": getattr(settings, "MAX_DAILY_SEND_LIMIT_PER_MAILBOX", 50),
+    }[key]
+
+
+def business_rule_ceiling(db: Session, key: str) -> int:
+    """Highest value a tenant may use for ``key`` (see module notes above)."""
+    cap = int(_rule_config_cap(key))
+    if key == "cooldown_days":
+        return cap
     try:
         from app.core.settings_resolver import get_tenant_setting
-        val = get_tenant_setting(db, "cooldown_days", tenant_id=tenant_id, default=None)
-        if val is not None:
-            return int(val)
+        global_val = get_tenant_setting(db, key, tenant_id=None, default=None)
+        if global_val is not None:
+            cap = max(cap, int(global_val))
     except Exception:
         pass
-    return settings.COOLDOWN_DAYS
+    return cap
+
+
+def resolve_business_rule(db: Session, tenant_id: Optional[int], key: str) -> int:
+    """Tenant-aware value of a send-safety rule, clamped to the platform range."""
+    val = None
+    try:
+        from app.core.settings_resolver import get_tenant_setting
+        raw = get_tenant_setting(db, key, tenant_id=tenant_id, default=None)
+        if raw is not None:
+            val = int(raw)
+    except Exception:
+        val = None
+    if val is None:
+        val = int(_rule_default(key))
+    lo = _RULE_FLOOR[key]
+    hi = business_rule_ceiling(db, key)
+    return max(lo, min(val, hi))
+
+
+def _resolve_cooldown_days(db: Session, tenant_id: Optional[int]) -> int:
+    """Return the cooldown window in days (tenant setting, else config), min 1."""
+    return resolve_business_rule(db, tenant_id, "cooldown_days")
 
 
 def _resolve_max_contacts_per_lead(db: Session, tenant_id: Optional[int]) -> int:
-    """Return the per-lead contact limit from tenant settings or config defaults."""
-    try:
-        from app.core.settings_resolver import get_tenant_setting
-        val = get_tenant_setting(
-            db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None,
-        )
-        if val is not None:
-            return int(val)
-    except Exception:
-        pass
-    return settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    """Return the per-lead contact limit (tenant setting, else config), clamped."""
+    return resolve_business_rule(db, tenant_id, "max_contacts_per_company_job")
+
+
+def _tenant_billing_suspended(db: Session, tenant_id: Optional[int]) -> bool:
+    if tenant_id is None:
+        return False
+    from app.db.models.tenant import Tenant
+    suspended = db.query(Tenant.billing_suspended).filter(Tenant.tenant_id == tenant_id).scalar()
+    # Strict: only a real true value counts (a missing tenant row → None → not suspended).
+    return suspended is True or suspended == 1
 
 
 def _resolve_company_cap(db: Session, tenant_id: Optional[int]) -> int:
@@ -184,6 +236,21 @@ def unified_send_gate(
     """
     checks: List[GateCheckResult] = []
 
+    # ── -1. Billing suspension (tenant-level) ─────────────────────
+    # Suspension used to be enforced only by the require_tenant_id dependency, so
+    # bulk outreach, draft sends, the campaign engine and the reply agent all kept
+    # sending. Checked here so every send path is covered. Fails CLOSED on error:
+    # an unpaid account must not keep sending because a lookup failed.
+    try:
+        suspended = _tenant_billing_suspended(db, tenant_id)
+    except Exception as e:
+        logger.warning("send_gate_billing_check_error", tenant_id=tenant_id, error=str(e))
+        suspended = True
+    if suspended:
+        checks.append(GateCheckResult("billing", False, "tenant billing suspended"))
+        return _blocked("BILLING_SUSPENDED", checks)
+    checks.append(GateCheckResult("billing", True))
+
     # ── 0. Monthly send quota (tenant-level) ──────────────────────
     # Runs FIRST rather than last: it is the only tenant-level check here, so when it
     # fails every per-contact check below is wasted work — including check 10, which
@@ -242,12 +309,12 @@ def unified_send_gate(
     if not validation_enabled:
         checks.append(GateCheckResult("email_validation", True, "skipped (feature disabled)"))
     else:
-        valid_email = contact.validation_status in ("valid", "Valid")
-        if not valid_email:
-            validation = db.query(EmailValidationResult).filter(
-                EmailValidationResult.email == email_lower,
-            ).order_by(EmailValidationResult.validated_at.desc()).first()
-            valid_email = validation is not None and validation.status == ValidationStatus.VALID
+        # Only the contact's own (tenant-scoped) status counts. EmailValidationResult
+        # has no tenant_id — it is a platform-wide cache of provider answers — so
+        # falling back to it let one tenant send on another tenant's paid
+        # validation. The validation pipeline always writes the result onto the
+        # tenant's contact rows, so a contact this tenant validated is covered.
+        valid_email = (contact.validation_status or "").lower() == ValidationStatus.VALID.value
         if not valid_email:
             checks.append(GateCheckResult("email_validation", False, "not validated"))
             return _blocked("INVALID_EMAIL", checks)

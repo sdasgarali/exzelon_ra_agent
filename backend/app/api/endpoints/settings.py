@@ -888,24 +888,23 @@ def is_super_admin_only_setting(key: str) -> bool:
     return k in SUPER_ADMIN_ONLY_SETTING_KEYS or k.startswith(SUPER_ADMIN_ONLY_SETTING_PREFIXES)
 
 
-def _tenant_business_rule_bounds() -> Dict[str, tuple]:
-    """Inclusive (min, max) ranges a tenant admin may set for send-safety rules.
+TENANT_BUSINESS_RULE_KEYS = ("cooldown_days", "max_contacts_per_company_job", "daily_send_limit")
 
-    Resolved at call time so config overrides (and tests) take effect.
+
+def _tenant_business_rule_bounds(db: Session, key: str) -> tuple:
+    """Inclusive (min, max) range a tenant admin may set for a send-safety rule.
+
+    The ceiling is the larger of the config cap and the super admin's global value
+    (see ``send_gate.business_rule_ceiling``); resolved per call so config
+    overrides take effect.
     """
-    return {
-        "cooldown_days": (1, 365),
-        "max_contacts_per_company_job": (1, max(1, int(app_config.MAX_CONTACTS_PER_COMPANY_PER_JOB))),
-        "daily_send_limit": (1, max(1, int(app_config.MAX_DAILY_SEND_LIMIT_PER_MAILBOX))),
-    }
+    from app.services.send_gate import business_rule_ceiling
+    return 1, max(1, business_rule_ceiling(db, key))
 
 
-def _validate_tenant_business_rule(key: str, raw) -> None:
+def _validate_tenant_business_rule(db: Session, key: str, raw) -> None:
     """Raise 400 if a tenant-admin value for a send-safety rule is out of range."""
-    bounds = _tenant_business_rule_bounds().get(key)
-    if bounds is None:
-        return
-    lo, hi = bounds
+    lo, hi = _tenant_business_rule_bounds(db, key)
     try:
         if isinstance(raw, bool):
             raise TypeError
@@ -958,14 +957,14 @@ async def update_setting(
         )
 
     # Send-safety business rules: tenants may tune them only within safe ranges.
-    if not is_super and key in _tenant_business_rule_bounds():
+    if not is_super and key in TENANT_BUSINESS_RULE_KEYS:
         try:
             raw = setting_in.value if setting_in.value is not None else (
                 json.loads(setting_in.value_json) if setting_in.value_json is not None else None
             )
         except (TypeError, ValueError):
             raw = None
-        _validate_tenant_business_rule(key, raw)
+        _validate_tenant_business_rule(db, key, raw)
 
     # Check tab-level write permission for non-super-admin
     if not is_super:

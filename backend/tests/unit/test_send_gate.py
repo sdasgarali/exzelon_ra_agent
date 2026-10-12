@@ -172,7 +172,10 @@ class TestEmailValidation:
         assert not result.allowed
         assert result.reason_code == "INVALID_EMAIL"
 
-    def test_invalid_status_with_valid_validation_record_passes(self, db_session, test_tenant):
+    def test_invalid_status_with_valid_validation_record_still_blocked(self, db_session, test_tenant):
+        """The global EmailValidationResult cache has no tenant_id, so it must not
+        validate a contact the tenant never validated (loophole B5b). Previously
+        this fallback let the send through."""
         contact = _make_contact(
             db_session, test_tenant.tenant_id,
             email="fb@co.com", validation="unknown",
@@ -187,8 +190,8 @@ class TestEmailValidation:
         db_session.commit()
 
         result = unified_send_gate(db_session, contact, test_tenant.tenant_id)
-        validation_check = next(c for c in result.checks if c.name == "email_validation")
-        assert validation_check.passed
+        assert not result.allowed
+        assert result.reason_code == "INVALID_EMAIL"
 
 
 # ---------------------------------------------------------------------------

@@ -350,3 +350,112 @@ class TestB4Imports:
         r = client.post(f"{API}/leads/import/google-sheet", headers=professional_admin_headers, json=SHEET)
         assert r.status_code == 200, r.text
         assert r.json()["imported"] == 3
+
+
+# ---------------------------------------------------------------------------
+# B5 — send gate: billing suspension + tenant-scoped validation; rule clamping
+# ---------------------------------------------------------------------------
+
+def _set_tenant_rule(db_session, tenant_id, key, value):
+    db_session.add(TenantSettings(tenant_id=tenant_id, key=key, value_json=json.dumps(value)))
+    db_session.commit()
+
+
+class TestB5SendGate:
+
+    def test_suspended_tenant_blocked_for_every_send_mode(self, db_session, test_tenant):
+        from app.services.send_gate import unified_send_gate
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status="valid")
+        test_tenant.billing_suspended = True
+        db_session.commit()
+        for kwargs in ({}, {"dry_run": True}, {"is_reply": True}):
+            res = unified_send_gate(db_session, c, test_tenant.tenant_id, **kwargs)
+            assert not res.allowed, kwargs
+            assert res.reason_code == "BILLING_SUSPENDED"
+
+    def test_active_tenant_not_blocked_by_billing_check(self, db_session, test_tenant):
+        from app.services.send_gate import unified_send_gate
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status="valid")
+        res = unified_send_gate(db_session, c, test_tenant.tenant_id, dry_run=True)
+        assert next(ch for ch in res.checks if ch.name == "billing").passed
+
+    def test_other_tenants_validation_result_does_not_validate_contact(self, db_session, test_tenant):
+        from datetime import datetime
+        from app.db.models.email_validation import EmailValidationResult, ValidationStatus
+        from app.services.send_gate import unified_send_gate
+        # Some other tenant paid to validate this address; this tenant never did.
+        db_session.add(EmailValidationResult(email="shared@acme-corp.com", provider="neverbounce",
+                                             status=ValidationStatus.VALID, validated_at=datetime.utcnow()))
+        c = _make_contact(db_session, test_tenant.tenant_id, email="shared@acme-corp.com", validation_status=None)
+        res = unified_send_gate(db_session, c, test_tenant.tenant_id, dry_run=True)
+        assert not res.allowed
+        assert res.reason_code == "INVALID_EMAIL"
+
+    def test_stale_zero_cooldown_override_is_clamped(self, db_session, test_tenant):
+        from app.services.send_gate import _resolve_cooldown_days
+        _set_tenant_rule(db_session, test_tenant.tenant_id, "cooldown_days", 0)
+        assert _resolve_cooldown_days(db_session, test_tenant.tenant_id) == 1
+
+    def test_stale_huge_contact_cap_override_is_clamped(self, db_session, test_tenant):
+        from app.core.config import settings as app_settings
+        from app.services.send_gate import _resolve_max_contacts_per_lead
+        _set_tenant_rule(db_session, test_tenant.tenant_id, "max_contacts_per_company_job", 999)
+        assert _resolve_max_contacts_per_lead(db_session, test_tenant.tenant_id) == \
+            app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+
+    def test_global_super_admin_value_raises_the_ceiling(self, db_session, test_tenant):
+        from app.services.send_gate import _resolve_max_contacts_per_lead
+        db_session.add(Settings(key="max_contacts_per_company_job", type="integer", value_json="4"))
+        db_session.commit()
+        _set_tenant_rule(db_session, test_tenant.tenant_id, "max_contacts_per_company_job", 999)
+        assert _resolve_max_contacts_per_lead(db_session, test_tenant.tenant_id) == 4
+
+
+# ---------------------------------------------------------------------------
+# B7 — mailbox daily_send_limit bound + outreach pipeline clamping
+# ---------------------------------------------------------------------------
+
+class TestB7DailySendLimit:
+
+    def test_mailbox_create_schema_rejects_huge_limit(self):
+        from pydantic import ValidationError
+        from app.schemas.sender_mailbox import SenderMailboxCreate
+        with pytest.raises(ValidationError):
+            SenderMailboxCreate(email="s@acme-corp.com", daily_send_limit=10_000)
+        with pytest.raises(ValidationError):
+            SenderMailboxCreate(email="s@acme-corp.com", daily_send_limit=0)
+        assert SenderMailboxCreate(email="s@acme-corp.com", daily_send_limit=50).daily_send_limit == 50
+
+    def test_mailbox_update_schema_rejects_huge_limit(self):
+        from pydantic import ValidationError
+        from app.schemas.sender_mailbox import SenderMailboxUpdate
+        with pytest.raises(ValidationError):
+            SenderMailboxUpdate(daily_send_limit=500)
+        assert SenderMailboxUpdate(daily_send_limit=None).daily_send_limit is None
+
+    def test_update_mailbox_endpoint_rejects_huge_limit(self, client, auth_headers, sample_mailbox):
+        r = client.put(f"{API}/mailboxes/{sample_mailbox.mailbox_id}", headers=auth_headers,
+                       json={"daily_send_limit": 5000})
+        assert r.status_code == 422, r.text
+
+    def test_response_schema_still_serialises_legacy_rows(self, db_session, sample_mailbox):
+        from app.schemas.sender_mailbox import SenderMailboxResponse
+        sample_mailbox.daily_send_limit = 400
+        db_session.commit()
+        assert SenderMailboxResponse.model_validate(sample_mailbox).daily_send_limit == 400
+
+    def test_outreach_business_rules_are_clamped(self, db_session, test_tenant):
+        from app.core.config import settings as app_settings
+        from app.services.pipelines.outreach import resolve_business_rules
+        _set_tenant_rule(db_session, test_tenant.tenant_id, "daily_send_limit", 10_000)
+        _set_tenant_rule(db_session, test_tenant.tenant_id, "cooldown_days", 0)
+        rules = resolve_business_rules(db_session, tenant_id=test_tenant.tenant_id)
+        assert rules["daily_send_limit"] == app_settings.MAX_DAILY_SEND_LIMIT_PER_MAILBOX
+        assert rules["cooldown_days"] == 1
+
+    def test_sendable_mailboxes_respect_platform_cap(self, db_session, test_tenant, sample_mailbox):
+        from app.services.pipelines.outreach import sendable_mailboxes_query
+        sample_mailbox.daily_send_limit = 400
+        sample_mailbox.emails_sent_today = 60  # over the 50 platform cap
+        db_session.commit()
+        assert sendable_mailboxes_query(db_session, test_tenant.tenant_id).count() == 0
