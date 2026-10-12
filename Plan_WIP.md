@@ -1,6 +1,24 @@
 # Plan WIP
 
 ## SESSION_CONTEXT_RETRIEVAL
+> PICKUP 2026-10-13 (session ended 2026-10-12 ~17:15 UTC). Prod = master 1bcb5e3 (PR #135), Alembic 0006,
+> credit enforcement ON (PROD_CREDIT_ENFORCEMENT_ENABLED=true), all services up, /api/v1/ready 200.
+> Launch readiness given to user: **70/100 public, ~80 private beta** (payments excluded). Shipped 2026-10-12:
+> PR #133 credit/billing/isolation loopholes + credit meter/history; PR #134 weekly OAuth keepalive;
+> PR #135 launch readiness (ready endpoint, watchdog timer, alerts to info@neuraleads.ai, 14-day backups +
+> integrity + restore drill PASS, outreach warmup gate 14d/50 emails + ramp + per-IP cohort, CAN-SPAM address
+> gate + inline banner, terms acceptance, site-info legal pages, signup/payments-off UX). 494 cPanel mailboxes
+> re-tested OK; 4 M365 need user (Sophia/Dustin/Elsa reconnect; David needs Authenticated SMTP).
+> USER TODO (blocks score): (1) Roles & Permissions -> Admin: set Validation, Warmup, Pipelines email_validation
+>  + outreach, Settings ai_llm/validation/outreach/business_rules/deliverability to Full (I was blocked from
+>  editing prod role_permissions; backup in backups/role_permissions-pre-launch6-*.json) => ~75.
+>  (2) confirm info@neuraleads.ai receives mail (test alert sent 17:03 UTC) + external uptime monitor.
+>  (3) B2 bucket + keys (deploy/DR_RUNBOOK.md). (4) LEGAL_* env once company registered. (5) Stripe later.
+>  (6) postal address for Neuraforz + Medeoan (banner on their dashboard).
+> NEXT FOR ME: security items -> upgrade python-jose (CVE) / FastAPI, TOTP MFA for admins, remove ~20
+>  `tenant_id or 1` fallbacks; then start warmup on ONE domain cohort (no outreach). Campaigns stay PAUSED.
+> Plans: Plan_Credit_Loopholes.md, Plan_Launch_Readiness_6.md (done). Remote branch
+> feature/launch-readiness-6 may still exist on GitHub (delete failed).
 > PICKUP 2026-10-08 (session ended 2026-10-07 ~19:00 UTC). Prod 138fb40 + docs, all services up.
 > Ratings given to user: launch readiness 62/100, bug-free 65/100. Agreed next steps, in order:
 >  1. Diagnose 454/503 mailboxes with connection_status=failed (read-only first), fix creds/OAuth;
