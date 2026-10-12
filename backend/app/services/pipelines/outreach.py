@@ -22,7 +22,7 @@ from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChanne
 from app.db.models.suppression import SuppressionList
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
-from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.models.sender_mailbox import SenderMailbox
 from app.services.pipelines.cancel_helper import check_cancel
 from app.services.outreach_draft_service import draft_outreach_email, clear_research_cache
 
@@ -496,7 +496,7 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
 def sendable_mailboxes_query(db, tenant_id: int):
     """Mailboxes of ``tenant_id`` that may send cold outreach right now.
 
-    Cold Ready or Active, under their daily limit, with a successful connection, and not
+    Cold Ready or Active with enough real warmup history, under their (ramped) daily limit, with a successful connection, and not
     blacklisted (mirrors ``mailbox_selector.select_best_mailbox``).
     Always tenant-scoped: picking the least-loaded mailbox across all tenants sent one
     tenant's outreach from another tenant's mailbox.
@@ -505,17 +505,21 @@ def sendable_mailboxes_query(db, tenant_id: int):
     whose ``daily_send_limit`` was set above it (before the schema bound, or via a
     path that skips the schema) cannot send past it.
     """
+    from app.services.mailbox_selector import apply_outreach_caps, outreach_eligible_filter
     from app.services.send_gate import business_rule_ceiling
     platform_cap = business_rule_ceiling(db, "daily_send_limit")
-    return db.query(SenderMailbox).filter(
+    query = db.query(SenderMailbox).filter(
         SenderMailbox.tenant_id == tenant_id,
         SenderMailbox.is_active == True,  # noqa: E712
-        SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+        # Status AND real warmup history (MIN_WARMUP_DAYS + MIN_WARMUP_EMAILS).
+        outreach_eligible_filter(),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
         SenderMailbox.emails_sent_today < platform_cap,
         SenderMailbox.connection_status == "successful",
         SenderMailbox.is_blacklisted == False,  # noqa: E712
     )
+    # First-30-day ISP ramp cap + per-IP cohort cap.
+    return apply_outreach_caps(db, query)
 
 
 def lead_contacts_query(db, lead_id: int, tenant_id: int):
