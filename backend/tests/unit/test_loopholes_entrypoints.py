@@ -391,6 +391,9 @@ class TestB5SendGate:
         from datetime import datetime
         from app.db.models.email_validation import EmailValidationResult, ValidationStatus
         from app.services.send_gate import unified_send_gate
+        # A postal address is required for outreach (CAN-SPAM) — give the workspace
+        # one so the validation check is what's exercised.
+        test_tenant.company_address = "1 Main St, Springfield"
         # Some other tenant paid to validate this address; this tenant never did.
         db_session.add(EmailValidationResult(email="shared@acme-corp.com", provider="neverbounce",
                                              status=ValidationStatus.VALID, validated_at=datetime.utcnow()))
@@ -479,7 +482,7 @@ def _signup(client, email):
     with patch("app.services.email_verification._send_email", return_value=True):
         return client.post(f"{API}/auth/signup", json={
             "email": email, "password": "SecurePass123!",
-            "full_name": "Jane Doe", "company_name": f"Co {email}",
+            "full_name": "Jane Doe", "company_name": f"Co {email}", "accept_terms": True,
         })
 
 

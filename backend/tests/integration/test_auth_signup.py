@@ -14,6 +14,7 @@ class TestSignupFlow:
                 "password": "SecurePass123!",
                 "full_name": "Jane Doe",
                 "company_name": "My Startup",
+                "accept_terms": True,
             })
         assert resp.status_code == 201
         data = resp.json()
@@ -28,12 +29,14 @@ class TestSignupFlow:
                 "password": "SecurePass123!",
                 "full_name": "User One",
                 "company_name": "Company A",
+                "accept_terms": True,
             })
             resp = client.post("/api/v1/auth/signup", json={
                 "email": "dup@test.com",
                 "password": "SecurePass123!",
                 "full_name": "User Two",
                 "company_name": "Company B",
+                "accept_terms": True,
             })
         assert resp.status_code == 400
         assert "already registered" in resp.json()["detail"]
@@ -44,6 +47,7 @@ class TestSignupFlow:
             "password": "short",
             "full_name": "Weak User",
             "company_name": "Corp",
+            "accept_terms": True,
         })
         assert resp.status_code == 422  # Pydantic validation (min_length=8)
 
@@ -63,6 +67,7 @@ class TestSignupFlow:
                 "password": "SecurePass123!",
                 "full_name": "Verify User",
                 "company_name": "Verify Corp",
+                "accept_terms": True,
             })
         user_id = signup_resp.json()["user_id"]
 
@@ -87,6 +92,7 @@ class TestSignupFlow:
                 "password": "SecurePass123!",
                 "full_name": "Unverified",
                 "company_name": "UV Corp",
+                "accept_terms": True,
             })
         # Try to login without verifying
         resp = client.post("/api/v1/auth/login", data={
@@ -165,6 +171,7 @@ class TestResendVerification:
                 "password": "SecurePass123!",
                 "full_name": "Resend User",
                 "company_name": "Resend Corp",
+                "accept_terms": True,
             })
             resp = client.post("/api/v1/auth/resend-verification", json={
                 "email": "resend@test.com",

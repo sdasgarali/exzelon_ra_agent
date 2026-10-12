@@ -39,6 +39,9 @@ class SignupRequest(BaseModel):
     password: str = Field(..., min_length=8, description="Password (min 8 chars, 1 uppercase, 1 number, 1 special)")
     full_name: str = Field(..., min_length=1, max_length=255, description="Full name")
     company_name: str = Field(..., min_length=1, max_length=255, description="Company/organization name")
+    # Must be true. Defaults to False (not required) so a missing value gets the
+    # endpoint's clear 400 message instead of a generic 422 validation error.
+    accept_terms: bool = Field(False, description="User accepted the Terms of Service and Privacy Policy")
 
     @field_validator("email", mode="before")
     @classmethod

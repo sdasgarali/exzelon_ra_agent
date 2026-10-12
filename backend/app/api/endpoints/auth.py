@@ -211,6 +211,12 @@ async def signup(
     from app.services.tenant_service import create_tenant_for_signup
     from app.services.email_verification import send_verification_email
 
+    if data.accept_terms is not True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must accept the Terms of Service and Privacy Policy",
+        )
+
     # data.email is already validated and lowercased by SignupRequest.
     if is_disposable_email_domain(data.email):
         raise HTTPException(
@@ -240,6 +246,8 @@ async def signup(
         tenant_id=tenant.tenant_id,
         is_active=True,
         is_verified=False,
+        terms_accepted_at=datetime.utcnow(),
+        terms_version=(settings.TERMS_VERSION or "").strip()[:50] or None,
     )
     db.add(user)
     db.commit()
