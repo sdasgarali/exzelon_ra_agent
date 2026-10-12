@@ -20,6 +20,18 @@ from app.db.models.inbox_message import InboxMessage, MessageDirection
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture(autouse=True)
+def _tenant_has_postal_address(request):
+    """The gate refuses outreach for a workspace with no postal address (CAN-SPAM,
+    covered in test_launch_legal.py). These tests exercise the other checks, so the
+    shared tenant gets an address."""
+    if "test_tenant" in request.fixturenames:
+        tenant = request.getfixturevalue("test_tenant")
+        db = request.getfixturevalue("db_session")
+        tenant.company_address = "1 Main St, Springfield, IL 62701"
+        db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

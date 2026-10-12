@@ -269,25 +269,6 @@ def unified_send_gate(
         return _blocked("BILLING_SUSPENDED", checks)
     checks.append(GateCheckResult("billing", True))
 
-    # ── -0.5. Sender postal address (CAN-SPAM, tenant-level) ──────
-    # Outreach is commercial email, so the workspace's own postal address must be
-    # in the footer. Replies are conversations the recipient started and are not
-    # blocked. Dry runs ARE checked so the preflight endpoint surfaces the problem.
-    # Warmup and transactional/system mail never call this gate. Fails CLOSED: a
-    # compliance requirement must not be skipped because a lookup failed.
-    if not is_reply:
-        try:
-            has_address = tenant_has_postal_address(db, tenant_id)
-        except Exception as e:
-            logger.warning("send_gate_postal_address_error", tenant_id=tenant_id, error=str(e))
-            has_address = False
-        if not has_address:
-            checks.append(GateCheckResult("postal_address", False, "workspace has no postal address"))
-            return _blocked("NO_POSTAL_ADDRESS", checks)
-        checks.append(GateCheckResult("postal_address", True))
-    else:
-        checks.append(GateCheckResult("postal_address", True, "skipped (reply)"))
-
     # ── 0. Monthly send quota (tenant-level) ──────────────────────
     # Runs FIRST rather than last: it is the only tenant-level check here, so when it
     # fails every per-contact check below is wasted work — including check 10, which
@@ -313,6 +294,25 @@ def unified_send_gate(
     else:
         checks.append(GateCheckResult(
             "send_quota", True, "skipped (dry_run)" if dry_run else "skipped (reply)"))
+
+    # ── 0.5. Sender postal address (CAN-SPAM, tenant-level) ───────
+    # Outreach is commercial email, so the workspace's own postal address must be
+    # in the footer. Replies are conversations the recipient started and are not
+    # blocked. Dry runs ARE checked so the preflight endpoint surfaces the problem.
+    # Warmup and transactional/system mail never call this gate. Fails CLOSED: a
+    # compliance requirement must not be skipped because a lookup failed.
+    if not is_reply:
+        try:
+            has_address = tenant_has_postal_address(db, tenant_id)
+        except Exception as e:
+            logger.warning("send_gate_postal_address_error", tenant_id=tenant_id, error=str(e))
+            has_address = False
+        if not has_address:
+            checks.append(GateCheckResult("postal_address", False, "workspace has no postal address"))
+            return _blocked("NO_POSTAL_ADDRESS", checks)
+        checks.append(GateCheckResult("postal_address", True))
+    else:
+        checks.append(GateCheckResult("postal_address", True, "skipped (reply)"))
 
     # ── 1. Contact status (no DB query) ────────────────────────────
     if hasattr(contact, "outreach_status") and contact.outreach_status:

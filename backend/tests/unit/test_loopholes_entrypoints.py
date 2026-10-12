@@ -391,6 +391,9 @@ class TestB5SendGate:
         from datetime import datetime
         from app.db.models.email_validation import EmailValidationResult, ValidationStatus
         from app.services.send_gate import unified_send_gate
+        # A postal address is required for outreach (CAN-SPAM) — give the workspace
+        # one so the validation check is what's exercised.
+        test_tenant.company_address = "1 Main St, Springfield"
         # Some other tenant paid to validate this address; this tenant never did.
         db_session.add(EmailValidationResult(email="shared@acme-corp.com", provider="neverbounce",
                                              status=ValidationStatus.VALID, validated_at=datetime.utcnow()))
