@@ -321,9 +321,12 @@ async def get_mailbox_stats(
 
     # Calculate daily capacity for active, ready mailboxes that can connect
     # (a failed connection contributes no real sending capacity).
+    # Capacity counts only mailboxes outreach may actually use (status AND
+    # finished warmup — mailbox_selector.is_outreach_eligible).
+    from app.services.mailbox_selector import is_outreach_eligible
     ready_mailboxes = [
         m for m in mailboxes
-        if m.warmup_status in [WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]
+        if is_outreach_eligible(m)
         and m.is_active
         and (m.connection_status or "untested") != "failed"
     ]
