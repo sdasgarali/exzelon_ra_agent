@@ -95,6 +95,9 @@ def init_scheduler():
         _scheduler.add_job(job_refill_credit_allowances, CronTrigger(day=1, hour=0, minute=5), id="credit_refill", name="Monthly Credit Refill", replace_existing=True)
         # Credits — lapse top-up lots past their 12-month validity, daily.
         _scheduler.add_job(job_expire_topup_credits, CronTrigger(hour=0, minute=15), id="credit_topup_expiry", name="Daily Top-up Credit Expiry", replace_existing=True)
+        # Mailboxes — keep Microsoft OAuth refresh tokens alive (they expire after
+        # 90 days unused), weekly on Sunday.
+        _scheduler.add_job(job_oauth_keepalive, CronTrigger(day_of_week="sun", hour=3, minute=30), id="oauth_keepalive", name="Weekly OAuth Token Keepalive", replace_existing=True)
 
         _scheduler.start()
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
@@ -816,6 +819,25 @@ def job_cleanup_stale_tenants():
         db.rollback()
     finally:
         db.close()
+
+
+def job_oauth_keepalive():
+    """Refresh every active Microsoft OAuth mailbox so idle ones don't expire."""
+    if not _is_job_enabled("oauth_keepalive"):
+        logger.info("Job oauth_keepalive skipped (disabled)")
+        return
+    from app.core.job_lock import advisory_lock
+    with advisory_lock("oauth_keepalive") as acquired:
+        if not acquired:
+            return
+        db = _get_db()
+        try:
+            from app.services.oauth_helper import refresh_idle_oauth_tokens
+            refresh_idle_oauth_tokens(db)
+        except Exception as e:
+            logger.error("OAuth keepalive failed", error=str(e))
+        finally:
+            db.close()
 
 
 def job_refill_credit_allowances():

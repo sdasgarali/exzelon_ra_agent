@@ -246,3 +246,56 @@ def imap_authenticate(imap, email: str, mailbox, db) -> None:
     else:
         plain_password = decrypt_field(mailbox.password)
         imap.login(email, plain_password)
+
+
+def refresh_idle_oauth_tokens(db) -> Dict[str, int]:
+    """Refresh every active OAuth2 mailbox's tokens, even when nothing is due.
+
+    Microsoft expires a refresh token after 90 days without use
+    (AADSTS700082). Mailboxes that aren't sending — paused campaigns, spare
+    senders — never trigger a refresh, so they silently lose their sign-in and
+    need the owner to reconnect. Running this weekly keeps every token inside
+    that window; each refresh also rotates the refresh token, which we persist.
+
+    A token that can no longer be refreshed marks the mailbox failed with a
+    reconnect instruction, so it shows up on the Mailboxes page instead of
+    failing quietly at send time. Commits per mailbox.
+    """
+    from app.db.models.sender_mailbox import SenderMailbox
+
+    mailboxes = (
+        db.query(SenderMailbox)
+        .filter(
+            SenderMailbox.is_archived == False,  # noqa: E712
+            SenderMailbox.is_active == True,  # noqa: E712
+            SenderMailbox.auth_method == "oauth2",
+            SenderMailbox.oauth_refresh_token.isnot(None),
+        )
+        .all()
+    )
+    result = {"checked": len(mailboxes), "refreshed": 0, "failed": 0}
+    for mailbox in mailboxes:
+        try:
+            token_data = refresh_oauth_token(
+                decrypt_field(mailbox.oauth_refresh_token), mailbox.oauth_tenant_id
+            )
+            mailbox.oauth_access_token = encrypt_field(token_data["access_token"])
+            mailbox.oauth_refresh_token = encrypt_field(token_data["refresh_token"])
+            mailbox.oauth_token_expires_at = datetime.utcnow() + timedelta(
+                seconds=token_data["expires_in"]
+            )
+            db.commit()
+            result["refreshed"] += 1
+        except Exception as e:  # one bad mailbox must not stop the rest
+            db.rollback()
+            mailbox.connection_status = "failed"
+            mailbox.connection_error = (
+                "Microsoft sign-in expired — reconnect this mailbox "
+                "(Mailboxes → Connect with Microsoft). " + str(e)[:300]
+            )
+            mailbox.last_connection_test_at = datetime.utcnow()
+            db.commit()
+            result["failed"] += 1
+            logger.warning("oauth_keepalive_failed", mailbox=mailbox.email, error=str(e)[:200])
+    logger.info("oauth_keepalive_complete", **result)
+    return result
