@@ -257,3 +257,96 @@ class TestB3DatabaseSearch:
     def test_read_scoped_api_key_cannot_call_it(self):
         from app.core.api_key_scopes import check_scope
         assert check_scope(["read"], "POST", "/api/v1/leads/database-search")[0] is False
+
+
+# ---------------------------------------------------------------------------
+# B4 — CSV / Google-Sheet import: role, row cap, plan limits
+# ---------------------------------------------------------------------------
+
+def _csv(n, with_email=True):
+    lines = ["Company Name,Job Title,State,Job Link,Email,First Name,Last Name"]
+    for i in range(n):
+        email = f"hr{i}@acme{i}-mfg.com" if with_email else ""
+        lines.append(f"Acme Manufacturing {i},Plant Manager,TX,https://jobs.example.com/b4-{i},{email},Pat,Doe")
+    return "\n".join(lines) + "\n"
+
+
+def _upload(client, headers, n):
+    return client.post(f"{API}/leads/import/csv", headers=headers,
+                       files={"file": ("leads.csv", _csv(n).encode(), "text/csv")})
+
+
+@pytest.fixture
+def fake_sheet(monkeypatch):
+    import app.api.endpoints.leads as leads_mod
+    state = {"n": 3, "fetched": 0}
+
+    async def _fetch(sheet_id, gid):
+        state["fetched"] += 1
+        return _csv(state["n"])
+
+    monkeypatch.setattr(leads_mod, "_fetch_google_sheet_csv", _fetch)
+    return state
+
+
+SHEET = {"sheet_url": "https://docs.google.com/spreadsheets/d/abcDEF123/edit"}
+
+
+class TestB4Imports:
+
+    def test_recruiter_cannot_import_csv(self, client, db_session, viewer_headers):
+        from app.db.models.lead import LeadDetails
+        r = _upload(client, viewer_headers, 2)
+        assert r.status_code == 403, r.text
+        assert db_session.query(LeadDetails).count() == 0
+
+    def test_recruiter_cannot_import_google_sheet(self, client, viewer_headers, fake_sheet):
+        r = client.post(f"{API}/leads/import/google-sheet", headers=viewer_headers, json=SHEET)
+        assert r.status_code == 403, r.text
+        assert fake_sheet["fetched"] == 0
+
+    def test_admin_csv_import_still_works(self, client, auth_headers):
+        r = _upload(client, auth_headers, 2)
+        assert r.status_code == 200, r.text
+        assert r.json()["imported"] == 2
+
+    def test_row_cap(self, client, auth_headers, monkeypatch):
+        from app.core.config import settings as app_settings
+        monkeypatch.setattr(app_settings, "MAX_IMPORT_ROWS", 3)
+        r = _upload(client, auth_headers, 4)
+        assert r.status_code == 413, r.text
+
+    def test_default_row_cap_is_5000(self):
+        from app.core.config import Settings
+        assert Settings.model_fields["MAX_IMPORT_ROWS"].default == 5000
+
+    def test_csv_import_stops_at_plan_lead_limit(self, client, db_session, professional_admin_headers,
+                                                 professional_capped_tenant):
+        from app.db.models.lead import LeadDetails
+        from app.db.models.contact import ContactDetails
+        r = _upload(client, professional_admin_headers, 5)  # plan: max_leads=3, max_contacts=2
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["imported"] == 3
+        assert body["plan_limited"] == 2
+        tid = professional_capped_tenant.tenant_id
+        assert db_session.query(LeadDetails).filter(LeadDetails.tenant_id == tid).count() == 3
+        assert db_session.query(ContactDetails).filter(ContactDetails.tenant_id == tid).count() == 2
+
+    def test_import_refused_when_already_at_plan_limit(self, client, db_session, professional_admin_headers,
+                                                       professional_capped_tenant):
+        from datetime import date
+        from app.db.models.lead import LeadDetails, LeadStatus
+        for i in range(3):
+            db_session.add(LeadDetails(tenant_id=professional_capped_tenant.tenant_id, client_name=f"X{i}",
+                                       job_title="Plant Manager", state="TX", posting_date=date.today(),
+                                       lead_status=LeadStatus.NEW))
+        db_session.commit()
+        r = _upload(client, professional_admin_headers, 1)
+        assert r.status_code == 403, r.text
+
+    def test_google_sheet_import_respects_plan_limit(self, client, professional_admin_headers, fake_sheet):
+        fake_sheet["n"] = 5
+        r = client.post(f"{API}/leads/import/google-sheet", headers=professional_admin_headers, json=SHEET)
+        assert r.status_code == 200, r.text
+        assert r.json()["imported"] == 3
