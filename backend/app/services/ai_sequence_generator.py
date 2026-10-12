@@ -50,6 +50,37 @@ def generate_sequence(
     return _generate_template_based(goal, product, tone, num_steps)
 
 
+def call_adapter_text(
+    adapter,
+    prompt: str,
+    system: Optional[str] = None,
+    max_tokens: int = 800,
+    temperature: float = 0.7,
+) -> str:
+    """One prompt → text, across the adapters' differing `_call_api` signatures.
+
+    Gemini takes `prompt=`/`system_instruction=`, Anthropic takes `messages=` plus a
+    separate `system=`, Groq/OpenAI take the system prompt as the first message.
+    Raises on any adapter error so callers can fall back (and not charge).
+    """
+    if not hasattr(adapter, "_call_api"):
+        raise RuntimeError("Adapter does not support _call_api")
+
+    from app.services.adapters.ai.gemini import GeminiAdapter
+    from app.services.adapters.ai.anthropic_adapter import AnthropicAdapter
+
+    if isinstance(adapter, GeminiAdapter):
+        return adapter._call_api(prompt=prompt, system_instruction=system,
+                                 temperature=temperature, max_tokens=max_tokens)
+    if isinstance(adapter, AnthropicAdapter):
+        return adapter._call_api(messages=[{"role": "user", "content": prompt}],
+                                 system=system, temperature=temperature, max_tokens=max_tokens)
+    messages = [{"role": "user", "content": prompt}]
+    if system:
+        messages.insert(0, {"role": "system", "content": system})
+    return adapter._call_api(messages=messages, temperature=temperature, max_tokens=max_tokens)
+
+
 def _get_lob_context_for_sequence(db: Session, lob_id: Optional[int]) -> tuple:
     """Retrieve LOB type and description for sequence generation.
 
@@ -143,40 +174,14 @@ Anti-AI-Detection (critical — emails WILL be flagged if you ignore these):
 
 Return ONLY a JSON array, no markdown or other text."""
 
-    # Call the adapter using the appropriate method for each adapter type
-    if hasattr(adapter, '_call_api'):
-        # Groq, OpenAI, Anthropic use messages-based _call_api
-        from app.services.adapters.ai.gemini import GeminiAdapter
-        if isinstance(adapter, GeminiAdapter):
-            text = adapter._call_api(
-                prompt=prompt,
-                system_instruction=OUTREACH_SYSTEM_PROMPT,
-                max_tokens=1500,
-            )
-        else:
-            # Check if it's Anthropic (uses system= kwarg)
-            from app.services.adapters.ai.anthropic_adapter import AnthropicAdapter
-            if isinstance(adapter, AnthropicAdapter):
-                text = adapter._call_api(
-                    messages=[{"role": "user", "content": prompt}],
-                    system=OUTREACH_SYSTEM_PROMPT,
-                    max_tokens=1500,
-                )
-            else:
-                # Groq and OpenAI
-                text = adapter._call_api(
-                    messages=[
-                        {"role": "system", "content": OUTREACH_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=1500,
-                )
-    else:
-        raise RuntimeError("Adapter does not support _call_api")
+    text = call_adapter_text(adapter, prompt, system=OUTREACH_SYSTEM_PROMPT, max_tokens=1500)
 
     # Extract JSON from response
     cleaned = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`")
     steps = json.loads(cleaned)
+    if not isinstance(steps, list) or not steps or not all(isinstance(s, dict) for s in steps):
+        # Not a usable sequence → caller falls back to the (free) template path.
+        raise ValueError("AI returned no usable sequence steps")
 
     # Validate and normalize
     for i, step in enumerate(steps):

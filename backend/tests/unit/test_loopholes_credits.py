@@ -282,3 +282,122 @@ def test_c4_auto_chain_skips_enrichment_and_validation_without_credits(db_sessio
     scheduler._run_auto_chain(db_session, leads_inserted=5, tenant_id=test_tenant.tenant_id)
     assert "enrichment" not in calls and "validation" not in calls
     assert "enrollment" in calls  # free step still runs
+
+
+# ---------------------------------------------------------------------------
+# C1 / C8 — AI endpoint charges persist; only real AI output is charged
+# ---------------------------------------------------------------------------
+
+def _fake_adapter(monkeypatch, text):
+    adapter = MagicMock()
+    adapter._call_api.return_value = text
+    monkeypatch.setattr("app.services.adapters.ai_content.get_ai_adapter",
+                        lambda db, tenant_id=None: adapter)
+    return adapter
+
+
+_SEQ_JSON = ('[{"step_order":1,"subject":"Hi","body_html":"<p>a</p>","delay_days":0},'
+             '{"step_order":2,"subject":"Re","body_html":"<p>b</p>","delay_days":3}]')
+_ICP_JSON = ('{"industries":["Healthcare"],"job_titles":["HR Manager"],"states":["TX"],'
+             '"company_sizes":["51-200"],"rationale":"fit"}')
+
+
+def test_c1_sequence_generator_charge_is_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
+    _fake_adapter(monkeypatch, _SEQ_JSON)
+    r = client.post("/api/v1/sequence-generator/generate", headers=auth_headers,
+                    json={"goal": "book meetings", "product": "staffing", "num_steps": 2})
+    assert r.status_code == 200, r.text
+    db_session.rollback()  # anything the endpoint left uncommitted disappears here
+    rows = _usage(db_session, test_tenant.tenant_id, "ai_sequence")
+    assert len(rows) == 1 and rows[0].credits_used == cost_for("ai_sequence")
+
+
+def test_c1_sequence_template_fallback_is_free(client, db_session, test_tenant, auth_headers, monkeypatch):
+    monkeypatch.setattr("app.services.adapters.ai_content.get_ai_adapter",
+                        lambda db, tenant_id=None: None)
+    r = client.post("/api/v1/sequence-generator/generate", headers=auth_headers,
+                    json={"goal": "x", "product": "y"})
+    assert r.status_code == 200
+    assert _usage(db_session, test_tenant.tenant_id, "ai_sequence") == []
+
+
+def test_c1_sequence_generator_is_gated(client, db_session, test_tenant, auth_headers, monkeypatch):
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, cost_for("ai_sequence") - 1)
+    adapter = _fake_adapter(monkeypatch, _SEQ_JSON)
+    r = client.post("/api/v1/sequence-generator/generate", headers=auth_headers,
+                    json={"goal": "x", "product": "y"})
+    assert r.status_code == 402
+    adapter._call_api.assert_not_called()
+
+
+def test_c8_icp_wizard_ai_path_runs_and_charge_is_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
+    adapter = _fake_adapter(monkeypatch, _ICP_JSON)
+    r = client.post("/api/v1/icp/generate", headers=auth_headers, json={
+        "company_description": "staffing", "offering": "nurses", "pain_points": "shortage"})
+    assert r.status_code == 200, r.text
+    assert r.json()["ai_generated"] is True
+    assert r.json()["industries"] == ["Healthcare"]
+    adapter._call_api.assert_called_once()
+    db_session.rollback()
+    rows = _usage(db_session, test_tenant.tenant_id, "icp_wizard")
+    assert len(rows) == 1 and rows[0].credits_used == 10
+
+
+def test_c8_icp_rule_based_fallback_is_free(client, db_session, test_tenant, auth_headers, monkeypatch):
+    _fake_adapter(monkeypatch, "not json at all")
+    r = client.post("/api/v1/icp/generate", headers=auth_headers, json={
+        "company_description": "hospital staffing", "offering": "nurses", "pain_points": "x"})
+    assert r.status_code == 200
+    assert r.json()["ai_generated"] is False
+    assert _usage(db_session, test_tenant.tenant_id, "icp_wizard") == []
+
+
+def _preview_campaign(db, tenant_id, n_contacts=2):
+    from app.db.models.campaign import (
+        Campaign, CampaignContact, CampaignContactStatus, CampaignStatus, SequenceStep, StepType,
+    )
+    from app.db.models.contact import ContactDetails
+    camp = Campaign(tenant_id=tenant_id, name="Preview", status=CampaignStatus.DRAFT)
+    db.add(camp)
+    db.flush()
+    db.add(SequenceStep(campaign_id=camp.campaign_id, step_order=0, step_type=StepType.EMAIL,
+                        subject="Hi {{contact_first_name}}", body_html="<p>hello</p>"))
+    for i in range(n_contacts):
+        ct = ContactDetails(tenant_id=tenant_id, client_name="Acme", first_name=f"F{i}",
+                            last_name="L", email=f"p{i}@acme.example.com")
+        db.add(ct)
+        db.flush()
+        db.add(CampaignContact(campaign_id=camp.campaign_id, contact_id=ct.contact_id,
+                               status=CampaignContactStatus.ACTIVE, current_step=1))
+    db.commit()
+    return camp
+
+
+def _fake_personaliser(monkeypatch):
+    def _personalise(db, tenant_id, subject, body_html, body_text, contact, lead):
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "ai_personalization", reference_id=str(contact.contact_id))
+        return {"subject": subject, "body_html": body_html, "body_text": body_text,
+                "ai_used": True, "tokens_used": 10}
+    monkeypatch.setattr("app.services.ai_personalizer.personalize_email_for_contact", _personalise)
+
+
+def test_c1_preview_personalization_charges_are_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
+    camp = _preview_campaign(db_session, test_tenant.tenant_id, n_contacts=2)
+    _fake_personaliser(monkeypatch)
+    r = client.post("/api/v1/email-preview/preview-personalization", headers=auth_headers,
+                    json={"campaign_id": camp.campaign_id, "step_index": 0})
+    assert r.status_code == 200, r.text
+    db_session.rollback()
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 2
+
+
+def test_c1_preview_personalization_is_gated_on_batch_size(client, db_session, test_tenant, auth_headers, monkeypatch):
+    camp = _preview_campaign(db_session, test_tenant.tenant_id, n_contacts=3)
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 2)  # 3 contacts x 1 credit needed
+    _fake_personaliser(monkeypatch)
+    r = client.post("/api/v1/email-preview/preview-personalization", headers=auth_headers,
+                    json={"campaign_id": camp.campaign_id, "step_index": 0})
+    assert r.status_code == 402

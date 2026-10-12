@@ -21,30 +21,46 @@ def generate_icp(
         company_desc: Description of the user's company
         offering: What they sell / service they provide
         pain_points: Problems they solve for customers
-        db: Session, only needed to meter credits (optional — callers without a
-            session still get a profile, just an unmetered one)
-        tenant_id: Tenant to bill
+        db: Session — the AI adapter is configured per tenant in settings, so without
+            one only the rule-based profile is possible
+        tenant_id: Tenant whose AI settings are used and who is billed
 
     Returns:
-        {industries: [], job_titles: [], states: [], company_sizes: [], rationale: str}
+        {industries: [], job_titles: [], states: [], company_sizes: [], rationale: str,
+         ai_generated: bool}
     """
-    # Try AI-powered generation
-    try:
-        result = _generate_with_ai(company_desc, offering, pain_points)
-        # The rule-based fallback below is free — it costs us nothing to run, so
-        # billing 10 credits for it would be charging for our own outage.
-        if db is not None:
+    if db is not None:
+        try:
+            result = _generate_with_ai(company_desc, offering, pain_points, db, tenant_id)
+            # Charged only here, when the AI actually produced the profile. The
+            # rule-based fallback below is free — billing 10 credits for it would be
+            # charging for our own outage (C8).
             from app.services.credit_metering import meter
             meter(db, tenant_id, "icp_wizard")
-        return result
-    except Exception as e:
-        logger.warning("AI ICP generation failed, using rule-based fallback", error=str(e))
-        return _generate_rule_based(company_desc, offering, pain_points)
+            result["ai_generated"] = True
+            return result
+        except Exception as e:
+            logger.warning("AI ICP generation failed, using rule-based fallback", error=str(e))
+    result = _generate_rule_based(company_desc, offering, pain_points)
+    result["ai_generated"] = False
+    return result
 
 
-def _generate_with_ai(company_desc: str, offering: str, pain_points: str) -> Dict[str, Any]:
-    """Use AI adapter to generate ICP."""
+def _generate_with_ai(
+    company_desc: str,
+    offering: str,
+    pain_points: str,
+    db,
+    tenant_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Use AI adapter to generate ICP.
+
+    Before C8 this called ``get_ai_adapter()`` with no session (TypeError) and then a
+    ``generate_content`` method no adapter has, so the AI path never ran and every
+    request silently got the rule-based profile.
+    """
     from app.services.adapters.ai_content import get_ai_adapter
+    from app.services.ai_sequence_generator import call_adapter_text
 
     prompt = f"""You are a B2B sales strategist. Based on the following business description, generate an Ideal Customer Profile (ICP).
 
@@ -61,11 +77,10 @@ Return a JSON object with exactly these fields:
 
 Return ONLY the JSON object, no markdown or other text."""
 
-    adapter = get_ai_adapter()
-    response = adapter.generate_content(prompt=prompt, max_tokens=800)
-
-    # Parse JSON from response
-    text = response.get("content", "") if isinstance(response, dict) else str(response)
+    adapter = get_ai_adapter(db, tenant_id=tenant_id)
+    if adapter is None:
+        raise RuntimeError("No AI adapter configured")
+    text = call_adapter_text(adapter, prompt, max_tokens=800) or ""
 
     # Extract JSON from response (handle markdown code blocks)
     if "```json" in text:
@@ -79,6 +94,8 @@ Return ONLY the JSON object, no markdown or other text."""
         logger.warning("AI ICP response not valid JSON, falling back to rule-based",
                        error=str(e), raw_text=text[:200])
         raise ValueError(f"AI returned invalid JSON: {e}")
+    if not isinstance(result, dict):
+        raise ValueError("AI returned JSON that is not an object")
 
     # Validate required fields
     for field in ["industries", "job_titles", "states", "company_sizes", "rationale"]:

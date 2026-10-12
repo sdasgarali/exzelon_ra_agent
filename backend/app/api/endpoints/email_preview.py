@@ -531,6 +531,12 @@ def preview_personalization(
     if not contacts:
         raise HTTPException(400, "No contacts found for preview")
 
+    # One personalisation per contact, each charged by the personaliser only when the
+    # rewrite lands. Gate on the whole batch up front (C1).
+    from app.core.credit_costs import cost_for
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, tid, credits_needed=cost_for("ai_personalization", len(contacts), db=db))
+
     results = []
     for contact in contacts:
         # Load associated lead
@@ -613,6 +619,8 @@ def preview_personalization(
             "ai_error": ai_result.get("ai_error"),
         })
 
+    # Persist the personaliser's charges — `get_db` closes without committing (C1).
+    db.commit()
     return {"results": results, "campaign_id": campaign.campaign_id, "step_index": data.step_index}
 
 
