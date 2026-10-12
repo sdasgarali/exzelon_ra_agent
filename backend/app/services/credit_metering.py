@@ -81,11 +81,17 @@ def plan_credit_limit(plan: Optional[str], tenant=None) -> int:
 
 
 def month_usage(db: Session, tenant_id: int) -> float:
-    """Total credits used by a tenant in the current calendar month."""
+    """Total credits used by a tenant in the current calendar month.
+
+    Only consumption counts. Top-up grants are ledger rows with NEGATIVE credits;
+    summing them in understated usage and, when a tenant's first balance row was
+    seeded from this, turned purchased credits into monthly allowance.
+    """
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     q = db.query(func.sum(CreditUsage.credits_used)).filter(
         CreditUsage.is_archived == False,
         CreditUsage.recorded_at >= month_start,
+        CreditUsage.credits_used > 0,
     )
     q = tenant_filter(q, CreditUsage, tenant_id)
     return float(q.scalar() or 0)

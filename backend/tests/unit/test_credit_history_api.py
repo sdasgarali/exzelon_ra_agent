@@ -64,3 +64,15 @@ def test_usage_filters_by_type_and_date(client, db_session, test_tenant, auth_he
         "usage_type": "lead_sourced", "from_date": "2026-02-01", "to_date": "2026-02-28"})
     items = res.json()["items"]
     assert [i["credits_used"] for i in items] == [7]
+
+
+def test_month_usage_ignores_topup_grants(db_session, test_tenant):
+    """Found by browser QA: the meter showed 642 used while history showed 1,641.5,
+    because the -1,000 top-up row was netted against charges."""
+    from app.services.credit_metering import get_balance, month_usage
+    _row(db_session, test_tenant.tenant_id, "contact_enriched", 873)
+    _row(db_session, test_tenant.tenant_id, "topup_purchase", -1000)
+
+    assert month_usage(db_session, test_tenant.tenant_id) == 873
+    balance = get_balance(db_session, test_tenant.tenant_id)  # first row, seeded from ledger
+    assert balance.period_spent == 873
