@@ -1,7 +1,9 @@
 """Credit-metering loopholes (Plan_Credit_Loopholes.md, Agent C items C1-C8).
 
 Every test here pins a hole that let work happen without the tenant paying for it,
-or let a tenant spend past what it had. Each one fails on decc862.
+or let a tenant spend past what it had. Each item's core test fails on decc862; the
+few that pass there (template fallback free, unused allowance not rolled over, keyword
+classification free, first summary free, ...) guard the "don't over-charge" side.
 """
 from datetime import date
 from unittest.mock import MagicMock
@@ -288,6 +290,39 @@ def test_c4_auto_chain_skips_enrichment_and_validation_without_credits(db_sessio
 # C1 / C8 — AI endpoint charges persist; only real AI output is charged
 # ---------------------------------------------------------------------------
 
+def _track_commit_after_charge(monkeypatch, db):
+    """Record the order of credit spends and session commits during a request.
+
+    `db_session.rollback()` can't prove an endpoint committed: pysqlite's SAVEPOINT
+    handling (which `spend()` uses via begin_nested) effectively auto-commits on
+    SQLite, while on MySQL the uncommitted charge is discarded when `get_db` closes.
+    So assert the real contract: a commit happens *after* the charge.
+    """
+    import app.services.credit_metering as cm
+    events = []
+    real_spend = cm.spend
+
+    def _spend(*a, **k):
+        out = real_spend(*a, **k)
+        if out is not None:
+            events.append("charge")
+        return out
+
+    real_commit = db.commit
+
+    def _commit():
+        events.append("commit")
+        return real_commit()
+
+    monkeypatch.setattr(cm, "spend", _spend)
+    monkeypatch.setattr(db, "commit", _commit)
+    return events
+
+
+def _committed_after_charge(events):
+    return "charge" in events and "commit" in events[events.index("charge"):]
+
+
 def _fake_adapter(monkeypatch, text):
     adapter = MagicMock()
     adapter._call_api.return_value = text
@@ -304,10 +339,11 @@ _ICP_JSON = ('{"industries":["Healthcare"],"job_titles":["HR Manager"],"states":
 
 def test_c1_sequence_generator_charge_is_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
     _fake_adapter(monkeypatch, _SEQ_JSON)
+    events = _track_commit_after_charge(monkeypatch, db_session)
     r = client.post("/api/v1/sequence-generator/generate", headers=auth_headers,
                     json={"goal": "book meetings", "product": "staffing", "num_steps": 2})
     assert r.status_code == 200, r.text
-    db_session.rollback()  # anything the endpoint left uncommitted disappears here
+    assert _committed_after_charge(events), events
     rows = _usage(db_session, test_tenant.tenant_id, "ai_sequence")
     assert len(rows) == 1 and rows[0].credits_used == cost_for("ai_sequence")
 
@@ -333,13 +369,14 @@ def test_c1_sequence_generator_is_gated(client, db_session, test_tenant, auth_he
 
 def test_c8_icp_wizard_ai_path_runs_and_charge_is_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
     adapter = _fake_adapter(monkeypatch, _ICP_JSON)
+    events = _track_commit_after_charge(monkeypatch, db_session)
     r = client.post("/api/v1/icp/generate", headers=auth_headers, json={
         "company_description": "staffing", "offering": "nurses", "pain_points": "shortage"})
     assert r.status_code == 200, r.text
+    assert _committed_after_charge(events), events
     assert r.json()["ai_generated"] is True
     assert r.json()["industries"] == ["Healthcare"]
     adapter._call_api.assert_called_once()
-    db_session.rollback()
     rows = _usage(db_session, test_tenant.tenant_id, "icp_wizard")
     assert len(rows) == 1 and rows[0].credits_used == 10
 
@@ -386,10 +423,11 @@ def _fake_personaliser(monkeypatch):
 def test_c1_preview_personalization_charges_are_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
     camp = _preview_campaign(db_session, test_tenant.tenant_id, n_contacts=2)
     _fake_personaliser(monkeypatch)
+    events = _track_commit_after_charge(monkeypatch, db_session)
     r = client.post("/api/v1/email-preview/preview-personalization", headers=auth_headers,
                     json={"campaign_id": camp.campaign_id, "step_index": 0})
     assert r.status_code == 200, r.text
-    db_session.rollback()
+    assert _committed_after_charge(events), events
     assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 2
 
 
@@ -532,9 +570,10 @@ def test_c6_ai_rewrite_is_charged(db_session, test_tenant, sample_mailbox, monke
     db_session.add(draft)
     db_session.commit()
     _fake_adapter(monkeypatch, "SUBJECT: new\nBODY: <p>new</p>")
+    events = _track_commit_after_charge(monkeypatch, db_session)
     result = ai_rewrite_draft(draft.draft_id, db_session, test_tenant.tenant_id)
     assert result.get("ai_rewritten") is True
-    db_session.rollback()
+    assert _committed_after_charge(events), events
     assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 1
 
 
@@ -563,11 +602,12 @@ def _campaign_with_lead(db, tenant_id):
 def test_c6_subject_suggestions_use_ai_and_charge(client, db_session, test_tenant, auth_headers, monkeypatch):
     camp = _campaign_with_lead(db_session, test_tenant.tenant_id)
     _fake_adapter(monkeypatch, '{"subjects": ["Hi {{first_name}}", "Quick q for {{company}}"]}')
+    events = _track_commit_after_charge(monkeypatch, db_session)
     r = client.post(f"/api/v1/campaigns/{camp.campaign_id}/ai-suggest-subjects", headers=auth_headers)
     assert r.status_code == 200, r.text
     assert r.json()["source"] == "ai"
     assert r.json()["subjects"][0] == "Hi {{first_name}}"
-    db_session.rollback()
+    assert _committed_after_charge(events), events
     assert len(_usage(db_session, test_tenant.tenant_id, "ai_suggestion")) == 1
 
 
@@ -600,9 +640,10 @@ def test_c6_inbox_suggest_reply_is_charged_and_committed(client, db_session, tes
     contact = _contact(db_session, test_tenant.tenant_id)
     _thread(db_session, test_tenant.tenant_id, contact)
     _fake_adapter(monkeypatch, "Happy to share pricing — 15 minutes Thursday?")
+    events = _track_commit_after_charge(monkeypatch, db_session)
     r = client.post("/api/v1/inbox/threads/thr-c6/suggest-reply", headers=auth_headers)
     assert r.status_code == 200, r.text
-    db_session.rollback()
+    assert _committed_after_charge(events), events
     rows = _usage(db_session, test_tenant.tenant_id, "ai_reply")
     assert len(rows) == 1 and rows[0].credits_used == 2
 
