@@ -45,11 +45,6 @@ class TestB1SettingsLockdown:
         ("feature_campaigns_enabled", True),
         ("feature_outreach_enabled", True),
         ("credit_anything", 1),
-        ("ai_provider", "anthropic"),
-        ("ai_model", "claude-opus"),
-        ("warmup_ai_provider", "openai"),
-        ("openai_api_key", "sk-x"),
-        ("groq_api_key", "gsk-x"),
     ])
     def test_tenant_admin_cannot_set_platform_keys(self, client, db_session, auth_headers, test_tenant, key, value):
         r = client.put(f"{API}/settings/{key}", headers=auth_headers, json={"value": value})

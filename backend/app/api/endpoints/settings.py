@@ -867,18 +867,13 @@ async def get_setting(
 # A tenant admin (or a write-scoped API key acting as one) must never set or
 # clear them: e.g. `feature_email_validation_enabled=false` disables the
 # valid-only send gate, `credit_enforcement_enabled=false` turns off credit
-# checks, and `ai_provider`/`ai_model`/AI keys can route usage onto the
-# platform's paid keys.
+# checks. AI provider/model/keys stay tenant-writable (bring-your-own-key):
+# `services/adapters/ai_content.resolve_ai_config` ignores a tenant's provider or
+# model choice unless the tenant also supplied its own key, so it can never route
+# usage onto the platform's paid keys.
 SUPER_ADMIN_ONLY_SETTING_KEYS = frozenset({
     "role_permissions",
     "credit_enforcement_enabled",
-    "ai_provider",
-    "ai_model",
-    "warmup_ai_provider",
-    "groq_api_key",
-    "openai_api_key",
-    "anthropic_api_key",
-    "gemini_api_key",
 })
 SUPER_ADMIN_ONLY_SETTING_PREFIXES = ("feature_", "credit_")
 
