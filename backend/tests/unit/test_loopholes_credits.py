@@ -213,3 +213,72 @@ def test_c4_has_credit_budget(db_session, test_tenant, monkeypatch):
     assert has_credit_budget(db_session, tid, 5) is True
     assert has_credit_budget(db_session, tid, 50) is False
     assert has_credit_budget(db_session, None, 10**9) is True  # internal work
+
+
+# ---------------------------------------------------------------------------
+# C4 — scheduled pipelines check the tenant's budget first
+# ---------------------------------------------------------------------------
+
+def _scheduler_for(monkeypatch, tenant_id):
+    from app.services.warmup import scheduler
+    from tests.conftest import TestingSessionLocal
+    monkeypatch.setattr(scheduler, "_get_db", lambda: TestingSessionLocal())
+    monkeypatch.setattr(scheduler, "_get_active_tenant_ids", lambda: [tenant_id])
+    return scheduler
+
+
+def _record(calls, name, result=None):
+    def _fn(*a, **k):
+        calls.append(name)
+        return result if result is not None else {}
+    return _fn
+
+
+def test_c4_scheduled_sourcing_skipped_when_out_of_credits(db_session, test_tenant, monkeypatch):
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 1)
+    scheduler = _scheduler_for(monkeypatch, test_tenant.tenant_id)
+    calls = []
+    monkeypatch.setattr("app.services.pipelines.lead_sourcing.run_lead_sourcing_pipeline",
+                        _record(calls, "sourcing", {"inserted": 0}))
+    scheduler._job_lead_sourcing_run_inner()
+    assert calls == []
+
+
+def test_c4_scheduled_sourcing_runs_with_credits(db_session, test_tenant, monkeypatch):
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 1_000)
+    scheduler = _scheduler_for(monkeypatch, test_tenant.tenant_id)
+    calls = []
+    monkeypatch.setattr("app.services.pipelines.lead_sourcing.run_lead_sourcing_pipeline",
+                        _record(calls, "sourcing", {"inserted": 0}))
+    scheduler._job_lead_sourcing_run_inner()
+    assert calls == ["sourcing"]
+
+
+def test_c4_scheduled_sourcing_ignores_budget_when_enforcement_off(db_session, test_tenant, monkeypatch):
+    _set_available(db_session, test_tenant.tenant_id, -50)
+    scheduler = _scheduler_for(monkeypatch, test_tenant.tenant_id)
+    calls = []
+    monkeypatch.setattr("app.services.pipelines.lead_sourcing.run_lead_sourcing_pipeline",
+                        _record(calls, "sourcing", {"inserted": 0}))
+    scheduler._job_lead_sourcing_run_inner()
+    assert calls == ["sourcing"]
+
+
+def test_c4_auto_chain_skips_enrichment_and_validation_without_credits(db_session, test_tenant, monkeypatch):
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 2)
+    from app.services.warmup import scheduler
+    monkeypatch.setattr("app.core.settings_resolver.get_tenant_setting_bool",
+                        lambda *a, **k: True)
+    calls = []
+    monkeypatch.setattr("app.services.pipelines.contact_enrichment.run_contact_enrichment_pipeline",
+                        _record(calls, "enrichment"))
+    monkeypatch.setattr("app.services.pipelines.email_validation.run_email_validation_pipeline",
+                        _record(calls, "validation"))
+    monkeypatch.setattr("app.services.auto_enrollment.run_auto_enrollment",
+                        _record(calls, "enrollment", {"total_enrolled": 0}))
+    scheduler._run_auto_chain(db_session, leads_inserted=5, tenant_id=test_tenant.tenant_id)
+    assert "enrichment" not in calls and "validation" not in calls
+    assert "enrollment" in calls  # free step still runs
