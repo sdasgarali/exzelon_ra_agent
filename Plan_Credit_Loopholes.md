@@ -22,27 +22,27 @@ Approved by user 2026-10-12 ("yes fix all of them").
 Owns: `services/pipelines/contact_enrichment.py`, `services/pipelines/lead_sourcing.py`,
 `services/pipelines/email_validation.py`, `services/intent_signal_monitor.py`,
 `services/company_enrichment.py`, new `tests/unit/test_loopholes_pipelines.py`.
-- [ ] A1 `_reuse_existing_contacts` + `_auto_enrich_company_siblings`: filter by `tenant_id` (CRITICAL leak)
-- [ ] A2 Enrichment meters only newly discovered contacts (`contacts_found - contacts_reused`)
-- [ ] A3 Per-row `begin_nested()` savepoints instead of full `db.rollback()` (lead sourcing + enrichment) so counters match stored rows
-- [ ] A4 Meter incrementally at checkpoint commits so crashed/partial runs are billed for what was stored (sourcing, enrichment, validation) — no double charge
-- [ ] A5 Intent scan: also meter `lead_sourced` for leads it creates
-- [ ] A6 company_enrichment: meter LLM `research_company` calls; cache firmographics for dropped companies so they are not re-bought; stop re-calling forever on permanently-null fields
-- [ ] A7 Scheduler-independent: pipelines accept and honour a budget check hook? → NO (C owns scheduler); A only fixes metering.
+- [x] A1 `_reuse_existing_contacts` + `_auto_enrich_company_siblings`: filter by `tenant_id` (CRITICAL leak)
+- [x] A2 Enrichment meters only newly discovered contacts (`contacts_found - contacts_reused`)
+- [x] A3 Per-row `begin_nested()` savepoints instead of full `db.rollback()` (lead sourcing + enrichment) so counters match stored rows
+- [x] A4 Meter incrementally at checkpoint commits so crashed/partial runs are billed for what was stored (sourcing, enrichment, validation) — no double charge
+- [x] A5 Intent scan: also meter `lead_sourced` for leads it creates
+- [x] A6 company_enrichment: meter LLM `research_company` calls; cache firmographics for dropped companies so they are not re-bought; stop re-calling forever on permanently-null fields
+- [x] A7 Scheduler-independent: pipelines accept and honour a budget check hook? → NO (C owns scheduler); A only fixes metering.
 
 ### Agent B — entry points, settings, send gate, signup
 Owns: `api/endpoints/settings.py`, `api/endpoints/contacts.py`, `schemas/contact.py`,
 `api/endpoints/lead_search.py`, `core/api_key_scopes.py`, `api/endpoints/leads.py`,
 `services/send_gate.py`, `api/endpoints/auth.py`, `schemas/tenant.py`, `schemas/sender_mailbox.py`,
 `services/pipelines/outreach.py`, rate-limiter module, new `tests/unit/test_loopholes_entrypoints.py`.
-- [ ] B1 `PUT /settings/{key}`: super-admin-only denylist for feature flags, credit enforcement, AI provider/model/keys, cooldown/caps floors (validate ranges)
-- [ ] B2 `is_test` / `validation_status` writable only by super admin
-- [ ] B3 `/leads/database-search`: budget gate, meter `contact_enriched` per result, remove from read-only API-key list
-- [ ] B4 CSV / Google-Sheet import: admin/BDM only, plan-limit check for row count, row cap
-- [ ] B5 send gate: block `billing_suspended` tenants; validation-result lookup scoped to tenant
-- [ ] B6 Signup: normalise email (lowercase, strip `+tag` for duplicate check), block disposable domains, rate limiter on shared Redis storage when available
-- [ ] B7 Mailbox `daily_send_limit` upper bound; outreach pipeline clamps it
-- [ ] B8 Notification test-send: rate limit + restrict recipient to the caller's own email
+- [x] B1 `PUT /settings/{key}`: super-admin-only denylist for feature flags, credit enforcement, AI provider/model/keys, cooldown/caps floors (validate ranges)
+- [x] B2 `is_test` / `validation_status` writable only by super admin
+- [x] B3 `/leads/database-search`: budget gate, meter `contact_enriched` per result, remove from read-only API-key list
+- [x] B4 CSV / Google-Sheet import: admin/BDM only, plan-limit check for row count, row cap
+- [x] B5 send gate: block `billing_suspended` tenants; validation-result lookup scoped to tenant
+- [x] B6 Signup: normalise email (lowercase, strip `+tag` for duplicate check), block disposable domains, rate limiter on shared Redis storage when available
+- [x] B7 Mailbox `daily_send_limit` upper bound; outreach pipeline clamps it
+- [x] B8 Notification test-send: rate limit + restrict recipient to the caller's own email
 
 ### Agent C — credit engine, scheduler, AI metering, Stripe
 Owns: `services/credit_metering.py`, `core/credit_costs.py`, `api/deps/auth.py` (budget dep only),
@@ -52,14 +52,14 @@ Owns: `services/credit_metering.py`, `core/credit_costs.py`, `api/deps/auth.py` 
 `api/endpoints/inbox.py`, `services/ai_sentiment.py`, `services/ai_reply_agent*.py`,
 `services/pipeline_summary.py`, `api/endpoints/billing.py`, `api/endpoints/clients.py`,
 new `tests/unit/test_loopholes_credits.py`.
-- [ ] C1 Charges actually persist: commit at AI endpoints (sequence, ICP, preview-personalization)
-- [ ] C2 Gate on estimated cost (`credits_needed`) for pipeline runs; budget gate on sequence-generator + preview
-- [ ] C3 Carry negative balance forward on monthly refill
-- [ ] C4 Scheduler: per-tenant `check_credit_budget` before scheduled sourcing/enrichment/validation (skip, log)
-- [ ] C5 Lock balance in refill paths (`get_balance(lock=True)`)
-- [ ] C6 Meter unmetered AI: outreach drafting, AI rewrite, spam-fix suggestions, subject/name suggestions, suggest-reply, sentiment, reply-agent early returns, pipeline summary regenerate, clients bulk enrich endpoints (gate)
-- [ ] C7 Stripe top-up: grant only when `payment_status == "paid"`; handle `async_payment_succeeded`
-- [ ] C8 Fix `ai_icp_wizard` `get_ai_adapter()` call missing `db`
+- [x] C1 Charges actually persist: commit at AI endpoints (sequence, ICP, preview-personalization)
+- [x] C2 Gate on estimated cost (`credits_needed`) for pipeline runs; budget gate on sequence-generator + preview
+- [x] C3 Carry negative balance forward on monthly refill
+- [x] C4 Scheduler: per-tenant `check_credit_budget` before scheduled sourcing/enrichment/validation (skip, log)
+- [x] C5 Lock balance in refill paths (`get_balance(lock=True)`)
+- [x] C6 Meter unmetered AI: outreach drafting, AI rewrite, spam-fix suggestions, subject/name suggestions, suggest-reply, sentiment, reply-agent early returns, pipeline summary regenerate, clients bulk enrich endpoints (gate)
+- [x] C7 Stripe top-up: grant only when `payment_status == "paid"`; handle `async_payment_succeeded`
+- [x] C8 Fix `ai_icp_wizard` `get_ai_adapter()` call missing `db`
 
 ### Main session — credit meter + history (user request 2026-10-12)
 Owns: `api/endpoints/credits.py`, frontend `components/credit-meter.tsx`, `lib/credit-ledger.ts`,
