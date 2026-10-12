@@ -401,3 +401,92 @@ def test_c1_preview_personalization_is_gated_on_batch_size(client, db_session, t
     r = client.post("/api/v1/email-preview/preview-personalization", headers=auth_headers,
                     json={"campaign_id": camp.campaign_id, "step_index": 0})
     assert r.status_code == 402
+
+
+# ---------------------------------------------------------------------------
+# C7 — Stripe top-ups granted only once the money has actually arrived
+# ---------------------------------------------------------------------------
+
+def _stripe_returns(monkeypatch, event):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_test", raising=False)
+    import stripe
+    monkeypatch.setattr(stripe.Webhook, "construct_event", lambda *a, **k: event, raising=True)
+
+
+def _topup_event(event_id, tenant_id, etype="checkout.session.completed",
+                 payment_status="paid", session_id="cs_topup_1", credits=1000):
+    return {
+        "id": event_id, "type": etype,
+        "data": {"object": {
+            "id": session_id, "payment_status": payment_status, "amount_total": 1000,
+            "metadata": {"purpose": "credit_topup", "tenant_id": str(tenant_id),
+                         "credits": str(credits)},
+        }},
+    }
+
+
+def _post_webhook(client):
+    return client.post("/api/v1/billing/webhook/stripe", content=b"{}",
+                       headers={"stripe-signature": "t=1,v1=x"})
+
+
+def _lots(db, tenant_id):
+    from app.db.models.credit_topup_lot import CreditTopupLot
+    db.expire_all()
+    return db.query(CreditTopupLot).filter(CreditTopupLot.tenant_id == tenant_id).all()
+
+
+def test_c7_unpaid_checkout_grants_nothing(client, db_session, test_tenant, monkeypatch):
+    _stripe_returns(monkeypatch, _topup_event("evt_u1", test_tenant.tenant_id, payment_status="unpaid"))
+    assert _post_webhook(client).status_code == 200
+    assert _lots(db_session, test_tenant.tenant_id) == []
+
+
+def test_c7_async_payment_succeeded_grants_once(client, db_session, test_tenant, monkeypatch):
+    tid = test_tenant.tenant_id
+    _stripe_returns(monkeypatch, _topup_event("evt_a1", tid, payment_status="unpaid"))
+    _post_webhook(client)
+    _stripe_returns(monkeypatch, _topup_event(
+        "evt_a2", tid, etype="checkout.session.async_payment_succeeded"))
+    assert _post_webhook(client).status_code == 200
+    lots = _lots(db_session, tid)
+    assert len(lots) == 1 and lots[0].credits_purchased == 1000
+
+
+def test_c7_same_session_cannot_be_granted_by_both_events(client, db_session, test_tenant, monkeypatch):
+    tid = test_tenant.tenant_id
+    _stripe_returns(monkeypatch, _topup_event("evt_b1", tid, payment_status="paid"))
+    _post_webhook(client)
+    _stripe_returns(monkeypatch, _topup_event(
+        "evt_b2", tid, etype="checkout.session.async_payment_succeeded"))
+    _post_webhook(client)
+    assert len(_lots(db_session, tid)) == 1
+    assert get_balance(db_session, tid).topup_credits == 1000
+
+
+def test_c7_unpaid_invoice_checkout_is_not_marked_paid(client, db_session, test_tenant, monkeypatch):
+    from app.db.models.invoice import Invoice, InvoiceStatus
+    inv = Invoice(tenant_id=test_tenant.tenant_id, invoice_number="INV-2026-7001",
+                  period_start=date(2026, 1, 1), period_end=date(2026, 1, 31),
+                  due_date=date(2026, 2, 5), subtotal_cents=5000, tax_cents=0,
+                  total_cents=5000, currency="USD", status=InvoiceStatus.SENT)
+    db_session.add(inv)
+    db_session.commit()
+
+    def _evt(eid, etype, ps):
+        return {"id": eid, "type": etype, "data": {"object": {
+            "id": "cs_inv", "payment_intent": "pi_x", "amount_total": 5000, "payment_status": ps,
+            "metadata": {"invoice_id": str(inv.invoice_id), "tenant_id": str(test_tenant.tenant_id)},
+        }}}
+
+    _stripe_returns(monkeypatch, _evt("evt_i1", "checkout.session.completed", "unpaid"))
+    assert _post_webhook(client).status_code == 200
+    db_session.expire_all()
+    assert db_session.get(Invoice, inv.invoice_id).status == InvoiceStatus.SENT
+
+    _stripe_returns(monkeypatch, _evt("evt_i2", "checkout.session.async_payment_succeeded", "paid"))
+    assert _post_webhook(client).status_code == 200
+    db_session.expire_all()
+    assert db_session.get(Invoice, inv.invoice_id).status == InvoiceStatus.PAID
