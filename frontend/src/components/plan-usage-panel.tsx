@@ -2,10 +2,20 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Coins, Send, ArrowUpRight, Plus, Check, Loader2 } from 'lucide-react'
-import { billingApi } from '@/lib/api'
+import { Coins, Send, ArrowUpRight, Plus, Check, Loader2, Mail } from 'lucide-react'
+import { billingApi, getApiError } from '@/lib/api'
+import { useSiteInfo } from '@/lib/use-site-info'
 import type { UsageResponse } from './usage-meters'
 import { useToast } from './toast'
+
+/** mailto: link to our team with the request pre-filled. Used while online payments are
+ *  off: the custom-quote API only accepts requests *above* Max, so a Pro upgrade or a
+ *  credit top-up is requested by email instead and set up for the customer by hand. */
+export function requestMailto(to: string, subject: string, body: string): string {
+  return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
+
+export const PAYMENTS_OFF_NOTE = "Online payments open soon — we'll set it up for you."
 
 /**
  * Plan & usage panel for the billing page.
@@ -66,6 +76,7 @@ function MeterRow({
 export default function PlanUsagePanel() {
   const qc = useQueryClient()
   const { toast } = useToast()
+  const { payments_enabled: paymentsEnabled, support_email: supportEmail } = useSiteInfo()
   const [annual, setAnnual] = useState(false)
   const [blocks, setBlocks] = useState(1)
   const [showCustom, setShowCustom] = useState(false)
@@ -83,20 +94,18 @@ export default function PlanUsagePanel() {
     mutationFn: () => billingApi.subscribe({ plan: data?.plan?.upgrade_to || undefined, annual }),
     onSuccess: (res) => {
       if (res?.checkout_url) window.location.href = res.checkout_url
-      else toast('error', 'Checkout is not configured yet. Contact support.')
+      else toast('error', `Checkout is not available yet. Email ${supportEmail} and we'll set it up.`)
     },
-    onError: (e: any) =>
-      toast('error', e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Upgrade failed'),
+    onError: (e: any) => toast('error', getApiError(e, 'Upgrade failed')),
   })
 
   const topup = useMutation({
     mutationFn: () => billingApi.buyCredits(blocks),
     onSuccess: (res) => {
       if (res?.checkout_url) window.location.href = res.checkout_url
-      else toast('error', 'Credit top-ups are not configured yet. Contact support.')
+      else toast('error', `Credit top-ups are not available yet. Email ${supportEmail} and we'll set it up.`)
     },
-    onError: (e: any) =>
-      toast('error', e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Top-up failed'),
+    onError: (e: any) => toast('error', getApiError(e, 'Top-up failed')),
   })
 
   const quote = useMutation({
@@ -115,8 +124,7 @@ export default function PlanUsagePanel() {
       setShowCustom(false)
       qc.invalidateQueries({ queryKey: ['billing-usage'] })
     },
-    onError: (e: any) =>
-      toast('error', e?.response?.data?.detail?.message || e?.response?.data?.detail || 'Could not send that request'),
+    onError: (e: any) => toast('error', getApiError(e, 'Could not send that request')),
   })
 
   if (isLoading) {
@@ -158,7 +166,24 @@ export default function PlanUsagePanel() {
           </p>
         </div>
 
-        {plan.upgrade_to && (
+        {plan.upgrade_to && !paymentsEnabled && (
+          <div className="flex flex-col items-end gap-1">
+            <a
+              href={requestMailto(
+                supportEmail,
+                `Upgrade request: ${plan.label} to ${plan.upgrade_label}`,
+                `Hi NeuraLeads team,\n\nPlease upgrade our workspace from the ${plan.label} plan to ${plan.upgrade_label}.\n\nThanks!`,
+              )}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <Mail className="h-4 w-4" aria-hidden="true" />
+              Request upgrade
+            </a>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{PAYMENTS_OFF_NOTE}</p>
+          </div>
+        )}
+
+        {plan.upgrade_to && paymentsEnabled && (
           <div className="flex items-center gap-3">
             <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
               <input
@@ -222,15 +247,33 @@ export default function PlanUsagePanel() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => topup.mutate()}
-              disabled={topup.isPending}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              {topup.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Buy credits
-            </button>
+            {paymentsEnabled ? (
+              <button
+                onClick={() => topup.mutate()}
+                disabled={topup.isPending}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {topup.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Buy credits
+              </button>
+            ) : (
+              <a
+                href={requestMailto(
+                  supportEmail,
+                  `Credit top-up request: ${fmt(blocks * topupOffer.block_size)} credits`,
+                  `Hi NeuraLeads team,\n\nPlease add ${fmt(blocks * topupOffer.block_size)} credits ` +
+                    `($${fmt((blocks * topupOffer.block_price_cents) / 100)}) to our ${plan.label} workspace.\n\nThanks!`,
+                )}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <Mail className="h-4 w-4" aria-hidden="true" />
+                Request credits
+              </a>
+            )}
           </div>
+          {!paymentsEnabled && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{PAYMENTS_OFF_NOTE}</p>
+          )}
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Purchased credits are used after your monthly allowance and are valid for{' '}
             {Math.round(topupOffer.validity_days / 30.4)} months.

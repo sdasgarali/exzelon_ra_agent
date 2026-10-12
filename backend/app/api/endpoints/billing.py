@@ -19,6 +19,21 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
+# What a customer sees when Stripe isn't set up. The developer detail (which STRIPE_*
+# key is missing) goes to the server log only — never to the browser.
+PAYMENTS_UNAVAILABLE_MESSAGE = (
+    "Online payments aren't available yet. Use 'Request upgrade' and our team will set it up."
+)
+INVOICE_PAYMENTS_UNAVAILABLE_MESSAGE = (
+    "Online payments aren't available yet. Contact support and our team will help you pay this invoice."
+)
+
+
+def _payments_unavailable(dev_detail: str, *, message: str = PAYMENTS_UNAVAILABLE_MESSAGE, **log_ctx) -> HTTPException:
+    """Log the configuration gap for us; return a user-safe 503 for the customer."""
+    logger.warning("stripe_not_configured", detail=dev_detail, **log_ctx)
+    return HTTPException(status_code=503, detail=message)
+
 
 # ─── Pydantic models ────────────────────────────────────────────────────────
 
@@ -559,7 +574,10 @@ def initiate_payment(
         raise HTTPException(status_code=400, detail="Tenant context required")
 
     if not settings.STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=400, detail="Online payments are not configured")
+        raise _payments_unavailable(
+            "STRIPE_SECRET_KEY not set; invoice payment unavailable",
+            message=INVOICE_PAYMENTS_UNAVAILABLE_MESSAGE, tenant_id=tenant_id,
+        )
 
     invoice = db.query(Invoice).filter(
         Invoice.invoice_id == invoice_id,
@@ -689,12 +707,15 @@ def subscription_checkout(
     price_id = price_id_for_plan(plan, annual=req.annual)
     if not price_id:
         term = "annual" if req.annual else "monthly"
-        raise HTTPException(
-            status_code=400,
-            detail=f"No Stripe {term} price configured for plan '{plan}'. Set STRIPE_PRICE_* first.",
+        raise _payments_unavailable(
+            f"No Stripe {term} price configured for plan '{plan}'. Set STRIPE_PRICE_* first.",
+            tenant_id=tenant_id, plan=plan,
         )
     if not settings.STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=400, detail="Online payments are not configured")
+        raise _payments_unavailable(
+            "STRIPE_SECRET_KEY not set; subscription checkout unavailable",
+            tenant_id=tenant_id, plan=plan,
+        )
 
     from app.services.billing.payment_gateway import get_payment_gateway
     base_url = settings.EFFECTIVE_BASE_URL
@@ -845,12 +866,14 @@ def buy_credit_topup(
 
     price_id = settings.STRIPE_PRICE_CREDIT_TOPUP
     if not price_id:
-        raise HTTPException(
-            status_code=400,
-            detail="No Stripe price configured for credit top-ups. Set STRIPE_PRICE_CREDIT_TOPUP.",
+        raise _payments_unavailable(
+            "No Stripe price configured for credit top-ups. Set STRIPE_PRICE_CREDIT_TOPUP.",
+            tenant_id=tenant_id,
         )
     if not settings.STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=400, detail="Online payments are not configured")
+        raise _payments_unavailable(
+            "STRIPE_SECRET_KEY not set; credit top-up unavailable", tenant_id=tenant_id,
+        )
 
     credits = req.blocks * settings.CREDIT_TOPUP_BLOCK_SIZE
     base_url = settings.EFFECTIVE_BASE_URL
