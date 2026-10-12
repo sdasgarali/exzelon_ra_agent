@@ -772,10 +772,12 @@ def _auto_enrich_new_leads(db, leads, tenant_id=None) -> int:
         if lead.first_name or not lead.client_name:
             continue
 
-        # Check company contact cache (only query DB once per company)
+        # Check company contact cache (only query DB once per company). Scoped to the
+        # lead's own tenant — another tenant's contacts are never a cache for this one.
         if lead.client_name not in checked_companies:
             has_contacts = db.query(ContactDetails).filter(
-                ContactDetails.client_name == lead.client_name
+                ContactDetails.tenant_id == lead.tenant_id,
+                ContactDetails.client_name == lead.client_name,
             ).first() is not None
             checked_companies[lead.client_name] = has_contacts
 
@@ -856,6 +858,28 @@ def run_lead_sourcing_pipeline(
     )
     db.add(job_run)
     db.commit()
+
+    # Incremental metering. Leads are committed at every progress checkpoint and
+    # once more before auto-enrich/export; each of those commits bills the leads it
+    # stores (call immediately BEFORE the commit, so the charge and the rows land
+    # in the same transaction). `metered` guarantees nothing is billed twice. Only
+    # leads that were actually STORED are billed — after dedup and the ICP gates;
+    # charging on fetched rows would bill the ~90% we throw away.
+    metered = {"leads": 0}
+    run_id_for_billing = job_run.run_id
+
+    def _meter_inserted(upto: Optional[int] = None) -> None:
+        target = counters["inserted"] if upto is None else upto
+        delta = int(target or 0) - metered["leads"]
+        if delta <= 0:
+            return
+        try:
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "lead_sourced", delta,
+                  reference_id=str(job_run.run_id))
+        except Exception as meter_err:  # metering must never break the pipeline
+            logger.warning(f"Failed to meter lead-sourcing credits: {meter_err}")
+        metered["leads"] += delta
 
     try:
         logger.info("Starting multi-source lead sourcing pipeline", requested_sources=sources)
@@ -1246,47 +1270,63 @@ def run_lead_sourcing_pipeline(
                 logger.info("Lead sourcing cancelled by user", processed=idx)
                 break
 
-            # Update progress every 10 items
+            # Update progress every 10 items. Leads are committed here, so they
+            # are billed in the same transaction (see _meter_inserted).
             if total_unique > 0 and idx % 10 == 0:
                 job_run.progress_pct = int((idx / total_unique) * 100)
+                _meter_inserted()
                 db.commit()
 
             try:
-                # Create new lead
-                lead = LeadDetails(
-                    tenant_id=tenant_id or 1,
-                    client_name=job_data["client_name"],
-                    job_title=job_data["job_title"],
-                    state=job_data.get("state"),
-                    posting_date=job_data.get("posting_date"),
-                    job_link=job_data.get("job_link"),
-                    salary_min=job_data.get("salary_min"),
-                    salary_max=job_data.get("salary_max"),
-                    source=", ".join(job_data.get("all_sources", [job_data.get("source", "unknown")])),
-                    employment_type=job_data.get("employment_type") or None,
-                    lead_status=LeadStatus.NEW,  # NEW status allows contact enrichment to pick it up
-                    # Pre-populate contact info if available from Coresignal
-                    first_name=job_data.get("contact_first_name"),
-                    last_name=job_data.get("contact_last_name"),
-                    contact_email=job_data.get("contact_email"),
-                    contact_title=job_data.get("contact_title"),
-                    # Enhanced dedup fields
-                    external_job_id=job_data.get("external_job_id") or None,
-                    city=job_data.get("city") or None,
-                    employer_linkedin_url=job_data.get("employer_linkedin_url") or None,
-                    employer_website=job_data.get("employer_website") or None,
-                    industry=job_data.get("industry") or None,
-                    company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
-                    run_id=job_run.run_id,
-                    lob_id=lob_id,
-                    metadata_json=json.dumps(job_data["metadata"]) if job_data.get("metadata") else None,
-                )
-                db.add(lead)
-                # Flush immediately to catch IntegrityError per-lead
-                # (e.g. duplicate job_link) before the session is poisoned
-                db.flush()
+                # Per-job SAVEPOINT: a failure (duplicate job_link, bad data) undoes
+                # only this job's rows. The old db.rollback() discarded every lead
+                # flushed since the last checkpoint while `inserted` still counted
+                # them — and the tenant was billed for leads that did not exist.
+                with db.begin_nested():
+                    # Create new lead
+                    lead = LeadDetails(
+                        tenant_id=tenant_id or 1,
+                        client_name=job_data["client_name"],
+                        job_title=job_data["job_title"],
+                        state=job_data.get("state"),
+                        posting_date=job_data.get("posting_date"),
+                        job_link=job_data.get("job_link"),
+                        salary_min=job_data.get("salary_min"),
+                        salary_max=job_data.get("salary_max"),
+                        source=", ".join(job_data.get("all_sources", [job_data.get("source", "unknown")])),
+                        employment_type=job_data.get("employment_type") or None,
+                        lead_status=LeadStatus.NEW,  # NEW status allows contact enrichment to pick it up
+                        # Pre-populate contact info if available from Coresignal
+                        first_name=job_data.get("contact_first_name"),
+                        last_name=job_data.get("contact_last_name"),
+                        contact_email=job_data.get("contact_email"),
+                        contact_title=job_data.get("contact_title"),
+                        # Enhanced dedup fields
+                        external_job_id=job_data.get("external_job_id") or None,
+                        city=job_data.get("city") or None,
+                        employer_linkedin_url=job_data.get("employer_linkedin_url") or None,
+                        employer_website=job_data.get("employer_website") or None,
+                        industry=job_data.get("industry") or None,
+                        company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
+                        run_id=job_run.run_id,
+                        lob_id=lob_id,
+                        metadata_json=json.dumps(job_data["metadata"]) if job_data.get("metadata") else None,
+                    )
+                    db.add(lead)
+                    # Flush immediately to catch IntegrityError per-lead
+                    db.flush()
 
-                # Only increment counters AFTER flush succeeds
+                    # Upsert client_info with normalized name + enrichment data
+                    upsert_client(
+                        db, job_data["client_name"],
+                        employer_website=job_data.get("employer_website"),
+                        employer_linkedin_url=job_data.get("employer_linkedin_url"),
+                        tenant_id=tenant_id,
+                        industry=job_data.get("industry"),
+                        company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
+                    )
+
+                # Only count the row once its savepoint has been released.
                 counters["inserted"] += 1
                 newly_inserted_leads.append(lead)
 
@@ -1299,24 +1339,13 @@ def run_lead_sourcing_pipeline(
                 if sub_src in per_sub_source_detail:
                     per_sub_source_detail[sub_src]["new"] += 1
 
-                # Upsert client_info with normalized name + enrichment data
-                upsert_client(
-                    db, job_data["client_name"],
-                    employer_website=job_data.get("employer_website"),
-                    employer_linkedin_url=job_data.get("employer_linkedin_url"),
-                    tenant_id=tenant_id,
-                    industry=job_data.get("industry"),
-                    company_size=str(job_data.get("company_size", "")) if job_data.get("company_size") else None,
-                )
-
             except Exception as e:
-                # Rollback to reset the session after IntegrityError or any
-                # other DB error — without this, the session stays broken and
-                # ALL subsequent operations fail
-                db.rollback()
-                logger.warning("Error processing job (rolled back)", error=str(e), job=job_data.get("client_name"))
+                logger.warning("Error processing job (row rolled back)", error=str(e), job=job_data.get("client_name"))
                 counters["errors"] += 1
 
+        # Leads are committed here — before auto-enrich / export, which can still
+        # raise — so bill them in this same commit.
+        _meter_inserted()
         db.commit()
 
         # Auto-enrich newly inserted leads from existing company contacts
@@ -1363,12 +1392,9 @@ def run_lead_sourcing_pipeline(
             "api_diagnostics": api_diagnostics_list,
         })
 
-        # Meter credits on leads that were actually STORED — after dedup and the ICP
-        # gates. Charging on fetched rows would bill the customer for the ~90% we
-        # throw away, and for duplicates they already paid for on an earlier run.
-        from app.services.credit_metering import meter
-        meter(db, tenant_id, "lead_sourced", counters["inserted"],
-              reference_id=str(job_run.run_id))
+        # Already billed at the checkpoints and the commit after the insert loop; a
+        # no-op unless something was inserted since.
+        _meter_inserted()
 
         db.commit()
 
@@ -1388,6 +1414,18 @@ def run_lead_sourcing_pipeline(
         #   3. If that still fails, use a fresh session as last resort
         try:
             db.rollback()
+            # Bill any leads that were committed but not yet metered (e.g. by a
+            # commit outside the metered checkpoints) — exactly once. Counting the
+            # stored rows, not `inserted`, because the rollback above just discarded
+            # whatever had been flushed but not committed.
+            try:
+                committed = db.query(LeadDetails).filter(
+                    LeadDetails.run_id == run_id_for_billing
+                ).count()
+                _meter_inserted(upto=committed)
+            except Exception as bill_err:
+                logger.warning("Could not reconcile lead-sourcing credits on failure",
+                               error=str(bill_err))
             job_run.status = JobStatus.FAILED
             job_run.error_message = str(e)[:500]
             job_run.ended_at = datetime.utcnow()
@@ -1650,105 +1688,120 @@ def _apply_company_gate(
 def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None, industry: str = None, company_size: str = None):
     """Create or update client_info record with normalized matching."""
     try:
-        # Try exact match first (scoped to tenant)
-        q = db.query(ClientInfo).filter(ClientInfo.client_name == client_name)
-        if tenant_id is not None:
-            q = q.filter(ClientInfo.tenant_id == tenant_id)
-        client = q.first()
-
-        # If not found, try normalized match
-        if not client:
-            normalized = normalize_company_name(client_name)
-            cq = db.query(ClientInfo)
+        with db.begin_nested():  # SAVEPOINT: a failure undoes only this upsert
+            # Try exact match first (scoped to tenant)
+            q = db.query(ClientInfo).filter(ClientInfo.client_name == client_name)
             if tenant_id is not None:
-                cq = cq.filter(ClientInfo.tenant_id == tenant_id)
-            all_clients = cq.all()
-            for c in all_clients:
-                if normalize_company_name(c.client_name) == normalized:
-                    client = c
-                    break
+                q = q.filter(ClientInfo.tenant_id == tenant_id)
+            client = q.first()
 
-        if not client:
-            client = ClientInfo(
-                tenant_id=tenant_id or 1,
-                client_name=client_name,
-                status=ClientStatus.ACTIVE,
-                start_date=date.today(),
-                service_count=1,
-                client_category=ClientCategory.PROSPECT,
-            )
-            # Populate enrichment fields from lead data
-            if employer_website:
-                client.website = employer_website
-                client.domain = _extract_domain(employer_website)
-            if employer_linkedin_url:
-                client.linkedin_url = employer_linkedin_url
-            if industry:
-                client.industry = industry
-            if company_size:
-                client.company_size = company_size
-            db.add(client)
-            db.flush()
-        else:
-            client.service_count = (client.service_count or 0) + 1
+            # If not found, try normalized match
+            if not client:
+                normalized = normalize_company_name(client_name)
+                cq = db.query(ClientInfo)
+                if tenant_id is not None:
+                    cq = cq.filter(ClientInfo.tenant_id == tenant_id)
+                all_clients = cq.all()
+                for c in all_clients:
+                    if normalize_company_name(c.client_name) == normalized:
+                        client = c
+                        break
 
-            # Backfill missing website/linkedin from lead data
-            if employer_website and not client.website:
-                client.website = employer_website
-                if not client.domain:
+            if not client:
+                client = ClientInfo(
+                    tenant_id=tenant_id or 1,
+                    client_name=client_name,
+                    status=ClientStatus.ACTIVE,
+                    start_date=date.today(),
+                    service_count=1,
+                    client_category=ClientCategory.PROSPECT,
+                )
+                # Populate enrichment fields from lead data
+                if employer_website:
+                    client.website = employer_website
                     client.domain = _extract_domain(employer_website)
-            if employer_linkedin_url and not client.linkedin_url:
-                client.linkedin_url = employer_linkedin_url
-            if industry and not client.industry:
-                client.industry = industry
-            if company_size and not client.company_size:
-                client.company_size = company_size
-
-            # Compute client category based on posting frequency
-            # Read thresholds from settings DB (same keys as clients endpoint)
-            window_days = 90
-            regular_threshold = 3
-            occasional_threshold = 0
-            for row in db.query(Settings).filter(Settings.key.in_([
-                "category_window_days", "category_regular_threshold", "category_occasional_threshold"
-            ])).all():
-                try:
-                    val = json.loads(row.value_json)
-                except Exception:
-                    val = row.value_json
-                if row.key == "category_window_days":
-                    window_days = int(val)
-                elif row.key == "category_regular_threshold":
-                    regular_threshold = int(val)
-                elif row.key == "category_occasional_threshold":
-                    occasional_threshold = int(val)
-
-            cutoff = date.today() - timedelta(days=window_days)
-
-            # Count unique dates using normalized company name matching
-            normalized = normalize_company_name(client_name)
-            all_leads = db.query(LeadDetails).filter(
-                LeadDetails.posting_date >= cutoff
-            ).all()
-
-            unique_dates = set()
-            for lead in all_leads:
-                if normalize_company_name(lead.client_name or "") == normalized:
-                    if lead.posting_date:
-                        unique_dates.add(lead.posting_date)
-
-            if len(unique_dates) > regular_threshold:
-                client.client_category = ClientCategory.REGULAR
-            elif len(unique_dates) > occasional_threshold:
-                client.client_category = ClientCategory.OCCASIONAL
+                if employer_linkedin_url:
+                    client.linkedin_url = employer_linkedin_url
+                if industry:
+                    client.industry = industry
+                if company_size:
+                    client.company_size = company_size
+                db.add(client)
+                db.flush()
             else:
-                client.client_category = ClientCategory.PROSPECT
+                # A company first seen by the sourcing gate is cached as an INACTIVE
+                # record with no services (company_enrichment._persist_researched).
+                # Now that it has a real lead, it is an active prospect.
+                if client.status == ClientStatus.INACTIVE and (client.service_count or 0) == 0:
+                    client.status = ClientStatus.ACTIVE
+                    if not client.start_date:
+                        client.start_date = date.today()
+                client.service_count = (client.service_count or 0) + 1
+
+                # Backfill missing website/linkedin from lead data
+                if employer_website and not client.website:
+                    client.website = employer_website
+                    if not client.domain:
+                        client.domain = _extract_domain(employer_website)
+                if employer_linkedin_url and not client.linkedin_url:
+                    client.linkedin_url = employer_linkedin_url
+                if industry and not client.industry:
+                    client.industry = industry
+                if company_size and not client.company_size:
+                    client.company_size = company_size
+
+                # Compute client category based on posting frequency
+                # Read thresholds from settings DB (same keys as clients endpoint)
+                window_days = 90
+                regular_threshold = 3
+                occasional_threshold = 0
+                for row in db.query(Settings).filter(Settings.key.in_([
+                    "category_window_days", "category_regular_threshold", "category_occasional_threshold"
+                ])).all():
+                    try:
+                        val = json.loads(row.value_json)
+                    except Exception:
+                        val = row.value_json
+                    if row.key == "category_window_days":
+                        window_days = int(val)
+                    elif row.key == "category_regular_threshold":
+                        regular_threshold = int(val)
+                    elif row.key == "category_occasional_threshold":
+                        occasional_threshold = int(val)
+
+                cutoff = date.today() - timedelta(days=window_days)
+
+                # Count unique dates using normalized company name matching
+                normalized = normalize_company_name(client_name)
+                lq = db.query(LeadDetails).filter(LeadDetails.posting_date >= cutoff)
+                if client.tenant_id is not None:
+                    # A tenant's client category reflects ITS postings, not every tenant's.
+                    lq = lq.filter(LeadDetails.tenant_id == client.tenant_id)
+                all_leads = lq.all()
+
+                unique_dates = set()
+                for lead in all_leads:
+                    if normalize_company_name(lead.client_name or "") == normalized:
+                        if lead.posting_date:
+                            unique_dates.add(lead.posting_date)
+
+                if len(unique_dates) > regular_threshold:
+                    client.client_category = ClientCategory.REGULAR
+                elif len(unique_dates) > occasional_threshold:
+                    client.client_category = ClientCategory.OCCASIONAL
+                else:
+                    client.client_category = ClientCategory.PROSPECT
 
     except Exception as e:
-        db.rollback()
+        # The savepoint already undid this upsert. Never db.rollback() here: that
+        # would discard every lead the caller flushed since its last commit while
+        # its counters still count them.
         logger.warning(f"Error upserting client {client_name}: {e}")
-        # Try to just find existing
-        client = db.query(ClientInfo).filter(ClientInfo.client_name == client_name).first()
+        # Try to just find existing (this tenant's row only)
+        fq = db.query(ClientInfo).filter(ClientInfo.client_name == client_name)
+        if tenant_id is not None:
+            fq = fq.filter(ClientInfo.tenant_id == tenant_id)
+        client = fq.first()
         if client:
             client.service_count = (client.service_count or 0) + 1
 
@@ -1826,9 +1879,11 @@ def import_leads_from_file(
 
                 # Check for existing using normalized name
                 normalized = normalize_company_name(client_name)
-                existing_leads = db.query(LeadDetails).filter(
-                    LeadDetails.job_title == job_title
-                ).all()
+                existing_q = db.query(LeadDetails).filter(
+                    LeadDetails.job_title == job_title,
+                    LeadDetails.tenant_id == (tenant_id or 1),
+                )
+                existing_leads = existing_q.all()
 
                 found_match = False
                 for existing in existing_leads:
