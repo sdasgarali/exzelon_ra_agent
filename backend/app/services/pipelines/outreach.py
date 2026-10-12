@@ -3,6 +3,7 @@ import imaplib
 import json
 import os
 import smtplib
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
@@ -361,8 +362,37 @@ def resolve_tenant_address(db, tenant_id) -> str:
         return ""
 
 
-def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png", unsub_url=""):
-    """Render an email template with placeholder substitution."""
+_LOGO_IMG_RE = re.compile(r"<img\b[^>]*\{\{logo_url\}\}[^>]*>", re.IGNORECASE)
+
+
+def resolve_tenant_logo_url(mailbox) -> str:
+    """The sending workspace's own logo (brand logo, then tenant logo), else "".
+
+    Never falls back to another company's logo. Best-effort; never raises.
+    """
+    try:
+        from sqlalchemy.orm import object_session
+        from app.db.models.tenant import Tenant
+        session = object_session(mailbox)
+        tenant_id = getattr(mailbox, "tenant_id", None)
+        if session is None or not tenant_id:
+            return ""
+        t = session.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        if not t:
+            return ""
+        return (getattr(t, "brand_logo_url", None) or getattr(t, "logo_url", None) or "").strip()
+    except Exception:
+        return ""
+
+
+def render_template(template, contact, lead, mailbox, signature_html, logo_url=None, unsub_url=""):
+    """Render an email template with placeholder substitution.
+
+    ``logo_url`` defaults to the sending workspace's own logo; with none set, any
+    ``<img>`` that points at ``{{logo_url}}`` is dropped so no broken image renders.
+    """
+    if logo_url is None:
+        logo_url = resolve_tenant_logo_url(mailbox)
 
     # Determine sender first name (prefer explicit field, fall back to display_name split)
     sender_first = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
@@ -388,6 +418,8 @@ def render_template(template, contact, lead, mailbox, signature_html, logo_url="
     subject = template.subject
     body_html = template.body_html
     body_text = template.body_text or ""
+    if not logo_url:
+        body_html = _LOGO_IMG_RE.sub("", body_html or "")
 
     for placeholder, value in placeholders.items():
         subject = subject.replace(placeholder, value)
