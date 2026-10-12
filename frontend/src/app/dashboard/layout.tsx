@@ -62,7 +62,11 @@ import {
   Ban,
   CircleDollarSign,
   Bell,
+  BookOpen,
+  LifeBuoy,
+  PlayCircle,
 } from 'lucide-react'
+import { useSiteInfo } from '@/lib/use-site-info'
 
 const navigation = [
   // Home
@@ -130,6 +134,9 @@ export default function DashboardLayout({
   const { theme, toggleTheme } = useTheme()
   const { helpOpen, setHelpOpen, shortcuts } = useKeyboardShortcuts()
   const { startTour } = useTour()
+  const { support_email: supportEmail } = useSiteInfo()
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false)
+  const helpMenuRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const { has: hasFeature, ready: planReady } = usePlanFeatures()
@@ -154,6 +161,23 @@ export default function DashboardLayout({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [profileOpen])
+
+  // Help menu: close on outside click or Escape.
+  useEffect(() => {
+    if (!helpMenuOpen) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (!helpMenuRef.current?.contains(e.target as Node)) setHelpMenuOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHelpMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [helpMenuOpen])
 
   // Handle mounting to avoid hydration mismatch
   useEffect(() => {
@@ -446,6 +470,14 @@ export default function DashboardLayout({
           <Keyboard className="w-4 h-4" />
           Keyboard shortcuts
         </button>
+        <a
+          href={`mailto:${supportEmail}?subject=${encodeURIComponent('NeuraLeads support request')}`}
+          onClick={() => setProfileOpen(false)}
+          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-lg transition-colors"
+        >
+          <LifeBuoy className="w-4 h-4" />
+          Email support
+        </a>
         <div className="border-t border-gray-700 my-1" />
         <button
           onClick={handleLogout}
@@ -557,15 +589,70 @@ export default function DashboardLayout({
         <main className="p-4 lg:p-8 dark:text-gray-100"><ErrorBoundary>{children}</ErrorBoundary></main>
       </div>
 
-      {/* Floating help / tour button */}
-      <button
-        data-tour="help-button"
-        onClick={startTour}
-        className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition-colors"
-        title="Replay guided tour"
-      >
-        <HelpCircle className="w-5 h-5" />
-      </button>
+      {/* Floating Help menu — documentation, email support, replay tour */}
+      <div ref={helpMenuRef} className="fixed bottom-6 right-6 z-40">
+        {helpMenuOpen && (
+          <div
+            role="menu"
+            aria-label="Help"
+            className="absolute bottom-12 right-0 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden py-1"
+          >
+            <a
+              role="menuitem"
+              href="/documentation"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setHelpMenuOpen(false)}
+              className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <BookOpen className="w-4 h-4" aria-hidden="true" />
+              Documentation
+            </a>
+            <a
+              role="menuitem"
+              href={`mailto:${supportEmail}?subject=${encodeURIComponent('NeuraLeads support request')}`}
+              onClick={() => setHelpMenuOpen(false)}
+              className="flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <LifeBuoy className="w-4 h-4" aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="block">Email support</span>
+                <span className="block text-xs text-gray-500 dark:text-gray-400 truncate">{supportEmail}</span>
+              </span>
+            </a>
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => { setHelpMenuOpen(false); startTour() }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <PlayCircle className="w-4 h-4" aria-hidden="true" />
+              Replay tour
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => { setHelpMenuOpen(false); setHelpOpen(true) }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <Keyboard className="w-4 h-4" aria-hidden="true" />
+              Keyboard shortcuts
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          data-tour="help-button"
+          onClick={() => setHelpMenuOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={helpMenuOpen}
+          aria-label="Help"
+          className="w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg flex items-center justify-center transition-colors"
+          title="Help"
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
+      </div>
 
       {/* AI Copilot Chat Widget */}
       <CopilotChat />
