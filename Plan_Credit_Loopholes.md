@@ -4,9 +4,10 @@ Branch: `bugfix/credit-loopholes` (from `master` a68fddb). Source: 3-agent read-
 Approved by user 2026-10-12 ("yes fix all of them").
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Fan-out in progress: 3 worktree agents (A data/pipelines, B entry points/settings/send gate,
-> C credit engine + AI metering). Integrator (main session) merges, runs full suite, updates docs, opens PR.
-> NOT deploying — prod deploy needs explicit user go-ahead (memory: check-before-deploy).
+> DONE on branch `bugfix/credit-loopholes` (not pushed, no PR, not deployed). A/B/C merged + integrator
+> fixes + credit meter/history UI. Full backend suite 2086 passed / 0 failed (baseline 1927); frontend
+> 90/90; browser QA via Playwright on a scratch DB copy passed. NEXT (user decisions): push + PR,
+> set prod env keys (deployment.md), decide whether to turn CREDIT_ENFORCEMENT_ENABLED on.
 
 ## Decisions
 - `CREDIT_ENFORCEMENT_ENABLED` global default stays `False` in code — flipping it on prod blocks live
@@ -68,10 +69,16 @@ Owns: `api/endpoints/credits.py`, frontend `components/credit-meter.tsx`, `lib/c
 - [x] M3 `/dashboard/billing/credits` history page: filters, pagination, monthly breakdown, CSV (55390ab)
 
 ## Integration (main session)
-- [ ] I1 Merge A, B, C branches into `bugfix/credit-loopholes`
-- [ ] I2 Full backend suite — zero regressions
-- [ ] I3 Update `CLAUDE_REFERENCE/services.md`, `api-endpoints.md`, `multi-tenancy.md`
+- [x] I1 Merge A, B, C branches into `bugfix/credit-loopholes`
+- [x] I2 Full backend suite — zero regressions (2086 passed, 0 failed)
+- [x] I3 Update `CLAUDE_REFERENCE/services.md`, `api-endpoints.md`, `multi-tenancy.md`, `deployment.md`
 - [ ] I4 PR to master (no deploy until user says)
+
+### Integrator extras (2026-10-12)
+- [x] Tenant AI overrides only run on the tenant's own key (BYO key stays tenant-writable)
+- [x] Preview drafts used ANY tenant's mailbox — scoped to tenant
+- [x] Run-sized gates: outreach run, forced summary regenerate, scheduled intent scans
+- [x] Browser QA finds: month usage netted top-ups; 402 said "out of credits" with credits left — both fixed
 
 ## Acceptance
 Every item above has a test that fails on master and passes on the branch; full suite green.
