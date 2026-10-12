@@ -19,11 +19,11 @@
 
 | Service | Unit Name | Port | Command | Notes |
 |---------|-----------|------|---------|-------|
-| Backend API | `exzelon-api` | 8000 | `systemctl restart exzelon-api` | 4 uvicorn workers, logs to journald |
+| Backend API | `exzelon-api` | 127.0.0.1:8000 | `systemctl restart exzelon-api` | 4 uvicorn workers, logs to journald |
 | Frontend | `exzelon-web` | 3000 | `systemctl restart exzelon-web` | Next.js production, logs to journald |
 | Reverse Proxy | `nginx` | 80/443 | `systemctl reload nginx` | SSL termination, security headers |
 | Database | `mysql` | 3306 | `systemctl restart mysql` | User: `ra_user`, DB: `exzelon_ra_agent` |
-| Cache | `redis-server` | 6379 | `systemctl restart redis-server` | Currently unused by app (reserved) |
+| Cache | `redis-server` | 6379 | `systemctl restart redis-server` | Rate limits, token blacklist, ops heartbeat + alert de-dup (all degrade gracefully without it) |
 
 ## Directory Layout (VPS)
 
@@ -38,10 +38,13 @@
 │   ├── .env.local            # NEXT_PUBLIC_API_URL (NOT in git — must exist)
 │   ├── .next/                # Build output
 │   └── node_modules/
-├── data/
-│   └── backups/              # Database backup .sql.gz files
+├── backups/                  # pre-deploy-<ts>.sql.gz (deploy.sh, newest 10) + older pre-migrate dumps
+│                             # (daily dumps: backend/data/backups/, ops state: backend/data/ops/)
 ├── deploy/
 │   ├── deploy.sh             # Self-contained deployment script
+│   ├── restore_drill.sh      # Restore newest dump into scratch DB + row-count report
+│   ├── DR_RUNBOOK.md         # Backups, B2 off-site, alerts, restore, drill log
+│   ├── watchdog/             # neuraleads-watchdog.{sh,service,timer}
 │   ├── nginx.conf            # Nginx config template
 │   ├── vps_ssh.sh            # SSH helper for non-interactive access
 │   └── systemd/
@@ -60,7 +63,26 @@ bash /opt/exzelon-ra-agent/deploy/deploy.sh
 ./deploy/vps_ssh.sh "bash /opt/exzelon-ra-agent/deploy/deploy.sh"
 ```
 
-The script performs: git pull -> pip install -> npm build -> restart services -> health checks.
+The script performs: **pre-deploy DB dump** (aborts on failure) -> git pull -> pip install ->
+npm build -> **`alembic upgrade head`** (aborts before restart on failure) -> restart services ->
+**wait up to 60s for `/health`** -> print `/api/v1/ready` JSON -> print rollback commands
+(previous SHA + `gunzip -c <dump> | mysql exzelon_ra_agent`). Overrides: `DEPLOY_DB_NAME`,
+`PREDEPLOY_BACKUP_DIR`, `PREDEPLOY_KEEP` (10), `HEALTH_WAIT_SECONDS` (60).
+
+## Readiness, watchdog & alerts (launch readiness M1-M4)
+
+- `GET /api/v1/ready` (also `/ready` on :8000; nginx only proxies `/api/` + `/health`, so use the
+  `/api/v1` path externally): DB, Redis (non-critical), scheduler heartbeat <= 10 min, disk free,
+  newest local backup <= 26h. 200 / 503 + per-check JSON. `/health` unchanged.
+- Scheduler heartbeat: `job_scheduler_heartbeat` (every minute, scheduler-owning worker) writes
+  Redis key `neuraleads:ops:scheduler_heartbeat` + file `backend/data/ops/scheduler_heartbeat`.
+- Alerts: `app/services/alerting.py` `send_alert(kind, ...)` -> `ALERT_EMAIL` (info@neuraleads.ai)
+  via the global Resend/SMTP system mailer, max 1 per kind per `ALERT_MIN_INTERVAL_MINUTES`.
+  Kinds: `unhandled_exception`, `backup_failed`, `backup_offsite_failed`. CLI:
+  `cd backend && venv/bin/python -m app.services.alerting send --subject S --body B [--no-dedup]`.
+- Watchdog: `deploy/watchdog/neuraleads-watchdog.{sh,service,timer}` (every 5 min; 2 failures ->
+  one DOWN email, one RECOVERED email). Install steps in `deploy/DR_RUNBOOK.md`.
+- Backups / B2 off-site / restore drill (`deploy/restore_drill.sh`): see `deploy/DR_RUNBOOK.md`.
 
 ## Deploy Steps (Manual)
 
@@ -109,9 +131,10 @@ No schema change. `CREDIT_ENFORCEMENT_ENABLED` is untouched (still opt-in).
 The legacy idempotent block in `main.py`'s lifespan still runs on startup as a safety net
 (see `deploy/MIGRATIONS.md`); every NEW schema change is an Alembic revision.
 
-**`deploy.sh` does NOT run Alembic and takes NO database backup.** For any release that
-adds a revision, deploy by hand in this order (the old code keeps serving until step 4,
-and it cannot read a migrated schema, so migrate and restart back-to-back):
+**Since launch-readiness M5, `deploy.sh` takes the backup and runs Alembic itself** (in the
+order below). The manual sequence is kept for reference / hand deploys (the old code keeps
+serving until the restart, and it cannot read a migrated schema, so migrate and restart
+back-to-back):
 
 ```bash
 cd /opt/exzelon-ra-agent && git pull --ff-only origin master
@@ -139,6 +162,11 @@ cp /opt/exzelon-ra-agent/deploy/systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl restart exzelon-api exzelon-web
 ```
+**`exzelon-api` binds uvicorn to `127.0.0.1:8000`** (launch readiness M6, was `0.0.0.0`) —
+nginx's `api_backend` upstream and the MCP server already use `127.0.0.1:8000`; ufw also
+blocks 8000. `deploy.sh` does NOT copy unit files: after pulling a change to
+`deploy/systemd/*`, run the three commands above (verify with `ss -tlnp | grep 8000` →
+`127.0.0.1:8000`).
 
 ## Nginx Config
 
