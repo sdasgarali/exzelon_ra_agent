@@ -34,6 +34,8 @@ def init_scheduler():
 
         _scheduler.add_job(job_daily_backup, CronTrigger(hour=2, minute=0), id="daily_backup", name="Daily Database Backup", replace_existing=True)
         _scheduler.add_job(job_backup_cleanup, CronTrigger(hour=2, minute=30), id="backup_cleanup", name="Backup Cleanup", replace_existing=True)
+        # Liveness heartbeat read by /ready (any worker) — proves this scheduler still ticks.
+        _scheduler.add_job(job_scheduler_heartbeat, IntervalTrigger(minutes=1), id="scheduler_heartbeat", name="Scheduler Heartbeat", replace_existing=True)
 
         # Configurable lead sourcing frequency (default: 2x/day to preserve API quota)
         _lead_freq = "2x"
@@ -100,6 +102,7 @@ def init_scheduler():
         _scheduler.add_job(job_oauth_keepalive, CronTrigger(day_of_week="sun", hour=3, minute=30), id="oauth_keepalive", name="Weekly OAuth Token Keepalive", replace_existing=True)
 
         _scheduler.start()
+        job_scheduler_heartbeat()  # immediate first beat so /ready is green right after a restart
         logger.info("Warmup scheduler started", jobs=len(_scheduler.get_jobs()))
         return _scheduler
     except ImportError:
@@ -577,7 +580,29 @@ def job_daily_backup():
         result = create_backup()
         logger.info("Daily backup complete", filename=result["filename"], size=result["size_human"])
     except Exception as e:
-        logger.error("Daily backup failed", error=str(e))
+        logger.error("Daily backup failed", error=str(e), exc_info=True)
+        try:
+            from app.services.backup_service import BackupIntegrityError
+            if not isinstance(e, BackupIntegrityError):  # integrity failures already alerted
+                from app.services.alerting import send_alert
+                send_alert(
+                    "backup_failed",
+                    "Daily database backup failed",
+                    f"{type(e).__name__}: {str(e)[:2000]}\n\n"
+                    "No new local or off-site backup was written. /ready will report "
+                    "the backup as stale after 26h.",
+                )
+        except Exception:
+            pass
+
+
+def job_scheduler_heartbeat():
+    """Write the shared scheduler heartbeat (Redis + backend/data/backups/.ops file). Never raises."""
+    try:
+        from app.services.alerting import record_scheduler_heartbeat
+        record_scheduler_heartbeat()
+    except Exception as e:
+        logger.warning("Scheduler heartbeat failed", error=str(e))
 
 
 def job_backup_cleanup():
@@ -588,10 +613,13 @@ def job_backup_cleanup():
     db = _get_db()
     try:
         from app.core.settings_resolver import get_tenant_setting
-        retention = get_tenant_setting(db, "backup_retention_days", default=3)
-        from app.services.backup_service import cleanup_old_backups
-        deleted = cleanup_old_backups(int(retention))
-        logger.info("Backup cleanup complete", deleted_count=deleted, retention_days=retention)
+        configured = get_tenant_setting(db, "backup_retention_days", default=3)
+        from app.services.backup_service import cleanup_old_backups, effective_retention_days
+        # BACKUP_LOCAL_RETENTION_DAYS is a floor over the admin setting (B1).
+        retention = effective_retention_days(configured)
+        deleted = cleanup_old_backups(retention)
+        logger.info("Backup cleanup complete", deleted_count=deleted, retention_days=retention,
+                    configured_setting=configured)
     except Exception as e:
         logger.error("Backup cleanup failed", error=str(e))
     finally:

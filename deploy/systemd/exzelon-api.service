@@ -10,7 +10,7 @@ Group=ra-user
 WorkingDirectory=/opt/exzelon-ra-agent/backend
 Environment="PATH=/opt/exzelon-ra-agent/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/exzelon-ra-agent/backend/.env
-ExecStart=/opt/exzelon-ra-agent/backend/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --log-level info
+ExecStart=/opt/exzelon-ra-agent/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4 --log-level info
 Restart=always
 RestartSec=5
 StandardOutput=journal
