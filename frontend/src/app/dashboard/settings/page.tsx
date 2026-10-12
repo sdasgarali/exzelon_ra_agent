@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { settingsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import ApiKeysMcpTab from '@/components/settings/api-keys-mcp-tab'
@@ -355,6 +356,7 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState('')
   const [isLocalhost, setIsLocalhost] = useState(false)
   const [activeTab, setActiveTab] = useState('')
+  const queryClient = useQueryClient()
   const [tabPermissions, setTabPermissions] = useState<Record<string, string>>({})
   const [permissionsLoaded, setPermissionsLoaded] = useState(false)
 
@@ -613,13 +615,20 @@ export default function SettingsPage() {
       setTabPermissions(perms)
       setPermissionsLoaded(true)
 
-      // Set initial active tab to the first accessible tab
+      // Initial tab: ?tab=<id> when the caller deep-links (e.g. the postal-address
+      // banner -> business) and the user can open it; else the first accessible tab.
       const tabOrder = ['jobfilters', 'jobsourceapis', 'ai', 'contacts', 'validation', 'outreach', 'business', 'deliverability']
-      const firstAccessible = tabOrder.find(tabId => {
+      const canOpen = (tabId: string) => {
         const permKey = TAB_PERM_MAP[tabId]
-        return perms[permKey] && perms[permKey] !== 'no_access'
-      })
-      setActiveTab(firstAccessible || 'jobfilters')
+        return !!perms[permKey] && perms[permKey] !== 'no_access'
+      }
+      const requested = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('tab')
+        : null
+      const firstAccessible = tabOrder.find(canOpen)
+      setActiveTab(requested && tabOrder.includes(requested) && canOpen(requested)
+        ? requested
+        : firstAccessible || 'jobfilters')
 
       // Now fetch settings
       await fetchSettings()
@@ -882,6 +891,9 @@ export default function SettingsPage() {
       setSavingProfile(true)
       setError('')
       await settingsApi.updateCompanyProfile(companyProfile)
+      // The dashboard's postal-address banner reads this query; refresh it so the
+      // banner disappears as soon as an address is saved.
+      queryClient.invalidateQueries({ queryKey: ['company-profile'] })
       setSuccess('Company profile saved!')
       setTimeout(() => setSuccess(''), 3000)
     } catch (err: any) {
