@@ -861,6 +861,66 @@ async def get_setting(
     return resp
 
 
+# ── Platform-controlled settings ─────────────────────────────────────────────
+# Keys that change billing, platform-funded resources or super-admin decisions.
+# A tenant admin (or a write-scoped API key acting as one) must never set or
+# clear them: e.g. `feature_email_validation_enabled=false` disables the
+# valid-only send gate, `credit_enforcement_enabled=false` turns off credit
+# checks, and `ai_provider`/`ai_model`/AI keys can route usage onto the
+# platform's paid keys.
+SUPER_ADMIN_ONLY_SETTING_KEYS = frozenset({
+    "role_permissions",
+    "credit_enforcement_enabled",
+    "ai_provider",
+    "ai_model",
+    "warmup_ai_provider",
+    "groq_api_key",
+    "openai_api_key",
+    "anthropic_api_key",
+    "gemini_api_key",
+})
+SUPER_ADMIN_ONLY_SETTING_PREFIXES = ("feature_", "credit_")
+
+
+def is_super_admin_only_setting(key: str) -> bool:
+    """True when only a super admin may write or clear ``key``."""
+    k = (key or "").strip().lower()
+    return k in SUPER_ADMIN_ONLY_SETTING_KEYS or k.startswith(SUPER_ADMIN_ONLY_SETTING_PREFIXES)
+
+
+def _tenant_business_rule_bounds() -> Dict[str, tuple]:
+    """Inclusive (min, max) ranges a tenant admin may set for send-safety rules.
+
+    Resolved at call time so config overrides (and tests) take effect.
+    """
+    return {
+        "cooldown_days": (1, 365),
+        "max_contacts_per_company_job": (1, max(1, int(app_config.MAX_CONTACTS_PER_COMPANY_PER_JOB))),
+        "daily_send_limit": (1, max(1, int(app_config.MAX_DAILY_SEND_LIMIT_PER_MAILBOX))),
+    }
+
+
+def _validate_tenant_business_rule(key: str, raw) -> None:
+    """Raise 400 if a tenant-admin value for a send-safety rule is out of range."""
+    bounds = _tenant_business_rule_bounds().get(key)
+    if bounds is None:
+        return
+    lo, hi = bounds
+    try:
+        if isinstance(raw, bool):
+            raise TypeError
+        val = int(raw)
+        if isinstance(raw, float) and raw != val:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{key} must be an integer")
+    if val < lo or val > hi:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key} must be between {lo} and {hi}",
+        )
+
+
 @router.put("/{key}", response_model=SettingResponse)
 async def update_setting(
     key: str,
@@ -874,15 +934,41 @@ async def update_setting(
     - Super admin without X-Tenant-ID: writes to global Settings table.
     - Regular admin / super admin with X-Tenant-ID: writes to TenantSettings.
     """
+    is_super = current_user.role == UserRole.SUPER_ADMIN
+
     # role_permissions is always super_admin only
-    if key == 'role_permissions' and current_user.role != UserRole.SUPER_ADMIN:
+    if key == 'role_permissions' and not is_super:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only super admins can modify role permissions"
         )
 
+    # Platform-controlled keys (feature flags, credit enforcement, AI provider/model/keys)
+    if is_super_admin_only_setting(key) and not is_super:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"'{key}' is managed by the platform and can only be changed by a super admin",
+        )
+
+    # A non-super-admin must always write a tenant override, never a global row.
+    if not is_super and tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenant assigned to this user",
+        )
+
+    # Send-safety business rules: tenants may tune them only within safe ranges.
+    if not is_super and key in _tenant_business_rule_bounds():
+        try:
+            raw = setting_in.value if setting_in.value is not None else (
+                json.loads(setting_in.value_json) if setting_in.value_json is not None else None
+            )
+        except (TypeError, ValueError):
+            raw = None
+        _validate_tenant_business_rule(key, raw)
+
     # Check tab-level write permission for non-super-admin
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if not is_super:
         tab = SETTINGS_TAB_MAP.get(key)
         if tab:
             access = get_user_settings_tab_access(db, current_user, tab)
@@ -1112,6 +1198,13 @@ async def remove_tenant_override(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Remove a tenant's override for a key, reverting to the global default."""
+    # Clearing a platform-controlled override (e.g. a feature flag a super admin
+    # switched off for this tenant) would silently re-enable it.
+    if is_super_admin_only_setting(key) and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"'{key}' is managed by the platform and can only be changed by a super admin",
+        )
     if tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
