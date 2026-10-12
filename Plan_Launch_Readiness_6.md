@@ -3,7 +3,8 @@
 Branch: `feature/launch-readiness-6` (from `master` ef42e31). Source: launch audit 2026-10-12 (overall 58/100).
 
 ## SESSION_CONTEXT_RETRIEVAL
-> Plan written 2026-10-12, awaiting user answers to the open questions below before coding.
+> 2026-10-12: user answered (below). Shared config keys + `frontend/src/lib/site-info.ts` /
+> `use-site-info.ts` contract committed by integrator. Fan-out to 4 worktree agents (A-D) in progress.
 > Campaigns stay PAUSED until D1 ships (494 cold cPanel mailboxes on one IP are send-eligible today).
 
 ## Targets
@@ -56,8 +57,38 @@ Branch: `feature/launch-readiness-6` (from `master` ef42e31). Source: launch aud
 - Fan-out by area (exclusive file ownership), integrator merges, full backend + MCP + frontend suites,
   browser QA, PR, deploy only on user's go. No campaign unpause as part of this work.
 
-## Open questions for the user
-1. Alert / support email address(es) to publish and to receive alerts.
-2. Off-site backups: OK to create a new Backblaze B2 bucket (private) for this app?
-3. Legal details: entity name, registered address, jurisdiction — or ship config-driven pages now and fill later.
-4. Warmup gate thresholds: 14 days / 50 warmup emails per mailbox before outreach (recommended).
+## Decisions (user, 2026-10-12)
+1. Support + alert address: **info@neuraleads.ai** (`SUPPORT_EMAIL`, `ALERT_EMAIL`).
+2. Off-site backups: **new private Backblaze B2 bucket** — user creates bucket + scoped app key and pastes
+   `BACKUP_S3_*` into the server .env themselves.
+3. Legal pages: **config-driven, fill later** (`LEGAL_*` empty => neutral "operated by NeuraLeads" line).
+4. Warmup gate: **14 days + 50 warmup emails** (`MIN_WARMUP_DAYS`, `MIN_WARMUP_EMAILS`).
+L6 (in-app delete/export) deferred — not needed for 6/10.
+
+## Shared contracts (committed before fan-out — agents must not change them)
+- Config keys in `core/config.py` + `.env.example`: SUPPORT_EMAIL, ALERT_EMAIL, ALERT_MIN_INTERVAL_MINUTES,
+  BACKUP_LOCAL_RETENTION_DAYS, MIN_WARMUP_DAYS, MIN_WARMUP_EMAILS, MAX_LIVE_DOMAINS_PER_IP, LEGAL_ENTITY_NAME,
+  LEGAL_ADDRESS, LEGAL_JURISDICTION, PRIVACY_EMAIL, TERMS_VERSION.
+- `GET /api/v1/public/site-info` (no auth) -> {support_email, privacy_email, legal_entity_name, legal_address,
+  legal_jurisdiction, terms_version, payments_enabled}. Backend by Agent C; frontend helpers
+  `lib/site-info.ts` (server-safe fetch) + `lib/use-site-info.ts` (client hook) already exist.
+- Signup request gains `accept_terms: bool` (must be true) — backend by C, form checkbox by D.
+
+## Partition (exclusive file ownership)
+- **A — Monitoring & backups (M1-M6, B1-B4):** `main.py` (/ready + exception handler only), new
+  `services/alerting.py`, `services/backup_service.py`, `services/warmup/scheduler.py` (backup jobs +
+  heartbeat only), `deploy/deploy.sh`, `deploy/systemd/*`, new `deploy/watchdog/*`, new
+  `deploy/restore_drill.sh`, `deploy/DR_RUNBOOK.md`, `deploy/MIGRATIONS.md`, `CLAUDE_REFERENCE/deployment.md`.
+- **B — Deliverability (D1-D3, L2 line in outreach.py):** `services/mailbox_selector.py`,
+  `services/warmup/domain_reputation.py`, `api/endpoints/mailboxes.py`, `services/pipelines/outreach.py`,
+  `services/campaign_engine.py`, `services/email_preview_service.py`, frontend `app/dashboard/mailboxes/*`.
+- **C — Legal backend + legal pages (L1-L5, site-info endpoint):** `services/send_gate.py`,
+  `services/template_service.py`, `api/endpoints/templates.py`, `api/endpoints/settings.py`, `api/endpoints/auth.py`,
+  `schemas/tenant.py`, tenant/user models + new Alembic revision, new `api/endpoints/public.py` + `api/router.py`,
+  frontend `(marketing)/privacy`, `(marketing)/terms`, new `components/postal-address-banner.tsx`, `app/dashboard/page.tsx`.
+- **D — New-customer UX (U1-U5):** frontend `signup/page.tsx`, `components/plan-usage-panel.tsx`,
+  `components/usage-meters.tsx`, `app/dashboard/billing/page.tsx`, `(marketing)/contact`, `(marketing)/page.tsx`,
+  marketing footer/layout, `app/dashboard/layout.tsx`, `app/dashboard/settings/page.tsx`,
+  `components/sequence-builder.tsx`, `app/dashboard/campaigns/page.tsx`, `components/getting-started.tsx`,
+  `lib/api.ts`; backend `api/endpoints/billing.py` (Stripe-off messages only).
+- **Integrator:** merge, prod data cleanup (placeholder address rows), full suites, Playwright QA (U6), PR, deploy.
