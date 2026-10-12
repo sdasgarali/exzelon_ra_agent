@@ -58,9 +58,10 @@ export default async function PrivacyPage() {
     >
       <LegalSectionBlock id="roles" num={1} title="Two different roles">
         <p>
-          NeuraLeads (“we”, “us”) is operated by {operatorName(info)}
-          {address ? `, registered at ${address}` : ''}. This policy explains how personal data is
-          handled across the NeuraLeads website and platform.
+          {info.legal_entity_name.trim()
+            ? <>NeuraLeads (“we”, “us”) is operated by {operatorName(info)}{address ? `, registered at ${address}` : ''}.</>
+            : <>NeuraLeads (“we”, “us”){address ? `, registered at ${address},` : ''} provides this website and platform.</>}
+          {' '}This policy explains how personal data is handled across the NeuraLeads website and platform.
         </p>
         <p>
           Almost every privacy question about this service depends on <em>whose</em> data is being
