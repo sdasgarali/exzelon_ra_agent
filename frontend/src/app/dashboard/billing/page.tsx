@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { isCancel } from 'axios'
 import PlanUsagePanel from '@/components/plan-usage-panel'
 import { useAuthStore } from '@/lib/store'
 import { billingApi, getApiError } from '@/lib/api'
@@ -133,6 +134,8 @@ export default function BillingPage() {
       setPayments(paymentData.payments || [])
       setStats(statsData)
     } catch (err: any) {
+      // A newer identical request superseded this one (GET dedup in lib/api.ts) — not an error.
+      if (isCancel(err)) return
       setError(getApiError(err, 'Failed to load billing data'))
     } finally {
       setLoading(false)
@@ -150,6 +153,8 @@ export default function BillingPage() {
       setInvoices(invoiceData.invoices || [])
       setPayments(paymentData.payments || [])
     } catch (err: any) {
+      // A newer identical request superseded this one (GET dedup in lib/api.ts) — not an error.
+      if (isCancel(err)) return
       setError(getApiError(err, 'Failed to load billing data'))
     } finally {
       setLoading(false)
