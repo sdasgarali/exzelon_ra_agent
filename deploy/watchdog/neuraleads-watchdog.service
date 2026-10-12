@@ -1,0 +1,15 @@
+[Unit]
+Description=NeuraLeads readiness watchdog (alerts ALERT_EMAIL when /api/v1/ready fails)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root so it can drop to ra-user (runuser) for the backend alert CLI.
+ExecStart=/bin/bash /opt/exzelon-ra-agent/deploy/watchdog/neuraleads-watchdog.sh
+EnvironmentFile=-/etc/default/neuraleads-watchdog
+StateDirectory=neuraleads-watchdog
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neuraleads-watchdog
