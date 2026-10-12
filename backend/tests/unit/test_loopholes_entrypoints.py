@@ -109,3 +109,75 @@ class TestB1SettingsLockdown:
         from app.core.api_key_scopes import check_scope
         assert check_scope(["write"], "PUT", "/api/v1/settings/cooldown_days")[0] is False
         assert check_scope(["admin"], "PUT", "/api/v1/settings/cooldown_days")[0] is True
+
+
+# ---------------------------------------------------------------------------
+# B2 — is_test / validation_status are super-admin-only on contacts
+# ---------------------------------------------------------------------------
+
+def _make_contact(db_session, tenant_id, email="b2@acme-corp.com", **kw):
+    from app.db.models.contact import ContactDetails
+    c = ContactDetails(tenant_id=tenant_id, client_name="Acme", first_name="Ann",
+                       last_name="Lee", email=email, **kw)
+    db_session.add(c)
+    db_session.commit()
+    db_session.refresh(c)
+    return c
+
+
+class TestB2ContactBypassFields:
+
+    def test_admin_cannot_create_test_contact(self, client, auth_headers):
+        r = client.post(f"{API}/contacts", headers=auth_headers, json={
+            "client_name": "Acme", "first_name": "A", "last_name": "B",
+            "email": "t1@acme-corp.com", "is_test": True})
+        assert r.status_code == 403, r.text
+
+    def test_bdm_cannot_create_test_contact(self, client, operator_headers):
+        r = client.post(f"{API}/contacts", headers=operator_headers, json={
+            "client_name": "Acme", "first_name": "A", "last_name": "B",
+            "email": "t2@acme-corp.com", "is_test": True})
+        assert r.status_code == 403, r.text
+
+    def test_admin_can_create_normal_contact(self, client, auth_headers):
+        r = client.post(f"{API}/contacts", headers=auth_headers, json={
+            "client_name": "Acme", "first_name": "A", "last_name": "B",
+            "email": "t3@acme-corp.com", "is_test": False})
+        assert r.status_code == 201, r.text
+        assert r.json()["is_test"] is False
+
+    def test_admin_cannot_flip_is_test(self, client, db_session, auth_headers, test_tenant):
+        c = _make_contact(db_session, test_tenant.tenant_id)
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers, json={"is_test": True})
+        assert r.status_code == 403, r.text
+        db_session.refresh(c)
+        assert c.is_test is False
+
+    def test_admin_cannot_mark_contact_valid(self, client, db_session, auth_headers, test_tenant):
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status=None)
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers,
+                       json={"validation_status": "valid"})
+        assert r.status_code == 403, r.text
+        db_session.refresh(c)
+        assert c.validation_status is None
+
+    def test_admin_echoing_unchanged_values_is_allowed(self, client, db_session, auth_headers, test_tenant):
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status="valid")
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers,
+                       json={"title": "HR Director", "is_test": False, "validation_status": "valid"})
+        assert r.status_code == 200, r.text
+        assert r.json()["title"] == "HR Director"
+
+    def test_admin_email_change_cannot_carry_valid_status(self, client, db_session, auth_headers, test_tenant):
+        c = _make_contact(db_session, test_tenant.tenant_id, validation_status="valid")
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=auth_headers,
+                       json={"email": "other@acme-corp.com", "validation_status": "valid"})
+        assert r.status_code == 200, r.text
+        assert r.json()["validation_status"] is None
+
+    def test_super_admin_can_set_bypass_fields(self, client, db_session, sa_headers, test_tenant):
+        c = _make_contact(db_session, test_tenant.tenant_id)
+        r = client.put(f"{API}/contacts/{c.contact_id}", headers=sa_headers,
+                       json={"is_test": True, "validation_status": "valid"})
+        assert r.status_code == 200, r.text
+        assert r.json()["is_test"] is True and r.json()["validation_status"] == "valid"
