@@ -53,12 +53,15 @@ def test_upsert_from_stripe_creates_and_syncs_plan(db_session, test_tenant, monk
         stripe_subscription_id="sub_1").first().status == SubscriptionStatus.CANCELED
 
 
-def test_checkout_400_without_price_configured(client, sa_headers, test_tenant, monkeypatch):
+def test_checkout_503_without_price_configured(client, sa_headers, test_tenant, monkeypatch):
+    # U2 (launch readiness): payments-not-configured is a user-safe 503, not a 400
+    # carrying developer instructions.
     from app.core.config import settings
     monkeypatch.setattr(settings, "STRIPE_PRICE_MAX", "", raising=False)
     r = client.post("/api/v1/billing/subscription/checkout", json={},
                     headers={**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)})
-    assert r.status_code == 400
+    assert r.status_code == 503
+    assert "STRIPE" not in r.json()["detail"]
 
 
 def test_checkout_returns_url_when_configured(client, sa_headers, test_tenant, monkeypatch):

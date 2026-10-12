@@ -62,6 +62,24 @@ jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
   }),
 }))
 
+// Public site info (support email for the Help menu) — no network in tests.
+jest.mock('@/lib/use-site-info', () => ({
+  useSiteInfo: () => ({
+    support_email: 'help@example.test',
+    privacy_email: 'privacy@example.test',
+    legal_entity_name: '',
+    legal_address: '',
+    legal_jurisdiction: '',
+    terms_version: '',
+    payments_enabled: false,
+  }),
+}))
+
+const mockStartTour = jest.fn()
+jest.mock('@/hooks/use-tour', () => ({
+  useTour: () => ({ startTour: mockStartTour }),
+}))
+
 // Mock next/link to avoid app router dependency
 jest.mock('next/link', () => {
   return ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>
@@ -146,5 +164,45 @@ describe('DashboardLayout', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Sign out').length).toBeGreaterThanOrEqual(1)
     })
+  })
+
+  test('Help menu offers documentation, email support and replay tour', async () => {
+    await act(async () => {
+      render(<DashboardLayout><div>Content</div></DashboardLayout>)
+    })
+    const trigger = screen.getByRole('button', { name: 'Help' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('menu', { name: 'Help' })).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(trigger)
+    })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    const docs = screen.getByRole('menuitem', { name: /Documentation/ })
+    expect(docs).toHaveAttribute('href', '/documentation')
+
+    const support = screen.getByRole('menuitem', { name: /Email support/ })
+    expect(support.getAttribute('href')).toMatch(/^mailto:help@example\.test\?/)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Replay tour/ }))
+    })
+    expect(mockStartTour).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('menu', { name: 'Help' })).not.toBeInTheDocument()
+  })
+
+  test('Help menu closes on Escape', async () => {
+    await act(async () => {
+      render(<DashboardLayout><div>Content</div></DashboardLayout>)
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+    })
+    expect(screen.getByRole('menu', { name: 'Help' })).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.keyDown(document, { key: 'Escape' })
+    })
+    expect(screen.queryByRole('menu', { name: 'Help' })).not.toBeInTheDocument()
   })
 })

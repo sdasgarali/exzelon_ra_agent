@@ -1,6 +1,7 @@
 import { Archivo } from 'next/font/google'
 import Navbar from '@/components/marketing/Navbar'
 import Footer from '@/components/marketing/Footer'
+import { fetchSiteInfo, SITE_INFO_FALLBACK } from '@/lib/site-info'
 
 // Archivo — a grotesque with real weight range, closer to the geometry of the
 // NeuraLeads wordmark than Inter is. Scoped to the marketing surface via the
@@ -27,7 +28,11 @@ const jsonLd = {
   },
 }
 
-export default function MarketingLayout({ children }: { children: React.ReactNode }) {
+export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
+  // Published support address for the footer; the fallback keeps it on screen if the API is down.
+  const supportEmail = await fetchSiteInfo()
+    .then((i) => i.support_email || SITE_INFO_FALLBACK.support_email)
+    .catch(() => SITE_INFO_FALLBACK.support_email)
   return (
     <div className={`${archivo.variable} light-only font-archivo marketing-gradient-bg min-h-screen`}>
       <script
@@ -36,7 +41,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
       />
       <Navbar />
       <main>{children}</main>
-      <Footer />
+      <Footer supportEmail={supportEmail} />
     </div>
   )
 }
