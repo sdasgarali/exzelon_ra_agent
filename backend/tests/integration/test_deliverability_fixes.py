@@ -43,7 +43,7 @@ def _make_mailbox(db, tenant, email, **kw):
         warmup_status=WarmupStatus.COLD_READY, is_active=True,
         connection_status="successful", daily_send_limit=30, emails_sent_today=0,
         total_emails_sent=100, bounce_count=1, reply_count=15, complaint_count=0,
-        warmup_days_completed=30,
+        warmup_days_completed=30, warmup_emails_sent=60,  # warmed: passes the outreach warmup gate
     )
     fields.update(kw)
     mb = SenderMailbox(**fields)

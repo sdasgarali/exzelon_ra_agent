@@ -20,7 +20,7 @@ from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
 from app.db.models.outreach_draft import OutreachDraft, DraftStatus
-from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.models.sender_mailbox import SenderMailbox
 
 logger = structlog.get_logger()
 
@@ -536,7 +536,10 @@ def _execute_email_step(
 
     # Smart throttling: check hourly rate limit (daily_limit / 8 hours)
     # Apply daily jitter: use 85-95% of actual limit
-    effective_daily = int(min(mailbox.daily_send_limit, effective_limit) * random.uniform(0.85, 0.95))
+    # Mailbox cap is ramped to the ISP schedule in its first 30 days of outreach (D2).
+    from app.services.mailbox_selector import mailbox_effective_daily_limit
+    mailbox_cap = mailbox_effective_daily_limit(db, mailbox)
+    effective_daily = int(min(mailbox_cap, effective_limit) * random.uniform(0.85, 0.95))
     if mailbox.emails_sent_today >= effective_daily:
         logger.info("Mailbox hit jittered daily limit", mailbox=mailbox.email,
                      sent=mailbox.emails_sent_today, effective=effective_daily)
@@ -881,9 +884,11 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
     except Exception as e:
         logger.warning("Health-aware selector failed, using fallback", error=str(e))
         # Fallback to simple least-loaded
+        from app.services.mailbox_selector import outreach_eligible_filter
         query = db.query(SenderMailbox).filter(
             SenderMailbox.is_active == True,
-            SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+            # Status AND real warmup history — the fallback must not bypass the gate.
+            outreach_eligible_filter(),
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
             SenderMailbox.connection_status == "successful",
             SenderMailbox.is_blacklisted == False,  # noqa: E712 — mirror primary selector safety filter
@@ -897,7 +902,8 @@ def _select_mailbox(campaign: Campaign, db: Session) -> Optional[SenderMailbox]:
             query = query.join(
                 OutreachRole, SenderMailbox.outreach_role_id == OutreachRole.role_id
             ).filter(OutreachRole.auto_outbound == True)  # noqa: E712
-        return query.order_by(SenderMailbox.emails_sent_today.asc()).first()
+        from app.services.mailbox_selector import apply_outreach_caps
+        return apply_outreach_caps(db, query).order_by(SenderMailbox.emails_sent_today.asc()).first()
 
 
 def _select_variant(

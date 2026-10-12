@@ -3,6 +3,7 @@ import imaplib
 import json
 import os
 import smtplib
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
@@ -22,7 +23,7 @@ from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChanne
 from app.db.models.suppression import SuppressionList
 from app.db.models.job_run import JobRun, JobStatus
 from app.core.config import settings
-from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.models.sender_mailbox import SenderMailbox
 from app.services.pipelines.cancel_helper import check_cancel
 from app.services.outreach_draft_service import draft_outreach_email, clear_research_cache
 
@@ -361,8 +362,37 @@ def resolve_tenant_address(db, tenant_id) -> str:
         return ""
 
 
-def render_template(template, contact, lead, mailbox, signature_html, logo_url="https://www.exzelon.com/gallery/logo.png", unsub_url=""):
-    """Render an email template with placeholder substitution."""
+_LOGO_IMG_RE = re.compile(r"<img\b[^>]*\{\{logo_url\}\}[^>]*>", re.IGNORECASE)
+
+
+def resolve_tenant_logo_url(mailbox) -> str:
+    """The sending workspace's own logo (brand logo, then tenant logo), else "".
+
+    Never falls back to another company's logo. Best-effort; never raises.
+    """
+    try:
+        from sqlalchemy.orm import object_session
+        from app.db.models.tenant import Tenant
+        session = object_session(mailbox)
+        tenant_id = getattr(mailbox, "tenant_id", None)
+        if session is None or not tenant_id:
+            return ""
+        t = session.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
+        if not t:
+            return ""
+        return (getattr(t, "brand_logo_url", None) or getattr(t, "logo_url", None) or "").strip()
+    except Exception:
+        return ""
+
+
+def render_template(template, contact, lead, mailbox, signature_html, logo_url=None, unsub_url=""):
+    """Render an email template with placeholder substitution.
+
+    ``logo_url`` defaults to the sending workspace's own logo; with none set, any
+    ``<img>`` that points at ``{{logo_url}}`` is dropped so no broken image renders.
+    """
+    if logo_url is None:
+        logo_url = resolve_tenant_logo_url(mailbox)
 
     # Determine sender first name (prefer explicit field, fall back to display_name split)
     sender_first = mailbox.resolved_first_name if hasattr(mailbox, 'resolved_first_name') else (mailbox.display_name or mailbox.email).split()[0]
@@ -388,6 +418,8 @@ def render_template(template, contact, lead, mailbox, signature_html, logo_url="
     subject = template.subject
     body_html = template.body_html
     body_text = template.body_text or ""
+    if not logo_url:
+        body_html = _LOGO_IMG_RE.sub("", body_html or "")
 
     for placeholder, value in placeholders.items():
         subject = subject.replace(placeholder, value)
@@ -496,7 +528,7 @@ def check_send_eligibility(db, contact: ContactDetails, business_rules: Optional
 def sendable_mailboxes_query(db, tenant_id: int):
     """Mailboxes of ``tenant_id`` that may send cold outreach right now.
 
-    Cold Ready or Active, under their daily limit, with a successful connection, and not
+    Cold Ready or Active with enough real warmup history, under their (ramped) daily limit, with a successful connection, and not
     blacklisted (mirrors ``mailbox_selector.select_best_mailbox``).
     Always tenant-scoped: picking the least-loaded mailbox across all tenants sent one
     tenant's outreach from another tenant's mailbox.
@@ -505,17 +537,21 @@ def sendable_mailboxes_query(db, tenant_id: int):
     whose ``daily_send_limit`` was set above it (before the schema bound, or via a
     path that skips the schema) cannot send past it.
     """
+    from app.services.mailbox_selector import apply_outreach_caps, outreach_eligible_filter
     from app.services.send_gate import business_rule_ceiling
     platform_cap = business_rule_ceiling(db, "daily_send_limit")
-    return db.query(SenderMailbox).filter(
+    query = db.query(SenderMailbox).filter(
         SenderMailbox.tenant_id == tenant_id,
         SenderMailbox.is_active == True,  # noqa: E712
-        SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+        # Status AND real warmup history (MIN_WARMUP_DAYS + MIN_WARMUP_EMAILS).
+        outreach_eligible_filter(),
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
         SenderMailbox.emails_sent_today < platform_cap,
         SenderMailbox.connection_status == "successful",
         SenderMailbox.is_blacklisted == False,  # noqa: E712
     )
+    # First-30-day ISP ramp cap + per-IP cohort cap.
+    return apply_outreach_caps(db, query)
 
 
 def lead_contacts_query(db, lead_id: int, tenant_id: int):

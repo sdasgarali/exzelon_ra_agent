@@ -222,4 +222,22 @@ describe('MailboxesPage', () => {
       expect(screen.getByText('sender2@example.com')).toBeInTheDocument()
     })
   })
+
+  test('shows the outreach warmup-gate reason for mailboxes that cannot send yet', async () => {
+    mockMailboxList.mockResolvedValue({
+      items: [
+        { ...mockMailboxes[0], outreach_eligible: false, can_send: false,
+          outreach_block_reason: 'Warming up — 3/14 days, 12/50 emails' },
+        { ...mockMailboxes[1], mailbox_id: 3, email: 'warm@example.com',
+          outreach_eligible: true, outreach_block_reason: null },
+      ],
+      total: 2, active_count: 2, ready_count: 1,
+    })
+    await act(async () => {
+      render(<MailboxesPage />)
+    })
+    await waitFor(() => expect(screen.getByText('sender1@example.com')).toBeInTheDocument())
+    expect(screen.getByTestId('outreach-gate-1')).toHaveTextContent('Warming up — 3/14 days, 12/50 emails')
+    expect(screen.queryByTestId('outreach-gate-3')).not.toBeInTheDocument()
+  })
 })

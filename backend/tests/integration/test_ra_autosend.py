@@ -14,6 +14,7 @@ def _mailbox(db, tenant_id, email, role_id):
         is_active=True, warmup_status=WarmupStatus.COLD_READY,
         daily_send_limit=30, emails_sent_today=0,
         connection_status="successful", is_blacklisted=False,
+        warmup_days_completed=30, warmup_emails_sent=60,  # warmed: passes the outreach warmup gate
     )
     db.add(mb)
     db.commit()

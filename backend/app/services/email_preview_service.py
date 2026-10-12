@@ -23,7 +23,7 @@ from app.db.models.campaign import (
 from app.db.models.contact import ContactDetails
 from app.db.models.lead import LeadDetails
 from app.db.models.outreach import OutreachEvent, OutreachStatus, OutreachChannel
-from app.db.models.sender_mailbox import SenderMailbox, WarmupStatus
+from app.db.models.sender_mailbox import SenderMailbox
 from app.db.models.email_template import EmailTemplate
 from app.services.spam_checker import check_spam_score
 
@@ -309,13 +309,15 @@ def generate_pipeline_drafts(
         if not eligible:
             continue
 
-        mailbox = db.query(SenderMailbox).filter(
+        # Same gate as live outreach: status + real warmup history, ramp and cohort caps.
+        from app.services.mailbox_selector import apply_outreach_caps, outreach_eligible_filter
+        mailbox = apply_outreach_caps(db, db.query(SenderMailbox).filter(
             SenderMailbox.tenant_id == tenant_id,
             SenderMailbox.is_active == True,
-            SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+            outreach_eligible_filter(),
             SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit,
             SenderMailbox.connection_status == "successful",
-        ).order_by(SenderMailbox.emails_sent_today.asc()).first()
+        )).order_by(SenderMailbox.emails_sent_today.asc()).first()
 
         if not mailbox:
             break

@@ -93,6 +93,28 @@ def detect_isp(email_or_host: str) -> str:
     return "other"
 
 
+def resolve_isp(email: str, smtp_host: str = "") -> str:
+    """ISP key for a mailbox: its email domain first, then its SMTP host."""
+    isp_key = detect_isp(email or "")
+    if isp_key == "other" and smtp_host:
+        isp_key = detect_isp(smtp_host)
+    return isp_key
+
+
+def recommended_daily_ramp(day: int, email: str = "", smtp_host: str = "") -> int:
+    """Recommended maximum sends on ``day`` (1-based) of a mailbox's outreach history.
+
+    Deterministic lookup into the ISP profile's ``recommended_daily_ramp`` table:
+    day 1 -> first entry, day N -> N-th entry, and past the end of the table the
+    final (plateau) value. Days below 1 are treated as day 1.
+    """
+    ramp = ISP_PROFILES[resolve_isp(email, smtp_host)]["recommended_daily_ramp"]
+    if not ramp:
+        return 30
+    idx = max(int(day or 1), 1) - 1
+    return ramp[idx] if idx < len(ramp) else ramp[-1]
+
+
 def get_warmup_recommendation(mailbox_id: int, db: Session) -> Dict[str, Any]:
     """Get ISP-specific warmup recommendation for a mailbox.
 
