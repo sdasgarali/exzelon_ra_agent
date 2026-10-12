@@ -21,7 +21,7 @@ from app.api.endpoints import (
     reply_macros, notifications, calendar, credits, goals, visitor_tracking,
     sms, objections, dfy, email_preview, deliverability,
     outreach_roles, reports, lob, company_exclusions,
-    roles, gdpr,
+    roles, gdpr, public,
 )
 
 api_router = APIRouter()
@@ -89,3 +89,5 @@ api_router.include_router(lob.router)
 api_router.include_router(company_exclusions.router)
 # GDPR data-subject export/erasure (ELR-024)
 api_router.include_router(gdpr.router)
+# Public site details for marketing/legal pages (no auth)
+api_router.include_router(public.router)
