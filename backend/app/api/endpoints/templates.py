@@ -388,13 +388,15 @@ async def preview_template(
         "{{job_title}}": "Senior Software Engineer",
         "{{job_location}}": "New York, NY",
         "{{company_name}}": "Acme Corp",
-        "{{signature}}": "<div style='margin-top:20px;padding-top:12px;border-top:1px solid #ccc;font-family:Arial,sans-serif;'><strong>Sarah Smith</strong><br>Recruitment Specialist<br>Exzelon Inc.</div>",
-        "{{logo_url}}": "https://www.exzelon.com/gallery/logo.png",
+        "{{signature}}": "<div style='margin-top:20px;padding-top:12px;border-top:1px solid #ccc;font-family:Arial,sans-serif;'><strong>Sarah Smith</strong><br>Recruitment Specialist<br>Your Company</div>",
     }
+    # The workspace's own logo, or none (the <img> is dropped) — never a platform default.
+    from app.services.template_service import LOGO_PLACEHOLDER, apply_logo, tenant_logo_url
+    logo_url = tenant_logo_url(db, template.tenant_id)
 
-    preview_subject = template.subject
-    preview_html = template.body_html
-    preview_text = template.body_text or ""
+    preview_subject = apply_logo(template.subject, html.escape(logo_url))
+    preview_html = apply_logo(template.body_html, html.escape(logo_url))
+    preview_text = apply_logo(template.body_text or "", logo_url)
 
     for placeholder, value in sample_data.items():
         safe_value = html.escape(value)
@@ -408,7 +410,7 @@ async def preview_template(
         "subject": preview_subject,
         "body_html": preview_html,
         "body_text": preview_text,
-        "placeholders_used": list(sample_data.keys()),
+        "placeholders_used": list(sample_data.keys()) + [LOGO_PLACEHOLDER],
     }
 
 
