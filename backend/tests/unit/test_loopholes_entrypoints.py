@@ -459,3 +459,68 @@ class TestB7DailySendLimit:
         sample_mailbox.emails_sent_today = 60  # over the 50 platform cap
         db_session.commit()
         assert sendable_mailboxes_query(db_session, test_tenant.tenant_id).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# B6 — signup: email validation/normalisation, alias duplicates, disposable
+#       domains, shared rate-limit storage
+# ---------------------------------------------------------------------------
+
+def _signup(client, email):
+    from unittest.mock import patch
+    with patch("app.services.email_verification._send_email", return_value=True):
+        return client.post(f"{API}/auth/signup", json={
+            "email": email, "password": "SecurePass123!",
+            "full_name": "Jane Doe", "company_name": f"Co {email}",
+        })
+
+
+class TestB6Signup:
+
+    def test_invalid_email_rejected(self, client, db_session):
+        assert _signup(client, "not-an-email").status_code == 422
+
+    def test_email_stored_lowercase(self, client, db_session):
+        from app.db.models.user import User
+        r = _signup(client, "  New.User@Startup-Co.com ")
+        assert r.status_code == 201, r.text
+        assert db_session.query(User).filter(User.email == "new.user@startup-co.com").count() == 1
+
+    @pytest.mark.parametrize("first,second", [
+        ("dup@startup-co.com", "DUP@Startup-Co.com"),
+        ("jane@acme-io.com", "jane+promo@acme-io.com"),
+        ("jane+a@acme-io.com", "jane+b@acme-io.com"),
+        ("janedoe@gmail.com", "j.ane.doe+x@googlemail.com"),
+    ])
+    def test_alias_of_existing_user_rejected(self, client, db_session, first, second):
+        assert _signup(client, first).status_code == 201
+        r = _signup(client, second)
+        assert r.status_code == 400, r.text
+        assert "already registered" in r.json()["detail"]
+
+    def test_dots_are_significant_outside_gmail(self, client, db_session):
+        assert _signup(client, "jane.doe@acme-io.com").status_code == 201
+        assert _signup(client, "janedoe@acme-io.com").status_code == 201
+
+    @pytest.mark.parametrize("email", ["x@mailinator.com", "x@YOPMAIL.com", "x@eu.guerrillamail.com"])
+    def test_disposable_domain_rejected(self, client, db_session, email):
+        r = _signup(client, email)
+        assert r.status_code == 400, r.text
+
+    def test_configured_blocked_domain_rejected(self, client, db_session, monkeypatch):
+        from app.core.config import settings as app_settings
+        monkeypatch.setattr(app_settings, "BLOCKED_SIGNUP_DOMAINS", "burner-example.org, other.test")
+        assert _signup(client, "x@burner-example.org").status_code == 400
+
+    def test_normalize_mailbox(self):
+        from app.api.endpoints.auth import normalize_mailbox
+        assert normalize_mailbox("J.Doe+tag@GoogleMail.com") == "jdoe@gmail.com"
+        assert normalize_mailbox("a.b+c@corp.com") == "a.b@corp.com"
+
+    def test_rate_limit_storage_configurable(self, monkeypatch):
+        from app.core.config import settings as app_settings
+        import app.core.rate_limiter as rl
+        monkeypatch.setattr(app_settings, "RATE_LIMIT_STORAGE_URI", "")
+        assert rl._storage_uri() == "memory://"
+        monkeypatch.setattr(app_settings, "RATE_LIMIT_STORAGE_URI", "redis://localhost:6379/0")
+        assert rl._storage_uri() == "redis://localhost:6379/0"

@@ -1,6 +1,6 @@
 """Tenant schemas."""
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 
 
@@ -35,10 +35,21 @@ class TenantBrief(BaseModel):
 
 class SignupRequest(BaseModel):
     """Schema for self-service signup."""
-    email: str = Field(..., description="User email address")
+    email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., min_length=8, description="Password (min 8 chars, 1 uppercase, 1 number, 1 special)")
     full_name: str = Field(..., min_length=1, max_length=255, description="Full name")
     company_name: str = Field(..., min_length=1, max_length=255, description="Company/organization name")
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def strip_email(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, v: str) -> str:
+        # Stored and compared lowercase so case variants can't open a second account.
+        return str(v).lower()
 
     @field_validator("password")
     @classmethod

@@ -22,6 +22,70 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 
+# ── Self-signup abuse guards ─────────────────────────────────────────────────
+# Each signup creates a tenant with a fresh credit allowance, so throwaway
+# addresses and mailbox aliases are a direct way to farm free credits.
+# Extend via the BLOCKED_SIGNUP_DOMAINS setting (comma-separated).
+DISPOSABLE_EMAIL_DOMAINS = frozenset({
+    "10minutemail.com", "10minutemail.net", "1secmail.com", "1secmail.net", "1secmail.org",
+    "burnermail.io", "discard.email", "dispostable.com", "emailondeck.com", "fakeinbox.com",
+    "getairmail.com", "getnada.com", "grr.la", "guerrillamail.biz", "guerrillamail.com",
+    "guerrillamail.de", "guerrillamail.info", "guerrillamail.net", "guerrillamail.org",
+    "guerrillamailblock.com", "mailcatch.com", "maildrop.cc", "mailinator.com",
+    "mailinator.net", "mailnesia.com", "mintemail.com", "moakt.com", "mohmal.com",
+    "mytemp.email", "nada.email", "sharklasers.com", "spamgourmet.com", "temp-mail.io",
+    "temp-mail.org", "tempail.com", "tempmail.com", "tempmail.net", "tempmailo.com",
+    "tempr.email", "throwawaymail.com", "trashmail.com", "trashmail.de", "trashmail.net",
+    "yopmail.com", "yopmail.fr", "yopmail.net",
+})
+_GMAIL_DOMAINS = frozenset({"gmail.com", "googlemail.com"})
+
+
+def _blocked_signup_domains() -> frozenset:
+    extra = {d.strip().lower().lstrip("@") for d in (settings.BLOCKED_SIGNUP_DOMAINS or "").split(",") if d.strip()}
+    return DISPOSABLE_EMAIL_DOMAINS | extra
+
+
+def is_disposable_email_domain(email: str) -> bool:
+    """True when the address is on a blocked (disposable) domain or a subdomain of one."""
+    domain = (email or "").rsplit("@", 1)[-1].strip().lower()
+    blocked = _blocked_signup_domains()
+    return any(domain == d or domain.endswith("." + d) for d in blocked)
+
+
+def normalize_mailbox(email: str) -> str:
+    """Canonical mailbox for duplicate detection.
+
+    Lowercases, drops a ``+tag`` on every domain, and for Gmail also removes dots
+    and folds googlemail.com into gmail.com — so ``J.Doe+x@GoogleMail.com`` and
+    ``jdoe@gmail.com`` are the same person.
+    """
+    local, _, domain = (email or "").strip().lower().rpartition("@")
+    local = local.split("+", 1)[0]
+    if domain in _GMAIL_DOMAINS:
+        local = local.replace(".", "")
+        domain = "gmail.com"
+    return f"{local}@{domain}"
+
+
+def _find_user_with_same_mailbox(db: Session, email: str) -> Optional[User]:
+    """Existing user whose address normalises to the same mailbox as ``email``."""
+    from sqlalchemy import func, or_
+    target = normalize_mailbox(email)
+    local, _, domain = target.rpartition("@")
+    if not local:
+        return None
+    domains = _GMAIL_DOMAINS if domain in _GMAIL_DOMAINS else {domain}
+    lowered = func.lower(User.email)
+    candidates = db.query(User).filter(
+        lowered.startswith(local[0], autoescape=True),
+        or_(*[lowered.endswith("@" + d, autoescape=True) for d in domains]),
+    ).all()
+    for u in candidates:
+        if normalize_mailbox(u.email) == target:
+            return u
+    return None
+
 
 def _record_login(db: Session, *, email: str, success: bool, user: User = None,
                    failure_reason: str = None, ip: str = None, ua: str = None):
@@ -51,6 +115,9 @@ async def login(
     email = form_data.username
 
     user = db.query(User).filter(User.email == email).first()
+    if user is None and email and email.strip().lower() != email:
+        # Signup now stores addresses lowercase; accept any casing at login.
+        user = db.query(User).filter(User.email == email.strip().lower()).first()
 
     # Check if account is locked
     if user and user.locked_until and user.locked_until > datetime.utcnow():
@@ -144,9 +211,18 @@ async def signup(
     from app.services.tenant_service import create_tenant_for_signup
     from app.services.email_verification import send_verification_email
 
-    # Check if email already exists
-    existing = db.query(User).filter(User.email == data.email).first()
-    if existing:
+    # data.email is already validated and lowercased by SignupRequest.
+    if is_disposable_email_domain(data.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please sign up with a permanent work email address.",
+        )
+
+    # Check if email already exists — exact match, any case, or the same mailbox
+    # behind a +tag / Gmail-dot alias.
+    from sqlalchemy import func
+    existing = db.query(User).filter(func.lower(User.email) == data.email).first()
+    if existing or _find_user_with_same_mailbox(db, data.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
