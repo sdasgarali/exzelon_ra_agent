@@ -203,7 +203,7 @@ DEFAULT_SETTINGS = {
     "email_send_mode": {"value": "mailmerge", "type": "string", "description": "Email send mode"},
     "catch_all_policy": {"value": "exclude", "type": "string", "description": "Policy for catch-all emails"},
     "unsubscribe_footer": {"value": True, "type": "boolean", "description": "Include unsubscribe footer"},
-    "company_address": {"value": "123 Business St, City, State 12345", "type": "string", "description": "Company mailing address for footer"},
+    "company_address": {"value": "", "type": "string", "description": "Company mailing address for footer (no placeholder: an empty value must read as 'not set')"},
     "data_retention_days": {"value": 180, "type": "integer", "description": "Days to keep archived records before permanent deletion"},
     "domain_daily_limit_default": {"value": 50, "type": "integer", "description": "Max emails per day to any single recipient domain"},
     "domain_daily_limit_major_providers": {"value": 30, "type": "integer", "description": "Max emails per day to major providers (Gmail, Outlook, Yahoo)"},
@@ -810,7 +810,8 @@ async def update_company_profile(
     if data.industry is not None:
         tenant.industry = data.industry
     if data.company_address is not None:
-        tenant.company_address = data.company_address
+        # Stored trimmed; blank clears it (the send gate treats blank as "not set").
+        tenant.company_address = data.company_address.strip()[:500] or None
 
     db.commit()
     db.refresh(tenant)

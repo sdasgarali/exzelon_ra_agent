@@ -403,6 +403,7 @@ def sample_mailbox(db_session, test_tenant):
         reply_count=10,
         complaint_count=0,
         warmup_days_completed=15,
+        warmup_emails_sent=60,  # warmed: passes the outreach warmup gate
     )
     db_session.add(mailbox)
     db_session.commit()

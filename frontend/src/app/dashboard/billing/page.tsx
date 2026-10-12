@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { isCancel } from 'axios'
 import PlanUsagePanel from '@/components/plan-usage-panel'
 import { useAuthStore } from '@/lib/store'
-import { billingApi } from '@/lib/api'
+import { billingApi, getApiError } from '@/lib/api'
+import { useSiteInfo } from '@/lib/use-site-info'
 import { Modal } from '@/components/modal'
 import type { Invoice, PaymentRecord, BillingStats } from '@/types/api'
 import {
@@ -64,6 +66,8 @@ function StatusBadge({ status, colors }: { status: string; colors: Record<string
 export default function BillingPage() {
   const { user } = useAuthStore()
   const isSuperAdmin = user?.role === 'super_admin'
+  // While Stripe isn't configured, "Pay Online" would only fail — offer support instead.
+  const siteInfo = useSiteInfo()
 
   // Data state
   const [invoices, setInvoices] = useState<Invoice[]>([])
@@ -130,7 +134,9 @@ export default function BillingPage() {
       setPayments(paymentData.payments || [])
       setStats(statsData)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load billing data')
+      // A newer identical request superseded this one (GET dedup in lib/api.ts) — not an error.
+      if (isCancel(err)) return
+      setError(getApiError(err, 'Failed to load billing data'))
     } finally {
       setLoading(false)
     }
@@ -147,7 +153,9 @@ export default function BillingPage() {
       setInvoices(invoiceData.invoices || [])
       setPayments(paymentData.payments || [])
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load billing data')
+      // A newer identical request superseded this one (GET dedup in lib/api.ts) — not an error.
+      if (isCancel(err)) return
+      setError(getApiError(err, 'Failed to load billing data'))
     } finally {
       setLoading(false)
     }
@@ -177,7 +185,7 @@ export default function BillingPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to download invoice PDF')
+      setError(getApiError(err, 'Failed to download invoice PDF'))
     }
   }
 
@@ -195,7 +203,7 @@ export default function BillingPage() {
       setMarkPaidForm({ payment_method: 'manual', reference: '', notes: '' })
       fetchSuperAdminData()
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to mark invoice as paid')
+      setError(getApiError(err, 'Failed to mark invoice as paid'))
     } finally {
       setMarkPaidSaving(false)
     }
@@ -229,7 +237,7 @@ export default function BillingPage() {
       setBulkForm({ tenant_ids_str: '', period_start: '', period_end: '' })
       fetchSuperAdminData()
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to generate invoices')
+      setError(getApiError(err, 'Failed to generate invoices'))
     } finally {
       setBulkGenerating(false)
     }
@@ -244,7 +252,7 @@ export default function BillingPage() {
       setDeleteConfirm(null)
       fetchSuperAdminData()
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete invoice')
+      setError(getApiError(err, 'Failed to delete invoice'))
     } finally {
       setDeleting(false)
     }
@@ -264,7 +272,7 @@ export default function BillingPage() {
         fetchTenantData()
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to initiate payment')
+      setError(getApiError(err, 'Failed to initiate payment'))
     } finally {
       setPayingInvoiceId(null)
     }
@@ -690,7 +698,17 @@ export default function BillingPage() {
                                 <Download className="w-3.5 h-3.5" />
                                 PDF
                               </button>
-                              {inv.status !== 'paid' && inv.status !== 'cancelled' && inv.status !== 'void' && (
+                              {inv.status !== 'paid' && inv.status !== 'cancelled' && inv.status !== 'void' && !siteInfo.payments_enabled && (
+                                <a
+                                  href={`mailto:${siteInfo.support_email}?subject=${encodeURIComponent(`Paying invoice ${inv.invoice_number}`)}`}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/30 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
+                                  title={`Email ${siteInfo.support_email} to arrange payment`}
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  Contact support to pay
+                                </a>
+                              )}
+                              {inv.status !== 'paid' && inv.status !== 'cancelled' && inv.status !== 'void' && siteInfo.payments_enabled && (
                                 <button
                                   onClick={() => handlePayOnline(inv)}
                                   disabled={payingInvoiceId === inv.invoice_id}

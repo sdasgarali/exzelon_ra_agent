@@ -23,7 +23,13 @@ Schema changes now go through **Alembic**, not ad-hoc `ALTER TABLE` blocks in
    review — autogenerate misses some server_defaults/enums, so always check).
 3. Fill in `upgrade()` / `downgrade()` with explicit `op.*` calls.
 4. `alembic upgrade head` locally to test; `alembic downgrade -1` to verify rollback.
-5. Deploy runs `alembic upgrade head`.
+5. Deploy runs `alembic upgrade head`: `deploy/deploy.sh` takes a pre-deploy dump
+   (`/opt/exzelon-ra-agent/backups/pre-deploy-<ts>.sql.gz`), pulls, installs, builds,
+   then runs `alembic upgrade head` + prints `alembic current` immediately before the
+   restart. If the migration fails the script stops **without restarting**, so the old
+   code keeps serving; it prints the dump-restore and `git checkout <prev>` commands.
+   Write migrations so the *old* code tolerates the new schema for the ~1 minute between
+   migrate and restart (add columns nullable/with defaults; drop/rename in a later release).
 
 ## Transition note (legacy `main.py` block)
 The large idempotent migration block in `main.py`'s lifespan is **kept as a safety

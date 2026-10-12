@@ -3,16 +3,42 @@ import { useAuthStore } from './store'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
+/** Turn one Pydantic validation item ({loc, msg, type}) into a sentence a user can act on.
+ *  "Value error, Password must..." -> "Password must..."; a generic "Field required" on
+ *  loc ["body","company_name"] -> "Company name: Field required". */
+function formatValidationItem(d: any): string {
+  if (typeof d === 'string') return d
+  if (!d || typeof d !== 'object') return d == null ? '' : String(d)
+  let msg: string = typeof d.msg === 'string' ? d.msg : ''
+  if (!msg) return ''
+  msg = msg.replace(/^(Value|Assertion) error,\s*/i, '')
+  // Custom validator messages already name the field; generic ones ("Field required") don't.
+  const loc: string[] = Array.isArray(d.loc)
+    ? d.loc.filter((p: any) => typeof p === 'string' && p !== 'body' && p !== 'query')
+    : []
+  const field = loc.length ? loc[loc.length - 1] : ''
+  if (field && d.type !== 'value_error') {
+    const label = field.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+    return `${label}: ${msg}`
+  }
+  return msg
+}
+
 /** Extract a human-readable error string from an Axios error.
- *  Handles Pydantic validation errors (detail is array of objects) and plain string detail. */
+ *  Handles Pydantic validation errors (detail is a list of objects), object details and
+ *  plain string detail. Always returns a string, so it is safe to render in JSX. */
 export function getApiError(err: any, fallback = 'Something went wrong'): string {
   const detail = err?.response?.data?.detail
   if (!detail) return fallback
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
-    return detail.map((d: any) => typeof d === 'string' ? d : (d?.msg || JSON.stringify(d))).join('; ')
+    const parts = detail.map(formatValidationItem).filter(Boolean)
+    return parts.length ? Array.from(new Set(parts)).join('; ') : fallback
   }
-  if (typeof detail === 'object') return detail.msg || JSON.stringify(detail)
+  if (typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message) return detail.message
+    return formatValidationItem(detail) || fallback
+  }
   return String(detail)
 }
 
@@ -167,7 +193,7 @@ export const authApi = {
     const response = await api.patch('/auth/me/notification-preferences', data)
     return response.data
   },
-  signup: async (data: { email: string; password: string; full_name: string; company_name: string }) => {
+  signup: async (data: { email: string; password: string; full_name: string; company_name: string; accept_terms: boolean }) => {
     const response = await api.post('/auth/signup', data)
     return response.data
   },

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Logo from './Logo'
+import { SITE_INFO_FALLBACK } from '@/lib/site-info'
 
 const footerLinks = {
   Product: [
@@ -28,7 +29,8 @@ const footerLinks = {
   ],
 }
 
-export default function Footer() {
+/** `supportEmail` comes from the public site-info API (fetched by the marketing layout). */
+export default function Footer({ supportEmail = SITE_INFO_FALLBACK.support_email }: { supportEmail?: string }) {
   return (
     <footer className="border-t border-white/5 bg-navy-900">
       <div className="max-w-7xl mx-auto px-6 py-16">
@@ -41,6 +43,17 @@ export default function Footer() {
             <p className="text-slate-500 text-sm leading-relaxed">
               AI-powered outreach automation. From lead sourcing to closed deals.
             </p>
+            {supportEmail && (
+              <p className="mt-4 text-sm">
+                <span className="block text-slate-500">Support</span>
+                <a
+                  href={`mailto:${supportEmail}`}
+                  className="text-slate-300 hover:text-white transition-colors break-all"
+                >
+                  {supportEmail}
+                </a>
+              </p>
+            )}
           </div>
 
           {/* Link columns */}

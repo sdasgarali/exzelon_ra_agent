@@ -3,10 +3,10 @@ import Link from 'next/link'
 import LegalShell, {
   LegalSectionBlock,
   Note,
-  Pending,
   TableWrap,
 } from '@/components/marketing/legal/LegalShell'
 import type { LegalSection } from '@/components/marketing/legal/types'
+import { loadSiteInfo, MailLink, operatorName } from '../privacy/legal-info'
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
@@ -37,7 +37,11 @@ const SECTIONS: LegalSection[] = [
 
 const EFFECTIVE = '10 September 2026'
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const info = await loadSiteInfo()
+  const entity = info.legal_entity_name.trim()
+  const address = info.legal_address.trim()
+  const jurisdiction = info.legal_jurisdiction.trim()
   return (
     <LegalShell
       eyebrow="Legal"
@@ -55,9 +59,10 @@ export default function TermsPage() {
     >
       <LegalSectionBlock id="agreement" num={1} title="The agreement">
         <p>
-          These terms form an agreement between you and <Pending>legal entity name</Pending>{' '}
-          (“NeuraLeads”, “we”, “us”), registered at <Pending>registered address</Pending>. They
-          apply when you create an account, use the platform, or use this website.
+          These terms form an agreement between you and {operatorName(info)}{' '}
+          {entity ? '(“NeuraLeads”, “we”, “us”)' : '(“we”, “us”)'}
+          {address ? `, registered at ${address}` : ''}. They apply when you create an account,
+          use the platform, or use this website.
         </p>
         <p>
           The service is provided for business use. By accepting these terms you confirm you are
@@ -452,11 +457,13 @@ export default function TermsPage() {
 
       <LegalSectionBlock id="general" num={17} title="General">
         <ul>
-          <li>
-            <strong>Governing law.</strong> These terms are governed by the laws of{' '}
-            <Pending>jurisdiction</Pending>, and the courts of{' '}
-            <Pending>jurisdiction</Pending> have exclusive jurisdiction over disputes.
-          </li>
+          {jurisdiction ? (
+            <li>
+              <strong>Governing law.</strong> These terms are governed by the laws of{' '}
+              {jurisdiction}, and the courts of {jurisdiction} have exclusive jurisdiction over
+              disputes.
+            </li>
+          ) : null}
           <li>
             <strong>Entire agreement.</strong> These terms and the Privacy Policy are the whole
             agreement between us on this subject and replace earlier discussions.
@@ -478,7 +485,7 @@ export default function TermsPage() {
           </li>
           <li>
             <strong>Notices.</strong> We will send notices to your account email. You can reach us
-            at <Pending>support address</Pending>.
+            at <MailLink email={info.support_email} />.
           </li>
         </ul>
       </LegalSectionBlock>

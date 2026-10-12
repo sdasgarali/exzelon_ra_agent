@@ -380,9 +380,12 @@ async def get_dashboard_stats(
         SenderMailbox.is_active == True,
         SenderMailbox.warmup_status == WarmupStatus.ACTIVE
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
+    # "Ready" means outreach may actually use it — status AND finished warmup —
+    # the same rule the senders apply (mailbox_selector.outreach_eligible_filter).
+    from app.services.mailbox_selector import outreach_eligible_filter
     ready_to_send = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).filter(
         SenderMailbox.is_active == True,
-        SenderMailbox.warmup_status.in_([WarmupStatus.ACTIVE, WarmupStatus.COLD_READY])
+        outreach_eligible_filter(),
     ).with_entities(func.count(SenderMailbox.mailbox_id)).scalar() or 0
     warming_up_mailboxes = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id).filter(
         SenderMailbox.warmup_status == WarmupStatus.WARMING_UP

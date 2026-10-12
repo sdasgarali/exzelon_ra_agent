@@ -3,10 +3,10 @@ import Link from 'next/link'
 import LegalShell, {
   LegalSectionBlock,
   Note,
-  Pending,
   TableWrap,
 } from '@/components/marketing/legal/LegalShell'
 import type { LegalSection } from '@/components/marketing/legal/types'
+import { loadSiteInfo, MailLink, operatorName } from './legal-info'
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -36,7 +36,11 @@ const SECTIONS: LegalSection[] = [
 
 const EFFECTIVE = '10 September 2026'
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const info = await loadSiteInfo()
+  const address = info.legal_address.trim()
+  const jurisdiction = info.legal_jurisdiction.trim()
+  const privacyEmail = <MailLink email={info.privacy_email || info.support_email} />
   return (
     <LegalShell
       eyebrow="Legal"
@@ -54,9 +58,10 @@ export default function PrivacyPage() {
     >
       <LegalSectionBlock id="roles" num={1} title="Two different roles">
         <p>
-          NeuraLeads (“we”, “us”) is operated by <Pending>legal entity name</Pending>, registered
-          at <Pending>registered address</Pending>. This policy explains how personal data is
-          handled across the NeuraLeads website and platform.
+          {info.legal_entity_name.trim()
+            ? <>NeuraLeads (“we”, “us”) is operated by {operatorName(info)}{address ? `, registered at ${address}` : ''}.</>
+            : <>NeuraLeads (“we”, “us”){address ? `, registered at ${address},` : ''} provides this website and platform.</>}
+          {' '}This policy explains how personal data is handled across the NeuraLeads website and platform.
         </p>
         <p>
           Almost every privacy question about this service depends on <em>whose</em> data is being
@@ -313,7 +318,7 @@ export default function PrivacyPage() {
         </TableWrap>
         <p>
           A current list of the sub-processors we engage is available on request from{' '}
-          <Pending>privacy address</Pending>.
+          {privacyEmail}.
         </p>
       </LegalSectionBlock>
 
@@ -340,8 +345,8 @@ export default function PrivacyPage() {
           We and the providers described above may process data in countries other than your own,
           including outside the European Economic Area and the United Kingdom. Where personal data
           is transferred internationally, we rely on an appropriate safeguard such as an adequacy
-          decision or standard contractual clauses. The governing jurisdiction for our own
-          processing is <Pending>jurisdiction</Pending>.
+          decision or standard contractual clauses.
+          {jurisdiction ? ` The governing jurisdiction for our own processing is ${jurisdiction}.` : ''}
         </p>
       </LegalSectionBlock>
 
@@ -438,12 +443,12 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>If the sender does not respond:</strong> contact us at{' '}
-            <Pending>privacy address</Pending> with a copy of the message. We will identify the
+            {privacyEmail} with a copy of the message. We will identify the
             customer responsible and require them to act.
           </li>
           <li>
             <strong>To report abuse of the platform:</strong> email{' '}
-            <Pending>privacy address</Pending>. Sending unlawful or unsolicited mail breaches our{' '}
+            {privacyEmail}. Sending unlawful or unsolicited mail breaches our{' '}
             <Link href="/terms">Terms of Service</Link>, and we suspend accounts that do it.
           </li>
         </ul>
@@ -473,8 +478,9 @@ export default function PrivacyPage() {
       <LegalSectionBlock id="contact" num={16} title="Contacting us">
         <p>
           For privacy questions, data-subject requests, sub-processor lists or a copy of our data
-          processing agreement, contact <Pending>privacy address</Pending>, or write to{' '}
-          <Pending>registered address</Pending>. General enquiries are answered through the{' '}
+          processing agreement, contact {privacyEmail}
+          {address ? `, or write to ${operatorName(info)}, ${address}` : ''}. General enquiries are
+          answered through the{' '}
           <Link href="/contact">contact page</Link>.
         </p>
       </LegalSectionBlock>

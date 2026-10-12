@@ -2781,6 +2781,109 @@ async def health_check():
     )
 
 
+# --- Readiness (Plan_Launch_Readiness_6 M1) ---------------------------------
+READY_HEARTBEAT_MAX_AGE_S = 10 * 60      # scheduler ticks every minute
+READY_BACKUP_MAX_AGE_H = 26              # daily backup at 02:00 UTC + slack
+READY_DISK_WARN_PCT = 10.0               # below: "warn" (non-critical)
+READY_DISK_CRIT_PCT = 5.0                # below: critical — a full disk stops MySQL/backups
+
+
+def _ready_check_db() -> dict:
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ok", "critical": True}
+    except Exception as e:
+        return {"status": "fail", "critical": True, "error": type(e).__name__}
+
+
+def _ready_check_redis() -> dict:
+    if not settings.REDIS_URL:
+        return {"status": "skipped", "critical": False, "reason": "REDIS_URL not configured"}
+    try:
+        import redis
+        client = redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=0.5, socket_timeout=0.5)
+        client.ping()
+        return {"status": "ok", "critical": False}
+    except Exception as e:
+        return {"status": "warn", "critical": False, "error": type(e).__name__}
+
+
+def _ready_check_scheduler() -> dict:
+    from datetime import datetime, timezone
+    from app.services.alerting import get_scheduler_heartbeat
+    hb = get_scheduler_heartbeat()
+    if hb is None:
+        return {"status": "fail", "critical": True, "error": "no heartbeat recorded"}
+    age = (datetime.now(timezone.utc) - hb).total_seconds()
+    out = {"critical": True, "last_heartbeat": hb.isoformat(), "age_seconds": int(age)}
+    out["status"] = "ok" if age <= READY_HEARTBEAT_MAX_AGE_S else "fail"
+    if out["status"] == "fail":
+        out["error"] = f"heartbeat older than {READY_HEARTBEAT_MAX_AGE_S // 60} min"
+    return out
+
+
+def _ready_check_disk() -> dict:
+    import shutil
+    from app.services.backup_service import BACKUP_DIR
+    try:
+        usage = shutil.disk_usage(BACKUP_DIR)
+        free_pct = round(usage.free * 100.0 / usage.total, 1) if usage.total else 0.0
+    except Exception as e:
+        return {"status": "warn", "critical": False, "error": type(e).__name__}
+    status = "ok"
+    if free_pct < READY_DISK_CRIT_PCT:
+        status = "fail"
+    elif free_pct < READY_DISK_WARN_PCT:
+        status = "warn"
+    return {"status": status, "critical": status == "fail", "free_pct": free_pct,
+            "free_gb": round(usage.free / 1024 ** 3, 1)}
+
+
+def _ready_check_backup() -> dict:
+    from datetime import datetime
+    from app.services.backup_service import latest_backup_time
+    ts = latest_backup_time()
+    if ts is None:
+        return {"status": "fail", "critical": True, "error": "no local backup found"}
+    age_h = (datetime.now() - ts).total_seconds() / 3600.0  # filenames use server local time
+    out = {"critical": True, "last_backup": ts.isoformat(), "age_hours": round(age_h, 1)}
+    out["status"] = "ok" if age_h <= READY_BACKUP_MAX_AGE_H else "fail"
+    if out["status"] == "fail":
+        out["error"] = f"latest backup older than {READY_BACKUP_MAX_AGE_H}h"
+    return out
+
+
+def readiness_report() -> tuple[int, dict]:
+    """Run every readiness check; 503 if any *critical* check fails."""
+    checks = {}
+    for name, fn in (("database", _ready_check_db), ("redis", _ready_check_redis),
+                     ("scheduler", _ready_check_scheduler), ("disk", _ready_check_disk),
+                     ("backup", _ready_check_backup)):
+        try:
+            checks[name] = fn()
+        except Exception as e:  # a broken check is a failed check, never a 500
+            checks[name] = {"status": "fail", "critical": True, "error": type(e).__name__}
+    failed = [n for n, c in checks.items() if c.get("critical") and c.get("status") == "fail"]
+    body = {"status": "ready" if not failed else "not_ready", "failed": failed,
+            "env": settings.APP_ENV, "checks": checks}
+    return (200 if not failed else 503), body
+
+
+@app.get("/ready")
+@app.get(f"{settings.API_V1_PREFIX}/ready")
+def ready_check():
+    """Readiness: DB, Redis (non-critical), scheduler heartbeat, disk, backup age.
+
+    Exposed at /ready and /api/v1/ready — nginx only proxies /api/ and /health to
+    the API, so the watchdog uses https://neuraleads.ai/api/v1/ready. Sync def ->
+    runs in the threadpool, so the blocking DB/Redis calls never stall the loop.
+    """
+    code, body = readiness_report()
+    return JSONResponse(status_code=code, content=body)
+
+
 @app.exception_handler(AppException)
 async def app_exception_handler(request, exc: AppException):
     logger.warning("Application error", error_code=exc.error_code, detail=exc.detail, path=request.url.path)
@@ -2792,7 +2895,31 @@ async def app_exception_handler(request, exc: AppException):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    logger.error("Unhandled exception", error=str(exc), path=request.url.path)
+    # Full traceback + method/path. Never the request body, headers or query string
+    # (they can carry credentials, tokens or contact PII).
+    logger.error(
+        "Unhandled exception",
+        error=str(exc), error_type=type(exc).__name__,
+        method=request.method, path=request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    try:
+        import traceback
+        from starlette.concurrency import run_in_threadpool
+        from app.services.alerting import send_alert
+        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        await run_in_threadpool(
+            send_alert,
+            "unhandled_exception",
+            f"500 on {request.method} {request.url.path}: {type(exc).__name__}",
+            f"{type(exc).__name__}: {str(exc)[:500]}\n"
+            f"Request: {request.method} {request.url.path}\n\n"
+            f"Traceback (last 4000 chars):\n{tb[-4000:]}\n\n"
+            f"Further unhandled exceptions are suppressed for "
+            f"{settings.ALERT_MIN_INTERVAL_MINUTES} min — see journalctl -u exzelon-api.",
+        )
+    except Exception:
+        pass
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 

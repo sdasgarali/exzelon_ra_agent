@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Coins, Send, AlertTriangle, ArrowUpRight } from 'lucide-react'
 import { billingApi } from '@/lib/api'
+import { useSiteInfo } from '@/lib/use-site-info'
 
 /**
  * The two meters, side by side.
@@ -126,6 +127,7 @@ function Meter({
 
 export default function UsageMeters({ compact = false }: { compact?: boolean }) {
   const router = useRouter()
+  const { payments_enabled } = useSiteInfo()
   const { data, isLoading } = useQuery<UsageResponse>({
     queryKey: ['billing-usage'],
     queryFn: billingApi.usage,
@@ -162,7 +164,8 @@ export default function UsageMeters({ compact = false }: { compact?: boolean }) 
             onClick={() => router.push('/dashboard/billing?tab=plan')}
             className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
           >
-            Upgrade to {plan?.upgrade_label}
+            {/* Payments off: the billing page offers "Request upgrade" instead of checkout. */}
+            {payments_enabled ? `Upgrade to ${plan?.upgrade_label}` : 'Request upgrade'}
             <ArrowUpRight className="h-3 w-3" />
           </button>
         )}
@@ -196,7 +199,9 @@ export default function UsageMeters({ compact = false }: { compact?: boolean }) 
           <span>
             {sends.exhausted
               ? 'You have used your send quota for this month. Campaigns are paused until it resets.'
-              : 'You are close to a monthly limit. Top up credits or upgrade to keep campaigns running.'}
+              : payments_enabled
+              ? 'You are close to a monthly limit. Top up credits or upgrade to keep campaigns running.'
+              : 'You are close to a monthly limit. Request an upgrade from the Billing page to keep campaigns running.'}
           </span>
         </p>
       )}

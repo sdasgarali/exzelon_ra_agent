@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { MyDealsWidget } from '@/components/my-deals-widget'
 import { GettingStarted } from '@/components/getting-started'
 import UsageMeters from '@/components/usage-meters'
+import { PostalAddressBanner } from '@/components/postal-address-banner'
 import {
   Building,
   Users,
@@ -896,6 +897,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* CAN-SPAM: outreach is blocked until the workspace has a postal address */}
+      <PostalAddressBanner />
+
       {/* Getting Started onboarding widget */}
       {showOnboarding && (
         <GettingStarted status={onboardingStatus} onDismiss={handleDismissOnboarding} />

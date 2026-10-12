@@ -162,7 +162,8 @@ function LinkedinNode({ data }: { data: any }) {
         <span className="text-xs font-semibold text-sky-700 dark:text-sky-300">LinkedIn Step {data.stepOrder}</span>
       </div>
       <div className="p-3">
-        <p className="text-xs text-gray-500 italic">Coming soon</p>
+        {/* LinkedIn steps can't be added any more; legacy ones are skipped by the engine. */}
+        <p className="text-xs text-gray-500 dark:text-gray-400 italic">Not supported — skipped when sending</p>
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-sky-500" />
     </div>

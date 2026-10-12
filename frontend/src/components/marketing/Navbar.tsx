@@ -59,7 +59,7 @@ export default function Navbar() {
             Log in
           </Link>
           <Link
-            href="/login"
+            href="/signup"
             className="bg-white hover:bg-white/90 text-brand-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
           >
             Get Started
@@ -102,7 +102,7 @@ export default function Navbar() {
               Log in
             </Link>
             <Link
-              href="/login"
+              href="/signup"
               onClick={() => setMobileOpen(false)}
               className="block text-center bg-primary-500 hover:bg-primary-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
             >

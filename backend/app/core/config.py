@@ -853,6 +853,31 @@ class Settings(BaseSettings):
     # are shared across workers and survive restarts.
     RATE_LIMIT_STORAGE_URI: str = ""
 
+    # --- Launch readiness (Plan_Launch_Readiness_6.md) -------------------------
+    # Published customer-support address (contact page, footer, in-app Help).
+    SUPPORT_EMAIL: str = "info@neuraleads.ai"
+    # Where site-down / error / backup-failure alerts are emailed (Resend system mail).
+    ALERT_EMAIL: str = "info@neuraleads.ai"
+    # Minimum minutes between two alert emails of the same kind (de-duplication).
+    ALERT_MIN_INTERVAL_MINUTES: int = 15
+    # Days of local DB backups kept on the server (off-site copies follow BACKUP_S3_*).
+    BACKUP_LOCAL_RETENTION_DAYS: int = 14
+    # Outreach eligibility: a mailbox must finish this much warmup before any
+    # campaign/outreach send may use it (warmup itself is unaffected).
+    MIN_WARMUP_DAYS: int = 14
+    MIN_WARMUP_EMAILS: int = 50
+    # How many sending domains that share ONE outbound IP may be in live outreach
+    # at the same time — one blacklisting would otherwise take the whole cohort down.
+    MAX_LIVE_DOMAINS_PER_IP: int = 1
+    # Legal pages (privacy / terms / contact). Empty = the page shows a neutral
+    # "operated by NeuraLeads" line instead of placeholders.
+    LEGAL_ENTITY_NAME: str = ""
+    LEGAL_ADDRESS: str = ""
+    LEGAL_JURISDICTION: str = ""
+    PRIVACY_EMAIL: str = ""  # falls back to SUPPORT_EMAIL
+    # Version string of the Terms/Privacy a user accepts at signup (bump on change).
+    TERMS_VERSION: str = "2026-09-10"
+
 
 @lru_cache
 def get_settings() -> Settings:

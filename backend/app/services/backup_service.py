@@ -20,6 +20,16 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 # Filename pattern for validation (prevents path traversal)
 FILENAME_PATTERN = re.compile(r"^exzelon_ra_agent_\d{8}_\d{6}\.sql\.gz$")
 
+# Integrity sanity floor for a dump (B3). Prod dumps are ~19 MB gzipped; anything
+# under 1 MB means mysqldump stopped early or dumped an empty/wrong schema.
+MIN_BACKUP_BYTES = 1024 * 1024
+# Off-site objects older than this are deleted after each successful upload (B2).
+OFFSITE_RETENTION_DAYS = 30
+
+
+class BackupIntegrityError(RuntimeError):
+    """A dump was written but failed verify_backup(); already alerted."""
+
 
 def _mysql_env() -> dict:
     """Build a subprocess env dict with MYSQL_PWD set (avoids password in CLI args)."""
@@ -77,12 +87,8 @@ def _upload_offsite(backup_path: Path, checksum: str) -> dict:
             data = Fernet(settings.ENCRYPTION_KEY.encode()).encrypt(data)
             key_suffix = ".enc"
 
-        import boto3
-        key = f"{settings.BACKUP_S3_PREFIX.rstrip('/')}/{backup_path.name}{key_suffix}"
-        client_kwargs = {}
-        if settings.BACKUP_S3_ENDPOINT_URL:
-            client_kwargs["endpoint_url"] = settings.BACKUP_S3_ENDPOINT_URL
-        s3 = boto3.client("s3", **client_kwargs)
+        key = f"{_offsite_prefix()}{backup_path.name}{key_suffix}"
+        s3 = _s3_client()
         s3.put_object(
             Bucket=settings.BACKUP_S3_BUCKET,
             Key=key,
@@ -91,13 +97,147 @@ def _upload_offsite(backup_path: Path, checksum: str) -> dict:
         )
         logger.info("backup_offsite_uploaded", bucket=settings.BACKUP_S3_BUCKET,
                     key=key, encrypted=bool(key_suffix))
+        pruned = _prune_offsite(s3)
         return {"status": "uploaded", "bucket": settings.BACKUP_S3_BUCKET,
-                "key": key, "encrypted": bool(key_suffix)}
+                "key": key, "encrypted": bool(key_suffix), "pruned": pruned}
     except Exception as e:
         # Loud + alertable — an offsite backup that silently stops uploading is a
         # DR gap you only discover when you need to restore.
         logger.warning("backup_offsite_failed", error=str(e), filename=backup_path.name)
+        from app.services.alerting import send_alert
+        send_alert(
+            "backup_offsite_failed",
+            "Off-site backup upload failed",
+            f"File: {backup_path.name}\nBucket: {settings.BACKUP_S3_BUCKET}\n"
+            f"Endpoint: {settings.BACKUP_S3_ENDPOINT_URL or '(AWS default)'}\n"
+            f"Error: {type(e).__name__}: {str(e)[:1000]}\n\n"
+            "The local backup is intact; only the off-site copy is missing.",
+        )
         return {"status": "failed", "error": str(e)}
+
+
+def _offsite_prefix() -> str:
+    prefix = (settings.BACKUP_S3_PREFIX or "").strip("/")
+    return f"{prefix}/" if prefix else ""
+
+
+def _region_from_endpoint(endpoint_url: str) -> Optional[str]:
+    """Backblaze B2 / Wasabi-style endpoints embed the region:
+    https://s3.us-west-004.backblazeb2.com -> us-west-004."""
+    m = re.match(r"^https?://s3[.-]([a-z0-9-]+)\.(?:backblazeb2\.com|wasabisys\.com)", endpoint_url or "")
+    return m.group(1) if m else None
+
+
+def _s3_client():
+    """boto3 S3 client that also works against S3-compatible stores (Backblaze B2).
+
+    Credentials come from the standard boto3 chain — ``AWS_ACCESS_KEY_ID`` /
+    ``AWS_SECRET_ACCESS_KEY`` (in the .env as ``PROD_AWS_*``; env_loader strips the
+    prefix). For B2 the SigV4 region must match the endpoint, so it is derived from
+    the endpoint host unless ``AWS_DEFAULT_REGION`` is set. boto3 >= 1.36 sends
+    CRC32 checksum headers by default that several S3-compatible stores reject, so
+    checksums are limited to "when_required" on a custom endpoint.
+    """
+    import boto3
+    from botocore.config import Config
+
+    kwargs: dict = {}
+    endpoint = settings.BACKUP_S3_ENDPOINT_URL
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
+        region = os.environ.get("AWS_DEFAULT_REGION") or _region_from_endpoint(endpoint)
+        if region:
+            kwargs["region_name"] = region
+        try:
+            kwargs["config"] = Config(
+                signature_version="s3v4",
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            )
+        except TypeError:  # botocore < 1.36 has neither option (nor the problem)
+            kwargs["config"] = Config(signature_version="s3v4")
+    return boto3.client("s3", **kwargs)
+
+
+def _prune_offsite(s3, retention_days: int = OFFSITE_RETENTION_DAYS) -> int:
+    """Delete off-site backup objects older than ``retention_days``. Best-effort —
+    a prune failure never fails the upload. Only touches objects under the backup
+    prefix whose name is a backup file. Returns the number deleted."""
+    from datetime import timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    prefix = _offsite_prefix()
+    deleted = 0
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=settings.BACKUP_S3_BUCKET, Prefix=prefix):
+            for obj in page.get("Contents", []) or []:
+                name = obj["Key"][len(prefix):]
+                if name.endswith(".enc"):
+                    name = name[:-4]
+                if not FILENAME_PATTERN.match(name):
+                    continue
+                if obj["LastModified"] < cutoff:
+                    s3.delete_object(Bucket=settings.BACKUP_S3_BUCKET, Key=obj["Key"])
+                    deleted += 1
+                    logger.info("backup_offsite_pruned", key=obj["Key"])
+    except Exception as e:
+        logger.warning("backup_offsite_prune_failed", error=str(e))
+    return deleted
+
+
+def verify_backup(path: Path, min_bytes: int = MIN_BACKUP_BYTES) -> tuple[bool, str]:
+    """Integrity check for a gzipped mysqldump (B3).
+
+    Streams the whole file through gzip (equivalent to ``gzip -t`` — a truncated or
+    corrupt stream raises), and checks: file size >= ``min_bytes``, at least one
+    ``CREATE TABLE``, and mysqldump's trailing ``-- Dump completed`` marker (absent
+    when the dump was cut short). Returns ``(ok, reason)``.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError as e:
+        return False, f"cannot stat backup: {e}"
+    if size < min_bytes:
+        return False, f"backup too small: {size} bytes (< {min_bytes})"
+    has_create = False
+    tail = b""
+    try:
+        with gzip.open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                window = tail + chunk
+                if not has_create and b"CREATE TABLE" in window:
+                    has_create = True
+                tail = window[-4096:]
+    except Exception as e:
+        return False, f"gzip stream invalid: {type(e).__name__}: {e}"
+    if not has_create:
+        return False, "no CREATE TABLE statement in dump"
+    if b"-- Dump completed" not in tail:
+        return False, "dump is missing the '-- Dump completed' trailer (truncated?)"
+    return True, "ok"
+
+
+def effective_retention_days(setting_value) -> int:
+    """Local retention = max(admin setting ``backup_retention_days``,
+    ``BACKUP_LOCAL_RETENTION_DAYS``). The config value is a floor so a low UI
+    setting (default 3) can never shrink the DR window below it (B1)."""
+    try:
+        configured = int(setting_value)
+    except (TypeError, ValueError):
+        configured = 0
+    return max(configured, int(settings.BACKUP_LOCAL_RETENTION_DAYS or 0), 1)
+
+
+def latest_backup_time() -> Optional[datetime]:
+    """Local time of the newest valid local backup (from its filename), or None."""
+    newest = None
+    for p in BACKUP_DIR.glob("exzelon_ra_agent_*.sql.gz"):
+        if not FILENAME_PATTERN.match(p.name):
+            continue
+        ts = _parse_timestamp_from_filename(p.name)
+        if ts and (newest is None or ts > newest):
+            newest = ts
+    return newest
 
 
 def create_backup() -> dict:
@@ -113,6 +253,9 @@ def create_backup() -> dict:
     cmd = [
         "mysqldump",
         "--single-transaction",
+        # ra_user has no PROCESS privilege; MySQL 8.0.21+ mysqldump aborts on the
+        # tablespace query without this flag (same flag the pre-deploy dump uses).
+        "--no-tablespaces",
         "--routines",
         "--triggers",
         "--events",
@@ -149,6 +292,26 @@ def create_backup() -> dict:
 
         size_bytes = backup_path.stat().st_size
         created_at = datetime.now().isoformat()
+
+        # Integrity check (B3). A bad dump is renamed out of the backup set so it
+        # neither counts as "latest successful backup" for /ready nor gets restored.
+        ok, reason = verify_backup(backup_path)
+        if not ok:
+            bad = backup_path.with_name(backup_path.name + ".failed")
+            try:
+                os.replace(backup_path, bad)
+            except OSError:
+                pass
+            logger.error("backup_integrity_failed", filename=filename, reason=reason,
+                         size_bytes=size_bytes)
+            from app.services.alerting import send_alert
+            send_alert(
+                "backup_failed",
+                "Database backup failed its integrity check",
+                f"File: {filename} (kept as {bad.name})\nSize: {size_bytes} bytes\n"
+                f"Reason: {reason}",
+            )
+            raise BackupIntegrityError(f"Backup integrity check failed: {reason}")
 
         # Integrity checksum (detects silent corruption / partial writes).
         checksum = _sha256_file(backup_path)
@@ -296,4 +459,11 @@ def cleanup_old_backups(retention_days: int) -> int:
             p.unlink()
             deleted += 1
             logger.info("Old backup cleaned up", filename=p.name)
+    # Dumps that failed the integrity check are kept for inspection, then aged out.
+    for p in BACKUP_DIR.glob("exzelon_ra_agent_*.sql.gz.failed"):
+        ts = _parse_timestamp_from_filename(p.name)
+        if ts and ts < cutoff:
+            p.unlink(missing_ok=True)
+            deleted += 1
+            logger.info("Old failed backup cleaned up", filename=p.name)
     return deleted

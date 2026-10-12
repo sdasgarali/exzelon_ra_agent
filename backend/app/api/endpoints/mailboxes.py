@@ -33,6 +33,17 @@ from app.schemas.sender_mailbox import (
 router = APIRouter(prefix="/mailboxes", tags=["Mailboxes"])
 
 
+class MailboxWithGateResponse(SenderMailboxResponse):
+    """Mailbox + the outreach warmup gate verdict (why it can't send outreach yet)."""
+    outreach_eligible: bool = False
+    outreach_block_reason: Optional[str] = None
+
+
+class MailboxListWithGateResponse(SenderMailboxListResponse):
+    items: List[MailboxWithGateResponse]
+    outreach_eligible_count: int = 0
+
+
 # ---- OAuth2 endpoints (placed BEFORE /{mailbox_id} routes) ----
 
 @router.get("/oauth/initiate")
@@ -166,11 +177,13 @@ async def oauth_callback(
     }
 
 
-def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> SenderMailboxResponse:
+def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> MailboxWithGateResponse:
     """Convert mailbox model to response schema."""
+    from app.services.mailbox_selector import outreach_block_reason
     warmup_sent = mailbox.warmup_emails_sent or 0
     outreach_sent = max(0, (mailbox.total_emails_sent or 0) - warmup_sent)
-    return SenderMailboxResponse(
+    block_reason = outreach_block_reason(mailbox)
+    return MailboxWithGateResponse(
         mailbox_id=mailbox.mailbox_id,
         email=mailbox.email,
         display_name=mailbox.display_name,
@@ -206,7 +219,14 @@ def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> Sender
         # The model property ignores connection health; a mailbox whose last
         # connection test failed cannot actually send (the campaign engine's
         # selector already requires connection_status == "successful").
-        can_send=bool(mailbox.can_send) and (mailbox.connection_status or "untested") != "failed",
+        # ...and outreach additionally requires real warmup history (D1 warmup gate).
+        can_send=(
+            bool(mailbox.can_send)
+            and (mailbox.connection_status or "untested") != "failed"
+            and block_reason is None
+        ),
+        outreach_eligible=block_reason is None,
+        outreach_block_reason=block_reason,
         remaining_daily_quota=mailbox.remaining_daily_quota,
         email_signature_json=mailbox.email_signature_json,
         is_archived=mailbox.is_archived,
@@ -219,7 +239,7 @@ def mailbox_to_response(mailbox: SenderMailbox, role_name: str = None) -> Sender
     )
 
 
-@router.get("", response_model=SenderMailboxListResponse)
+@router.get("", response_model=MailboxListWithGateResponse)
 async def list_mailboxes(
     status: Optional[str] = Query(None, description="Filter by warmup status"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
@@ -271,11 +291,13 @@ async def list_mailboxes(
     active_count = sum(1 for m in mailboxes if m.is_active)
     ready_count = sum(1 for m in mailboxes if m.warmup_status == WarmupStatus.COLD_READY and m.is_active)
 
-    return SenderMailboxListResponse(
-        items=[mailbox_to_response(m, role_name=role_map.get(m.outreach_role_id)) for m in mailboxes],
+    items = [mailbox_to_response(m, role_name=role_map.get(m.outreach_role_id)) for m in mailboxes]
+    return MailboxListWithGateResponse(
+        items=items,
         total=len(mailboxes),
         active_count=active_count,
-        ready_count=ready_count
+        ready_count=ready_count,
+        outreach_eligible_count=sum(1 for i in items if i.outreach_eligible and i.is_active),
     )
 
 
@@ -299,9 +321,12 @@ async def get_mailbox_stats(
 
     # Calculate daily capacity for active, ready mailboxes that can connect
     # (a failed connection contributes no real sending capacity).
+    # Capacity counts only mailboxes outreach may actually use (status AND
+    # finished warmup — mailbox_selector.is_outreach_eligible).
+    from app.services.mailbox_selector import is_outreach_eligible
     ready_mailboxes = [
         m for m in mailboxes
-        if m.warmup_status in [WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]
+        if is_outreach_eligible(m)
         and m.is_active
         and (m.connection_status or "untested") != "failed"
     ]
@@ -998,11 +1023,17 @@ async def test_new_mailbox_connection(
 async def update_mailbox_status(
     mailbox_id: int,
     new_status: WarmupStatusEnum,
+    force: bool = Query(False, description="Super admin only: bypass the warmup gate (audited)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Update warmup status of a mailbox (Admin only)."""
+    """Update warmup status of a mailbox (Admin only).
+
+    Moving to cold_ready/active (outreach-capable) requires the warmup gate
+    (MIN_WARMUP_DAYS + MIN_WARMUP_EMAILS). A super admin may override with
+    ``force=true``; the override is written to the audit log.
+    """
     if new_status == WarmupStatusEnum.RECOVERING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1021,6 +1052,23 @@ async def update_mailbox_status(
     from datetime import datetime
 
     old_status = mailbox.warmup_status
+    forced_reason = None
+    if new_status in (WarmupStatusEnum.COLD_READY, WarmupStatusEnum.ACTIVE):
+        from app.services.mailbox_selector import warmup_progress_reason
+        gate_reason = warmup_progress_reason(mailbox)
+        if gate_reason:
+            if not force:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mailbox has not finished warmup: {gate_reason}",
+                )
+            if current_user.role != UserRole.SUPER_ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only a super admin can override the warmup gate",
+                )
+            forced_reason = gate_reason
+
     mailbox.warmup_status = WarmupStatus(new_status)
 
     # Track warmup completion
@@ -1029,6 +1077,24 @@ async def update_mailbox_status(
     elif new_status == WarmupStatusEnum.WARMING_UP and old_status != WarmupStatus.WARMING_UP:
         mailbox.warmup_started_at = datetime.utcnow()
         mailbox.warmup_days_completed = 0
+
+    if forced_reason:
+        from app.services.audit_helper import write_audit_log
+        write_audit_log(
+            db,
+            tenant_id=mailbox.tenant_id,
+            entity_type="mailbox",
+            entity_id=mailbox.mailbox_id,
+            action="warmup_gate_override",
+            changed_by=current_user.email,
+            changed_fields={"warmup_status": {
+                "old": getattr(old_status, "value", old_status),
+                "new": WarmupStatus(new_status).value,
+            }},
+            notes=f"Super admin forced status past the warmup gate ({forced_reason})",
+        )
+        logger.warning("warmup_gate_override", mailbox_id=mailbox.mailbox_id,
+                       by=current_user.email, reason=forced_reason)
 
     db.commit()
     db.refresh(mailbox)
@@ -1063,9 +1129,10 @@ async def get_available_mailboxes_for_sending(
 ):
     """Get available mailboxes for sending (cold-ready with remaining quota)."""
     query = tenant_filter(db.query(SenderMailbox), SenderMailbox, tenant_id)
+    from app.services.mailbox_selector import outreach_eligible_filter
     mailboxes = query.filter(
         SenderMailbox.is_active == True,
-        SenderMailbox.warmup_status.in_([WarmupStatus.COLD_READY, WarmupStatus.ACTIVE]),
+        outreach_eligible_filter(),  # status + real warmup history (D1)
         SenderMailbox.emails_sent_today < SenderMailbox.daily_send_limit
     ).order_by(
         SenderMailbox.emails_sent_today.asc()  # Prefer mailboxes with lower usage
