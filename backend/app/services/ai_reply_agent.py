@@ -15,8 +15,13 @@ def generate_reply_suggestion(
     contact: Optional[ContactDetails],
     campaign: Optional[Campaign],
     db: Session,
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Generate an AI-suggested reply for an inbox thread.
+
+    Uses the tenant's AI settings and charges the tenant one `ai_reply` when the AI
+    produced the reply; the canned fallback is free. Not committed here — the
+    endpoint commits (C6).
 
     Returns {subject, body_html, body_text, confidence}.
     """
@@ -51,7 +56,7 @@ def generate_reply_suggestion(
 
     try:
         from app.services.adapters.ai_content import get_ai_adapter
-        adapter = get_ai_adapter(db)
+        adapter = get_ai_adapter(db, tenant_id=tenant_id)
 
         if not adapter:
             return _fallback_reply(contact)
@@ -73,6 +78,11 @@ def generate_reply_suggestion(
                 last_subject = msg.subject
                 break
         subject = last_subject if last_subject.lower().startswith("re:") else f"Re: {last_subject}"
+
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "ai_reply",
+              reference_id=str(getattr(thread_messages[-1], "thread_id", "") or ""),
+              description="AI suggested reply")
 
         # Log AI suggestion event
         try:

@@ -528,6 +528,12 @@ def ai_rewrite_draft(draft_id: int, db: Session, tenant_id: int) -> Dict[str, An
         draft.spam_grade = spam_result["grade"]
         draft.flagged_words_json = json.dumps(spam_result["flagged_words"])
 
+        # Charged with the rewrite it paid for, in the same commit (C6). An adapter
+        # error raises past this into the except below and costs nothing.
+        from app.services.credit_metering import meter
+        meter(db, tenant_id, "ai_personalization", reference_id=str(draft_id),
+              description="AI draft rewrite")
+
         db.commit()
         return {
             "draft_id": draft_id,
@@ -656,8 +662,13 @@ def check_spam_and_suggest(
     body_html: str,
     db: Session,
     tenant_id: int,
+    allow_ai: bool = True,
 ) -> Dict[str, Any]:
-    """Run spam check and generate AI-powered replacement suggestions."""
+    """Run spam check and generate AI-powered replacement suggestions.
+
+    `allow_ai=False` (tenant out of credits) skips the paid AI call and returns the
+    basic suggestions instead.
+    """
     from app.services.adapters.ai_content import get_ai_adapter
 
     spam_result = check_spam_score(subject, body_html)
@@ -666,7 +677,7 @@ def check_spam_and_suggest(
     flagged = spam_result.get("flagged_words", [])
 
     if flagged:
-        ai = get_ai_adapter(db, tenant_id)
+        ai = get_ai_adapter(db, tenant_id) if allow_ai else None
         if ai:
             # Build list of flagged words for AI
             words_list = [f.get("word", "") for f in flagged if not f.get("word", "").startswith("[pattern:")]
@@ -685,6 +696,13 @@ def check_spam_and_suggest(
                     ], temperature=0.5, max_tokens=800)
                     cleaned = re.sub(r"```(?:json)?\s*", "", result).strip().rstrip("`")
                     suggestions = json.loads(cleaned)
+                    if not isinstance(suggestions, list):
+                        raise ValueError("AI suggestions are not a list")
+                    # Charged only for usable AI suggestions; the canned fallback in
+                    # the except below is free. The caller commits (C6).
+                    from app.services.credit_metering import meter
+                    meter(db, tenant_id, "ai_personalization",
+                          description="AI spam-fix suggestions")
                 except Exception as e:
                     logger.warning("AI spam suggestions failed", error=str(e))
                     # Fallback: provide basic suggestions

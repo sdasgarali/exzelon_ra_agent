@@ -92,6 +92,14 @@ def generate_drafts(
             raise HTTPException(400, "campaign_id and step_index required for campaign source")
         result = generate_campaign_drafts(data.campaign_id, data.step_index, db, tid)
     elif source == "pipeline":
+        # Pipeline drafts are AI-written (one `ai_personalization` each, charged per
+        # draft that the AI actually produced) when AI outreach drafting is on. Gate
+        # on at least one so an empty balance can't keep generating (C6).
+        from app.core.settings_resolver import get_tenant_setting_bool
+        if get_tenant_setting_bool(db, "ai_outreach_drafting", tenant_id=tid, default=False):
+            from app.core.credit_costs import cost_for
+            from app.services.credit_metering import check_credit_budget
+            check_credit_budget(db, tid, credits_needed=cost_for("ai_personalization", db=db))
         result = generate_pipeline_drafts(tid, data.limit, db)
     elif source == "broadcast":
         if not data.contact_ids or not data.template_id or not data.mailbox_id:
@@ -443,9 +451,13 @@ def ai_rewrite(
     user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """AI-rewrite a single draft."""
+    """AI-rewrite a single draft (one `ai_personalization`, charged on success)."""
+    from app.core.credit_costs import cost_for
+    from app.services.credit_metering import check_credit_budget
     from app.services.email_preview_service import ai_rewrite_draft
-    result = ai_rewrite_draft(draft_id, db, ensure_tenant(tenant_id))
+    tid = ensure_tenant(tenant_id)
+    check_credit_budget(db, tid, credits_needed=cost_for("ai_personalization", db=db))
+    result = ai_rewrite_draft(draft_id, db, tid)
     if result.get("error"):
         raise HTTPException(400, result["error"])
     return result
@@ -473,9 +485,19 @@ def spam_check(
     user: User = Depends(get_current_active_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Check spam score + get AI suggestions for replacements."""
+    """Check spam score + get AI suggestions for replacements.
+
+    The AI suggestions cost one `ai_personalization` (charged only when the AI
+    returned usable suggestions). The spam score itself is free, so a tenant out of
+    credits still gets it — just with the basic, non-AI suggestions.
+    """
+    from app.core.credit_costs import cost_for
+    from app.services.credit_metering import has_credit_budget
     from app.services.email_preview_service import check_spam_and_suggest
-    result = check_spam_and_suggest(data.subject, data.body_html, db, ensure_tenant(tenant_id))
+    tid = ensure_tenant(tenant_id)
+    allow_ai = has_credit_budget(db, tid, credits_needed=cost_for("ai_personalization", db=db))
+    result = check_spam_and_suggest(data.subject, data.body_html, db, tid, allow_ai=allow_ai)
+    db.commit()  # persist the charge — get_db closes without committing
     return result
 
 

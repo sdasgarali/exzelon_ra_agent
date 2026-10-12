@@ -919,6 +919,18 @@ def _fallback_summary(pipeline_name: str, counters: Dict[str, Any], score: int,
     }
 
 
+def _has_current_summary(job_run: JobRun) -> bool:
+    """Whether the run already carries a current-format cached summary — i.e. the
+    caller is regenerating, not producing the first one."""
+    if not getattr(job_run, "summary_json", None):
+        return False
+    try:
+        cached = json.loads(job_run.summary_json)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(cached, dict) and "source_breakdown" in cached
+
+
 def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
     """Generate a complete enhanced summary report for a pipeline run.
 
@@ -988,6 +1000,15 @@ def generate_pipeline_summary(db: Session, job_run: JobRun) -> Dict[str, Any]:
             ai_generated = True
     except Exception as e:
         logger.warning(f"AI summary generation failed, using fallback: {e}")
+
+    # The first AI summary of a run is part of the run (free). Asking for it again —
+    # `?regenerate=true` over an existing current-format summary — is a fresh AI call
+    # the user chose to make, so it costs one `ai_suggestion` (C6). An old-format
+    # cached summary being upgraded automatically is not the user's choice: free.
+    if ai_generated and _has_current_summary(job_run):
+        from app.services.credit_metering import meter
+        meter(db, job_run.tenant_id, "ai_suggestion", reference_id=str(job_run.run_id),
+              description="AI pipeline summary regenerated")
 
     if not narrative:
         narrative = _fallback_summary(job_run.pipeline_name, counters, score, status, duration, error_message, error_details)

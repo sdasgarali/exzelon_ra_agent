@@ -43,8 +43,18 @@ CATEGORIES = [
 SENTIMENTS = ["positive", "negative", "neutral"]
 
 
-def analyze_reply_sentiment(body: str, subject: str = "", db: Optional[Session] = None) -> Dict[str, Any]:
+def analyze_reply_sentiment(
+    body: str,
+    subject: str = "",
+    db: Optional[Session] = None,
+    tenant_id: Optional[int] = None,
+) -> Dict[str, Any]:
     """Analyze an incoming reply to classify category and sentiment.
+
+    Keyword rules first (free). Only when they don't decide does it ask the AI, with
+    the reply's tenant's AI settings, and a usable AI classification charges that
+    tenant one `ai_classification` (C6). Runs automatically on every inbound reply
+    from the inbox syncer, which commits.
 
     Returns {category, sentiment, confidence}.
     """
@@ -81,7 +91,7 @@ def analyze_reply_sentiment(body: str, subject: str = "", db: Optional[Session] 
     if db:
         try:
             from app.services.adapters.ai_content import get_ai_adapter
-            adapter = get_ai_adapter(db)
+            adapter = get_ai_adapter(db, tenant_id=tenant_id)
 
             if adapter:
                 prompt = (
@@ -109,6 +119,9 @@ def analyze_reply_sentiment(body: str, subject: str = "", db: Optional[Session] 
                             conf = 0.5
 
                         if cat in CATEGORIES and sent in SENTIMENTS:
+                            from app.services.credit_metering import meter
+                            meter(db, tenant_id, "ai_classification",
+                                  description="AI reply sentiment")
                             return {"category": cat, "sentiment": sent, "confidence": conf}
 
         except Exception as e:

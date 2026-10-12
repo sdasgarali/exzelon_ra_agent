@@ -490,3 +490,234 @@ def test_c7_unpaid_invoice_checkout_is_not_marked_paid(client, db_session, test_
     assert _post_webhook(client).status_code == 200
     db_session.expire_all()
     assert db_session.get(Invoice, inv.invoice_id).status == InvoiceStatus.PAID
+
+
+# ---------------------------------------------------------------------------
+# C6 — AI calls that used to run unmetered
+# ---------------------------------------------------------------------------
+
+def _contact(db, tenant_id, email="c6@acme.example.com"):
+    from app.db.models.contact import ContactDetails
+    c = ContactDetails(tenant_id=tenant_id, client_name="Acme", first_name="Ann",
+                       last_name="Lee", email=email)
+    db.add(c)
+    db.commit()
+    return c
+
+
+def test_c6_outreach_draft_charges_per_successful_draft(db_session, test_tenant, monkeypatch):
+    import app.services.outreach_draft_service as ods
+    contact = _contact(db_session, test_tenant.tenant_id)
+    adapter = MagicMock()
+    adapter.research_company.return_value = {}
+    adapter.generate_email.return_value = {"subject": "Hi", "body_html": "<p>x</p>", "body_text": "x"}
+    monkeypatch.setattr(ods, "get_tenant_setting_bool", lambda *a, **k: True)
+    monkeypatch.setattr(ods, "get_ai_adapter", lambda db, tenant_id=None: adapter)
+
+    assert ods.draft_outreach_email(db_session, contact, tenant_id=test_tenant.tenant_id) is not None
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 1
+
+    adapter.generate_email.return_value = {"subject": "Hi", "body_html": "<p>x</p>", "error": "fallback"}
+    assert ods.draft_outreach_email(db_session, contact, tenant_id=test_tenant.tenant_id) is None
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 1  # unchanged
+
+
+def test_c6_ai_rewrite_is_charged(db_session, test_tenant, sample_mailbox, monkeypatch):
+    from app.db.models.outreach_draft import DraftSource, DraftStatus, OutreachDraft
+    from app.services.email_preview_service import ai_rewrite_draft
+    contact = _contact(db_session, test_tenant.tenant_id)
+    draft = OutreachDraft(tenant_id=test_tenant.tenant_id, contact_id=contact.contact_id,
+                          mailbox_id=sample_mailbox.mailbox_id, subject="s", body_html="<p>b</p>",
+                          status=DraftStatus.PENDING, source=DraftSource.PIPELINE)
+    db_session.add(draft)
+    db_session.commit()
+    _fake_adapter(monkeypatch, "SUBJECT: new\nBODY: <p>new</p>")
+    result = ai_rewrite_draft(draft.draft_id, db_session, test_tenant.tenant_id)
+    assert result.get("ai_rewritten") is True
+    db_session.rollback()
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 1
+
+
+def test_c6_spam_suggestions_charged_only_when_ai_answers(db_session, test_tenant, monkeypatch):
+    from app.services.email_preview_service import check_spam_and_suggest
+    adapter = _fake_adapter(monkeypatch, '[{"original": "free", "replacement": "no-cost"}]')
+    subject, body = "FREE money guaranteed", "<p>Act now, 100% free, risk free guarantee</p>"
+
+    out = check_spam_and_suggest(subject, body, db_session, test_tenant.tenant_id, allow_ai=False)
+    adapter._call_api.assert_not_called()
+    assert out["flagged_words"]
+    assert _usage(db_session, test_tenant.tenant_id, "ai_personalization") == []
+
+    check_spam_and_suggest(subject, body, db_session, test_tenant.tenant_id)
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_personalization")) == 1
+
+
+def _campaign_with_lead(db, tenant_id):
+    from app.db.models.campaign import Campaign, CampaignStatus
+    camp = Campaign(tenant_id=tenant_id, name="Camp", status=CampaignStatus.DRAFT)
+    db.add(camp)
+    db.commit()
+    return camp
+
+
+def test_c6_subject_suggestions_use_ai_and_charge(client, db_session, test_tenant, auth_headers, monkeypatch):
+    camp = _campaign_with_lead(db_session, test_tenant.tenant_id)
+    _fake_adapter(monkeypatch, '{"subjects": ["Hi {{first_name}}", "Quick q for {{company}}"]}')
+    r = client.post(f"/api/v1/campaigns/{camp.campaign_id}/ai-suggest-subjects", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == "ai"
+    assert r.json()["subjects"][0] == "Hi {{first_name}}"
+    db_session.rollback()
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_suggestion")) == 1
+
+
+def test_c6_campaign_naming_charges_and_falls_back_free_when_broke(client, db_session, test_tenant, auth_headers, monkeypatch):
+    camp = _campaign_with_lead(db_session, test_tenant.tenant_id)
+    adapter = _fake_adapter(monkeypatch, '{"name": "Healthcare HR push", "description": "d"}')
+    r = client.post(f"/api/v1/campaigns/{camp.campaign_id}/ai-enhance", headers=auth_headers)
+    assert r.json()["suggested_name"] == "Healthcare HR push"
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_suggestion")) == 1
+
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 0)
+    adapter._call_api.reset_mock()
+    r = client.post(f"/api/v1/campaigns/{camp.campaign_id}/ai-enhance", headers=auth_headers)
+    assert r.status_code == 200  # rule-based suggestion, no 402
+    adapter._call_api.assert_not_called()
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_suggestion")) == 1
+
+
+def _thread(db, tenant_id, contact):
+    from app.db.models.inbox_message import InboxMessage, MessageDirection
+    db.add(InboxMessage(tenant_id=tenant_id, thread_id="thr-c6", contact_id=contact.contact_id,
+                        direction=MessageDirection.RECEIVED, from_email=contact.email,
+                        to_email="me@x.example.com", subject="Re: hello",
+                        body_text="What does it cost?"))
+    db.commit()
+
+
+def test_c6_inbox_suggest_reply_is_charged_and_committed(client, db_session, test_tenant, auth_headers, monkeypatch):
+    contact = _contact(db_session, test_tenant.tenant_id)
+    _thread(db_session, test_tenant.tenant_id, contact)
+    _fake_adapter(monkeypatch, "Happy to share pricing — 15 minutes Thursday?")
+    r = client.post("/api/v1/inbox/threads/thr-c6/suggest-reply", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    db_session.rollback()
+    rows = _usage(db_session, test_tenant.tenant_id, "ai_reply")
+    assert len(rows) == 1 and rows[0].credits_used == 2
+
+
+def test_c6_inbox_suggest_reply_is_gated(client, db_session, test_tenant, auth_headers, monkeypatch):
+    contact = _contact(db_session, test_tenant.tenant_id)
+    _thread(db_session, test_tenant.tenant_id, contact)
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 1)
+    adapter = _fake_adapter(monkeypatch, "x")
+    r = client.post("/api/v1/inbox/threads/thr-c6/suggest-reply", headers=auth_headers)
+    assert r.status_code == 402
+    adapter._call_api.assert_not_called()
+
+
+def test_c6_sentiment_ai_classification_is_metered_to_the_reply_tenant(db_session, test_tenant, monkeypatch):
+    from app.services.ai_sentiment import analyze_reply_sentiment
+    _fake_adapter(monkeypatch, "question|neutral|0.7")
+    out = analyze_reply_sentiment("What would pricing look like for 3 sites?", "Re: x",
+                                  db_session, tenant_id=test_tenant.tenant_id)
+    assert out["category"] == "question"
+    rows = _usage(db_session, test_tenant.tenant_id, "ai_classification")
+    assert len(rows) == 1 and rows[0].credits_used == 0.5
+
+    # Keyword rule decides → no AI call, no charge.
+    analyze_reply_sentiment("Not interested, thanks", "", db_session, tenant_id=test_tenant.tenant_id)
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_classification")) == 1
+
+
+@pytest.mark.parametrize("reasoning,charged", [
+    ("The sender says they are travelling until Monday", 1),   # LLM classification
+    ("Keyword match: ooo (2 hits)", 0),                          # keyword fallback: free
+])
+def test_c6_reply_agent_ooo_exit_charges_llm_classification(db_session, test_tenant, monkeypatch, reasoning, charged):
+    from app.db.models.inbox_message import InboxMessage, MessageDirection
+    from app.services.ai_reply_agent_service import generate_ai_reply_draft
+    monkeypatch.setattr("app.services.ai_sales_agent.orchestrator.orchestrate_reply",
+                        lambda **k: {"intent": "ooo", "confidence": 90,
+                                     "classification": {"reasoning": reasoning}})
+    msg = InboxMessage(tenant_id=test_tenant.tenant_id, thread_id="thr-ooo",
+                       direction=MessageDirection.RECEIVED, from_email="a@b.example.com",
+                       to_email="me@x.example.com", body_text="I'm away")
+    assert generate_ai_reply_draft(db_session, "thr-ooo", msg, None, None, test_tenant.tenant_id) is None
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_classification")) == charged
+
+
+def _finished_run(db, tenant_id, summary_json=None):
+    from app.db.models.job_run import JobRun, JobStatus
+    run = JobRun(tenant_id=tenant_id, pipeline_name="contact_enrichment", status=JobStatus.COMPLETED,
+                 counters_json='{"contacts_found": 3}', triggered_by="t@t.example.com",
+                 summary_json=summary_json)
+    db.add(run)
+    db.commit()
+    return run
+
+
+@pytest.mark.parametrize("existing,charged", [
+    (None, 0),                                              # first summary: free
+    ('{"summary": "old", "source_breakdown": []}', 1),      # user-forced regenerate
+    ('{"summary": "legacy format"}', 0),                     # auto-upgrade of old cache: free
+])
+def test_c6_pipeline_summary_regenerate_is_charged(db_session, test_tenant, monkeypatch, existing, charged):
+    from app.services.pipeline_summary import generate_pipeline_summary
+    adapter = MagicMock()
+    adapter._call_api.return_value = '{"summary": "AI", "suggestions": [], "highlights": []}'
+    monkeypatch.setattr("app.services.warmup.content_generator.get_ai_adapter", lambda *a, **k: adapter)
+    run = _finished_run(db_session, test_tenant.tenant_id, existing)
+    assert generate_pipeline_summary(db_session, run)["ai_generated"] is True
+    assert len(_usage(db_session, test_tenant.tenant_id, "ai_suggestion")) == charged
+
+
+def _clients(db, tenant_id, n):
+    from app.db.models.client import ClientInfo
+    rows = [ClientInfo(tenant_id=tenant_id, client_name=f"Co {i}") for i in range(n)]
+    db.add_all(rows)
+    db.commit()
+    return [r.client_id for r in rows]
+
+
+def test_c6_bulk_company_enrich_capped_at_100(client, db_session, test_tenant, auth_headers, monkeypatch):
+    import app.api.endpoints.clients as clients_ep
+    monkeypatch.setattr(clients_ep, "bulk_enrich_clients", lambda *a, **k: {"enriched": 0})
+    r = client.post("/api/v1/clients/bulk/enrich", headers=auth_headers,
+                    json={"client_ids": list(range(1, 102))})
+    assert r.status_code == 400
+
+
+def test_c6_bulk_company_enrich_is_gated_without_metering_twice(client, db_session, test_tenant, auth_headers, monkeypatch):
+    import app.api.endpoints.clients as clients_ep
+    calls = []
+    monkeypatch.setattr(clients_ep, "bulk_enrich_clients",
+                        lambda db, ids, tenant_id=None: calls.append(ids) or {"enriched": len(ids)})
+    ids = _clients(db_session, test_tenant.tenant_id, 5)
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 14)  # 5 x 3 = 15 needed
+    r = client.post("/api/v1/clients/bulk/enrich", headers=auth_headers, json={"client_ids": ids})
+    assert r.status_code == 402 and calls == []
+
+    _set_available(db_session, test_tenant.tenant_id, 15)
+    r = client.post("/api/v1/clients/bulk/enrich", headers=auth_headers, json={"client_ids": ids})
+    assert r.status_code == 200, r.text
+    assert _usage(db_session, test_tenant.tenant_id) == []  # metering is company_enrichment's job
+
+
+def test_c6_single_company_enrich_is_gated(client, db_session, test_tenant, auth_headers, monkeypatch):
+    import app.api.endpoints.clients as clients_ep
+    monkeypatch.setattr(clients_ep, "enrich_client", lambda *a, **k: {"enriched": True})
+    (cid,) = _clients(db_session, test_tenant.tenant_id, 1)
+    _enforce(monkeypatch)
+    _set_available(db_session, test_tenant.tenant_id, 2)
+    r = client.post(f"/api/v1/clients/{cid}/enrich", headers=auth_headers)
+    assert r.status_code == 402
+
+
+def test_c6_new_actions_are_priced():
+    assert CREDIT_COSTS["ai_suggestion"].credits == 1
+    assert CREDIT_COSTS["ai_classification"].credits == 0.5
+    assert CREDIT_COSTS["ai_classification"].category == "ai"
