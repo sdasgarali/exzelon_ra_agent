@@ -39,7 +39,7 @@
 │   ├── .next/                # Build output
 │   └── node_modules/
 ├── backups/                  # pre-deploy-<ts>.sql.gz (deploy.sh, newest 10) + older pre-migrate dumps
-│                             # (daily dumps: backend/data/backups/, ops state: backend/data/ops/)
+│                             # (daily dumps: backend/data/backups/, ops state: backend/data/backups/.ops/)
 ├── deploy/
 │   ├── deploy.sh             # Self-contained deployment script
 │   ├── restore_drill.sh      # Restore newest dump into scratch DB + row-count report
@@ -75,7 +75,7 @@ npm build -> **`alembic upgrade head`** (aborts before restart on failure) -> re
   `/api/v1` path externally): DB, Redis (non-critical), scheduler heartbeat <= 10 min, disk free,
   newest local backup <= 26h. 200 / 503 + per-check JSON. `/health` unchanged.
 - Scheduler heartbeat: `job_scheduler_heartbeat` (every minute, scheduler-owning worker) writes
-  Redis key `neuraleads:ops:scheduler_heartbeat` + file `backend/data/ops/scheduler_heartbeat`.
+  Redis key `neuraleads:ops:scheduler_heartbeat` + file `backend/data/backups/.ops/scheduler_heartbeat`.
 - Alerts: `app/services/alerting.py` `send_alert(kind, ...)` -> `ALERT_EMAIL` (info@neuraleads.ai)
   via the global Resend/SMTP system mailer, max 1 per kind per `ALERT_MIN_INTERVAL_MINUTES`.
   Kinds: `unhandled_exception`, `backup_failed`, `backup_offsite_failed`. CLI:

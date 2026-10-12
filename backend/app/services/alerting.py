@@ -1,7 +1,7 @@
 """Operational alerting + small shared ops state (Plan_Launch_Readiness_6 M1/M3/M4).
 
 Three things live here because they share one storage helper (Redis when reachable,
-else a file under ``backend/data/ops/``) and must stay importable without the database:
+else a file under ``backend/data/backups/.ops/``) and must stay importable without the database:
 
 * ``send_alert(kind, subject, body)`` — emails ``ALERT_EMAIL`` through the global
   system mailer (Resend, or global SMTP — the same provider that sends verification
@@ -34,8 +34,11 @@ from app.core.config import settings
 
 logger = structlog.get_logger()
 
-# backend/data/ops — shared by every worker on the host (same filesystem).
-OPS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "ops"
+# backend/data/backups/.ops — shared by every worker on the host (same filesystem).
+# Lives under data/backups/ because that path is already git-ignored (an untracked
+# file in the VPS checkout would trip deploy.sh's "local changes" stash), and it
+# never matches the backup filename pattern, so backup listing/cleanup ignore it.
+OPS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "backups" / ".ops"
 
 HEARTBEAT_KEY = "neuraleads:ops:scheduler_heartbeat"
 HEARTBEAT_FILE = "scheduler_heartbeat"

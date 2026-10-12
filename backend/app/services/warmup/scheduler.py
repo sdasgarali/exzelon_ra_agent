@@ -597,7 +597,7 @@ def job_daily_backup():
 
 
 def job_scheduler_heartbeat():
-    """Write the shared scheduler heartbeat (Redis + backend/data/ops file). Never raises."""
+    """Write the shared scheduler heartbeat (Redis + backend/data/backups/.ops file). Never raises."""
     try:
         from app.services.alerting import record_scheduler_heartbeat
         record_scheduler_heartbeat()
