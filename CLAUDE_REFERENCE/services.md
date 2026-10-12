@@ -61,6 +61,7 @@ Kanban-style deal tracking:
 
 ### System / Notification Mailer (`services/system_mailer.py`)
 - `send_system_email(db, tenant_id, to, subject, html, attachments=None, reply_to=None)` — the tenant-aware transactional sender for ALL system mail. Now provider-backed (`adapters/transactional/`): **Resend** or SMTP per `SYSTEM_MAIL_PROVIDER`, with a tenant's own SMTP always winning (deal notifications, email verification, password resets). Resolves a **per-tenant** sender from `tenant_settings` (keys `notification_sender_email`/`_name`, `notification_smtp_host`/`_port`/`_user`, `notification_smtp_password_enc` (Fernet), `notification_smtp_security` = starttls|ssl); falls back to global `settings.SMTP_*`; skips (returns False) if neither is set. `_smtp_send()` handles STARTTLS (587) and implicit SSL (465). `send_test_email()` powers the Settings "Send test" button. Configured via `PUT /settings/notifications/sender`.
+- **OAuth keepalive** (2026-10-12): `oauth_helper.refresh_idle_oauth_tokens()` refreshes every active OAuth2 mailbox weekly (scheduler job `oauth_keepalive`, Sun 03:30 UTC). Microsoft expires a refresh token after 90 days unused (AADSTS700082); idle mailboxes used to die silently. A token that can't refresh marks the mailbox `failed` with a reconnect hint.
 - NOTE: M365 mailboxes need **Authenticated SMTP** enabled to use basic SMTP here (e.g. Hr@exzelon.com works; support@exzelon.com returns 535). Otherwise use OAuth (campaign path) or a cPanel SMTP box.
 
 ### Deal Notifications (`services/deal_notifications.py`)
