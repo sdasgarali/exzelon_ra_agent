@@ -3,10 +3,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 
 const mockGetProfile = jest.fn()
+const mockUpdateProfile = jest.fn()
 let mockRole = 'admin'
 
 jest.mock('@/lib/api', () => ({
-  settingsApi: { getCompanyProfile: () => mockGetProfile() },
+  settingsApi: {
+    getCompanyProfile: () => mockGetProfile(),
+    updateCompanyProfile: (d: any) => mockUpdateProfile(d),
+  },
+  getApiError: (e: any) => e?.message || 'error',
 }))
 
 jest.mock('@/lib/store', () => ({
@@ -26,6 +31,7 @@ function renderBanner() {
 
 beforeEach(() => {
   mockGetProfile.mockReset()
+  mockUpdateProfile.mockReset()
   mockRole = 'admin'
   window.sessionStorage.clear()
 })
@@ -34,7 +40,31 @@ test('shows when the workspace has no postal address', async () => {
   mockGetProfile.mockResolvedValue({ name: 'Acme', company_address: null })
   renderBanner()
   expect(await screen.findByRole('alert')).toHaveTextContent(/postal address/i)
-  expect(screen.getByRole('link')).toHaveAttribute('href', '/dashboard/settings?tab=business')
+  expect(screen.getByRole('button', { name: 'Add address' })).toBeInTheDocument()
+})
+
+test('saves the address inline (works even when the Business Rules tab is hidden)', async () => {
+  mockGetProfile.mockResolvedValueOnce({ company_address: null })
+    .mockResolvedValue({ company_address: '12 High St, Leeds LS1 1AA, UK' })
+  mockUpdateProfile.mockResolvedValue({})
+  renderBanner()
+  fireEvent.click(await screen.findByRole('button', { name: 'Add address' }))
+  fireEvent.change(screen.getByLabelText('Company postal address'), {
+    target: { value: '  12 High St, Leeds LS1 1AA, UK  ' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save address' }))
+  await waitFor(() => expect(mockUpdateProfile).toHaveBeenCalledWith({ company_address: '12 High St, Leeds LS1 1AA, UK' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+})
+
+test('rejects an obviously incomplete address without calling the API', async () => {
+  mockGetProfile.mockResolvedValue({ company_address: null })
+  renderBanner()
+  fireEvent.click(await screen.findByRole('button', { name: 'Add address' }))
+  fireEvent.change(screen.getByLabelText('Company postal address'), { target: { value: 'Leeds' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save address' }))
+  expect(await screen.findByText(/full postal address/i)).toBeInTheDocument()
+  expect(mockUpdateProfile).not.toHaveBeenCalled()
 })
 
 test('treats a whitespace-only address as missing', async () => {
