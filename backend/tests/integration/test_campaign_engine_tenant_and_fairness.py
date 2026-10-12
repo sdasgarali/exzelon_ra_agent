@@ -24,7 +24,8 @@ pytestmark = pytest.mark.integration
 def _mailbox(db, tenant_id, email):
     mb = SenderMailbox(tenant_id=tenant_id, email=email, display_name=email, password="x",
                        warmup_status=WarmupStatus.COLD_READY, is_active=True, connection_status="successful",
-                       daily_send_limit=30, emails_sent_today=0, is_blacklisted=False)
+                       daily_send_limit=30, emails_sent_today=0, is_blacklisted=False,
+                       warmup_days_completed=30, warmup_emails_sent=60)  # warmed: passes the outreach warmup gate
     db.add(mb)
     db.flush()
     return mb

@@ -30,6 +30,15 @@ pytestmark = pytest.mark.integration
 API = "/api/v1"
 
 
+@pytest.fixture(autouse=True)
+def _no_new_mailbox_ramp(monkeypatch):
+    """These tests seed mailboxes with several sends today to check least-loaded,
+    tenant-scoped selection; the first-30-day ISP ramp (D2, covered in
+    tests/unit/test_launch_warmup_gate.py) would cap a brand-new mailbox at 2/day."""
+    from app.services import mailbox_selector
+    monkeypatch.setattr(mailbox_selector, "RAMP_WINDOW_DAYS", 0)
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -49,6 +58,7 @@ def _mailbox(db, tenant_id, email, sent_today=0):
         password="x", warmup_status=WarmupStatus.COLD_READY, is_active=True,
         connection_status="successful", daily_send_limit=30,
         emails_sent_today=sent_today, total_emails_sent=0,
+        warmup_days_completed=30, warmup_emails_sent=60,  # warmed: passes the outreach warmup gate
     )
     db.add(m)
     db.commit()
