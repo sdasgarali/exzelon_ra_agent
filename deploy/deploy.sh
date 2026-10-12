@@ -174,7 +174,9 @@ predeploy_backup() {
         log_fail "mysqldump failed — aborting deploy (nothing changed)"
         exit 1
     fi
-    if ! gzip -t "$dump" || ! gunzip -c "$dump" | tail -n 3 | grep -q "Dump completed"; then
+    local trailer
+    trailer=$(gunzip -c "$dump" | tail -n 3 | grep -c "Dump completed" || true)
+    if ! gzip -t "$dump" || [ "${trailer:-0}" -lt 1 ]; then
         rm -f "$dump"
         log_fail "Pre-deploy dump failed its integrity check — aborting deploy (nothing changed)"
         exit 1
