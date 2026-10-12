@@ -590,7 +590,7 @@ export default function DashboardLayout({
       </div>
 
       {/* Floating Help menu — documentation, email support, replay tour */}
-      <div ref={helpMenuRef} className="fixed bottom-6 right-6 z-40">
+      <div ref={helpMenuRef} className="fixed bottom-6 right-6 z-[55]">{/* above the copilot button (z-50) so the open menu is never covered */}
         {helpMenuOpen && (
           <div
             role="menu"
