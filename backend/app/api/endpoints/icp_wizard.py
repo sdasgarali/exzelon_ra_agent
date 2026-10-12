@@ -41,7 +41,7 @@ def generate_icp(
     from app.services.credit_metering import check_credit_budget
     from app.core.credit_costs import cost_for
 
-    check_credit_budget(db, tenant_id, credits_needed=cost_for("icp_wizard"))
+    check_credit_budget(db, tenant_id, credits_needed=cost_for("icp_wizard", db=db))
     result = gen_icp(
         company_desc=body.company_description,
         offering=body.offering,
@@ -49,6 +49,9 @@ def generate_icp(
         db=db,
         tenant_id=tenant_id,
     )
+    # The service meters only when the AI ran; persist that charge — `get_db`
+    # closes without committing, so it used to be rolled back (C1).
+    db.commit()
     return result
 
 

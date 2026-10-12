@@ -2426,6 +2426,37 @@ def get_contact_schedule(
 
 # ─── LLM Integration Endpoints ────────────────────────────────────
 
+def _campaign_ai_text(db: Session, tenant_id: Optional[int], prompt: str, system: str) -> Optional[str]:
+    """One short completion for the campaign helpers below, or None.
+
+    None when the tenant has no AI configured or can't afford an `ai_suggestion` —
+    both endpoints then return their free rule-based suggestion instead of a 402.
+
+    These endpoints used to call ``call_ai_with_fallback(prompt=..., ...)``, which
+    has no such signature (it takes a method name), so the TypeError was swallowed
+    and the AI never ran (C6).
+    """
+    from app.core.credit_costs import cost_for
+    from app.services.adapters.ai_content import get_ai_adapter
+    from app.services.ai_sequence_generator import call_adapter_text
+    from app.services.credit_metering import has_credit_budget
+
+    if not has_credit_budget(db, tenant_id, credits_needed=cost_for("ai_suggestion", db=db)):
+        return None
+    adapter = get_ai_adapter(db, tenant_id=tenant_id)
+    if adapter is None:
+        return None
+    return call_adapter_text(adapter, prompt, system=system, max_tokens=400)
+
+
+def _charge_ai_suggestion(db: Session, tenant_id: Optional[int], campaign_id: int, what: str) -> None:
+    """Meter + commit one `ai_suggestion` for a suggestion the AI actually produced."""
+    from app.services.credit_metering import meter
+    meter(db, tenant_id, "ai_suggestion", reference_id=str(campaign_id),
+          description=f"AI {what}")
+    db.commit()
+
+
 @router.post("/{campaign_id}/ai-enhance")
 def ai_enhance_campaign(
     campaign_id: int,
@@ -2475,23 +2506,23 @@ def ai_enhance_campaign(
     )
 
     try:
-        from app.services.ai_resilience import call_ai_with_fallback
-        result = call_ai_with_fallback(
-            prompt=prompt,
-            system_prompt="You are a campaign naming assistant. Reply ONLY with valid JSON.",
-            db=db,
-            tenant_id=tenant_id,
+        result = _campaign_ai_text(
+            db, tenant_id, prompt,
+            system="You are a campaign naming assistant. Reply ONLY with valid JSON.",
         )
 
         import re
-        json_match = re.search(r'\{[^}]+\}', result or '')
+        json_match = re.search(r'\{.*\}', result or '', re.DOTALL)
         if json_match:
             suggestion = json.loads(json_match.group())
-            return {
-                "suggested_name": suggestion.get("name", campaign.name),
-                "suggested_description": suggestion.get("description", campaign.description or ""),
-                "applied": False,
-            }
+            if isinstance(suggestion, dict) and suggestion.get("name"):
+                response = {
+                    "suggested_name": suggestion.get("name", campaign.name),
+                    "suggested_description": suggestion.get("description", campaign.description or ""),
+                    "applied": False,
+                }
+                _charge_ai_suggestion(db, tenant_id, campaign_id, "campaign name")
+                return response
     except Exception as e:
         logger.warning("AI enhance failed, using rule-based fallback", error=str(e))
 
@@ -2551,19 +2582,21 @@ def ai_suggest_subjects(
     )
 
     try:
-        from app.services.ai_resilience import call_ai_with_fallback
-        result = call_ai_with_fallback(
-            prompt=prompt,
-            system_prompt="You are an email copywriting expert. Reply ONLY with valid JSON.",
-            db=db,
-            tenant_id=tenant_id,
+        result = _campaign_ai_text(
+            db, tenant_id, prompt,
+            system="You are an email copywriting expert. Reply ONLY with valid JSON.",
         )
 
         import re
-        json_match = re.search(r'\{[^}]+\}', result or '', re.DOTALL)
+        # Greedy: the subjects themselves contain {{first_name}}-style tokens, which
+        # a non-greedy `[^}]+` match would cut in half.
+        json_match = re.search(r'\{.*\}', result or '', re.DOTALL)
         if json_match:
             parsed = json.loads(json_match.group())
-            return {"subjects": parsed.get("subjects", []), "source": "ai"}
+            subjects = parsed.get("subjects") if isinstance(parsed, dict) else None
+            if isinstance(subjects, list) and subjects:
+                _charge_ai_suggestion(db, tenant_id, campaign_id, "subject lines")
+                return {"subjects": subjects, "source": "ai"}
     except Exception as e:
         logger.warning("AI subject suggestion failed", error=str(e))
 

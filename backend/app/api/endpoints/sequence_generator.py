@@ -25,8 +25,18 @@ def generate_sequence(
     current_user: User = Depends(get_current_user),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """AI-generate a multi-step email campaign sequence."""
+    """AI-generate a multi-step email campaign sequence.
+
+    Gated on the `ai_sequence` price up front. The service charges only when the AI
+    actually produced the sequence (the template fallback is free), and the charge is
+    committed here — `get_db` closes without committing, so before this the meter's
+    write was rolled back on every request (C1).
+    """
+    from app.core.credit_costs import cost_for
     from app.services.ai_sequence_generator import generate_sequence as gen_seq
+    from app.services.credit_metering import check_credit_budget
+
+    check_credit_budget(db, tenant_id, credits_needed=cost_for("ai_sequence", db=db))
     steps = gen_seq(
         goal=body.goal,
         product=body.product,
@@ -35,4 +45,5 @@ def generate_sequence(
         db=db,
         tenant_id=tenant_id,
     )
+    db.commit()
     return {"steps": steps, "total": len(steps)}

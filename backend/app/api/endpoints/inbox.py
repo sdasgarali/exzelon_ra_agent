@@ -592,8 +592,14 @@ def suggest_reply(
         if contact and campaign:
             break
 
+    # Paid action: one `ai_reply` when the AI writes the suggestion (C6).
+    from app.core.credit_costs import cost_for
     from app.services.ai_reply_agent import generate_reply_suggestion
-    return generate_reply_suggestion(messages, contact, campaign, db)
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, tenant_id, credits_needed=cost_for("ai_reply", db=db))
+    result = generate_reply_suggestion(messages, contact, campaign, db, tenant_id=tenant_id)
+    db.commit()  # persist the charge — get_db closes without committing
+    return result
 
 
 # ─── Stats ─────────────────────────────────────────────────────────

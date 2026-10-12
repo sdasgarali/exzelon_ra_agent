@@ -103,6 +103,15 @@ def draft_outreach_email(
             company=contact.client_name,
             step=step_number,
         )
+        # One personalisation charge per draft that actually came back from the AI
+        # (the optional company research is part of producing it). Disabled feature,
+        # no adapter, empty/error results all return None above and cost nothing.
+        # Not committed here: callers (outreach pipeline, draft generation) commit
+        # their batch, and the charge rides with the drafts it paid for (C6).
+        from app.services.credit_metering import meter
+        meter(db, effective_tenant, "ai_personalization",
+              reference_id=str(getattr(contact, "contact_id", "") or ""),
+              description="AI outreach draft")
         return (subject, body_html, body_text)
 
     except Exception as e:

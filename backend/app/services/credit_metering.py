@@ -126,17 +126,30 @@ def get_balance(
     is how :func:`spend` serialises concurrent writers. It is a no-op on SQLite (which
     serialises writes at the file level anyway), so the tests exercise the logic but
     not the lock itself.
+
+    An unlocked read that finds a stale period re-reads the row **with** the lock
+    before refilling (C5). The refill is a read-modify-write of `allowance_credits`;
+    done unlocked it could overwrite a concurrent :func:`spend`'s debit.
     """
     q = db.query(TenantCreditBalance).filter(TenantCreditBalance.tenant_id == tenant_id)
-    if lock:
-        q = q.with_for_update()
-    balance = q.first()
+    balance = (q.with_for_update() if lock else q).first()
 
     if balance is None:
-        balance = _create_balance(db, tenant_id, tenant=tenant)
-    else:
-        refill_if_new_period(db, balance, tenant=tenant)
+        return _create_balance(db, tenant_id, tenant=tenant)
+
+    if not lock and _is_stale(balance):
+        # populate_existing: refresh the identity-map copy from the locked read
+        # instead of handing back the attributes we loaded unlocked. Flush first so
+        # no pending in-session change to the row is discarded by that refresh.
+        db.flush()
+        balance = q.with_for_update().populate_existing().first()
+    refill_if_new_period(db, balance, tenant=tenant)
     return balance
+
+
+def _is_stale(balance: TenantCreditBalance) -> bool:
+    """Whether the balance still belongs to an earlier calendar month."""
+    return not (balance.period_start and balance.period_start >= _period_start())
 
 
 def _create_balance(db: Session, tenant_id: int, tenant=None) -> TenantCreditBalance:
@@ -170,22 +183,33 @@ def refill_if_new_period(db: Session, balance: TenantCreditBalance, tenant=None)
     """Reset the monthly allowance when the calendar month has turned.
 
     Runs lazily on every access so a tenant is always correct even if the scheduler
-    sweep (:func:`refill_all_balances`) missed a night. Unused allowance does **not**
-    roll over — that was a deliberate v1 decision, rollover being the single largest
-    source of credit-accounting bugs. Purchased top-ups are untouched; they never
-    expire.
+    sweep (:func:`refill_all_balances`) missed a night. Callers must hold the balance
+    row lock (:func:`get_balance` takes it) — this is a read-modify-write.
+
+    * Unused allowance does **not** roll over — a deliberate v1 decision, rollover
+      being the single largest source of credit-accounting bugs.
+    * Overspend **does** carry forward (C3): the new allowance is
+      ``plan amount + min(0, previous allowance)``. A negative allowance is debt the
+      meter recorded after the gate let a run through; wiping it at the month turn
+      made overspending free. The debt is taken out of the new month, so a tenant
+      who overspent by 500 on Free starts the next month with 300 - 500 = -200.
+    * Purchased top-ups are untouched; they live in their own lots with their own
+      expiry.
     """
     current = _period_start()
     if balance.period_start and balance.period_start >= current:
         return False
 
     tenant = tenant if tenant is not None else _load_tenant(db, balance.tenant_id)
-    balance.allowance_credits = float(plan_credit_limit(getattr(tenant, "plan", None), tenant=tenant))
+    plan_amount = float(plan_credit_limit(getattr(tenant, "plan", None), tenant=tenant))
+    carried_debt = min(0.0, float(balance.allowance_credits or 0))
+    balance.allowance_credits = plan_amount + carried_debt
     balance.period_start = current
     balance.period_spent = 0.0
     balance.last_refill_at = datetime.utcnow()
     logger.info("credit_allowance_refilled", tenant_id=balance.tenant_id,
-                allowance=balance.allowance_credits, period=str(current))
+                allowance=balance.allowance_credits, plan_amount=plan_amount,
+                carried_debt=carried_debt, period=str(current))
     return True
 
 
@@ -305,8 +329,9 @@ def _debit(balance: TenantCreditBalance, credits: float,
     """Draw `credits` off a balance. Returns the shortfall (0 when fully covered).
 
     Allowance first, top-ups second. Any shortfall is pushed onto `allowance_credits`
-    as a negative, so an overage stays visible in the data until the next refill
-    rather than being clamped to zero and forgotten. With `db`, the top-up share is
+    as a negative, so an overage stays visible in the data — and is carried into the
+    next month by :func:`refill_if_new_period` — rather than being clamped to zero
+    and forgotten. With `db`, the top-up share is
     also drained from the per-purchase lots (see :func:`_drain_lots`).
     """
     allowance = float(balance.allowance_credits or 0)
@@ -481,15 +506,29 @@ def refill_all_balances(db: Session) -> int:
     endpoint first.
     """
     current = _period_start()
-    stale = db.query(TenantCreditBalance).filter(
+    stale_ids = [tid for (tid,) in db.query(TenantCreditBalance.tenant_id).filter(
         TenantCreditBalance.period_start < current
-    ).all()
+    ).all()]
     refilled = 0
-    for balance in stale:
-        if refill_if_new_period(db, balance):
-            refilled += 1
+    for tid in stale_ids:
+        # Lock each row before the read-modify-write (C5): an unlocked bulk load
+        # followed by a refill could overwrite a spend that landed in between.
+        # One commit per tenant keeps each lock short.
+        try:
+            balance = (
+                db.query(TenantCreditBalance)
+                .filter(TenantCreditBalance.tenant_id == tid)
+                .with_for_update()
+                .populate_existing()
+                .first()
+            )
+            if balance is not None and refill_if_new_period(db, balance):
+                refilled += 1
+            db.commit()
+        except Exception as e:  # one tenant's failure must not stop the sweep
+            db.rollback()
+            logger.error("credit_refill_failed", tenant_id=tid, error=str(e))
     if refilled:
-        db.commit()
         logger.info("credit_balances_refilled", count=refilled, period=str(current))
     return refilled
 
@@ -545,7 +584,7 @@ def check_credit_budget(
 
     # Always load the tenant: custom plans carry their allowance on the row, and a
     # JWT `plan` claim can be stale (or a legacy starter/professional/enterprise
-    # string) after an upgrade.
+    # string) after an upgrade. get_balance locks the row if it has to refill (C5).
     tenant = _load_tenant(db, tenant_id)
     balance = get_balance(db, tenant_id, tenant=tenant)
     available = balance.total_available
@@ -562,6 +601,30 @@ def check_credit_budget(
                 "Upgrade your plan or buy a top-up to continue."
             ),
         )
+
+
+def has_credit_budget(
+    db: Session,
+    tenant_id: Optional[int],
+    credits_needed: float = 1.0,
+) -> bool:
+    """Non-raising form of :func:`check_credit_budget` for background jobs (C4).
+
+    True when the tenant may proceed: enforcement off, super-admin/internal work, or
+    enough credits. A balance read failure fails *open* (logs, returns True) — the
+    scheduler must not stop every tenant's automation because one read errored, and
+    the meter still records whatever the run spends.
+    """
+    try:
+        check_credit_budget(db, tenant_id, credits_needed=credits_needed)
+        return True
+    except HTTPException as e:
+        if e.status_code == status.HTTP_402_PAYMENT_REQUIRED:
+            return False
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.warning("credit_budget_check_failed", tenant_id=tenant_id, error=str(e))
+        return True
 
 
 def record_usage(

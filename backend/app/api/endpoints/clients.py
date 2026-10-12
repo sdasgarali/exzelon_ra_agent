@@ -23,6 +23,23 @@ from app.services.company_enrichment import enrich_client, bulk_enrich_clients
 from app.services.timezone_resolver import resolve_contact_timezone
 from app.core.settings_resolver import get_tenant_setting
 from app.utils.text_filter import text_filter_from_params
+from app.core.rate_limiter import limiter
+
+#: Company enrichment can make an LLM research call per company (metered inside
+#: `company_enrichment`). The batch used to allow 500 per request with no gate.
+MAX_ENRICH_BATCH = 100
+
+
+def _gate_company_enrichment(db: Session, tenant_id: Optional[int], n_companies: int) -> None:
+    """402 unless the tenant can afford `n_companies` firmographic lookups (C6).
+
+    Gate only — the charge itself is recorded by `services/company_enrichment.py`
+    per lookup it actually performs, so nothing is metered here (no double charge).
+    """
+    from app.core.credit_costs import cost_for
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, tenant_id,
+                        credits_needed=cost_for("firmographic_lookup", n_companies, db=db))
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -394,18 +411,20 @@ async def bulk_delete_clients(
 
 
 @router.post("/bulk/enrich")
+@limiter.limit("10/hour")
 async def bulk_enrich(
-    request: BulkClientIdsRequest,
+    request: Request,
+    body: BulkClientIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Enrich multiple clients with data aggregated from leads."""
-    client_ids = request.client_ids
+    client_ids = body.client_ids
     if not client_ids:
         raise HTTPException(status_code=400, detail="No client IDs provided")
-    if len(client_ids) > 500:
-        raise HTTPException(status_code=400, detail="Maximum 500 clients per batch")
+    if len(client_ids) > MAX_ENRICH_BATCH:
+        raise HTTPException(status_code=400, detail=f"Maximum {MAX_ENRICH_BATCH} clients per batch")
 
     # Filter client IDs to only those belonging to this tenant
     query = db.query(ClientInfo.client_id).filter(ClientInfo.client_id.in_(client_ids))
@@ -415,7 +434,9 @@ async def bulk_enrich(
     if not valid_ids:
         raise HTTPException(status_code=404, detail="No clients found with provided IDs")
 
+    _gate_company_enrichment(db, tenant_id, len(valid_ids))
     result = bulk_enrich_clients(db, valid_ids, tenant_id=tenant_id)
+    db.commit()  # persist enrichment + the service's metering
     return result
 
 
@@ -468,7 +489,9 @@ async def bulk_update_clients(
 
 
 @router.post("/{client_id}/enrich")
+@limiter.limit("60/hour")
 async def enrich_single_client(
+    request: Request,
     client_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN, UserRole.BDM])),
@@ -482,6 +505,7 @@ async def enrich_single_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
+    _gate_company_enrichment(db, tenant_id, 1)
     result = enrich_client(db, client, tenant_id=tenant_id)
     db.commit()
     return result

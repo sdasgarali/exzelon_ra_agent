@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Optional
 
 import structlog
 
@@ -68,6 +69,15 @@ CREDIT_COSTS: dict[str, CreditCost] = {
         "ai_sequence", 5, "ai", "AI sequence generated", 0.003),
     "icp_wizard": _c(
         "icp_wizard", 10, "ai", "ICP Wizard run", 0.005),
+    # One short completion: campaign name/description, subject-line ideas, a
+    # regenerated pipeline-run summary. Priced like a personalisation.
+    "ai_suggestion": _c(
+        "ai_suggestion", 1, "ai", "AI suggestion", 0.0004),
+    # Classifying an inbound reply without drafting one (sentiment tagging on sync,
+    # or the reply agent stopping after classification for OOO / max replies).
+    # Half of `ai_reply`, which covers classify + draft in one charge.
+    "ai_classification": _c(
+        "ai_classification", 0.5, "ai", "AI reply classified", 0.0002),
 
     # --- communications ---------------------------------------------------
     "sms": _c(
@@ -87,6 +97,24 @@ CREDITS_PER_FULL_CONTACT = (
     + CREDIT_COSTS["email_validated"].credits
     + CREDIT_COSTS["ai_personalization"].credits
 )
+
+
+#: Pre-flight estimates for the pipeline-run gate (C2). The gate used to ask for 1
+#: credit, so a tenant with 1 credit left could launch a 2,000-lead run and overspend
+#: by thousands. These are deliberately *conservative minimums* — what the smallest
+#: useful run will certainly spend — not the worst case: the meter is authoritative
+#: and any overage is carried into next month (see `refill_if_new_period`).
+#:
+#: * sourcing    = lead_sourced × RUN_ESTIMATE_SOURCING_LEADS
+#: * enrichment  = contact_enriched × leads × max contacts per lead, the lead count
+#:                 being the selection (or RUN_ESTIMATE_ENRICHMENT_DEFAULT_LEADS for an
+#:                 "enrich whatever is eligible" run), capped at RUN_ESTIMATE_MAX_CREDITS
+#: * validation  = email_validated × emails (or RUN_ESTIMATE_VALIDATION_DEFAULT_EMAILS
+#:                 for a "validate everything pending" run), same cap
+RUN_ESTIMATE_SOURCING_LEADS = 50
+RUN_ESTIMATE_ENRICHMENT_DEFAULT_LEADS = 10
+RUN_ESTIMATE_VALIDATION_DEFAULT_EMAILS = 25
+RUN_ESTIMATE_MAX_CREDITS = 1_000
 
 
 def _overrides(db) -> dict:
@@ -127,6 +155,35 @@ def cost_for(action: str, quantity: float = 1, db=None) -> float:
         logger.warning("Unpriced credit action — defaulting to 1", action=action)
         return 1.0 * quantity
     return spec.credits * quantity
+
+
+def estimate_run_credits(
+    pipeline: str,
+    *,
+    units: Optional[int] = None,
+    per_unit_multiplier: int = 1,
+    db=None,
+) -> float:
+    """Conservative pre-flight credit estimate for a pipeline run (see the
+    ``RUN_ESTIMATE_*`` constants above for the formulas).
+
+    `pipeline` is ``lead_sourcing`` | ``contact_enrichment`` | ``email_validation``.
+    `units` is the number of selected leads / emails when the caller knows it; None
+    means "whatever is eligible" and uses the documented default. For enrichment,
+    `per_unit_multiplier` is the max contacts per lead.
+    """
+    if pipeline == "lead_sourcing":
+        return cost_for("lead_sourced", RUN_ESTIMATE_SOURCING_LEADS, db=db)
+
+    if pipeline == "contact_enrichment":
+        leads = units if units else RUN_ESTIMATE_ENRICHMENT_DEFAULT_LEADS
+        est = cost_for("contact_enriched", leads * max(int(per_unit_multiplier or 1), 1), db=db)
+    elif pipeline == "email_validation":
+        emails = units if units else RUN_ESTIMATE_VALIDATION_DEFAULT_EMAILS
+        est = cost_for("email_validated", emails, db=db)
+    else:
+        return 1.0
+    return min(est, float(RUN_ESTIMATE_MAX_CREDITS))
 
 
 def category_for(action: str) -> str:
