@@ -838,6 +838,21 @@ class Settings(BaseSettings):
         "Underwriter", "Worker",
     ]
 
+    # --- Abuse / loophole guards (2026-10 credit-loophole fixes) -------------
+    # Hard ceiling for a mailbox's daily_send_limit and for a tenant's
+    # `daily_send_limit` business-rule override. Super admins may exceed it only
+    # through the global setting.
+    MAX_DAILY_SEND_LIMIT_PER_MAILBOX: int = 50
+    # Max rows accepted by one CSV / Google-Sheet lead import.
+    MAX_IMPORT_ROWS: int = 5000
+    # Extra disposable/throwaway domains blocked at self-signup (comma-separated),
+    # added to the built-in list in api/endpoints/auth.py.
+    BLOCKED_SIGNUP_DOMAINS: str = ""
+    # slowapi storage. Empty = in-process memory (per worker — fine for dev/tests).
+    # Production should point this at Redis (e.g. the REDIS_URL value) so limits
+    # are shared across workers and survive restarts.
+    RATE_LIMIT_STORAGE_URI: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

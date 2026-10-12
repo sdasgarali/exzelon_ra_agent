@@ -59,6 +59,34 @@ def detect_intent(text: str) -> tuple:
     return best_intent, confidence
 
 
+def _llm_classified(orchestrator_result: Optional[dict]) -> bool:
+    """Whether the orchestrator's intent came from the LLM rather than keywords.
+
+    `classify_reply` falls back to `classify_reply_keyword`, whose `reasoning` always
+    starts "Keyword match" / "No keyword matches" — the only marker it leaves.
+    """
+    if not orchestrator_result:
+        return False
+    classification = orchestrator_result.get("classification") or {}
+    reasoning = str(classification.get("reasoning") or "")
+    return not (reasoning.startswith("Keyword match") or reasoning.startswith("No keyword matches"))
+
+
+def _charge_classification_only(db: Session, tenant_id: int, thread_id: str,
+                                orchestrator_result: Optional[dict], why: str) -> None:
+    """Meter the LLM classification on a path that stops before drafting (C6).
+
+    The `ai_reply` charge below covers classify + draft together, but the OOO,
+    max-replies and rule-based-reply exits returned before reaching it, so the LLM
+    classification that already ran on them was never billed.
+    """
+    if not _llm_classified(orchestrator_result):
+        return
+    from app.services.credit_metering import meter
+    meter(db, tenant_id, "ai_classification", reference_id=str(thread_id or ""),
+          description=f"AI reply classified ({why})")
+
+
 def generate_ai_reply_draft(
     db: Session,
     thread_id: str,
@@ -91,6 +119,7 @@ def generate_ai_reply_draft(
     # Skip OOO -- no reply needed
     if intent == "ooo":
         logger.info("skip_ooo_reply", thread_id=thread_id)
+        _charge_classification_only(db, tenant_id, thread_id, orchestrator_result, "out of office")
         return None
 
     # Check max auto-replies per thread
@@ -106,14 +135,16 @@ def generate_ai_reply_draft(
 
     if existing_drafts >= max_replies:
         logger.info("max_auto_replies_reached", thread_id=thread_id, count=existing_drafts)
+        _charge_classification_only(db, tenant_id, thread_id, orchestrator_result, "max replies")
         return None
 
     # Generate reply using AI
     try:
         from app.services.adapters.ai_content import get_ai_adapter
 
-        adapter = get_ai_adapter(db)
+        adapter = get_ai_adapter(db, tenant_id=tenant_id)
         if not adapter:
+            _charge_classification_only(db, tenant_id, thread_id, orchestrator_result, "rule-based reply")
             return _generate_rule_based_reply(
                 db, thread_id, intent, confidence,
                 received_message, contact, campaign, tenant_id,
@@ -185,6 +216,7 @@ def generate_ai_reply_draft(
 
     except Exception as e:
         logger.error("ai_reply_generation_failed", error=str(e))
+        _charge_classification_only(db, tenant_id, thread_id, orchestrator_result, "rule-based reply")
         return _generate_rule_based_reply(
             db, thread_id, intent, confidence,
             received_message, contact, campaign, tenant_id,

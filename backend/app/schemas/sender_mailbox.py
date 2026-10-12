@@ -27,6 +27,21 @@ def normalize_us_phone(value: Optional[str]) -> Optional[str]:
     return f"({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
 
 
+def _check_daily_send_limit(value: Optional[int]) -> Optional[int]:
+    """Bound a mailbox daily_send_limit to 1..MAX_DAILY_SEND_LIMIT_PER_MAILBOX.
+
+    Read from config at validation time (not frozen into a ``Field(le=...)`` at
+    import) so the platform cap can be changed without a code change.
+    """
+    if value is None:
+        return value
+    from app.core.config import settings
+    cap = int(getattr(settings, "MAX_DAILY_SEND_LIMIT_PER_MAILBOX", 50))
+    if value < 1 or value > cap:
+        raise ValueError(f"daily_send_limit must be between 1 and {cap}")
+    return value
+
+
 class WarmupStatusEnum(str, Enum):
     """Mailbox warmup status."""
     WARMING_UP = "warming_up"
@@ -85,6 +100,9 @@ class SenderMailboxBase(BaseModel):
 
 class SenderMailboxCreate(SenderMailboxBase):
     """Schema for creating a sender mailbox."""
+    # Bounded on input only — SenderMailboxResponse shares the base and must still
+    # serialise legacy rows whose limit predates the cap.
+    _check_daily_send_limit = field_validator("daily_send_limit")(lambda cls, v: _check_daily_send_limit(v))
     password: Optional[str] = None  # Optional for OAuth2 mailboxes (this is the SEND credential)
     auth_method: str = "password"  # "password" | "oauth2"
     oauth_tenant_id: Optional[str] = None
@@ -121,6 +139,7 @@ class SenderMailboxUpdate(BaseModel):
     _check_warmup_status = field_validator("warmup_status")(lambda cls, v: _reject_system_only_status(v))
     is_active: Optional[bool] = None
     daily_send_limit: Optional[int] = None
+    _check_daily_send_limit = field_validator("daily_send_limit")(lambda cls, v: _check_daily_send_limit(v))
     notes: Optional[str] = None
     email_signature_json: Optional[str] = None
     outreach_role_id: Optional[int] = None

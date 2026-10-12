@@ -990,6 +990,21 @@ def cancel_subscription(
 
 # ─── Stripe Webhook ──────────────────────────────────────────────────────────
 
+def _topup_already_granted(db, session_id: Optional[str]) -> bool:
+    """Whether a top-up lot already exists for this Checkout Session.
+
+    ProcessedStripeEvent de-dups one *event*; a delayed payment produces two events
+    for one session (`completed`, then `async_payment_succeeded`), so the grant is
+    also keyed on the session id carried as the lot's `reference_id` (C7).
+    """
+    if not session_id:
+        return False
+    from app.db.models.credit_topup_lot import CreditTopupLot
+    return db.query(CreditTopupLot.lot_id).filter(
+        CreditTopupLot.reference_id == session_id
+    ).first() is not None
+
+
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Stripe webhook: handles checkout.session.completed events."""
@@ -1039,30 +1054,55 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             db.rollback()
             return False
 
-    if event["type"] == "checkout.session.completed":
+    if event["type"] in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         session = event["data"]["object"]
         meta = session.get("metadata", {}) or {}
 
+        # `checkout.session.completed` fires when the customer finishes checkout, which
+        # for delayed methods (ACH, SEPA, bank transfer) is *before* the money arrives:
+        # payment_status is "unpaid" then, and Stripe sends
+        # `checkout.session.async_payment_succeeded` once it clears (or ..._failed). So
+        # money-moving branches act only on a paid session (C7). Sessions without a
+        # payment_status (older fixtures, API versions) are treated as paid, as before.
+        payment_status = session.get("payment_status")
+        is_paid = payment_status in (None, "paid", "no_payment_required")
+
         # Credit top-up → grant the credits. Done here rather than at checkout time so
         # an abandoned or failed payment never results in free credits. The
-        # ProcessedStripeEvent guard above makes Stripe's at-least-once delivery safe:
-        # a retried webhook must not grant the credits twice.
+        # ProcessedStripeEvent guard above makes Stripe's at-least-once delivery safe
+        # for one event; the lot lookup below makes it safe across the two events
+        # (completed + async_payment_succeeded) for the same session.
         if meta.get("purpose") == "credit_topup":
             tid = meta.get("tenant_id")
             credits = meta.get("credits")
-            if tid and credits:
+            session_id = session.get("id")
+            # Strict for credits: Stripe always sends payment_status on a Checkout
+            # Session, and nothing but "paid" is money for a top-up.
+            if payment_status != "paid":
+                logger.info("credit_topup_awaiting_payment", tenant_id=tid,
+                            session_id=session_id, payment_status=payment_status)
+            elif not (tid and credits):
+                logger.warning("Stripe webhook: credit_topup missing tenant_id/credits",
+                               metadata=meta)
+            elif _topup_already_granted(db, session_id):
+                logger.info("credit_topup_already_granted", tenant_id=tid, session_id=session_id)
+            else:
                 from app.services.credit_metering import grant_topup
                 grant_topup(
                     db, int(tid), float(credits),
-                    reference_id=session.get("id"),
+                    reference_id=session_id,
                     description=f"Top-up: {int(float(credits)):,} credits",
                     commit=False,
                 )
                 logger.info("credit_topup_paid", tenant_id=int(tid), credits=credits,
-                            session_id=session.get("id"))
-            else:
-                logger.warning("Stripe webhook: credit_topup missing tenant_id/credits",
-                               metadata=meta)
+                            session_id=session_id)
+            _mark_processed_and_commit()
+            return {"received": True}
+
+        # Async-payment success for anything other than a top-up: only invoice
+        # sessions need it (a subscription is linked on `completed` and then driven by
+        # customer.subscription.* events).
+        if event["type"] == "checkout.session.async_payment_succeeded" and session.get("subscription"):
             _mark_processed_and_commit()
             return {"received": True}
 
@@ -1096,6 +1136,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if invoice.status == InvoiceStatus.PAID:
             _mark_processed_and_commit()
             return {"received": True}
+
+        # Same rule as top-ups: a delayed-payment session isn't money yet. The invoice
+        # is marked paid when `async_payment_succeeded` arrives (idempotent through the
+        # PAID check above).
+        if not is_paid:
+            logger.info("Stripe webhook: invoice payment pending", invoice_id=invoice.invoice_id,
+                        payment_status=payment_status)
+            _mark_processed_and_commit()
+            return {"received": True, "pending": True}
 
         # Verify the payment matches the invoice before marking paid: the amount
         # Stripe charged must equal what we billed, and the metadata tenant (if

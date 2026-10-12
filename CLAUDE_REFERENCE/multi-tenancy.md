@@ -243,3 +243,28 @@ Phase 2-4 migration blocks in `main.py` lifespan:
 - Backfill existing rows with default tenant
 - Add NOT NULL constraints
 - Create indexes
+
+
+## Isolation & abuse hardening (2026-10-12, `Plan_Credit_Loopholes.md`)
+
+- **Tenant scoping fixed**: contact reuse during enrichment (`_reuse_existing_contacts`,
+  `_auto_enrich_company_siblings`) and preview draft generation (sender mailbox + lead
+  lookups) were unscoped and could hand one tenant another tenant's contacts / mailbox.
+  Both now filter by `tenant_id`. `EmailValidationResult` is a platform-wide cache with
+  no `tenant_id`; the send gate no longer trusts it — only the contact's own status.
+- **Platform-only settings**: `PUT/DELETE /settings/{key}` rejects non-super-admins for
+  `feature_*`, `credit_*`, `credit_enforcement_enabled`, `role_permissions`. Business
+  rules tenants may tune are range-checked (cooldown 1..365, contacts per company/job
+  1..cap, daily send limit 1..`MAX_DAILY_SEND_LIMIT_PER_MAILBOX`) and clamped again when
+  read by the send gate.
+- **Contact flags**: only super admins may set `is_test` or `validation_status`.
+- **Suspension**: `billing_suspended` is enforced inside the unified send gate, so every
+  send path stops, not just endpoints using `require_tenant_id`.
+- **Imports**: CSV / Google-Sheet import is admin/BDM only, capped at `MAX_IMPORT_ROWS`,
+  and stops at the plan's remaining lead/contact allowance.
+- **Signup**: email normalised (case, `+tag`, Gmail dots) for duplicate checks;
+  disposable domains blocked (`BLOCKED_SIGNUP_DOMAINS` extends the built-in list).
+  Rate limits are per-process unless `RATE_LIMIT_STORAGE_URI` (e.g. Redis) is set — set
+  it in prod so limits hold across uvicorn workers.
+- **Enforcement switch**: `CREDIT_ENFORCEMENT_ENABLED` still defaults to `False`; when
+  off, gates are no-ops and credits are only recorded. Turning it on is a product call.

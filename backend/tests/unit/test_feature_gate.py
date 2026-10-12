@@ -213,8 +213,9 @@ def test_send_gate_blocks_when_quota_is_gone(db_session, monkeypatch):
 
     assert result.allowed is False
     assert result.reason_code == "SEND_QUOTA_EXCEEDED"
-    # First check evaluated — nothing downstream ran.
-    assert result.checks[0].name == "send_quota"
+    # Only the (cheap, DB-only) billing-suspension check runs before the quota
+    # check (loophole B5); nothing per-contact or LLM-backed ran.
+    assert [c.name for c in result.checks] == ["billing", "send_quota"]
 
 
 def test_send_gate_skips_quota_for_replies_and_dry_runs(db_session, monkeypatch):

@@ -173,6 +173,43 @@ def _get_active_tenant_ids():
         db.close()
 
 
+def _tenant_can_afford(db, tenant_id, pipeline: str) -> bool:
+    """Credit pre-flight for a scheduled, per-tenant pipeline run (C4).
+
+    The HTTP run endpoints gate on an estimate of the run's cost; the scheduler used
+    to launch the same pipelines for every active tenant with no check at all, so a
+    tenant at zero (or deep in debt) kept sourcing and enriching every night. Uses the
+    same conservative estimate as the endpoints (`estimate_run_credits`). A no-op
+    when credit enforcement is off. Logs a structured skip when the tenant is short.
+    """
+    from app.core.credit_costs import estimate_run_credits
+    from app.services.credit_metering import has_credit_budget
+
+    kwargs = {}
+    if pipeline == "contact_enrichment":
+        from app.core.config import settings as app_settings
+        from app.core.settings_resolver import get_tenant_setting
+        _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+        kwargs["per_unit_multiplier"] = int(_mc) if _mc is not None else app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    needed = estimate_run_credits(pipeline, db=db, **kwargs)
+    if has_credit_budget(db, tenant_id, credits_needed=needed):
+        return True
+    logger.warning("scheduled_run_skipped_insufficient_credits",
+                   tenant_id=tenant_id, pipeline=pipeline, credits_needed=needed)
+    try:
+        from app.services.automation_logger import log_automation_event
+        log_automation_event(
+            db, pipeline,
+            f"Skipped scheduled {pipeline.replace('_', ' ')}: not enough credits "
+            f"(needs ~{int(needed)})",
+            status="skipped", details={"tenant_id": tenant_id, "credits_needed": needed},
+            tenant_id=tenant_id,
+        )
+    except Exception:
+        pass
+    return False
+
+
 # ─── Job functions ───────────────────────────────────────────────────────────
 
 
@@ -412,6 +449,8 @@ def _job_lead_sourcing_run_inner():
     for tid in _get_active_tenant_ids():
         db = _get_db()
         try:
+            if not _tenant_can_afford(db, tid, "lead_sourcing"):
+                continue
             from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
             result = run_lead_sourcing_pipeline(sources=["auto"], triggered_by="scheduler", tenant_id=tid)
             logger.info("Scheduled lead sourcing complete",
@@ -450,7 +489,11 @@ def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
         return
 
     # Step 1: Contact Enrichment (independent toggle)
-    if get_tenant_setting_bool(db, "automation_chain_enrichment", tenant_id=tenant_id, default=False):
+    if not get_tenant_setting_bool(db, "automation_chain_enrichment", tenant_id=tenant_id, default=False):
+        logger.info("Auto-chain: contact enrichment skipped (disabled by user)")
+    elif not _tenant_can_afford(db, tenant_id, "contact_enrichment"):
+        pass  # logged by _tenant_can_afford
+    else:
         logger.info("Auto-chain: starting contact enrichment", leads_inserted=leads_inserted, tenant_id=tenant_id)
         try:
             from app.services.pipelines.contact_enrichment import run_contact_enrichment_pipeline
@@ -469,14 +512,13 @@ def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
                 f"Auto-chain enrichment failed: {str(e)[:100]}",
                 status="error", source="auto_chain",
             )
-    else:
-        logger.info("Auto-chain: contact enrichment skipped (disabled by user)")
 
     # Step 2: Email Validation (independent toggle — processes all unvalidated contacts)
     # Skip if feature is disabled for this tenant
     if not get_tenant_setting_bool(db, "feature_email_validation_enabled", tenant_id=tenant_id, default=True):
         logger.info("Auto-chain: email validation skipped (feature disabled for tenant)", tenant_id=tenant_id)
-    elif get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False):
+    elif (get_tenant_setting_bool(db, "automation_chain_validation", tenant_id=tenant_id, default=False)
+          and _tenant_can_afford(db, tenant_id, "email_validation")):
         logger.info("Auto-chain: starting email validation", tenant_id=tenant_id)
         try:
             from app.services.pipelines.email_validation import run_email_validation_pipeline
@@ -496,7 +538,7 @@ def _run_auto_chain(db, leads_inserted: int, tenant_id: int = None):
                 status="error", source="auto_chain",
             )
     else:
-        logger.info("Auto-chain: email validation skipped (disabled by user)")
+        logger.info("Auto-chain: email validation skipped (disabled by user or out of credits)")
 
     # Step 3: Campaign Enrollment (independent toggle — processes all validated contacts)
     if get_tenant_setting_bool(db, "automation_chain_enrollment", tenant_id=tenant_id, default=False):
@@ -1093,6 +1135,12 @@ def job_intent_signals_daily():
         logger.info("Running daily intent signal check")
         for tid in _get_active_tenant_ids():
             try:
+                _db = _get_db()
+                try:
+                    if not _tenant_can_afford(_db, tid, "intent_scan"):
+                        continue
+                finally:
+                    _db.close()
                 from app.services.intent_engine import run_intent_engine
                 result = run_intent_engine(tenant_id=tid, schedule_type="daily")
                 logger.info(
@@ -1128,6 +1176,12 @@ def job_intent_signals_weekly():
         logger.info("Running weekly intent signal deep scan")
         for tid in _get_active_tenant_ids():
             try:
+                _db = _get_db()
+                try:
+                    if not _tenant_can_afford(_db, tid, "intent_scan"):
+                        continue
+                finally:
+                    _db.close()
                 from app.services.intent_engine import run_intent_engine
                 result = run_intent_engine(tenant_id=tid, schedule_type="weekly")
                 logger.info(

@@ -28,6 +28,20 @@ def _utc_iso(dt) -> str | None:
 router = APIRouter(prefix="/pipelines", tags=["Pipelines"])
 
 
+def _gate_run_estimate(db: Session, tenant_id: Optional[int], pipeline: str, **kwargs) -> None:
+    """Pre-flight credit gate sized to the run (C2).
+
+    `require_tenant_with_budget` only proves the tenant has *a* credit; this asks
+    for a conservative estimate of what the run will spend (formulas in
+    `core.credit_costs.estimate_run_credits`). Raises 402 when enforcement is on and
+    the balance can't cover it; a no-op otherwise.
+    """
+    from app.core.credit_costs import estimate_run_credits
+    from app.services.credit_metering import check_credit_budget
+    check_credit_budget(db, tenant_id,
+                        credits_needed=estimate_run_credits(pipeline, db=db, **kwargs))
+
+
 def parse_counters(counters_json: str) -> dict:
     """Parse counters JSON and return standardized fields."""
     try:
@@ -283,6 +297,13 @@ async def get_run_summary(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # A forced regenerate is a charged AI call (ai_suggestion); the first summary is
+    # free. Gate it so a tenant out of credits can't regenerate without limit.
+    if regenerate and tenant_id is not None:
+        from app.core.credit_costs import cost_for
+        from app.services.credit_metering import check_credit_budget
+        check_credit_budget(db, tenant_id, credits_needed=cost_for("ai_suggestion", db=db))
+
     # Generate new summary
     from app.services.pipeline_summary import generate_pipeline_summary
     summary = generate_pipeline_summary(db, run)
@@ -327,6 +348,8 @@ async def run_lead_sourcing(
 ):
     """Run lead sourcing pipeline."""
     from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
+
+    _gate_run_estimate(db, tenant_id, "lead_sourcing")
 
     background_tasks.add_task(
         run_lead_sourcing_pipeline,
@@ -506,6 +529,14 @@ async def run_contact_enrichment(
 
     lead_ids = body.lead_ids if body else None
 
+    from app.core.config import settings as app_settings
+    from app.core.settings_resolver import get_tenant_setting
+    _mc = get_tenant_setting(db, "max_contacts_per_company_job", tenant_id=tenant_id, default=None)
+    max_contacts = int(_mc) if _mc is not None else app_settings.MAX_CONTACTS_PER_COMPANY_PER_JOB
+    _gate_run_estimate(db, tenant_id, "contact_enrichment",
+                       units=len(lead_ids) if lead_ids else None,
+                       per_unit_multiplier=max_contacts)
+
     background_tasks.add_task(
         run_contact_enrichment_pipeline,
         triggered_by=current_user.email,
@@ -575,6 +606,8 @@ async def run_email_validation(
 
     from app.services.pipelines.email_validation import run_email_validation_pipeline
 
+    _gate_run_estimate(db, tenant_id, "email_validation")
+
     background_tasks.add_task(
         run_email_validation_pipeline,
         emails=None,  # Will validate all unvalidated contacts
@@ -624,6 +657,8 @@ async def run_email_validation_selected(
     if not emails:
         raise HTTPException(status_code=400, detail="No valid emails found for selected contacts")
 
+    _gate_run_estimate(db, tenant_id, "email_validation", units=len(emails))
+
     background_tasks.add_task(
         run_email_validation_pipeline,
         emails=emails,
@@ -662,6 +697,9 @@ async def run_outreach(
             raise HTTPException(status_code=403, detail="Outreach is disabled for your organization")
 
     lead_ids = body.lead_ids if body else None
+    # Outreach personalises each email with AI; size the gate to the run (one
+    # credit was the old threshold, so a tenant with 1 credit could launch it).
+    _gate_run_estimate(db, tenant_id, "outreach", units=len(lead_ids) if lead_ids else None)
 
     if mode == "mailmerge":
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline

@@ -35,9 +35,11 @@ BODY_TEMPLATES = {
 
 def get_ai_adapter(db: Session, tenant_id=None):
     """Load configured AI provider from settings."""
-    provider = get_tenant_setting(db, "warmup_ai_provider", tenant_id=tenant_id, default="groq")
-    api_key_map = {"groq": "groq_api_key", "openai": "openai_api_key", "anthropic": "anthropic_api_key", "gemini": "gemini_api_key"}
-    api_key = get_tenant_setting(db, api_key_map.get(provider, "groq_api_key"), tenant_id=tenant_id, default="")
+    # Same rule as the shared factory: a tenant's provider choice only runs on the
+    # tenant's own key, never on the platform's.
+    from app.services.adapters.ai_content import resolve_ai_config
+    provider, _model, api_key = resolve_ai_config(
+        db, tenant_id, provider_keys=("warmup_ai_provider",), model_key=None)
     if not api_key:
         return None
     try:

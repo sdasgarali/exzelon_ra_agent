@@ -122,6 +122,15 @@ def check_intent_signals(
             if lob_results["signals_checked"]:
                 meter(db, lob.tenant_id, "intent_scan", lob_results["signals_checked"],
                       reference_id=f"lob:{lob.lob_id}")
+            # A signal can create many leads. Each is a stored lead like any other
+            # sourced one, so it is billed as `lead_sourced` — to the LOB's tenant.
+            if lob_results["leads_created"]:
+                meter(db, lob.tenant_id, "lead_sourced", lob_results["leads_created"],
+                      reference_id=f"lob:{lob.lob_id}",
+                      description="Lead created from intent signal")
+            # Commit per LOB so one LOB's later failure cannot undo another
+            # LOB's leads (and their charge) — rows and credits land together.
+            db.commit()
         db.commit()
 
         logger.info(
@@ -297,30 +306,33 @@ def _create_lead_from_signal(
             return False  # Already exists
 
     try:
-        lead = LeadDetails(
-            tenant_id=lob.tenant_id,
-            lob_id=lob.lob_id,
-            client_name=client_name,
-            job_title=lead_data.get("job_title", "Prospect"),
-            state=lead_data.get("state"),
-            city=lead_data.get("city"),
-            source=lead_data.get("source", "intent_signal"),
-            industry=lead_data.get("industry"),
-            employer_website=lead_data.get("employer_website"),
-            company_size=str(lead_data.get("company_size", "")) if lead_data.get("company_size") else None,
-            job_link=lead_data.get("job_link"),
-            lead_status=LeadStatus.NEW,
-            first_name=lead_data.get("contact_first_name"),
-            last_name=lead_data.get("contact_last_name"),
-            contact_title=lead_data.get("contact_title"),
-            contact_phone=lead_data.get("contact_phone"),
-            metadata_json=json.dumps(lead_data.get("metadata", {})) if lead_data.get("metadata") else None,
-        )
-        db.add(lead)
-        db.flush()
+        # SAVEPOINT: a failed insert undoes only this lead. A plain db.rollback()
+        # here discarded every lead created earlier in the run while they were
+        # still counted (and billed) as created.
+        with db.begin_nested():
+            lead = LeadDetails(
+                tenant_id=lob.tenant_id,
+                lob_id=lob.lob_id,
+                client_name=client_name,
+                job_title=lead_data.get("job_title", "Prospect"),
+                state=lead_data.get("state"),
+                city=lead_data.get("city"),
+                source=lead_data.get("source", "intent_signal"),
+                industry=lead_data.get("industry"),
+                employer_website=lead_data.get("employer_website"),
+                company_size=str(lead_data.get("company_size", "")) if lead_data.get("company_size") else None,
+                job_link=lead_data.get("job_link"),
+                lead_status=LeadStatus.NEW,
+                first_name=lead_data.get("contact_first_name"),
+                last_name=lead_data.get("contact_last_name"),
+                contact_title=lead_data.get("contact_title"),
+                contact_phone=lead_data.get("contact_phone"),
+                metadata_json=json.dumps(lead_data.get("metadata", {})) if lead_data.get("metadata") else None,
+            )
+            db.add(lead)
+            db.flush()
         return True
     except Exception as e:
-        db.rollback()
         logger.warning("signal_lead_create_error", error=str(e), company=client_name)
         return False
 

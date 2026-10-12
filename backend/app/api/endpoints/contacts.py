@@ -612,6 +612,13 @@ async def create_contact(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Create a new contact."""
+    # is_test contacts skip cooldown / caps / fatigue in the send gate — only a
+    # super admin may create one.
+    if contact_in.is_test and current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super admin can mark a contact as a test contact",
+        )
     check_plan_limit(db, tenant_id, "contacts")
 
     dup_query = tenant_filter(
@@ -678,6 +685,32 @@ async def update_contact(
         )
 
     update_data = contact_in.model_dump(exclude_unset=True)
+
+    # Send-gate bypass fields are super-admin only: is_test skips cooldown/caps/
+    # fatigue, and validation_status="valid" skips (paid) email validation. The
+    # edit form echoes the current values back, so only a *change* is refused.
+    if current_user.role != UserRole.SUPER_ADMIN:
+        if "is_test" in update_data and bool(update_data["is_test"]) != bool(contact.is_test):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only a super admin can change a contact's test flag",
+            )
+        update_data.pop("is_test", None)
+        if "validation_status" in update_data:
+            new_vs = update_data["validation_status"]
+            cur_vs = contact.validation_status
+            # Clearing the status is always allowed: it only makes the contact LESS
+            # sendable (it must be validated again). The MCP connector does this when
+            # it changes an email. Setting any other value is the bypass.
+            if new_vs is None or str(new_vs).strip() == "":
+                update_data["validation_status"] = None
+            elif str(new_vs).lower() != str(cur_vs or "").lower():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Email validation status is set by the validation pipeline; run validation instead",
+                )
+            else:
+                update_data.pop("validation_status", None)
 
     # A lead link must stay inside the contact's own tenant.
     if update_data.get("lead_id") is not None:

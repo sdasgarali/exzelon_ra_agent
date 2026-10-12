@@ -10,6 +10,17 @@ from app.api.deps.auth import get_current_active_user, get_current_tenant_id
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User
 from app.db.models.credit_usage import CreditUsage
+from app.core.credit_costs import category_for, label_for
+
+#: Ledger rows that are not consumption. Grants are stored with negative credits, so
+#: the history screen can tell a top-up from a charge without a second column.
+_LEDGER_LABELS = {
+    "topup_purchase": "Credits purchased",
+}
+
+
+def _label(usage_type: str) -> str:
+    return _LEDGER_LABELS.get(usage_type) or label_for(usage_type)
 
 router = APIRouter(prefix="/credits", tags=["Credits"])
 
@@ -56,6 +67,8 @@ def list_usage(
                 "tenant_id": u.tenant_id,
                 "user_id": u.user_id,
                 "usage_type": u.usage_type,
+                "label": _label(u.usage_type),
+                "category": "grant" if (u.credits_used or 0) < 0 else category_for(u.usage_type),
                 "credits_used": u.credits_used,
                 "description": u.description,
                 "reference_id": u.reference_id,
@@ -86,6 +99,8 @@ def usage_summary(
     ).filter(
         CreditUsage.is_archived == False,
         CreditUsage.recorded_at >= month_start,
+        # Grants (top-ups) are negative rows; they are not usage.
+        CreditUsage.credits_used > 0,
     )
     q = tenant_filter(q, CreditUsage, tenant_id)
     rows = q.group_by(CreditUsage.usage_type).all()
@@ -97,6 +112,8 @@ def usage_summary(
         total_credits += credits
         summary.append({
             "usage_type": row.usage_type,
+            "label": _label(row.usage_type),
+            "category": category_for(row.usage_type),
             "total_credits": round(credits, 2),
             "count": row.count,
         })

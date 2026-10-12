@@ -83,11 +83,11 @@ class TestContactsEndpoints:
         )
         assert response.status_code == 400
 
-    def test_update_contact(self, client, auth_headers, sample_contact):
-        """Test updating a contact."""
+    def test_update_contact(self, client, sa_headers, sample_contact):
+        """Test updating a contact. validation_status is super-admin-only (loophole B2)."""
         response = client.put(
             f"/api/v1/contacts/{sample_contact.contact_id}",
-            headers=auth_headers,
+            headers=sa_headers,
             json={
                 "title": "HR Director",
                 "validation_status": "valid"

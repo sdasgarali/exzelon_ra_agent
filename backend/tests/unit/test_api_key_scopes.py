@@ -27,7 +27,6 @@ def test_read_scope_blocks_writes(method, path):
 
 @pytest.mark.parametrize("path", [
     "/api/v1/leads/ai-search",
-    "/api/v1/leads/database-search",
     "/api/v1/leads/bulk/enrich/preview",
     "/api/v1/campaigns/7/enrollment-preview",
     "/api/v1/campaigns/compare",
@@ -117,6 +116,7 @@ def test_read_scope_allows_phase2_compute_only_posts(path):
     "/api/v1/email-preview/preview-personalization",   # meters AI credits
     "/api/v1/sequence-generator/generate",             # meters AI credits
     "/api/v1/leads/import/google-sheet",               # the real import
+    "/api/v1/leads/database-search",                   # paid contact provider, meters credits
     "/api/v1/templates/42/duplicate",
     "/api/v1/templates/42/activate",
     "/api/v1/inbox/threads/abc/generate-draft",

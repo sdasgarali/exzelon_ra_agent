@@ -215,9 +215,11 @@ def test_update_contact_email_change_resets_validation(client, auth_headers, db_
     assert r.json()["validation_status"] == "valid"
 
 
-def test_update_contact_explicit_validation_wins(client, auth_headers, db_session, test_tenant):
+def test_update_contact_explicit_validation_wins(client, sa_headers, db_session, test_tenant):
+    # Setting validation_status is super-admin-only (loophole B2); a tenant admin
+    # gets 403 and an email change always clears it for them.
     own = _contact(db_session, test_tenant.tenant_id, "a@a.com")
-    r = client.put(f"{API}/contacts/{own.contact_id}", headers=auth_headers,
+    r = client.put(f"{API}/contacts/{own.contact_id}", headers=sa_headers,
                    json={"email": "changed@a.com", "validation_status": "valid"})
     assert r.status_code == 200, r.text
     assert r.json()["validation_status"] == "valid"

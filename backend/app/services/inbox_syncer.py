@@ -151,6 +151,7 @@ def sync_inbox(db: Session, tenant_id: int = None) -> Dict[str, Any]:
                     event.reply_body,
                     event.reply_subject or "",
                     db,
+                    tenant_id=_reply_tenant_id,
                 )
                 reply_msg.category = sentiment_result["category"]
                 reply_msg.sentiment = sentiment_result["sentiment"]
