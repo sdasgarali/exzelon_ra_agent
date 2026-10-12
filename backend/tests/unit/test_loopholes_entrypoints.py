@@ -524,3 +524,58 @@ class TestB6Signup:
         assert rl._storage_uri() == "memory://"
         monkeypatch.setattr(app_settings, "RATE_LIMIT_STORAGE_URI", "redis://localhost:6379/0")
         assert rl._storage_uri() == "redis://localhost:6379/0"
+
+
+# ---------------------------------------------------------------------------
+# B8 — notification sender test-send: own address only + rate limit
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def stub_test_send(monkeypatch):
+    import app.api.endpoints.settings as settings_ep
+    sent = []
+
+    def _send(db, tenant_id, to):
+        sent.append(to)
+        return True, "Sent."
+
+    monkeypatch.setattr(settings_ep, "send_test_email", _send)
+    return sent
+
+
+class TestB8NotificationTestSend:
+
+    def test_admin_cannot_send_to_arbitrary_address(self, client, auth_headers, stub_test_send):
+        r = client.post(f"{API}/settings/notifications/sender/test", headers=auth_headers,
+                        json={"to_email": "victim@elsewhere-corp.com"})
+        assert r.status_code == 403, r.text
+        assert stub_test_send == []
+
+    def test_admin_can_send_to_own_address(self, client, auth_headers, stub_test_send):
+        r = client.post(f"{API}/settings/notifications/sender/test", headers=auth_headers,
+                        json={"to_email": "Admin@Test.com"})
+        assert r.status_code == 200, r.text
+        assert stub_test_send == ["Admin@Test.com"]
+
+    def test_super_admin_may_send_anywhere(self, client, sa_headers, test_tenant, stub_test_send):
+        headers = {**sa_headers, "X-Tenant-ID": str(test_tenant.tenant_id)}
+        r = client.post(f"{API}/settings/notifications/sender/test", headers=headers,
+                        json={"to_email": "ops@elsewhere-corp.com"})
+        assert r.status_code == 200, r.text
+
+    def test_rate_limited(self, client, auth_headers, stub_test_send):
+        from app.core.rate_limiter import limiter
+        limiter.enabled = True
+        try:
+            limiter._storage.reset()
+            codes = [
+                client.post(f"{API}/settings/notifications/sender/test", headers=auth_headers,
+                            json={"to_email": "admin@test.com"}).status_code
+                for _ in range(6)
+            ]
+        finally:
+            limiter.enabled = False
+            limiter._storage.reset()
+        assert codes[:5] == [200] * 5
+        assert codes[5] == 429
+        assert len(stub_test_send) == 5

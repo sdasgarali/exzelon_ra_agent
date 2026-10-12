@@ -4,12 +4,13 @@ import structlog
 from typing import List, Optional, Dict
 
 logger = structlog.get_logger()
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role, get_current_tenant_id, get_current_active_user
 from app.api.deps.auth import get_user_settings_tab_access, get_all_settings_tab_permissions
 from app.core.config import settings as app_config
+from app.core.rate_limiter import limiter
 from app.core.settings_resolver import (
     get_tenant_setting,
     set_tenant_setting,
@@ -1732,15 +1733,28 @@ async def update_notification_sender_config(
 
 
 @router.post("/notifications/sender/test")
+@limiter.limit("5/hour")
 async def test_notification_sender(
+    request: Request,
     body: NotificationSenderTest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(require_tenant_id),
 ):
-    """Send a test email using the tenant's saved sender (or global fallback)."""
-    to = (body.to_email or current_user.email or "").strip()
+    """Send a test email using the tenant's saved sender (or global fallback).
+
+    Rate limited, and a tenant admin may only send the test to their own address:
+    with no tenant sender configured this goes out through the platform's global
+    sender, which must not be usable to mail arbitrary recipients.
+    """
+    own = (current_user.email or "").strip()
+    to = (body.to_email or own or "").strip()
     if not to:
         raise HTTPException(status_code=400, detail="Provide a recipient email for the test.")
+    if current_user.role != UserRole.SUPER_ADMIN and to.lower() != own.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Test emails can only be sent to your own email address.",
+        )
     ok, detail = send_test_email(db, tenant_id, to)
     return {"ok": ok, "detail": detail, "to": to}

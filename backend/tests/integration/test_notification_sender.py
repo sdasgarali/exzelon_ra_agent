@@ -163,6 +163,7 @@ class TestNotificationSenderEndpoints:
         db_session.commit()
         monkeypatch.setattr(SMTPMailer, "send",
                             lambda self, **k: MailResult(True, "Sent.", provider="smtp"))
-        r = client.post("/api/v1/settings/notifications/sender/test", headers=auth_headers, json={"to_email": "me@example.com"})
+        # Tenant admins may only send the test to their own address (loophole B8).
+        r = client.post("/api/v1/settings/notifications/sender/test", headers=auth_headers, json={"to_email": "admin@test.com"})
         assert r.status_code == 200, r.text
         assert r.json()["ok"] is True
