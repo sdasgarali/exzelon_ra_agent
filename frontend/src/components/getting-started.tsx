@@ -60,9 +60,11 @@ const STEPS = [
     key: 'has_contacts' as const,
     number: 3,
     title: 'Enrich Contacts',
-    description: 'Discover decision-maker contacts (emails, titles) from your sourced leads.',
+    description: 'Select your sourced leads and use Contact Enrich to discover decision-makers (emails, titles).',
     icon: Users,
-    href: '/dashboard/pipelines',
+    // The Leads page has the per-lead "Contact Enrich" bulk action; Pipelines has no
+    // tab/anchor to deep-link to, so this is the most specific destination.
+    href: '/dashboard/leads',
     cta: 'Enrich Contacts',
     color: 'violet',
   },
@@ -72,7 +74,7 @@ const STEPS = [
     title: 'Validate Emails',
     description: 'Verify contact emails to reduce bounces and protect your sender reputation.',
     icon: ShieldCheck,
-    href: '/dashboard/pipelines',
+    href: '/dashboard/validation',
     cta: 'Validate Emails',
     color: 'cyan',
   },
