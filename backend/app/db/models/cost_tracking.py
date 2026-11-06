@@ -9,7 +9,9 @@ class CostEntry(Base):
     __tablename__ = "cost_entries"
 
     cost_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+    # NULL = a system-wide row (scheduler, un-impersonated super admin). Tenants never
+    # see these: tenant_filter matches tenant_id == X. Migration 0007.
+    tenant_id = Column(Integer, ForeignKey("tenants.tenant_id"), nullable=True, index=True)
     category = Column(String(50), nullable=False, index=True)  # lead_sourcing, contact_discovery, validation, sending, ai
     # 6dp precision so sub-cent per-call AI/token costs are not truncated to $0.00.
     amount = Column(Numeric(12, 6), nullable=False)

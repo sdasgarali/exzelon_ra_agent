@@ -729,7 +729,8 @@ def job_crm_sync():
             result = run_crm_sync(db, tenant_id=tid)
             logger.info("CRM sync complete", tenant_id=tid, result=result)
             from app.services.automation_logger import log_automation_event
-            log_automation_event(db, "crm_sync", "Nightly CRM sync completed", details=result)
+            log_automation_event(db, "crm_sync", "Nightly CRM sync completed", details=result,
+                                 tenant_id=tid)
         except Exception as e:
             logger.error("CRM sync failed", tenant_id=tid, error=str(e))
         finally:

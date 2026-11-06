@@ -12,13 +12,24 @@ from app.db.models.crm_sync_log import CRMSyncLog
 logger = structlog.get_logger()
 
 
-def sync_contacts_from_crm(crm_type: str, db: Session) -> Dict[str, Any]:
-    """Pull contacts from HubSpot/Salesforce and create/update in Exzelon.
+def _require_tenant(tenant_id: Optional[int]) -> int:
+    # A CRM sync always belongs to one workspace: its contacts are matched and created
+    # there, only its deals are pushed, and its log row is its own. The old engine had
+    # no tenant at all (every deal of every workspace, contacts matched by email across
+    # workspaces, log under tenant 1). (ELR-005)
+    if tenant_id is None:
+        raise ValueError("tenant_id is required")
+    return tenant_id
+
+
+def sync_contacts_from_crm(crm_type: str, db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
+    """Pull contacts from HubSpot/Salesforce into one workspace.
 
     Returns: {synced: int, skipped: int, errors: int}
     """
+    tenant_id = _require_tenant(tenant_id)
     log = CRMSyncLog(
-        tenant_id=1,
+        tenant_id=tenant_id,
         crm_type=crm_type,
         direction="pull",
         entity_type="contacts",
@@ -45,7 +56,8 @@ def sync_contacts_from_crm(crm_type: str, db: Session) -> Dict[str, Any]:
                     continue
 
                 existing = db.query(ContactDetails).filter(
-                    ContactDetails.email == email
+                    ContactDetails.tenant_id == tenant_id,
+                    ContactDetails.email == email,
                 ).first()
 
                 if existing:
@@ -57,6 +69,7 @@ def sync_contacts_from_crm(crm_type: str, db: Session) -> Dict[str, Any]:
                     result["skipped"] += 1
                 else:
                     new_contact = ContactDetails(
+                        tenant_id=tenant_id,
                         email=email,
                         first_name=crm_contact.get("first_name", ""),
                         last_name=crm_contact.get("last_name", ""),
@@ -88,13 +101,14 @@ def sync_contacts_from_crm(crm_type: str, db: Session) -> Dict[str, Any]:
     return result
 
 
-def sync_deals_to_crm(crm_type: str, db: Session) -> Dict[str, Any]:
-    """Push new/updated deals to CRM.
+def sync_deals_to_crm(crm_type: str, db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
+    """Push one workspace's new/updated deals to its CRM.
 
     Returns: {synced: int, skipped: int, errors: int}
     """
+    tenant_id = _require_tenant(tenant_id)
     log = CRMSyncLog(
-        tenant_id=1,
+        tenant_id=tenant_id,
         crm_type=crm_type,
         direction="push",
         entity_type="deals",
@@ -107,6 +121,7 @@ def sync_deals_to_crm(crm_type: str, db: Session) -> Dict[str, Any]:
 
     try:
         deals = db.query(Deal).filter(
+            Deal.tenant_id == tenant_id,
             Deal.is_archived == False,
         ).all()
 
@@ -141,8 +156,10 @@ def sync_deals_to_crm(crm_type: str, db: Session) -> Dict[str, Any]:
 
 
 def run_crm_sync(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
-    """Run full bidirectional CRM sync. Called by scheduler."""
+    """Run full bidirectional CRM sync for one workspace. Called by scheduler."""
     from app.core.settings_resolver import get_tenant_setting
+
+    tenant_id = _require_tenant(tenant_id)
 
     results = {}
 
@@ -152,13 +169,13 @@ def run_crm_sync(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]
 
     if hubspot_key:
         logger.info("Running HubSpot sync")
-        results["hubspot_pull"] = sync_contacts_from_crm("hubspot", db)
-        results["hubspot_push"] = sync_deals_to_crm("hubspot", db)
+        results["hubspot_pull"] = sync_contacts_from_crm("hubspot", db, tenant_id=tenant_id)
+        results["hubspot_push"] = sync_deals_to_crm("hubspot", db, tenant_id=tenant_id)
 
     if salesforce_id:
         logger.info("Running Salesforce sync")
-        results["salesforce_pull"] = sync_contacts_from_crm("salesforce", db)
-        results["salesforce_push"] = sync_deals_to_crm("salesforce", db)
+        results["salesforce_pull"] = sync_contacts_from_crm("salesforce", db, tenant_id=tenant_id)
+        results["salesforce_push"] = sync_deals_to_crm("salesforce", db, tenant_id=tenant_id)
 
     if not hubspot_key and not salesforce_id:
         results["status"] = "no_crm_configured"

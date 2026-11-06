@@ -44,3 +44,13 @@ The right fix is a nullable `tenant_id` on `automation_events` / `cost_entries` 
 hidden from tenants and shown to super admins. That's a schema change, so it's a separate follow-up.
 Also fixed here: `lead_sourcing.py` recorded job-board costs with no tenant (so every workspace's
 sourcing cost went to tenant 1); it now passes the run's tenant.
+
+## Follow-up PR: system logs + CRM sync (branch fix/system-log-tenant)
+- [x] Alembic 0007: `automation_events.tenant_id`, `cost_entries.tenant_id` → nullable (NULL = system event)
+- [x] Models nullable; `automation_logger`, `cost_tracker`, `resource_pool_client._log_event` write None as NULL (no `or 1`)
+- [x] Readers: tenants never see NULL rows (`tenant_filter` uses `==`); super admin unscoped views include them
+- [x] CRM sync engine: every function takes a required `tenant_id`; contacts matched/created and deals pushed
+      only within that tenant; sync log under that tenant; `/crm-sync/run` requires a tenant
+      (engine is currently dead code: adapter imports fail, so this is defense-in-depth; NOT re-enabling it)
+- [ ] Tests, migration-safety review, full suites, PR, deploy (deploy.sh runs `alembic upgrade head`)
+Existing tenant-1 rows that were really system events stay as they are (can't tell them apart reliably).

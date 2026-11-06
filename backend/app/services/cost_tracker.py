@@ -147,7 +147,7 @@ def record_pipeline_cost(
         run_id: Optional job_run ID for linking
         category: Cost category — "lead_sourcing" (job boards) or
             "contact_discovery" (enrichment providers).
-        tenant_id: Owning tenant (defaults to 1 for single-tenant pipelines).
+        tenant_id: Owning tenant, or None for a system-level cost (stored as NULL).
 
     Returns:
         Created CostEntry or None on error
@@ -158,7 +158,7 @@ def record_pipeline_cost(
         estimated_cost = estimate_run_cost(source, api_calls, results, db)
 
         entry = CostEntry(
-            tenant_id=tenant_id or 1,
+            tenant_id=tenant_id,  # None = system cost (NULL); never borrow tenant 1
             category=category,
             amount=estimated_cost,
             entry_date=date.today(),
@@ -236,7 +236,7 @@ def record_ai_cost(
 
         cost = _ai_token_cost(provider, model, input_tokens, output_tokens, db)
         entry = CostEntry(
-            tenant_id=tenant_id or 1,
+            tenant_id=tenant_id,  # None = system cost (NULL); never borrow tenant 1
             category="ai",
             amount=cost,
             entry_date=date.today(),
