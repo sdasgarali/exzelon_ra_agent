@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.db.base import get_db
-from app.api.deps.auth import require_role, get_current_tenant_id
+from app.api.deps.auth import require_role, get_current_tenant_id, ensure_tenant
 from app.db.models.user import User, UserRole
 from app.db.models.crm_sync_log import CRMSyncLog
 from app.db.query_helpers import tenant_filter
@@ -24,14 +24,16 @@ def trigger_crm_sync(
     current_user: User = Depends(require_role([UserRole.SUPER_ADMIN, UserRole.ADMIN])),
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
-    """Trigger manual CRM sync."""
+    """Trigger a manual CRM sync for the current workspace."""
     from app.services.crm_sync_engine import run_crm_sync, sync_contacts_from_crm, sync_deals_to_crm
+
+    tenant_id = ensure_tenant(tenant_id)  # a sync always belongs to one workspace
 
     if body.crm_type:
         if body.crm_type not in ("hubspot", "salesforce"):
             raise HTTPException(status_code=400, detail="crm_type must be 'hubspot' or 'salesforce'")
-        pull_result = sync_contacts_from_crm(body.crm_type, db)
-        push_result = sync_deals_to_crm(body.crm_type, db)
+        pull_result = sync_contacts_from_crm(body.crm_type, db, tenant_id=tenant_id)
+        push_result = sync_deals_to_crm(body.crm_type, db, tenant_id=tenant_id)
         return {
             "crm_type": body.crm_type,
             "pull_contacts": pull_result,
@@ -39,7 +41,7 @@ def trigger_crm_sync(
         }
 
     # Sync all configured CRMs
-    results = run_crm_sync(db)
+    results = run_crm_sync(db, tenant_id=tenant_id)
     return results
 
 

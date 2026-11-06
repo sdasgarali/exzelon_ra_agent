@@ -28,10 +28,11 @@ def log_automation_event(
         details: Arbitrary dict/list serialized as JSON.
         source: Who triggered it — scheduler, user, api.
         status: success, error, or skipped.
+        tenant_id: Owning tenant, or None for a platform-wide (system) event.
     """
     try:
         event = AutomationEvent(
-            tenant_id=tenant_id or 1,
+            tenant_id=tenant_id,  # None = system event (NULL); never borrow tenant 1
             event_type=event_type,
             source=source,
             title=title,

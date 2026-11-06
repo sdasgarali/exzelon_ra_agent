@@ -51,10 +51,10 @@
 - **Webhook** — webhook subscriptions with URL, HMAC secret, event filter
 - **ApiKey** — API key auth with SHA-256 hash, scopes, expiry
 - **WarmupProfile** — warmup templates (Conservative 45d, Standard 30d, Aggressive 20d)
-- **AutomationEvent** — system activity log (scheduler runs, AI classifications, campaign sends)
+- **AutomationEvent** — system activity log (scheduler runs, AI classifications, campaign sends). `tenant_id` is **nullable** since Alembic 0007: NULL = a platform-wide (system) event, hidden from every tenant by `tenant_filter`, visible to an unscoped super admin. Never write `tenant_id or 1`.
 - **TrackingDomain** — custom tracking domains (domain, CNAME verification, default flag)
 - **SavedSearch** — saved lead filter sets (smart lists) with sharing support
-- **CostEntry** — cost tracking for revenue/ROI analytics (category, amount, date). `category` ∈ {lead_sourcing, contact_discovery, validation, sending, ai}; `amount` is `DECIMAL(12,6)` so sub-cent per-call AI/token costs are not truncated. Auto-recorded by `cost_tracker.record_pipeline_cost()` (job boards + contact discovery) and `record_ai_cost()` (LLM token cost).
+- **CostEntry** — cost tracking for revenue/ROI analytics (category, amount, date). `category` ∈ {lead_sourcing, contact_discovery, validation, sending, ai}; `amount` is `DECIMAL(12,6)` so sub-cent per-call AI/token costs are not truncated. Auto-recorded by `cost_tracker.record_pipeline_cost()` (job boards + contact discovery) and `record_ai_cost()` (LLM token cost). `tenant_id` nullable since 0007 (NULL = system cost, e.g. an un-impersonated super admin's AI call).
 - **ICPProfile** — AI-generated Ideal Customer Profiles (industries, job titles, states, company sizes)
 - **SuppressionList** — suppressed email addresses/domains
 

@@ -198,7 +198,7 @@ def _tenant_domain(db, tenant_id: Optional[int]) -> Optional[str]:
 def _log_event(db, tenant_id, description: str, status: str = "success") -> None:
     from app.db.models.automation_event import AutomationEvent
     try:
-        db.add(AutomationEvent(tenant_id=tenant_id or 1, event_type="resource_pool_push",
+        db.add(AutomationEvent(tenant_id=tenant_id, event_type="resource_pool_push",
                                source="api", title=description[:255], status=status))
         db.commit()
     except Exception:  # logging must never break the caller

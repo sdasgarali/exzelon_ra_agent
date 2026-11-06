@@ -128,3 +128,77 @@ def test_scheduler_tenant_lookup_failure_runs_no_tenant(monkeypatch):
 
     monkeypatch.setattr(scheduler, "_get_db", lambda: _BrokenSession())
     assert scheduler._get_active_tenant_ids() == []
+
+
+# --- System log rows: NULL tenant, hidden from every tenant -------------------------
+
+def test_system_automation_event_has_no_tenant_and_is_hidden_from_tenants(db_session, test_tenant):
+    from app.db.models.automation_event import AutomationEvent
+    from app.db.query_helpers import tenant_filter
+    from app.services.automation_logger import log_automation_event
+
+    log_automation_event(db_session, "scheduler_run", "Platform job ran", tenant_id=None)
+    row = db_session.query(AutomationEvent).filter(AutomationEvent.title == "Platform job ran").one()
+    assert row.tenant_id is None
+
+    seen_by_tenant = tenant_filter(db_session.query(AutomationEvent), AutomationEvent,
+                                   test_tenant.tenant_id).filter(
+        AutomationEvent.title == "Platform job ran").count()
+    seen_by_super_admin = tenant_filter(db_session.query(AutomationEvent), AutomationEvent,
+                                        None).filter(
+        AutomationEvent.title == "Platform job ran").count()
+    assert seen_by_tenant == 0
+    assert seen_by_super_admin == 1
+
+
+def test_system_ai_cost_is_recorded_without_a_tenant(db_session):
+    from app.services.cost_tracker import record_ai_cost
+
+    record_ai_cost(db_session, provider="openai", model="gpt-4o-mini", input_tokens=100,
+                   output_tokens=50, feature="test-system-cost", tenant_id=None)
+    db_session.commit()
+    row = db_session.query(CostEntry).filter(CostEntry.notes.like("%test-system-cost%")).one()
+    assert row.tenant_id is None
+
+
+# --- CRM sync: always one workspace ------------------------------------------------
+
+def test_crm_sync_functions_require_a_tenant(db_session):
+    from app.services import crm_sync_engine as eng
+    for fn in (lambda: eng.sync_contacts_from_crm("hubspot", db_session),
+               lambda: eng.sync_deals_to_crm("hubspot", db_session),
+               lambda: eng.run_crm_sync(db_session)):
+        with pytest.raises(ValueError, match="tenant_id is required"):
+            fn()
+
+
+def test_crm_deal_push_only_sends_the_tenants_own_deals(db_session, test_tenant, monkeypatch):
+    from app.db.models.crm_sync_log import CRMSyncLog
+    from app.db.models.deal import Deal, DealStage
+    from app.services import crm_sync_engine as eng
+
+    other = Tenant(name="Other Co", slug="other-co-crm", plan=TenantPlan.FREE)
+    db_session.add(other)
+    db_session.commit()
+    stages = {}
+    for t in (test_tenant.tenant_id, other.tenant_id):
+        st = DealStage(tenant_id=t, name="Open", stage_order=1)
+        db_session.add(st)
+        db_session.commit()
+        stages[t] = st.stage_id
+    db_session.add(Deal(tenant_id=test_tenant.tenant_id, name="Mine", stage_id=stages[test_tenant.tenant_id]))
+    db_session.add(Deal(tenant_id=other.tenant_id, name="Not mine", stage_id=stages[other.tenant_id]))
+    db_session.commit()
+
+    pushed = []
+    monkeypatch.setattr(eng, "_push_deal_to_hubspot", lambda data, db: pushed.append(data["name"]))
+    eng.sync_deals_to_crm("hubspot", db_session, tenant_id=test_tenant.tenant_id)
+
+    assert pushed == ["Mine"]
+    log = db_session.query(CRMSyncLog).order_by(CRMSyncLog.sync_id.desc()).first()
+    assert log.tenant_id == test_tenant.tenant_id
+
+
+def test_crm_sync_endpoint_requires_a_tenant(client, super_admin_headers):
+    r = client.post("/api/v1/crm-sync/run", headers=super_admin_headers, json={"crm_type": "hubspot"})
+    assert r.status_code == 400
