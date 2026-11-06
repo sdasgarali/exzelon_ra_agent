@@ -67,3 +67,40 @@ def test_current_models_are_priced():
     assert AI_MODEL_PRICING["claude-haiku-4-5"] == (1.00, 5.00)
     assert AI_MODEL_PRICING["claude-sonnet-5"] == (2.00, 10.00)
     assert AI_MODEL_PRICING["claude-opus-5"] == (5.00, 25.00)
+
+
+def _call_messages(messages, system=None):
+    ctx, client = _fake_client([{"type": "text", "text": "ok"}])
+    adapter = AnthropicAdapter(api_key="sk-ant-test", model="claude-haiku-4-5")
+    with patch("app.services.adapters.ai.anthropic_adapter.httpx.Client", return_value=ctx):
+        adapter._call_api(messages, system=system, max_tokens=50)
+    return client.post.call_args.kwargs["json"]
+
+
+def test_system_message_moves_to_the_system_field():
+    """Regression: the copilot sent an OpenAI-style system message; Anthropic 400'd."""
+    payload = _call_messages([
+        {"role": "system", "content": "You are the NeuraLeads assistant."},
+        {"role": "user", "content": "hi"},
+    ])
+    assert payload["system"] == "You are the NeuraLeads assistant."
+    assert all(m["role"] != "system" for m in payload["messages"])
+    assert payload["messages"] == [{"role": "user", "content": "hi"}]
+
+
+def test_explicit_system_and_system_message_are_combined():
+    payload = _call_messages([{"role": "system", "content": "B"}, {"role": "user", "content": "hi"}],
+                             system="A")
+    assert payload["system"] == "A\n\nB"
+
+
+def test_leading_assistant_and_empty_messages_are_dropped():
+    payload = _call_messages([
+        {"role": "assistant", "content": "Hi! How can I help?"},
+        {"role": "user", "content": ""},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "Hello"},
+        {"role": "user", "content": "thanks"},
+    ])
+    assert [m["role"] for m in payload["messages"]] == ["user", "assistant", "user"]
+    assert "system" not in payload
