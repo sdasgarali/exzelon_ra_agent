@@ -54,11 +54,18 @@ def test_record_pipeline_cost_contact_discovery_category(db_session):
     assert float(entry.amount) > 0
 
 
-def test_record_pipeline_cost_defaults_lead_sourcing_tenant1(db_session):
+def test_record_pipeline_cost_defaults_lead_sourcing(db_session):
+    """No tenant = a system cost (NULL), never borrowed tenant 1 (Alembic 0007)."""
     entry = ct.record_pipeline_cost(db_session, "serpapi", 3, 50)
     db_session.commit()
     assert entry.category == "lead_sourcing"
-    assert entry.tenant_id == 1
+    assert entry.tenant_id is None
+
+
+def test_record_pipeline_cost_keeps_the_run_tenant(db_session, test_tenant):
+    entry = ct.record_pipeline_cost(db_session, "serpapi", 3, 50, tenant_id=test_tenant.tenant_id)
+    db_session.commit()
+    assert entry.tenant_id == test_tenant.tenant_id
 
 
 # ---------------------------------------------------------------------------
