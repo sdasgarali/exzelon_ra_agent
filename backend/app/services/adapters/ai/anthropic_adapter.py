@@ -21,18 +21,31 @@ class AnthropicAdapter(AIAdapter):
     BASE_URL = "https://api.anthropic.com/v1"
     PROVIDER_NAME = "anthropic"
 
-    # Available models
+    # Available models. The Claude 3.x ids this adapter used to list were retired by
+    # Anthropic (Sonnet 3.5 2025-10-28, Opus 3 2026-01-05, Haiku 3.5 2026-02-19) and
+    # now fail every call. Use the current-generation aliases, never dated snapshots.
     MODELS = {
-        "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet - Best balance",
-        "claude-3-5-haiku-20241022": "Claude 3.5 Haiku - Fast and affordable",
-        "claude-3-opus-20240229": "Claude 3 Opus - Most capable",
+        "claude-haiku-4-5": "Claude Haiku 4.5 - Fastest and cheapest",
+        "claude-sonnet-5": "Claude Sonnet 5 - Balanced",
+        "claude-opus-5": "Claude Opus 5 - Most capable",
     }
 
-    DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+    DEFAULT_MODEL = "claude-haiku-4-5"
+
+    # Models that reject sampling parameters (temperature/top_p/top_k) with a 400.
+    _NO_SAMPLING_PREFIXES = (
+        "claude-opus-5", "claude-sonnet-5", "claude-opus-4-7", "claude-opus-4-8", "claude-fable",
+    )
+
+    @classmethod
+    def _accepts_sampling(cls, model: str) -> bool:
+        return not (model or "").startswith(cls._NO_SAMPLING_PREFIXES)
 
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or getattr(settings, 'ANTHROPIC_API_KEY', None)
-        self.model = model or self.DEFAULT_MODEL
+        # A model saved for another provider (e.g. "gpt-4.1-nano" left behind after the
+        # platform switched to Anthropic) would 404 here; use the default instead.
+        self.model = model if (model or "").startswith("claude-") else self.DEFAULT_MODEL
         self._last_usage = {"input_tokens": 0, "output_tokens": 0}
 
     def test_connection(self) -> bool:
@@ -51,7 +64,7 @@ class AnthropicAdapter(AIAdapter):
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": "claude-3-5-haiku-20241022",
+                        "model": self.model,  # the model we will actually call
                         "max_tokens": 10,
                         "messages": [{"role": "user", "content": "Hi"}]
                     },
@@ -70,8 +83,9 @@ class AnthropicAdapter(AIAdapter):
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": temperature
         }
+        if self._accepts_sampling(self.model):
+            payload["temperature"] = temperature
 
         if system:
             payload["system"] = system
@@ -95,7 +109,13 @@ class AnthropicAdapter(AIAdapter):
                 "output_tokens": usage.get("output_tokens", 0),
             }
             self._track_ai_cost()
-            return data["content"][0]["text"]
+            # Join the text blocks: the first block is not always text (e.g. a
+            # thinking block on models that think by default).
+            return "".join(
+                block.get("text", "")
+                for block in data.get("content", [])
+                if block.get("type") == "text"
+            )
 
     def research_company(
         self,
