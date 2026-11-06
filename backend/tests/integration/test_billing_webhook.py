@@ -110,3 +110,51 @@ def test_webhook_invalid_signature_400(client, db_session, test_tenant, monkeypa
     monkeypatch.setattr(stripe.Webhook, "construct_event", _raise, raising=True)
     r = _post(client)
     assert r.status_code == 400
+
+
+def _signed_post(client, event: dict, secret: str):
+    """Post `event` with a genuine Stripe signature, so the real
+    stripe.Webhook.construct_event runs (no mock)."""
+    import json as _json
+    import time
+    import stripe
+    payload = _json.dumps(event)
+    ts = int(time.time())
+    sig = stripe.WebhookSignature._compute_signature(f"{ts}.{payload}", secret)
+    return client.post("/api/v1/billing/webhook/stripe", content=payload.encode(),
+                       headers={"stripe-signature": f"t={ts},v1={sig}",
+                                "content-type": "application/json"})
+
+
+def test_webhook_real_signature_marks_invoice_paid(client, db_session, test_tenant, monkeypatch):
+    """Regression: stripe-python >= 15 returns an Event that has no .get(), which
+    made every real (unmocked) webhook 500 and left paid invoices unpaid."""
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_real", raising=False)
+    inv = _make_invoice(db_session, test_tenant.tenant_id, 10000)
+    r = _signed_post(client, _checkout_event("evt_real_sig", inv), "whsec_real")
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    assert db_session.get(Invoice, inv.invoice_id).status == InvoiceStatus.PAID
+
+
+def test_webhook_rejects_bad_signature(client, monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "STRIPE_SECRET_KEY", "sk_test", raising=False)
+    monkeypatch.setattr(settings, "STRIPE_WEBHOOK_SECRET", "whsec_real", raising=False)
+    r = _signed_post(client, {"id": "evt_x", "type": "invoice.paid", "data": {"object": {}}},
+                     "whsec_wrong")
+    assert r.status_code == 400
+
+
+def test_subscription_period_end_read_from_item(db_session, test_tenant):
+    """Stripe API 2025-03-31+ puts current_period_end on the subscription item."""
+    from datetime import datetime
+    from app.services.billing.subscription_service import upsert_from_stripe
+    rec = upsert_from_stripe(db_session, {
+        "id": "sub_item_cpe", "customer": "cus_1", "status": "active",
+        "items": {"data": [{"price": {"id": "price_unknown"},
+                            "current_period_end": 1798761600}]},
+    }, test_tenant.tenant_id)
+    assert rec.current_period_end == datetime.utcfromtimestamp(1798761600)
