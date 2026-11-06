@@ -705,7 +705,7 @@ async def run_outreach(
         from app.services.pipelines.outreach import run_outreach_mailmerge_pipeline
         # Create JobRun eagerly so we can return run_id for polling/download
         job_run = JobRun(
-            tenant_id=tenant_id or 1,
+            tenant_id=tenant_id,  # require_tenant_with_budget guarantees one
             pipeline_name="outreach_mailmerge",
             status=JobStatus.RUNNING,
             triggered_by=current_user.email,

@@ -7,7 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from app.db.base import get_db
-from app.api.deps.auth import require_role, get_current_tenant_id, role_value
+from app.api.deps.auth import require_role, get_current_tenant_id, role_value, ensure_tenant
 from app.db.query_helpers import tenant_filter
 from app.db.models.user import User, UserRole
 from app.db.models.outreach import OutreachEvent, OutreachStatus
@@ -297,7 +297,7 @@ def create_cost_entry(
         user_id=current_user.user_id,
         source_adapter=body.source_adapter,
         is_automated=False,
-        tenant_id=tenant_id or 1,
+        tenant_id=ensure_tenant(tenant_id),
     )
     db.add(entry)
     db.commit()

@@ -355,7 +355,7 @@ def _update_client_from_org_data(db, lead, org_data: dict):
 
     client = db.query(ClientInfo).filter(
         ClientInfo.client_name == lead.client_name,
-        ClientInfo.tenant_id == (lead.tenant_id or 1),
+        ClientInfo.tenant_id == lead.tenant_id,
     ).first()
     if not client:
         return
@@ -479,6 +479,10 @@ def run_contact_enrichment_pipeline(
         lead_ids: Optional list of specific lead IDs to enrich
         run_id: Optional pre-created job run ID
     """
+    if tenant_id is None:
+        # Never fall back to tenant 1: that silently files one workspace's data under
+        # another. Every caller (endpoints, scheduler) passes a real tenant. (ELR-005)
+        raise ValueError("tenant_id is required")
     # A contact-enrichment run always executes under ONE concrete tenant, so that
     # tenant's own API keys + settings are used and only ITS leads are enriched.
     # A super-admin who runs without selecting (impersonating) a tenant resolves to
@@ -504,11 +508,11 @@ def run_contact_enrichment_pipeline(
             job_run.started_at = datetime.utcnow()
             db.commit()
         else:
-            job_run = JobRun(tenant_id=tenant_id or 1, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+            job_run = JobRun(tenant_id=tenant_id, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
             db.add(job_run)
             db.commit()
     else:
-        job_run = JobRun(tenant_id=tenant_id or 1, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
+        job_run = JobRun(tenant_id=tenant_id, pipeline_name="contact_enrichment", status=JobStatus.RUNNING, triggered_by=triggered_by)
         db.add(job_run)
         db.commit()
 
@@ -754,7 +758,7 @@ def run_contact_enrichment_pipeline(
                             c_first = c_email.split("@")[0].capitalize()
 
                         contact = ContactDetails(
-                            tenant_id=tenant_id or lead.tenant_id or 1,
+                            tenant_id=lead.tenant_id or tenant_id,
                             lead_id=lead.lead_id,
                             client_name=lead.client_name,
                             first_name=c_first,

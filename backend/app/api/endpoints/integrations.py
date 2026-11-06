@@ -414,20 +414,26 @@ async def resource_pool_webhook(request: Request, db: Session = Depends(get_db))
     # Resolve lead → tenant + source; and a best-effort originating campaign.
     # When the ref carries a tenant (ra-t<tenant>-lead-<id>), scope the lead
     # lookup by it so a lead_id shared across tenants maps to the RIGHT lead.
-    tenant_id, source, campaign_id = ref_tenant_id or 1, None, None
+    tenant_id, source, campaign_id = ref_tenant_id, None, None
     if lead_id is not None:
         lq = db.query(LeadDetails).filter(LeadDetails.lead_id == lead_id)
         if ref_tenant_id is not None:
             lq = lq.filter(LeadDetails.tenant_id == ref_tenant_id)
         lead = lq.first()
         if lead:
-            tenant_id = lead.tenant_id or ref_tenant_id or 1
+            tenant_id = lead.tenant_id or ref_tenant_id
             source = lead.source
             oe = (db.query(OutreachEvent)
                   .filter(OutreachEvent.lead_id == lead_id, OutreachEvent.campaign_id.isnot(None))
                   .order_by(OutreachEvent.event_id.desc()).first())
             if oe:
                 campaign_id = oe.campaign_id
+
+    if tenant_id is None:
+        # No tenant in the ref and no matching lead: we can't tell whose event this is.
+        # Ack it so Resource Pool stops retrying, but never file it under tenant 1.
+        logger.warning("Resource Pool webhook %s for ref %r has no tenant; ignored", event, external_ref)
+        return {"ok": True, "ignored": "unknown_tenant"}
 
     rp_entity_id = str(data.get("placementId") or data.get("offerId") or data.get("invoiceId") or "") or None
     amount = data.get("offerAmount")

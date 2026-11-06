@@ -585,7 +585,7 @@ def create_campaign_from_leads(
 
     # Fetch active templates from DB (prefer tenant industry match, fallback to any active)
     from app.db.models.email_template import TemplateStatus, TemplateCategory
-    effective_tenant = tenant_id or user.tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id or user.tenant_id)
     tenant_obj = db.query(Tenant).filter(Tenant.tenant_id == effective_tenant).first()
     tenant_industry = tenant_obj.industry if tenant_obj else None
 
