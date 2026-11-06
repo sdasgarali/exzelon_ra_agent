@@ -152,12 +152,12 @@ class TestTenantService:
     def test_create_tenant_for_signup(self, db_session):
         """Signup must provision a usable workspace.
 
-        This test previously asserted `max_mailboxes == 0` and `max_contacts == 0` —
-        i.e. it locked in the bug that made every self-signup account unable to create
-        anything at all. Limits now come from PLAN_MATRIX["free"].
+        The limit columns stay 0 ("follow the plan"), and the effective limits resolve
+        to PLAN_MATRIX["free"]. Copying Free's numbers into the row (the 2026-09 to
+        2026-11 behaviour) left upgraded tenants capped at Free.
         """
         from app.services.tenant_service import create_tenant_for_signup
-        from app.core.plans import PLAN_MATRIX
+        from app.core.plans import LIMIT_FIELDS, PLAN_MATRIX, limits_for_tenant
 
         tenant = create_tenant_for_signup("My Startup Inc", db_session)
         free = PLAN_MATRIX["free"]
@@ -166,12 +166,26 @@ class TestTenantService:
         assert tenant.name == "My Startup Inc"
         assert tenant.slug == "my-startup-inc"
         assert tenant.plan == TenantPlan.FREE
-        assert tenant.max_mailboxes == free.max_mailboxes > 0
-        assert tenant.max_contacts == free.max_contacts > 0
-        assert tenant.max_campaigns == free.max_campaigns > 0
-        assert tenant.max_leads == free.max_leads > 0
-        assert tenant.max_lobs == free.max_lobs > 0
-        assert tenant.max_users == free.max_users > 0
+        for field in LIMIT_FIELDS:
+            assert getattr(tenant, field) == 0, field
+        resolved = limits_for_tenant(tenant)
+        for field in LIMIT_FIELDS:
+            assert resolved[field] == getattr(free, field) > 0, field
+
+    def test_signup_tenant_gets_paid_limits_after_upgrade(self, db_session):
+        """Regression: a self-signup tenant that upgrades must get the new plan's limits."""
+        from app.services.tenant_service import create_tenant_for_signup
+        from app.services.billing.plan_change import change_plan
+        from app.core.plans import PLAN_MATRIX, limits_for_tenant
+
+        tenant = create_tenant_for_signup("Upgrader Co", db_session)
+        change_plan(db_session, tenant, TenantPlan.MAX, reason="test")
+        db_session.commit()
+
+        limits = limits_for_tenant(tenant)
+        assert limits["max_mailboxes"] == PLAN_MATRIX["max"].max_mailboxes
+        assert limits["max_campaigns"] == PLAN_MATRIX["max"].max_campaigns
+        assert limits["max_leads"] == PLAN_MATRIX["max"].max_leads
 
     def test_signup_tenant_can_actually_create_things(self, db_session):
         """End-to-end of the same regression, through the real limit check."""

@@ -38,11 +38,11 @@ def generate_unique_slug(company_name: str, db: Session) -> str:
 def create_tenant_for_signup(company_name: str, db: Session) -> Tenant:
     """Create a new Free tenant for self-service signup.
 
-    Limits come from `PLAN_MATRIX["free"]`, never hardcoded here. Until 2026-09 this
-    function assigned `max_mailboxes/contacts/campaigns/leads = 0`, which the old
-    plan-limit sentinel read as "locked" — so every self-signup tenant was created
-    unable to add a mailbox, lead, contact or campaign. Reading the matrix means a
-    pricing change can never silently strand new signups again.
+    The `max_*` limit columns are left at 0, which `limits_for_tenant` reads as "use
+    the plan's number" — so the workspace gets Free's limits now and the paid tier's
+    limits the moment it upgrades. (Until 2026-11 this copied Free's numbers into the
+    row, and those explicit values kept overriding the plan after a Stripe upgrade: a
+    paying Max customer stayed capped at 1 mailbox. Before 2026-09, 0 meant "locked".)
 
     Args:
         company_name: The company name from the signup form.
@@ -58,12 +58,13 @@ def create_tenant_for_signup(company_name: str, db: Session) -> Tenant:
         name=company_name,
         slug=slug,
         plan=TenantPlan(DEFAULT_PLAN),
-        max_users=free.max_users,
-        max_mailboxes=free.max_mailboxes,
-        max_contacts=free.max_contacts,
-        max_campaigns=free.max_campaigns,
-        max_leads=free.max_leads,
-        max_lobs=free.max_lobs,
+        # 0 = follow the plan (see limits_for_tenant). Never copy a tier's numbers here.
+        max_users=0,
+        max_mailboxes=0,
+        max_contacts=0,
+        max_campaigns=0,
+        max_leads=0,
+        max_lobs=0,
         monthly_price_cents=free.monthly_price_cents,
     )
     db.add(tenant)
