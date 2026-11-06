@@ -276,14 +276,19 @@ change is config-only after the code change. Steps on the VPS:
 
 Rollback: restore the three `.bak-<ts>` files, rebuild frontend, restart services, reload nginx.
 
-## Stripe on prod (2026-11-06 — TEST MODE)
+## Stripe on prod (LIVE since 2026-11-07)
 
-Prod runs Stripe **test-mode** keys by the owner's choice (card checkout visible; no real money; card 4242 works).
-Keys live in the ROOT `/opt/exzelon-ra-agent/.env` as `PROD_BILLING_ENABLED=true` and `PROD_STRIPE_{SECRET_KEY,
-PUBLISHABLE_KEY,WEBHOOK_SECRET,PRICE_PRO,PRICE_PRO_ANNUAL,PRICE_MAX,PRICE_MAX_ANNUAL,PRICE_CREDIT_TOPUP}` (never in git).
-Webhook endpoint in the Stripe test account → `https://neuraleads.ai/api/v1/billing/webhook/stripe`.
+Prod takes **real payments**. Keys live in the ROOT `/opt/exzelon-ra-agent/.env` (never in git): `PROD_BILLING_ENABLED=true`,
+`PROD_STRIPE_SECRET_KEY` (a **restricted** `rk_live_` key, "full access except sensitive operations": no payouts/transfers),
+`PROD_STRIPE_PUBLISHABLE_KEY` (unused by the code today; checkout is server-side), `PROD_STRIPE_WEBHOOK_SECRET`,
+and the live price ids `PROD_STRIPE_PRICE_{PRO,PRO_ANNUAL,MAX,MAX_ANNUAL,CREDIT_TOPUP}`.
+Live prices (lookup keys `neuraleads_{pro,max}_{monthly,annual}`, `neuraleads_credit_topup`): Pro $99/mo + $948/yr,
+Max $299/mo + $2,868/yr, top-up $20 one-time per 1,000 credits. Live webhook `we_1UYtYnDfvVcN6rUjja4NWzs4` →
+`https://neuraleads.ai/api/v1/billing/webhook/stripe` (checkout.session.*, invoice.paid/payment_failed,
+customer.subscription.*, payment_intent.payment_failed, charge.refunded, charge.dispute.created).
 Check: `GET /api/v1/public/site-info` → `"payments_enabled": true`.
 
-**Going live:** activate the Stripe account → create live Products/Prices (Pro $99/mo + $948/yr, Max $299/mo + $2,868/yr,
-top-up $20 one-time per 1,000 credits) and a live webhook to the same URL → back up `.env`, replace the `PROD_STRIPE_*`
-values → `systemctl restart exzelon-api`. Test-mode subscriptions do not carry over to live mode.
+**Rotating the key:** create a new restricted key in Stripe → back up `.env` → replace `PROD_STRIPE_SECRET_KEY` →
+`systemctl restart exzelon-api` → delete the old key in Stripe. **Changing a price:** create a new Price in Stripe (prices are
+immutable), update the matching `PROD_STRIPE_PRICE_*`, restart, and keep `core/plans.py` PLAN_MATRIX in sync.
+Local dev keeps using **test** keys (`DEV_STRIPE_*` in the local `.env`).
