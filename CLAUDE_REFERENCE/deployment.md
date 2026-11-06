@@ -275,3 +275,15 @@ change is config-only after the code change. Steps on the VPS:
    OAuth clients, and the new webhook URL in Stripe once Stripe is set up.
 
 Rollback: restore the three `.bak-<ts>` files, rebuild frontend, restart services, reload nginx.
+
+## Stripe on prod (2026-11-06 — TEST MODE)
+
+Prod runs Stripe **test-mode** keys by the owner's choice (card checkout visible; no real money; card 4242 works).
+Keys live in the ROOT `/opt/exzelon-ra-agent/.env` as `PROD_BILLING_ENABLED=true` and `PROD_STRIPE_{SECRET_KEY,
+PUBLISHABLE_KEY,WEBHOOK_SECRET,PRICE_PRO,PRICE_PRO_ANNUAL,PRICE_MAX,PRICE_MAX_ANNUAL,PRICE_CREDIT_TOPUP}` (never in git).
+Webhook endpoint in the Stripe test account → `https://neuraleads.ai/api/v1/billing/webhook/stripe`.
+Check: `GET /api/v1/public/site-info` → `"payments_enabled": true`.
+
+**Going live:** activate the Stripe account → create live Products/Prices (Pro $99/mo + $948/yr, Max $299/mo + $2,868/yr,
+top-up $20 one-time per 1,000 credits) and a live webhook to the same URL → back up `.env`, replace the `PROD_STRIPE_*`
+values → `systemctl restart exzelon-api`. Test-mode subscriptions do not carry over to live mode.
