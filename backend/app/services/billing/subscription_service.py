@@ -99,6 +99,12 @@ def upsert_from_stripe(db, sub_obj: dict, tenant_id: int) -> SubscriptionRecord:
     record.status = _map_status(sub_obj.get("status", "incomplete"))
     record.cancel_at_period_end = bool(sub_obj.get("cancel_at_period_end", False))
     cpe = sub_obj.get("current_period_end")
+    if not cpe:
+        # Stripe API 2025-03-31+ moved the billing period onto the subscription item.
+        try:
+            cpe = sub_obj["items"]["data"][0].get("current_period_end")
+        except (KeyError, IndexError, TypeError, AttributeError):
+            cpe = None
     if cpe:
         record.current_period_end = datetime.utcfromtimestamp(int(cpe))
 

@@ -1049,6 +1049,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # The handlers below treat the event as a plain dict. stripe-python >= 15
+    # StripeObjects no longer support dict methods (.get), which made every real
+    # webhook 500 and left paid checkouts un-applied. The signature is verified, so
+    # the raw JSON payload is the same event as plain dicts.
+    if not isinstance(event, dict):
+        event = json.loads(payload)
+
     from app.db.models.invoice import (
         Invoice, InvoiceStatus, PaymentRecord, PaymentMethod, PaymentStatus,
         ProcessedStripeEvent,
