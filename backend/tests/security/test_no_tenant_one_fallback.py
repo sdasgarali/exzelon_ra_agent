@@ -112,3 +112,19 @@ def test_resource_pool_event_without_tenant_is_ignored_not_filed_under_tenant_on
     assert r.json().get("ignored") == "unknown_tenant"
     assert db_session.query(ResourcePoolAttribution).filter(
         ResourcePoolAttribution.rp_entity_id == "plc_orphan").count() == 0
+
+
+# --- Scheduler: a failed tenant lookup must not turn into "run everything as tenant 1" ---
+
+def test_scheduler_tenant_lookup_failure_runs_no_tenant(monkeypatch):
+    from app.services.warmup import scheduler
+
+    class _BrokenSession:
+        def query(self, *a, **k):
+            raise RuntimeError("db down")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scheduler, "_get_db", lambda: _BrokenSession())
+    assert scheduler._get_active_tenant_ids() == []
