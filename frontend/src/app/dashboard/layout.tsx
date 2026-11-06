@@ -17,6 +17,7 @@ import { CopilotChat } from '@/components/copilot-chat'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter } from '@/components/notification-center'
 import { CreditMeter } from '@/components/credit-meter'
+import { UpgradeButton } from '@/components/upgrade-button'
 import { LobSelector } from '@/components/lob-selector'
 import { useLobStore } from '@/lib/lob-store'
 import BrandLogo from '@/components/brand-logo'
@@ -403,6 +404,11 @@ export default function DashboardLayout({
           })}
         </nav>
 
+        {/* Upgrade — on mobile it lives here; on desktop it sits in the top bar. */}
+        <div className={`lg:hidden ${collapsed ? 'px-2 pb-2' : 'px-4 pb-3'}`}>
+          <UpgradeButton variant="sidebar" collapsed={collapsed} />
+        </div>
+
         {/* Profile — mobile drawer only; on desktop it lives in the top bar. */}
         <div ref={profileRef} className="border-t border-gray-700 relative p-4 lg:hidden">
           <button
@@ -554,6 +560,9 @@ export default function DashboardLayout({
             <span>Search...</span>
             <kbd className="ml-auto text-[10px] font-mono text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-600 px-1 py-0.5 rounded">Ctrl+K</kbd>
           </button>
+
+          {/* Upgrade — only for Free/Pro workspace admins */}
+          <UpgradeButton />
 
           {/* Credit balance — refreshes every minute so background runs show up */}
           <CreditMeter />

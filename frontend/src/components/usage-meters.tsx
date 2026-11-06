@@ -18,6 +18,18 @@ import { useSiteInfo } from '@/lib/use-site-info'
  * component that draws a bar.
  */
 
+export interface UpgradeOption {
+  key: string
+  label: string
+  monthly_price_cents: number
+  annual_price_cents: number
+  credits_per_month: number
+  send_quota_per_month: number
+  max_mailboxes: number
+  max_contacts: number
+  max_campaigns: number
+}
+
 export interface UsageResponse {
   metered: boolean
   plan?: {
@@ -30,6 +42,8 @@ export interface UsageResponse {
     upgrade_to: string | null
     upgrade_label: string | null
   }
+  // Every self-serve tier above the current plan (Free → Pro and Max). From PLAN_MATRIX.
+  upgrade_options?: UpgradeOption[]
   credits?: {
     allowance: number
     topup: number
@@ -161,7 +175,7 @@ export default function UsageMeters({ compact = false }: { compact?: boolean }) 
         </h3>
         {canUpgrade && (
           <button
-            onClick={() => router.push('/dashboard/billing?tab=plan')}
+            onClick={() => router.push('/dashboard/billing#plans')}
             className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
           >
             {/* Payments off: the billing page offers "Request upgrade" instead of checkout. */}

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/lib/store'
 import { authApi } from '@/lib/api'
 import { CheckCircle, Eye, EyeOff } from 'lucide-react'
 import BrandLogo from '@/components/brand-logo'
+import { readPendingUpgrade, savePendingUpgrade, upgradeFromSearch, upgradeUrl } from '@/lib/pending-upgrade'
 
 function LoginContent() {
   const router = useRouter()
@@ -27,6 +28,9 @@ function LoginContent() {
     if (searchParams.get('verified') === 'true') {
       setVerified(true)
     }
+    // An existing user who picked a plan on /pricing and came here to sign in.
+    const picked = upgradeFromSearch(`?${searchParams.toString()}`)
+    if (picked) savePendingUpgrade(picked.plan, picked.annual)
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,7 +41,10 @@ function LoginContent() {
     try {
       const response = await authApi.login(formData.email, formData.password)
       setAuth(response.access_token, response.user, response.refresh_token, rememberMe)
-      router.push('/dashboard')
+      // A plan picked on /pricing (saved at signup) lands on its upgrade, not the dashboard.
+      // Super admins have no plan of their own, so they always go to the dashboard.
+      const pending = response.user?.role === 'super_admin' ? null : readPendingUpgrade()
+      router.push(pending ? upgradeUrl(pending.plan, pending.annual) : '/dashboard')
     } catch (err: any) {
       setError(err.response?.data?.detail || 'An error occurred')
     } finally {
