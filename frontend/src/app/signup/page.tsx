@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { authApi, getApiError } from '@/lib/api'
 import { Building, Mail, User, Lock, CheckCircle, Circle } from 'lucide-react'
 import BrandLogo from '@/components/brand-logo'
+import { savePendingUpgrade, upgradeFromSearch, type UpgradePlan } from '@/lib/pending-upgrade'
 
 // Mirrors backend/app/schemas/tenant.py SignupRequest.password_strength exactly, so a
 // password that passes here is never rejected by the API.
@@ -26,6 +27,17 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [acceptTerms, setAcceptTerms] = useState(false)
+  // The plan picked on /pricing (?plan=pro&billing=annual). Read after mount so the
+  // page still prerenders statically.
+  const [chosen, setChosen] = useState<{ plan: UpgradePlan; annual: boolean } | null>(null)
+  useEffect(() => {
+    const picked = upgradeFromSearch(window.location.search)
+    if (picked) {
+      setChosen(picked)
+      savePendingUpgrade(picked.plan, picked.annual)
+    }
+  }, [])
+  const chosenLabel = chosen ? `${chosen.plan === 'max' ? 'Max' : 'Pro'}${chosen.annual ? ' (annual)' : ''}` : ''
   const [formData, setFormData] = useState({
     full_name: '',
     company_name: '',
@@ -73,6 +85,11 @@ export default function SignupPage() {
               We sent a verification link to <strong>{formData.email}</strong>.
               Click the link to activate your account.
             </p>
+            {chosen && (
+              <p className="text-sm text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30 rounded-lg px-4 py-3 mb-6">
+                After you sign in we&apos;ll take you straight to the {chosenLabel} upgrade.
+              </p>
+            )}
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               Didn&apos;t receive the email? Check your spam folder or{' '}
               <button
@@ -112,6 +129,13 @@ export default function SignupPage() {
             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Get Started Free</h1>
             <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">Create your NeuraLeads account</p>
           </div>
+
+          {chosen && (
+            <div role="status" className="mb-6 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/30 px-4 py-3 text-sm text-primary-800 dark:text-primary-200">
+              You picked <strong>{chosenLabel}</strong>. Your workspace starts on Free; once you verify
+              your email and sign in, we&apos;ll take you to checkout.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

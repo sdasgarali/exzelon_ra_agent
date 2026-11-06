@@ -95,7 +95,7 @@ const plans: Array<{
     price: 99,
     annualPrice: 79,
     description: 'Everything a team needs to run outbound every day.',
-    cta: 'Start free, upgrade later',
+    cta: 'Start free, then upgrade to Pro',
     href: '/signup',
     popular: true,
   },
@@ -105,7 +105,7 @@ const plans: Array<{
     price: 299,
     annualPrice: 239,
     description: 'Agency scale — multi-client, white-label, full intelligence.',
-    cta: 'Start free, upgrade later',
+    cta: 'Start free, then upgrade to Max',
     href: '/signup',
   },
   {
@@ -118,6 +118,12 @@ const plans: Array<{
     href: '/contact?topic=custom-plan',
   },
 ]
+
+/** Paid tiers carry the choice to signup, so it survives into the upgrade step. */
+export function planHref(key: PlanKey, href: string, annual: boolean): string {
+  if (key !== 'pro' && key !== 'max') return href
+  return `${href}?plan=${key}&billing=${annual ? 'annual' : 'monthly'}`
+}
 
 function FeatureValue({ value }: { value: Value }) {
   if (value === true) return <Check className="w-5 h-5 text-green-400 mx-auto" aria-label="Included" />
@@ -194,7 +200,7 @@ export default function PricingCards() {
                   </div>
 
                   <Link
-                    href={plan.href}
+                    href={planHref(plan.key, plan.href, annual)}
                     className={`block text-center font-semibold py-3 rounded-xl transition-colors mb-8 ${
                       plan.popular
                         ? 'bg-primary-500 hover:bg-primary-400 text-white'

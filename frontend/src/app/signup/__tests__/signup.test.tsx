@@ -132,4 +132,21 @@ describe('SignupPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create Account' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Email already registered')
   })
+  test('a plan picked on /pricing is shown and remembered for after verification', () => {
+    window.history.pushState({}, '', '/signup?plan=max&billing=annual')
+    render(<SignupPage />)
+    expect(screen.getByRole('status')).toHaveTextContent('You picked Max (annual)')
+    const saved = JSON.parse(window.localStorage.getItem('nl_pending_upgrade') || '{}')
+    expect(saved).toMatchObject({ plan: 'max', annual: true })
+    window.localStorage.clear()
+    window.history.pushState({}, '', '/signup')
+  })
+
+  test('an unknown plan in the URL is ignored', () => {
+    window.history.pushState({}, '', '/signup?plan=enterprise')
+    render(<SignupPage />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(window.localStorage.getItem('nl_pending_upgrade')).toBeNull()
+    window.history.pushState({}, '', '/signup')
+  })
 })

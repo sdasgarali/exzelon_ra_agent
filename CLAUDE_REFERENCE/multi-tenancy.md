@@ -104,6 +104,15 @@ tenant was unable to create a mailbox, lead, contact or campaign**. Such rows no
 back to the plan. Whether a tenant may use a feature at all is a feature-gate question
 (Phase 3), not a limit of zero.
 
+**Signup writes `0`, never a tier's numbers (2026-11).** From 2026-09 to 2026-11
+`create_tenant_for_signup()` copied Free's numbers into the row; being `> 0`, they kept
+overriding the plan after a Stripe upgrade (a paying Max tenant stayed at 1 mailbox).
+`plan_change.change_plan()` now resets any `max_*` column that equals the **old** plan's
+default to `0` on a self-serve plan change (`_release_copied_limits`), which heals those
+legacy rows on their next upgrade/downgrade. Values that differ from the old default are
+deliberate grants and are kept; Custom rows are never touched. The super-admin tenant
+editor (`PUT /admin/tenants/{id}`) still sets plan + limits explicitly.
+
 ### Counting rules
 
 - **Campaigns count live state**, not lifetime: only `ACTIVE` and `PAUSED` occupy a

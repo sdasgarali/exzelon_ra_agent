@@ -122,4 +122,34 @@ describe('LoginPage', () => {
       expect(submitButton).toBeDisabled()
     })
   })
+  test('a plan picked on /pricing (saved at signup) lands on its upgrade instead of the dashboard', async () => {
+    window.localStorage.setItem('nl_pending_upgrade',
+      JSON.stringify({ plan: 'max', annual: true, savedAt: Date.now() }))
+    mockLogin.mockResolvedValueOnce({
+      access_token: 't', refresh_token: 'r',
+      user: { user_id: 1, email: 'new@test.com', role: 'admin' },
+    })
+    render(<LoginPage />)
+    await userEvent.type(screen.getByPlaceholderText('you@example.com'), 'new@test.com')
+    await userEvent.type(screen.getByPlaceholderText('Enter password'), 'password123')
+    await userEvent.click(screen.getByText('Sign In'))
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/billing?upgrade=max&billing=annual#plans'))
+    window.localStorage.clear()
+  })
+
+  test('an expired saved plan is ignored', async () => {
+    window.localStorage.setItem('nl_pending_upgrade',
+      JSON.stringify({ plan: 'pro', annual: false, savedAt: Date.now() - 8 * 24 * 3600 * 1000 }))
+    mockLogin.mockResolvedValueOnce({
+      access_token: 't', refresh_token: 'r',
+      user: { user_id: 1, email: 'old@test.com', role: 'admin' },
+    })
+    render(<LoginPage />)
+    await userEvent.type(screen.getByPlaceholderText('you@example.com'), 'old@test.com')
+    await userEvent.type(screen.getByPlaceholderText('Enter password'), 'password123')
+    await userEvent.click(screen.getByText('Sign In'))
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'))
+    window.localStorage.clear()
+  })
 })

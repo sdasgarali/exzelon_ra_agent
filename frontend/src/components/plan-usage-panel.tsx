@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Coins, Send, ArrowUpRight, Plus, Check, Loader2, Mail } from 'lucide-react'
 import { billingApi, getApiError } from '@/lib/api'
 import { useSiteInfo } from '@/lib/use-site-info'
-import type { UsageResponse } from './usage-meters'
+import type { UsageResponse, UpgradeOption } from './usage-meters'
+import { clearPendingUpgrade, parseAnnual, parseUpgradePlan, readPendingUpgrade } from '@/lib/pending-upgrade'
 import { useToast } from './toast'
 
 /** mailto: link to our team with the request pre-filled. Used while online payments are
@@ -78,6 +79,9 @@ export default function PlanUsagePanel() {
   const { toast } = useToast()
   const { payments_enabled: paymentsEnabled, support_email: supportEmail } = useSiteInfo()
   const [annual, setAnnual] = useState(false)
+  // Plan preselected by ?upgrade= (from /pricing → signup → login) or a saved choice.
+  const [selected, setSelected] = useState<string | null>(null)
+  const plansRef = useRef<HTMLDivElement>(null)
   const [blocks, setBlocks] = useState(1)
   const [showCustom, setShowCustom] = useState(false)
   const [custom, setCustom] = useState({
@@ -90,8 +94,29 @@ export default function PlanUsagePanel() {
     queryFn: billingApi.usage,
   })
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const fromUrl = parseUpgradePlan(params.get('upgrade'))
+    const pending = fromUrl ? null : readPendingUpgrade()
+    const picked = fromUrl ?? pending?.plan ?? null
+    if (picked) {
+      setSelected(picked)
+      setAnnual(fromUrl ? parseAnnual(params.get('billing')) : Boolean(pending?.annual))
+    }
+    // The choice has reached the picker; don't redirect future logins here again.
+    clearPendingUpgrade()
+  }, [])
+
+  // Bring the picker into view once it has rendered (the #plans anchor can't scroll to
+  // it on arrival, because it only exists after the usage call returns).
+  useEffect(() => {
+    if (data?.metered && (selected || window.location.hash === '#plans')) {
+      plansRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selected, data?.metered])
+
   const upgrade = useMutation({
-    mutationFn: () => billingApi.subscribe({ plan: data?.plan?.upgrade_to || undefined, annual }),
+    mutationFn: (planKey: string) => billingApi.subscribe({ plan: planKey, annual }),
     onSuccess: (res) => {
       if (res?.checkout_url) window.location.href = res.checkout_url
       else toast('error', `Checkout is not available yet. Email ${supportEmail} and we'll set it up.`)
@@ -139,6 +164,7 @@ export default function PlanUsagePanel() {
   if (!data?.metered || !data.plan || !data.credits || !data.sends) return null
 
   const { plan, credits, sends } = data
+  const options = data.upgrade_options ?? []
   // Price and validity come from the API (config), never hardcoded here.
   const topupOffer = data.topup ?? {
     block_size: 1000, block_price_cents: 2000, validity_days: 365, available: plan.key !== 'free',
@@ -165,46 +191,100 @@ export default function PlanUsagePanel() {
               : `$${(plan.monthly_price_cents! / 100).toFixed(0)}/month`}
           </p>
         </div>
-
-        {plan.upgrade_to && !paymentsEnabled && (
-          <div className="flex flex-col items-end gap-1">
-            <a
-              href={requestMailto(
-                supportEmail,
-                `Upgrade request: ${plan.label} to ${plan.upgrade_label}`,
-                `Hi NeuraLeads team,\n\nPlease upgrade our workspace from the ${plan.label} plan to ${plan.upgrade_label}.\n\nThanks!`,
-              )}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <Mail className="h-4 w-4" aria-hidden="true" />
-              Request upgrade
-            </a>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{PAYMENTS_OFF_NOTE}</p>
-          </div>
-        )}
-
-        {plan.upgrade_to && paymentsEnabled && (
-          <div className="flex items-center gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-              <input
-                type="checkbox"
-                checked={annual}
-                onChange={(e) => setAnnual(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              Annual (save 20%)
-            </label>
-            <button
-              onClick={() => upgrade.mutate()}
-              disabled={upgrade.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {upgrade.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
-              Upgrade to {plan.upgrade_label}
-            </button>
-          </div>
-        )}
       </div>
+
+      {options.length > 0 && (
+        <div id="plans" ref={plansRef} className="mb-6 scroll-mt-24">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Upgrade your plan</h3>
+            <div role="group" aria-label="Billing period" className="inline-flex rounded-lg border border-gray-200 p-0.5 text-xs dark:border-gray-600">
+              <button
+                type="button"
+                aria-pressed={!annual}
+                onClick={() => setAnnual(false)}
+                className={`rounded-md px-3 py-1.5 font-medium ${!annual ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                aria-pressed={annual}
+                onClick={() => setAnnual(true)}
+                className={`rounded-md px-3 py-1.5 font-medium ${annual ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}
+              >
+                Annual · save 20%
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {options.map((opt: UpgradeOption) => {
+              const isSelected = selected === opt.key
+              const perMonth = (annual ? opt.annual_price_cents : opt.monthly_price_cents) / 100
+              return (
+                <div
+                  key={opt.key}
+                  data-testid={`plan-option-${opt.key}`}
+                  className={`flex flex-col rounded-lg border p-5 ${
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-600/30 dark:border-blue-400'
+                      : 'border-gray-200 dark:border-gray-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-gray-900 dark:text-white">{opt.label}</p>
+                    {isSelected && (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                        Your pick
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
+                    ${fmt(perMonth)}
+                    <span className="text-sm font-normal text-gray-500 dark:text-gray-400">/mo</span>
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {annual ? `billed $${fmt(perMonth * 12)} yearly` : 'billed monthly'}
+                  </p>
+                  <ul className="mt-3 flex-1 space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-600" aria-hidden="true" />{fmt(opt.credits_per_month)} credits / month</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-600" aria-hidden="true" />{fmt(opt.send_quota_per_month)} sends / month</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-600" aria-hidden="true" />{fmt(opt.max_mailboxes)} mailboxes</li>
+                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-600" aria-hidden="true" />{fmt(opt.max_contacts)} contacts</li>
+                  </ul>
+                  {paymentsEnabled ? (
+                    <button
+                      type="button"
+                      onClick={() => { setSelected(opt.key); upgrade.mutate(opt.key) }}
+                      disabled={upgrade.isPending}
+                      className="mt-4 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {upgrade.isPending && upgrade.variables === opt.key
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <ArrowUpRight className="h-4 w-4" />}
+                      Upgrade to {opt.label}
+                    </button>
+                  ) : (
+                    <a
+                      href={requestMailto(
+                        supportEmail,
+                        `Upgrade request: ${plan.label} to ${opt.label}${annual ? ' (annual)' : ''}`,
+                        `Hi NeuraLeads team,\n\nPlease upgrade our workspace from the ${plan.label} plan to ${opt.label}, billed ${annual ? 'annually' : 'monthly'}.\n\nThanks!`,
+                      )}
+                      className="mt-4 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    >
+                      <Mail className="h-4 w-4" aria-hidden="true" />
+                      Request upgrade to {opt.label}
+                    </a>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {!paymentsEnabled && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{PAYMENTS_OFF_NOTE}</p>
+          )}
+        </div>
+      )}
 
       {/* The two meters */}
       <div className="mb-6 grid gap-5 sm:grid-cols-2">

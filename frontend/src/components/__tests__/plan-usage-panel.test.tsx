@@ -43,6 +43,24 @@ const usage = {
   sends: { used: 100, limit: 500, remaining: 400, percent: 20, near_limit: false, exhausted: false },
   resources: [],
   topup: { block_size: 1000, block_price_cents: 2000, validity_days: 365, available: true },
+  upgrade_options: [
+    { key: 'max', label: 'Max', monthly_price_cents: 29900, annual_price_cents: 23900,
+      credits_per_month: 25000, send_quota_per_month: 150000, max_mailboxes: 1000,
+      max_contacts: 250000, max_campaigns: 100 },
+  ],
+}
+
+const proOption = {
+  key: 'pro', label: 'Pro', monthly_price_cents: 9900, annual_price_cents: 7900,
+  credits_per_month: 6000, send_quota_per_month: 25000, max_mailboxes: 25,
+  max_contacts: 25000, max_campaigns: 25,
+}
+
+const freeUsage = {
+  ...usage,
+  plan: { key: 'free', label: 'Free', is_custom: false, monthly_price_cents: 0,
+    annual_price_cents: 0, upgrade_to: 'pro', upgrade_label: 'Pro' },
+  upgrade_options: [proOption, usage.upgrade_options[0]],
 }
 
 function renderPanel() {
@@ -59,6 +77,8 @@ describe('PlanUsagePanel', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockUsage.mockResolvedValue(usage)
+    window.localStorage.clear()
+    window.history.pushState({}, '', '/dashboard/billing')
   })
 
   test('payments off: shows "Request upgrade" + "Request credits" mailto links and never calls Stripe', async () => {
@@ -95,6 +115,47 @@ describe('PlanUsagePanel', () => {
 
     fireEvent.click(upgrade)
     await waitFor(() => expect(mockSubscribe).toHaveBeenCalledWith({ plan: 'max', annual: false }))
+  })
+
+  test('free workspace is offered both Pro and Max, not just the next tier', async () => {
+    mockSiteInfo = { ...base, payments_enabled: true }
+    mockUsage.mockResolvedValue(freeUsage)
+    mockSubscribe.mockResolvedValue({})
+    renderPanel()
+
+    expect(await screen.findByRole('button', { name: /Upgrade to Pro/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Upgrade to Max/ }))
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledWith({ plan: 'max', annual: false }))
+  })
+
+  test('?upgrade=max&billing=annual from the pricing flow preselects Max, annual', async () => {
+    mockSiteInfo = { ...base, payments_enabled: true }
+    mockUsage.mockResolvedValue(freeUsage)
+    mockSubscribe.mockResolvedValue({})
+    window.history.pushState({}, '', '/dashboard/billing?upgrade=max&billing=annual')
+    renderPanel()
+
+    const maxCard = await screen.findByTestId('plan-option-max')
+    expect(maxCard).toHaveTextContent('Your pick')
+    expect(maxCard).toHaveTextContent('$239')
+    expect(maxCard).toHaveTextContent('billed $2,868 yearly')
+    expect(screen.getByTestId('plan-option-pro')).not.toHaveTextContent('Your pick')
+
+    fireEvent.click(screen.getByRole('button', { name: /Upgrade to Max/ }))
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledWith({ plan: 'max', annual: true }))
+  })
+
+  test('a plan saved at signup is preselected, then cleared so later logins land normally', async () => {
+    mockSiteInfo = { ...base, payments_enabled: false }
+    mockUsage.mockResolvedValue(freeUsage)
+    window.localStorage.setItem('nl_pending_upgrade',
+      JSON.stringify({ plan: 'pro', annual: false, savedAt: Date.now() }))
+    renderPanel()
+
+    expect(await screen.findByTestId('plan-option-pro')).toHaveTextContent('Your pick')
+    const req = screen.getByRole('link', { name: /Request upgrade to Pro/ })
+    expect(decodeURIComponent(req.getAttribute('href') || '')).toContain('Upgrade request: Free to Pro')
+    expect(window.localStorage.getItem('nl_pending_upgrade')).toBeNull()
   })
 
   test('custom quote request path still works with payments off', async () => {
