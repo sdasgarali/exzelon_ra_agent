@@ -173,8 +173,10 @@ def _get_active_tenant_ids():
         rows = db.query(Tenant.tenant_id).filter(Tenant.is_active == True).all()
         return [r[0] for r in rows]
     except Exception as e:
-        logger.warning("Failed to get active tenants, falling back to [1]", error=str(e))
-        return [1]
+        # Skip this run rather than guess: the old `[1]` fallback ran every per-tenant
+        # job (lead sourcing, enrichment, sends) against tenant 1 on a DB hiccup. (ELR-005)
+        logger.error("Failed to get active tenants; skipping per-tenant jobs this run", error=str(e))
+        return []
     finally:
         db.close()
 

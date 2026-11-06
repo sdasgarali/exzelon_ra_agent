@@ -818,6 +818,10 @@ def run_lead_sourcing_pipeline(
     Returns:
         Counter dict with inserted, updated, skipped, errors counts
     """
+    if tenant_id is None:
+        # Never fall back to tenant 1: that silently files one workspace's data under
+        # another. Every caller (endpoints, scheduler) passes a real tenant. (ELR-005)
+        raise ValueError("tenant_id is required")
     db = SessionLocal()
     counters = {
         "inserted": 0,
@@ -851,7 +855,7 @@ def run_lead_sourcing_pipeline(
 
     # Create job run record
     job_run = JobRun(
-        tenant_id=tenant_id or 1,
+        tenant_id=tenant_id,
         pipeline_name="lead_sourcing",
         status=JobStatus.RUNNING,
         triggered_by=triggered_by,
@@ -1160,7 +1164,8 @@ def run_lead_sourcing_pipeline(
                 api_calls = getattr(adapter, 'api_calls_made', 0)
                 results = counters["jobs_per_source"].get(source_name, 0)
                 if api_calls > 0 or results > 0:
-                    record_pipeline_cost(db, source_name, api_calls, results, run_id=job_run.run_id)
+                    record_pipeline_cost(db, source_name, api_calls, results, run_id=job_run.run_id,
+                                         tenant_id=tenant_id)
             db.commit()
         except Exception as e:
             logger.warning(f"Failed to record pipeline costs: {e}")
@@ -1203,7 +1208,7 @@ def run_lead_sourcing_pipeline(
         excluded_companies_set = set()
         try:
             excluded_rows = db.query(CompanyExclusion.company_name_normalized).filter(
-                CompanyExclusion.tenant_id == (tenant_id or 1),
+                CompanyExclusion.tenant_id == tenant_id,
                 CompanyExclusion.is_active == True,
             )
             # If LOB is specified, include both LOB-specific and global (lob_id=NULL) exclusions
@@ -1285,7 +1290,7 @@ def run_lead_sourcing_pipeline(
                 with db.begin_nested():
                     # Create new lead
                     lead = LeadDetails(
-                        tenant_id=tenant_id or 1,
+                        tenant_id=tenant_id,
                         client_name=job_data["client_name"],
                         job_title=job_data["job_title"],
                         state=job_data.get("state"),
@@ -1687,6 +1692,10 @@ def _apply_company_gate(
 
 def upsert_client(db, client_name: str, employer_website: str = None, employer_linkedin_url: str = None, tenant_id: int = None, industry: str = None, company_size: str = None):
     """Create or update client_info record with normalized matching."""
+    if tenant_id is None:
+        # Never fall back to tenant 1: that silently files one workspace's data under
+        # another. Every caller (endpoints, scheduler) passes a real tenant. (ELR-005)
+        raise ValueError("tenant_id is required")
     try:
         with db.begin_nested():  # SAVEPOINT: a failure undoes only this upsert
             # Try exact match first (scoped to tenant)
@@ -1709,7 +1718,7 @@ def upsert_client(db, client_name: str, employer_website: str = None, employer_l
 
             if not client:
                 client = ClientInfo(
-                    tenant_id=tenant_id or 1,
+                    tenant_id=tenant_id,
                     client_name=client_name,
                     status=ClientStatus.ACTIVE,
                     start_date=date.today(),
@@ -1848,6 +1857,10 @@ def import_leads_from_file(
     tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Import leads from XLSX file."""
+    if tenant_id is None:
+        # Never fall back to tenant 1: that silently files one workspace's data under
+        # another. Every caller (endpoints, scheduler) passes a real tenant. (ELR-005)
+        raise ValueError("tenant_id is required")
     db = SessionLocal()
     counters = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
 
@@ -1881,7 +1894,7 @@ def import_leads_from_file(
                 normalized = normalize_company_name(client_name)
                 existing_q = db.query(LeadDetails).filter(
                     LeadDetails.job_title == job_title,
-                    LeadDetails.tenant_id == (tenant_id or 1),
+                    LeadDetails.tenant_id == tenant_id,
                 )
                 existing_leads = existing_q.all()
 
@@ -1896,7 +1909,7 @@ def import_leads_from_file(
                     continue
 
                 lead = LeadDetails(
-                    tenant_id=tenant_id or 1,
+                    tenant_id=tenant_id,
                     client_name=client_name,
                     job_title=job_title,
                     state=str(row.get("State", row.get("state", ""))) if pd.notna(row.get("State", row.get("state"))) else None,

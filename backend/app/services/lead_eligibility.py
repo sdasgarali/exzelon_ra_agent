@@ -143,11 +143,15 @@ class LeadEligibilityGate:
 
         global_set: set = set()
         by_lob: dict = {}
+        if self.tenant_id is None:
+            # No tenant, no exclusion list to apply. Reading tenant 1's list (the old
+            # fallback) applied one workspace's exclusions to another. (ELR-005)
+            return global_set, by_lob, normalize_company_for_exclusion
         try:
             q = self.db.query(
                 CompanyExclusion.company_name_normalized, CompanyExclusion.lob_id
             ).filter(
-                CompanyExclusion.tenant_id == (self.tenant_id or 1),
+                CompanyExclusion.tenant_id == self.tenant_id,
                 CompanyExclusion.is_active == True,  # noqa: E712
             )
             # If the gate is pinned to one LOB, only that LOB's rows are relevant.

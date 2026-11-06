@@ -98,7 +98,7 @@ async def list_templates(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """List all email templates. Always scoped to one tenant (super admin defaults to own tenant)."""
-    effective_tenant = tenant_id or current_user.tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id or current_user.tenant_id)  # never tenant 1 by default
     query = db.query(EmailTemplate)
     query = query.filter(EmailTemplate.tenant_id == effective_tenant)
     if show_archived:
@@ -167,7 +167,7 @@ async def get_active_template(
     tenant_id: Optional[int] = Depends(get_current_tenant_id),
 ):
     """Get the currently active email template. Optionally filter by category."""
-    effective_tenant = tenant_id or current_user.tenant_id or 1
+    effective_tenant = ensure_tenant(tenant_id or current_user.tenant_id)  # never tenant 1 by default
     query = db.query(EmailTemplate).filter(
         EmailTemplate.tenant_id == effective_tenant,
         EmailTemplate.status == TemplateStatus.ACTIVE,
