@@ -74,11 +74,37 @@ class AnthropicAdapter(AIAdapter):
         except Exception:
             return False
 
+    @staticmethod
+    def _to_anthropic_messages(messages: List[Dict], system: Optional[str] = None):
+        """Convert OpenAI-style chat messages to the Messages API shape.
+
+        Callers (e.g. the copilot) put instructions in a `{"role": "system"}` message,
+        which Anthropic rejects with a 400: instructions go in the top-level `system`
+        field. The conversation must also start with a user turn and have no empty
+        messages. Returns (system, messages).
+        """
+        system_parts = [system] if system else []
+        chat = []
+        for m in messages or []:
+            role = m.get("role")
+            content = m.get("content")
+            if role == "system":
+                if content:
+                    system_parts.append(content if isinstance(content, str) else str(content))
+                continue
+            if role not in ("user", "assistant") or content in (None, "", []):
+                continue
+            chat.append({"role": role, "content": content})
+        while chat and chat[0]["role"] != "user":
+            chat.pop(0)  # e.g. a UI greeting shown before the user typed anything
+        return ("\n\n".join(system_parts) or None), chat
+
     def _call_api(self, messages: List[Dict], system: str = None, temperature: float = 0.7, max_tokens: int = 1000) -> str:
         """Make API call to Anthropic."""
         if not self.api_key:
             raise ValueError("Anthropic API key not configured")
 
+        system, messages = self._to_anthropic_messages(messages, system)
         payload = {
             "model": self.model,
             "messages": messages,
