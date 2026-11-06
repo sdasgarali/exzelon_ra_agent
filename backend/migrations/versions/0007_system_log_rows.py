@@ -12,8 +12,9 @@ NULL now means "system": `tenant_filter` (`tenant_id == X`) hides those rows fro
 tenant, and the super admin's unscoped views include them. (ELR-005 follow-up)
 
 Existing rows are not touched: old system events filed under tenant 1 cannot be told
-apart from tenant 1's own events. Making a column NULL-able is an in-place, online
-change on MySQL 8 (ALGORITHM=INPLACE, concurrent DML allowed); the FK and index stay.
+apart from tenant 1's own events. Making a column NULL-able on MySQL 8 is
+ALGORITHM=INPLACE with concurrent DML allowed (reads and writes keep working), but it
+rebuilds the table, so on a large log table it takes a while; the FK and index stay.
 Idempotent: a column that is already nullable is skipped.
 """
 import sqlalchemy as sa
@@ -52,6 +53,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    to_tighten = []
+    blocked = []
     for table in TABLES:
         col = _column(bind, table)
         if col is None or not col.get("nullable"):
@@ -60,10 +63,16 @@ def downgrade() -> None:
             sa.text(f"SELECT COUNT(*) FROM {table} WHERE {COLUMN} IS NULL")
         ).scalar()
         if nulls:
-            # Refuse rather than invent an owner for system rows (that was the bug).
-            raise RuntimeError(
-                f"{table} has {nulls} system rows (tenant_id IS NULL); delete or reassign "
-                f"them before downgrading below 0007."
-            )
+            blocked.append(f"{table} ({nulls})")
+        to_tighten.append(table)
+    if blocked:
+        # Refuse rather than invent an owner for system rows (that was the bug). Checked
+        # for every table BEFORE altering any: MySQL DDL auto-commits, so a refusal
+        # halfway would leave one table reverted and the other not.
+        raise RuntimeError(
+            "system rows (tenant_id IS NULL) in " + ", ".join(blocked)
+            + "; delete or reassign them before downgrading below 0007."
+        )
+    for table in to_tighten:
         with op.batch_alter_table(table) as batch:
             batch.alter_column(COLUMN, existing_type=sa.Integer(), nullable=False)

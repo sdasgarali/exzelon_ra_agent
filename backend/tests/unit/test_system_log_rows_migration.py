@@ -100,3 +100,6 @@ def test_downgrade_refuses_while_system_rows_exist(tmp_path):
     assert r.returncode != 0
     assert "system rows" in (r.stdout + r.stderr)
     assert _version(dbfile) == REV
+    # Nothing was half-reverted: both tables are still nullable.
+    for table in TABLES:
+        assert _tenant_nullable(dbfile, table), table
