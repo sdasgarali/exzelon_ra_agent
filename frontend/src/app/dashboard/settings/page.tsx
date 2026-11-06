@@ -1166,9 +1166,9 @@ export default function SettingsPage() {
         ]
       case 'anthropic':
         return [
-          { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet (Recommended)' },
-          { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
-          { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku (Faster)' },
+          { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (Cheapest - Recommended)' },
+          { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 (Balanced)' },
+          { value: 'claude-opus-5', label: 'Claude Opus 5 (Best Quality)' },
         ]
       case 'gemini':
         return [

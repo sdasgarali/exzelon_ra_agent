@@ -48,7 +48,11 @@ AI_MODEL_PRICING = {
     "gpt-4.1":       (2.00, 8.00),
     "gpt-4o-mini":   (0.15, 0.60),
     "gpt-4o":        (2.50, 10.00),
-    # Anthropic
+    # Anthropic (current generation)
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-5":  (2.00, 10.00),
+    "claude-opus-5":    (5.00, 25.00),
+    # Anthropic (retired; kept so historical rows still price)
     "claude-3-5-sonnet-20241022": (3.00, 15.00),
     "claude-3-5-haiku-20241022":  (0.80, 4.00),
     "claude-3-opus-20240229":     (15.00, 75.00),
@@ -67,7 +71,7 @@ AI_MODEL_PRICING = {
 AI_PROVIDER_FALLBACK = {
     "groq":      (0.0, 0.0),
     "openai":    (0.15, 0.60),
-    "anthropic": (0.80, 4.00),
+    "anthropic": (1.00, 5.00),  # Haiku 4.5, the cheapest current Claude model
     "gemini":    (0.075, 0.30),
 }
 

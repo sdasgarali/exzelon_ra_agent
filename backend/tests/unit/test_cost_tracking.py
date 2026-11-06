@@ -25,9 +25,9 @@ def test_ai_token_cost_groq_is_free():
 
 
 def test_ai_token_cost_unknown_model_uses_provider_fallback():
-    # Unknown anthropic model → fallback (0.80, 4.00)
+    # Unknown anthropic model → fallback (1.00, 5.00), Haiku 4.5's rate
     cost = ct._ai_token_cost("anthropic", "claude-x-unknown", 1_000_000, 0)
-    assert cost == pytest.approx(0.80)
+    assert cost == pytest.approx(1.00)
 
 
 def test_ai_token_cost_unknown_provider_defaults_zero():
