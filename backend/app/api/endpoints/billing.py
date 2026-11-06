@@ -792,6 +792,24 @@ def plan_usage(
         if credits.get("plan_allowance") else None
     )
     next_plan = {"free": "pro", "pro": "max"}.get(plan_key)
+    # Every self-serve tier above the current one, so the plan picker can offer Max to a
+    # Free workspace directly. From PLAN_MATRIX: the UI must not hardcode prices.
+    from app.core.plans import PLAN_ORDER
+    higher = PLAN_ORDER[PLAN_ORDER.index(plan_key) + 1:] if plan_key in PLAN_ORDER else ()
+    upgrade_options = [
+        {
+            "key": key,
+            "label": PLAN_MATRIX[key].label,
+            "monthly_price_cents": PLAN_MATRIX[key].monthly_price_cents,
+            "annual_price_cents": PLAN_MATRIX[key].annual_price_cents,
+            "credits_per_month": PLAN_MATRIX[key].credits_per_month,
+            "send_quota_per_month": PLAN_MATRIX[key].send_quota_per_month,
+            "max_mailboxes": PLAN_MATRIX[key].max_mailboxes,
+            "max_contacts": PLAN_MATRIX[key].max_contacts,
+            "max_campaigns": PLAN_MATRIX[key].max_campaigns,
+        }
+        for key in higher
+    ]
 
     return {
         "metered": True,
@@ -804,6 +822,7 @@ def plan_usage(
             "upgrade_to": next_plan,
             "upgrade_label": PLAN_MATRIX[next_plan].label if next_plan else None,
         },
+        "upgrade_options": upgrade_options,
         # What this plan includes. The UI uses it to hide nav for features the tenant
         # cannot reach and — more importantly — to stop polling gated endpoints, which
         # otherwise 402 on every page load and fill the console with errors that look
