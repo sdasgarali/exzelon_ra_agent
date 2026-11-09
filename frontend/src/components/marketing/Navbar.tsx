@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
 import Logo from './Logo'
+import { useAuthStore } from '@/lib/store'
 
 const navLinks = [
   { label: 'Features', href: '/features' },
@@ -16,6 +17,13 @@ const navLinks = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // The auth store hydrates from browser storage, so the server always renders
+  // the logged-out CTAs; switch only after mount to avoid a hydration mismatch.
+  const [mounted, setMounted] = useState(false)
+  const token = useAuthStore((s) => s.token)
+  const loggedIn = mounted && !!token
+
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
@@ -52,18 +60,29 @@ export default function Navbar() {
 
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="text-slate-300 hover:text-white transition-colors text-sm font-medium px-4 py-2"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/signup"
-            className="bg-white hover:bg-white/90 text-brand-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
-          >
-            Get Started
-          </Link>
+          {loggedIn ? (
+            <Link
+              href="/dashboard"
+              className="bg-white hover:bg-white/90 text-brand-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-slate-300 hover:text-white transition-colors text-sm font-medium px-4 py-2"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/signup"
+                className="bg-white hover:bg-white/90 text-brand-700 font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+              >
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile toggle */}
@@ -94,20 +113,32 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="pt-3 border-t border-white/10 space-y-2">
-            <Link
-              href="/login"
-              onClick={() => setMobileOpen(false)}
-              className="block text-center text-slate-300 hover:text-white py-2 text-sm font-medium"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/signup"
-              onClick={() => setMobileOpen(false)}
-              className="block text-center bg-primary-500 hover:bg-primary-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
-            >
-              Get Started
-            </Link>
+            {loggedIn ? (
+              <Link
+                href="/dashboard"
+                onClick={() => setMobileOpen(false)}
+                className="block text-center bg-primary-500 hover:bg-primary-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="block text-center text-slate-300 hover:text-white py-2 text-sm font-medium"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setMobileOpen(false)}
+                  className="block text-center bg-primary-500 hover:bg-primary-400 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </motion.div>
       )}
