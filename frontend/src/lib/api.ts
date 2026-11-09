@@ -477,6 +477,11 @@ export const pipelinesApi = {
     const response = await api.get('/pipelines/lead-sourcing/run-options')
     return response.data
   },
+  /** Save the workspace's default leads per run; `null` clears it. */
+  setLeadSourcingDefaultMaxLeads: async (maxLeads: number | null) => {
+    const response = await api.put('/pipelines/lead-sourcing/default-max-leads', { max_leads: maxLeads })
+    return response.data as { default_max_leads: number | null }
+  },
   getLobLeadSources: async (lobId?: number | null) => {
     const params: Record<string, any> = {}
     if (lobId) params.lob_id = lobId
