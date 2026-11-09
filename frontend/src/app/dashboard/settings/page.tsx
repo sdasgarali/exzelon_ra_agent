@@ -4574,8 +4574,8 @@ export default function SettingsPage() {
               </div>
               <div className="mt-4">
                 <label htmlFor="lead-sourcing-max-leads-per-run" className="block text-sm font-medium text-gray-700 mb-1">
-                  Default Leads Per Run
-                  <span className="ml-2 text-xs font-normal bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">0 = no limit</span>
+                  Default Jobs Per Run
+                  <span className="ml-2 text-xs font-normal bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">0 = none · 10–5,000</span>
                 </label>
                 <input
                   id="lead-sourcing-max-leads-per-run"
@@ -4583,13 +4583,17 @@ export default function SettingsPage() {
                   min={0}
                   max={5000}
                   value={sourceTuningConfig.lead_sourcing_max_leads_per_run}
-                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_leads_per_run: Math.min(5000, Math.max(0, parseInt(e.target.value) || 0)) })}
+                  onChange={(e) => {
+                    // 0 = no default; otherwise 10..5,000 (the run dialog's range).
+                    const v = Math.min(5000, Math.max(0, parseInt(e.target.value) || 0))
+                    setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_leads_per_run: v > 0 && v < 10 ? 10 : v })
+                  }}
                   className="input w-full max-w-xs"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Most new leads a run saves when nobody types a number in the Run dialog — including
-                  scheduled runs. Users can still choose their own number per run (up to 5,000).
-                  Every run also stops as soon as the workspace runs out of credits.
+                  Most jobs a run fetches from all job APIs together when nobody picks a number —
+                  including scheduled runs. Users choose their own number per run (10–5,000) in the
+                  Run dialog. Only saved leads are charged; every run stops when credits run out.
                 </p>
               </div>
             </div>

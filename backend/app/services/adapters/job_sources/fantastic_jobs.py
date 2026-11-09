@@ -42,6 +42,8 @@ class FantasticJobsAdapter(JobSourceAdapter):
     LinkedIn feed requires the direct API."""
 
     DEFAULT_HOST = "data.fantastic.jobs"
+    #: Postings per request (the API allows up to 1,000).
+    PAGE_SIZE = 100
 
     def __init__(self, api_key: str = None, host: str = None):
         self.api_key = api_key or getattr(settings, "FANTASTIC_JOBS_API_KEY", None)
@@ -118,11 +120,17 @@ class FantasticJobsAdapter(JobSourceAdapter):
         exclude_industries = getattr(self, "_exclude_industries", None)
 
         results: List[Dict[str, Any]] = []
+        # Postings the API has returned this call. Billed per posting, so every
+        # request asks only for what is left of `limit` — never a full page past it.
+        self._raw_returned = 0
         with httpx.Client() as client:
             for page in range(max_pages):
+                want = min(self.PAGE_SIZE, int(limit) - self._raw_returned)
+                if want <= 0:
+                    break
                 params = {
-                    "limit": 100,
-                    "offset": page * 100,
+                    "limit": want,
+                    "offset": self._raw_returned,
                     "time_frame": time_frame,
                     "location": location,
                     # server-side ICP push. On active-jb the LinkedIn org fields
@@ -159,9 +167,11 @@ class FantasticJobsAdapter(JobSourceAdapter):
                     break
                 if not batch:
                     break
+                batch = batch[:want]  # never keep more than was asked for
+                self._raw_returned += len(batch)
                 for raw in batch:
                     results.append(self.normalize(raw))
-                if len(batch) < 100:
+                if len(batch) < want:
                     break
         return results
 

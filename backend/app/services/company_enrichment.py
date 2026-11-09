@@ -325,6 +325,7 @@ def resolve_company_metadata_batch(
     max_llm_calls: int = 300,
     use_llm: bool = True,
     free_only: bool = False,
+    bill_tenant: bool = True,
 ) -> dict:
     """Resolve {industry, company_size, employee_count} for many companies.
 
@@ -340,6 +341,8 @@ def resolve_company_metadata_batch(
         use_llm: when False, only the ClientInfo cache is consulted.
         free_only: pin the free Groq provider; if no Groq key, degrade to
             cache-only instead of using a paid provider (never incur AI spend).
+        bill_tenant: False when the caller charges the workspace only for what it
+            delivers (lead sourcing bills saved leads, not the research behind them).
 
     Returns:
         dict keyed by ``client_name.strip().lower()`` →
@@ -500,7 +503,7 @@ def resolve_company_metadata_batch(
     # session). The free_only path is the internal pre-enrichment gate, which
     # exists to SAVE the tenant a paid contact lookup and is pinned to the free
     # provider, so it is not billed.
-    if not free_only:
+    if not free_only and bill_tenant:
         _meter_research(db, tenant_id, llm_calls, reference="company_metadata_batch")
 
     _persist_researched(db, tenant_id, unique, researched, result)

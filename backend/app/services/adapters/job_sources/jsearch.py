@@ -38,6 +38,8 @@ class JSearchAdapter(JobSourceAdapter):
     """
 
     BASE_URL = "https://jsearch.p.rapidapi.com"
+    #: Results per JSearch page (fixed by the API; `num_pages` is the only size knob).
+    RESULTS_PER_PAGE = 10
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, 'JSEARCH_API_KEY', None) or getattr(settings, 'RAPIDAPI_KEY', None)
@@ -152,10 +154,19 @@ class JSearchAdapter(JobSourceAdapter):
         # excluded postings are filtered server-side, not after we pay for them.
         neg_suffix = self.google_negative_suffix(self._negative_terms(exclude_keywords))
 
+        # Results the API has returned this call. JSearch pages hold up to
+        # RESULTS_PER_PAGE and can't be sized, so a query asks only for the whole
+        # pages that fit in what is left of `limit` — and is skipped when none do.
+        self._raw_returned = 0
+        tuned_pages = int(_t.get('num_pages', 10))
+
         # Reuse a single HTTP client for all queries (connection pooling)
         with httpx.Client(timeout=30) as client:
           for query in search_queries:
             full_query = f"{query}{neg_suffix}"
+            num_pages = min(tuned_pages, (int(limit) - self._raw_returned) // self.RESULTS_PER_PAGE)
+            if num_pages < 1:
+                break
             try:
                 # IMPACT: num_pages=10 fetches 100 results per call
                 self._api_calls += 1
@@ -168,7 +179,7 @@ class JSearchAdapter(JobSourceAdapter):
                     params={
                         "query": full_query,
                         "page": "1",
-                        "num_pages": str(int(_t.get('num_pages', 10))),
+                        "num_pages": str(num_pages),
                         "date_posted": date_posted,
                         "remote_jobs_only": "false"
                     },
@@ -184,7 +195,7 @@ class JSearchAdapter(JobSourceAdapter):
                         response = client.get(
                             f"{self.BASE_URL}/search",
                             headers={"X-RapidAPI-Key": self.api_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"},
-                            params={"query": full_query, "page": "1", "num_pages": "10", "date_posted": date_posted, "remote_jobs_only": "false"},
+                            params={"query": full_query, "page": "1", "num_pages": str(num_pages), "date_posted": date_posted, "remote_jobs_only": "false"},
                             timeout=30,
                         )
                         if response.status_code != 429:
@@ -194,8 +205,10 @@ class JSearchAdapter(JobSourceAdapter):
 
                 response.raise_for_status()
                 data = response.json()
+                returned = data.get("data", [])[: num_pages * self.RESULTS_PER_PAGE]
+                self._raw_returned += len(returned)
 
-                for result in data.get("data", []):
+                for result in returned:
                     job = self.normalize(result)
 
                     if job and self.filter_excluded(

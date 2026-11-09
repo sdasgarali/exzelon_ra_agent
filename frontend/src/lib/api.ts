@@ -458,7 +458,7 @@ export const pipelinesApi = {
     const response = await api.get('/pipelines/runs', { params })
     return response.data
   },
-  /** `maxLeads` caps how many new leads the run saves; omit for the workspace default. */
+  /** `maxLeads` = most jobs the run fetches from all sources (10–5,000); omit for the workspace default. */
   runLeadSourcing: async (sources: string[], lobId?: number | null, maxLeads?: number | null) => {
     const params: Record<string, any> = { sources }
     if (lobId) params.lob_id = lobId
@@ -470,6 +470,7 @@ export const pipelinesApi = {
   },
   getLeadSourcingRunOptions: async (): Promise<{
     default_max_leads: number | null
+    min_leads: number
     max_leads_limit: number
     credits_per_lead: number
     affordable_leads: number | null

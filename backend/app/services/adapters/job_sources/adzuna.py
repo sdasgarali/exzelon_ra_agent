@@ -86,15 +86,25 @@ class AdzunaAdapter(JobSourceAdapter):
         neg_terms = self._negative_terms(exclude_keywords)
         what_exclude = " ".join(neg_terms) if neg_terms else None
 
+        # Results the API has returned this call; each request asks only for what
+        # is left of `limit`, so the API never sends more than that in total.
+        self._raw_returned = 0
         with httpx.Client(timeout=30) as client:
             for query in batched_queries:
+                if self._raw_returned >= limit:
+                    break
                 try:
-                    # Adzuna uses page-based pagination (1-indexed)
-                    for page in range(1, _max_pages + 1):
+                    # Adzuna uses page-NUMBER pagination (1-indexed), so a query keeps
+                    # one page size; page_plan sizes the pages to fit what is left.
+                    page_size, pages = self.page_plan(
+                        int(limit) - self._raw_returned, _results_per_page, _max_pages)
+                    for page in range(1, pages + 1):
+                        if self._raw_returned >= limit:
+                            break
                         params = {
                             "app_id": self.app_id,
                             "app_key": self.api_key,
-                            "results_per_page": _results_per_page,
+                            "results_per_page": page_size,
                             "what": query,
                             "where": location,
                             "max_days_old": posted_within_days,
@@ -124,6 +134,8 @@ class AdzunaAdapter(JobSourceAdapter):
                         results = data.get("results", [])
                         if not results:
                             break
+                        results = results[: int(limit) - self._raw_returned]
+                        self._raw_returned += len(results)
 
                         for result in results:
                             job = self.normalize(result)

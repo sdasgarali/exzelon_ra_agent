@@ -97,9 +97,9 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
                                     lob_id: Optional[int] = None,
                                     max_leads: Optional[int] = None, confirm: bool = False) -> dict:
             """Start a lead-sourcing run that pulls new job postings from job boards (default
-            linkedin + indeed). `max_leads` (1-5000) caps how many new leads it saves; omit it for
-            the workspace default. Costs 1 credit per new lead and stops as soon as credits run
-            out; limited to 5 runs per hour. Runs in the background — follow it with
+            linkedin + indeed). `max_leads` (10-5000) is the most jobs it fetches from all job APIs
+            together; omit it for the workspace default. Costs 1 credit per NEW lead saved only
+            (duplicates/filtered jobs are free) and stops when credits run out; 5 runs per hour. Runs in the background — follow it with
             list_pipeline_runs(pipeline_name='lead_sourcing'). Requires confirm=true."""
             chosen = sources or ["linkedin", "indeed"]
             if not confirm:
@@ -107,7 +107,8 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
                 return confirmation_required("run_lead_sourcing", {
                     "sources": chosen, "lob_id": lob_id,
                     "max_leads": max_leads or "workspace default",
-                    "cost": "1 credit per new lead inserted; the run stops when credits run out",
+                    "cost": "fetches at most max_leads jobs; 1 credit per new lead saved, duplicates "
+                            "and filtered jobs free; stops when credits run out",
                     "credits_remaining": balance.get("total_remaining")})
             started = await rt.post(ctx, "/pipelines/lead-sourcing/run", sources=chosen, lob_id=lob_id,
                                     max_leads=max_leads)

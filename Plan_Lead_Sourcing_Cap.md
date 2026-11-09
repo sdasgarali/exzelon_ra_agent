@@ -97,3 +97,44 @@ so it stays as is. Instead (user's direction):
 - New `PUT /pipelines/lead-sourcing/default-max-leads` (pipelines → lead_sourcing read_write,
   tenant required) writes `lead_sourcing_max_leads_per_run` (null/0 clears).
 - [x] F1 backend endpoint + tests  - [x] F2 dialog tick box + page badge + tests  - [ ] F3 suites, PR, deploy
+
+## Follow-up 2 (2026-11-09, APPROVED): strict fetch budget + pay only for saved leads
+User's rule: the pop-up number is **jobs to fetch** — min **10**, max **5,000**, both shown in the
+pop-up. Never fetch more than that from the APIs in total. Charge only for leads actually saved;
+duplicates and filtered jobs cost nothing.
+
+### Fetch budget (only when a run has a number)
+- Sources run **one after another** in tier order with a shared budget `remaining = N`
+  (uncapped runs keep today's parallel fetch). Each source gets `limit=remaining`; the pipeline
+  then truncates what it returns to `remaining` (hard guarantee), subtracts, and stops at 0 —
+  later/expensive sources never run once the budget is used.
+- Each API is asked for no more than it may return:
+  - Fantastic.jobs: per request `limit=min(100, remaining)`; pages bounded by the budget.
+  - TheirStack: per page `limit=min(per_page, remaining)`.
+  - Adzuna: `results_per_page=min(rpp, remaining)`.
+  - JSearch (fixed ~10/page): `num_pages=floor(remaining/10)`; skipped when < 10 remain.
+  - Other adapters (SerpAPI, SearchAPI, USAJobs, Jooble, JobDataFeeds, Coresignal, Indeed):
+    get `limit=remaining` and are truncated by the pipeline. Not used in prod today (run #1733).
+  - LOB lead sources: `limit=min(configured, remaining)` + truncation.
+- Counters: `fetch_limit`, `jobs_fetched`; new `stopped_reason="fetch_limit_reached"` when the
+  budget is used up before N leads were saved.
+
+### Billing
+- Lead credits already charge only stored leads (1 each) — duplicates/filtered are never charged.
+- Lead-sourcing **company research and applicant scrapes stop being charged to the workspace**
+  (flag on `resolve_company_metadata_batch` / `resolve_applicant_counts`), so a run costs exactly
+  its saved leads. Research is still bounded (≤ N×3 lookups) and still recorded as platform cost.
+- Run report / pop-up text: "Fetched 10 jobs → 4 new leads (4 credits). 6 duplicates or filtered —
+  not charged."
+
+### Limits
+- `MIN_LEADS_PER_RUN = 10`: run + default endpoints `ge=10`; a saved default below 10 is raised to
+  10; `run-options` returns `min_leads`. Pop-up field required, 10–5,000, label shows the range.
+- Scheduled runs / Dashboard + Campaigns buttons: use the saved default (strict too); no default =
+  today's uncapped behaviour.
+
+### Tasks
+- [x] S1 pipeline budget + truncation + counters   - [x] S2 adapter request sizing (4 APIs)
+- [x] S3 research not billed in sourcing           - [x] S4 min 10 (backend + pop-up + Source Tuning)
+- [x] S5 tests (budget never exceeded per adapter, sequential stop, billing = saved leads, min 10)
+- [ ] S6 suites, PR, CI, deploy on approval
