@@ -313,7 +313,7 @@ const SETTING_TAB_MAP: Record<string, string> = {
   // Source Tuning
   job_source_tuning: 'source_tuning', pipeline_adapter_limit: 'source_tuning',
   pipeline_max_workers: 'source_tuning', posted_within_days: 'source_tuning',
-  location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning',
+  location_diversification: 'source_tuning', lead_sourcing_target_per_run: 'source_tuning', lead_sourcing_max_leads_per_run: 'source_tuning',
   lead_sourcing_max_employee_count: 'source_tuning', lead_sourcing_min_employee_count: 'source_tuning', lead_sourcing_drop_confidential: 'source_tuning',
   lead_sourcing_max_posting_age_days: 'source_tuning', lead_sourcing_drop_expired_postings: 'source_tuning',
   lead_sourcing_scrape_applicants: 'source_tuning', lead_sourcing_max_applicants: 'source_tuning', applicant_scrape_max_lookups: 'source_tuning',
@@ -531,6 +531,7 @@ export default function SettingsPage() {
     posted_within_hours: number;
     location_diversification: boolean;
     lead_sourcing_target_per_run: number;
+    lead_sourcing_max_leads_per_run: number;
     lead_sourcing_max_employee_count: number;
     lead_sourcing_min_employee_count: number;
     lead_sourcing_max_posting_age_days: number;
@@ -562,6 +563,7 @@ export default function SettingsPage() {
     posted_within_hours: 0,
     location_diversification: false,
     lead_sourcing_target_per_run: 500,
+    lead_sourcing_max_leads_per_run: 0,
     lead_sourcing_max_employee_count: 500,
     lead_sourcing_min_employee_count: 1,
     lead_sourcing_max_posting_age_days: 14,
@@ -847,6 +849,7 @@ export default function SettingsPage() {
         posted_within_hours: settingsMap.posted_within_hours ?? 0,
         location_diversification: settingsMap.location_diversification === true,
         lead_sourcing_target_per_run: settingsMap.lead_sourcing_target_per_run ?? 500,
+        lead_sourcing_max_leads_per_run: settingsMap.lead_sourcing_max_leads_per_run ?? 0,
         lead_sourcing_max_employee_count: settingsMap.lead_sourcing_max_employee_count ?? 500,
         lead_sourcing_min_employee_count: settingsMap.lead_sourcing_min_employee_count ?? 1,
         lead_sourcing_max_posting_age_days: settingsMap.lead_sourcing_max_posting_age_days ?? 14,
@@ -1100,6 +1103,7 @@ export default function SettingsPage() {
           saveSetting('posted_within_hours', sourceTuningConfig.posted_within_hours, 'integer'),
           saveSetting('location_diversification', sourceTuningConfig.location_diversification, 'boolean'),
           saveSetting('lead_sourcing_target_per_run', sourceTuningConfig.lead_sourcing_target_per_run, 'integer'),
+          saveSetting('lead_sourcing_max_leads_per_run', sourceTuningConfig.lead_sourcing_max_leads_per_run, 'integer'),
           saveSetting('lead_sourcing_max_employee_count', sourceTuningConfig.lead_sourcing_max_employee_count, 'integer'),
           saveSetting('lead_sourcing_min_employee_count', sourceTuningConfig.lead_sourcing_min_employee_count, 'integer'),
           saveSetting('lead_sourcing_max_posting_age_days', sourceTuningConfig.lead_sourcing_max_posting_age_days, 'integer'),
@@ -4566,6 +4570,26 @@ export default function SettingsPage() {
                 <p className="text-xs text-gray-500 mt-1">
                   Once the cheap tier reaches this many unique leads, expensive Google-Jobs/premium APIs are skipped.
                   Raise it for more coverage; set 0 to disable early-stop (call every enabled source each run).
+                </p>
+              </div>
+              <div className="mt-4">
+                <label htmlFor="lead-sourcing-max-leads-per-run" className="block text-sm font-medium text-gray-700 mb-1">
+                  Default Leads Per Run
+                  <span className="ml-2 text-xs font-normal bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">0 = no limit</span>
+                </label>
+                <input
+                  id="lead-sourcing-max-leads-per-run"
+                  type="number"
+                  min={0}
+                  max={5000}
+                  value={sourceTuningConfig.lead_sourcing_max_leads_per_run}
+                  onChange={(e) => setSourceTuningConfig({ ...sourceTuningConfig, lead_sourcing_max_leads_per_run: Math.min(5000, Math.max(0, parseInt(e.target.value) || 0)) })}
+                  className="input w-full max-w-xs"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Most new leads a run saves when nobody types a number in the Run dialog — including
+                  scheduled runs. Users can still choose their own number per run (up to 5,000).
+                  Every run also stops as soon as the workspace runs out of credits.
                 </p>
               </div>
             </div>

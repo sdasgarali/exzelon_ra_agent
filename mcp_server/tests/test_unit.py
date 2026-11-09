@@ -180,6 +180,22 @@ async def test_confirmation_gate_makes_no_write_call():
 
 
 @respx.mock
+async def test_run_lead_sourcing_passes_max_leads():
+    respx.get(f"{API}/credits/balance").mock(return_value=httpx.Response(200, json={"total_remaining": 900}))
+    run = respx.post(f"{API}/pipelines/lead-sourcing/run").mock(
+        return_value=httpx.Response(200, json={"status": "processing", "max_leads": 40}))
+    mcp, _ = build_server(Settings(api_url=API, api_key="k", max_retries=0))
+
+    preview = result_json(await _call(mcp, "run_lead_sourcing", {"max_leads": 40}))
+    assert preview["details"]["max_leads"] == 40
+    assert run.call_count == 0
+
+    await _call(mcp, "run_lead_sourcing", {"max_leads": 40, "confirm": True})
+    assert run.call_count == 1
+    assert run.calls[0].request.url.params["max_leads"] == "40"
+
+
+@respx.mock
 async def test_activate_reports_not_ready_without_calling_activate():
     respx.get(f"{API}/campaigns/5").mock(return_value=httpx.Response(200, json={
         "campaign_id": 5, "status": "draft", "mailbox_ids": [], "total_contacts": 0, "steps": []}))

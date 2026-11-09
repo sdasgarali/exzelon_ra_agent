@@ -173,12 +173,15 @@ def estimate_run_credits(
 
     `pipeline` is ``lead_sourcing`` | ``contact_enrichment`` | ``email_validation`` |
     ``outreach`` | ``intent_scan``.
-    `units` is the number of selected leads / emails when the caller knows it; None
-    means "whatever is eligible" and uses the documented default. For enrichment,
+    `units` is the number of selected leads / emails when the caller knows it (for
+    lead sourcing, the run's lead cap); None means "whatever is eligible" and uses
+    the documented default. For enrichment,
     `per_unit_multiplier` is the max contacts per lead.
     """
     if pipeline == "lead_sourcing":
-        return cost_for("lead_sourced", RUN_ESTIMATE_SOURCING_LEADS, db=db)
+        # `units` is the run's lead cap: a 10-lead run needs 10 credits, not 50.
+        leads = min(units, RUN_ESTIMATE_SOURCING_LEADS) if units else RUN_ESTIMATE_SOURCING_LEADS
+        return cost_for("lead_sourced", leads, db=db)
 
     if pipeline == "contact_enrichment":
         leads = units if units else RUN_ESTIMATE_ENRICHMENT_DEFAULT_LEADS

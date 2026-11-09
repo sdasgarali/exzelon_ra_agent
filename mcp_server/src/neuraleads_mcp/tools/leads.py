@@ -94,19 +94,23 @@ def register(mcp: MCPServer, rt: Runtime) -> None:
     if write:
         @mcp.tool(annotations=EXTERNAL)
         async def run_lead_sourcing(ctx: Context, sources: Optional[list[str]] = None,
-                                    lob_id: Optional[int] = None, confirm: bool = False) -> dict:
+                                    lob_id: Optional[int] = None,
+                                    max_leads: Optional[int] = None, confirm: bool = False) -> dict:
             """Start a lead-sourcing run that pulls new job postings from job boards (default
-            linkedin + indeed). Costs credits per new lead; limited to 5 runs per hour. Runs in the
-            background — follow it with list_pipeline_runs(pipeline_name='lead_sourcing').
-            Requires confirm=true."""
+            linkedin + indeed). `max_leads` (1-5000) caps how many new leads it saves; omit it for
+            the workspace default. Costs 1 credit per new lead and stops as soon as credits run
+            out; limited to 5 runs per hour. Runs in the background — follow it with
+            list_pipeline_runs(pipeline_name='lead_sourcing'). Requires confirm=true."""
             chosen = sources or ["linkedin", "indeed"]
             if not confirm:
                 balance = await rt.get(ctx, "/credits/balance")
                 return confirmation_required("run_lead_sourcing", {
                     "sources": chosen, "lob_id": lob_id,
-                    "cost": "1 credit per new lead inserted",
+                    "max_leads": max_leads or "workspace default",
+                    "cost": "1 credit per new lead inserted; the run stops when credits run out",
                     "credits_remaining": balance.get("total_remaining")})
-            started = await rt.post(ctx, "/pipelines/lead-sourcing/run", sources=chosen, lob_id=lob_id)
+            started = await rt.post(ctx, "/pipelines/lead-sourcing/run", sources=chosen, lob_id=lob_id,
+                                    max_leads=max_leads)
             started["follow_up"] = "Call list_pipeline_runs(pipeline_name='lead_sourcing', limit=1) to track it."
             return started
 

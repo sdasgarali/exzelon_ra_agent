@@ -21,6 +21,37 @@ from app.services.pipelines.cancel_helper import check_cancel
 
 logger = structlog.get_logger()
 
+#: Most leads one run may be asked to save (the run dialog's upper bound).
+MAX_LEADS_PER_RUN_LIMIT = 5_000
+#: Paid pre-insert work scales with the request, so a 10-lead run can't spend
+#: hundreds of credits researching companies it will never save.
+FIRMOGRAPHIC_LOOKUPS_PER_REQUESTED_LEAD = 3
+#: Unique candidates (before the ICP gates) the tiered early-stop aims for per lead
+#: requested; the gates typically keep about one in ten.
+CANDIDATES_PER_REQUESTED_LEAD = 10
+APPLICANT_LOOKUPS_PER_REQUESTED_LEAD = 2
+#: Share of the remaining balance a pre-insert research step may use, leaving the
+#: rest for the leads themselves.
+RESEARCH_CREDIT_SHARE = 0.5
+
+
+def resolve_max_leads(db, tenant_id: Optional[int], requested: Optional[int] = None) -> Optional[int]:
+    """The run's lead cap: the requested number, else the workspace default.
+
+    The default is the `lead_sourcing_max_leads_per_run` setting (Source Tuning);
+    0 or unset means no cap. Always clamped to 1..MAX_LEADS_PER_RUN_LIMIT.
+    """
+    value = requested
+    if not value:
+        try:
+            value = int(get_tenant_setting(db, "lead_sourcing_max_leads_per_run",
+                                           tenant_id=tenant_id, default=0) or 0)
+        except (TypeError, ValueError):
+            value = 0
+    if not value or value <= 0:
+        return None
+    return min(int(value), MAX_LEADS_PER_RUN_LIMIT)
+
 
 # Company name normalization patterns
 # IMPACT ON LEAD COUNT: These suffixes are stripped during deduplication.
@@ -797,9 +828,14 @@ def run_lead_sourcing_pipeline(
     triggered_by: str = "system",
     tenant_id: Optional[int] = None,
     lob_id: Optional[int] = None,
+    max_leads: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Run the lead sourcing pipeline with multi-source support.
+
+    The run saves at most `max_leads` new leads (None = the workspace default, see
+    :func:`resolve_max_leads`) and stops as soon as the workspace can't pay for the
+    next one; `stopped_reason` in the counters says which limit ended it.
 
     Steps:
     1. Fetch jobs from all enabled sources in parallel
@@ -830,6 +866,10 @@ def run_lead_sourcing_pipeline(
         "errors": 0,
         "sources_used": [],
         "jobs_per_source": {},
+        "requested_max_leads": None,
+        # "max_leads_reached" | "credits_exhausted" | None (ran to the end)
+        "stopped_reason": None,
+        "leads_not_saved": 0,
     }
     per_source_detail: Dict[str, Dict[str, int]] = {}
     per_sub_source_detail: Dict[str, Dict[str, int]] = {}  # linkedin, indeed, glassdoor, etc.
@@ -887,6 +927,8 @@ def run_lead_sourcing_pipeline(
 
     try:
         logger.info("Starting multi-source lead sourcing pipeline", requested_sources=sources)
+        max_leads = resolve_max_leads(db, tenant_id, max_leads)
+        counters["requested_max_leads"] = max_leads
 
         # Load settings from database or fall back to config
         target_industries = get_tenant_setting(db, "target_industries", tenant_id=tenant_id, default=settings.TARGET_INDUSTRIES)
@@ -1047,6 +1089,11 @@ def run_lead_sourcing_pipeline(
             # 3) Per-run target. Tier 2 (expensive) runs only to fill a gap toward
             #    this many unique leads. 0 disables early-stop (all tiers run).
             target = int(get_tenant_setting(db, "lead_sourcing_target_per_run", tenant_id=tenant_id, default=500) or 0)
+            if max_leads and target > 0:
+                # Don't run the expensive sources for far more candidates than the run
+                # can save. The target counts candidates before the ICP gates, which
+                # drop most of them, hence the headroom.
+                target = min(target, max_leads * CANDIDATES_PER_REQUESTED_LEAD)
             optimization = {
                 "target_per_run": target,
                 "overlap_skipped": overlap_skipped,
@@ -1235,6 +1282,16 @@ def run_lead_sourcing_pipeline(
         # (IT / staffing / government), and confidential/blank employers — cases
         # the keyword filters cannot detect from a bare brand name. Missing
         # attributes are filled by a bounded, cached LLM enrichment step first.
+        # Paid research is limited to the request and to half the remaining credits,
+        # so it can never spend the credits the leads themselves need.
+        from app.services.credit_metering import affordable_quantity
+        if max_leads:
+            enrich_max_companies = min(enrich_max_companies,
+                                       max_leads * FIRMOGRAPHIC_LOOKUPS_PER_REQUESTED_LEAD)
+        affordable_lookups = affordable_quantity(db, tenant_id, "firmographic_lookup",
+                                                 share=RESEARCH_CREDIT_SHARE)
+        if affordable_lookups is not None:
+            enrich_max_companies = min(enrich_max_companies, affordable_lookups)
         unique_jobs = _apply_company_gate(
             db,
             unique_jobs,
@@ -1254,6 +1311,13 @@ def run_lead_sourcing_pipeline(
         # LinkedIn/Indeed pages for applicant counts and drops over-competed jobs.
         # No-op unless enabled AND a Firecrawl key is present. Recall-preserving.
         if scrape_applicants and firecrawl_api_key:
+            if max_leads:
+                applicant_scrape_max_lookups = min(applicant_scrape_max_lookups,
+                                                   max_leads * APPLICANT_LOOKUPS_PER_REQUESTED_LEAD)
+            affordable_scrapes = affordable_quantity(db, tenant_id, "applicant_scrape",
+                                                     share=RESEARCH_CREDIT_SHARE)
+            if affordable_scrapes is not None:
+                applicant_scrape_max_lookups = min(applicant_scrape_max_lookups, affordable_scrapes)
             unique_jobs = _apply_applicant_gate(
                 db,
                 unique_jobs,
@@ -1269,6 +1333,9 @@ def run_lead_sourcing_pipeline(
         # Process unique jobs
         newly_inserted_leads = []
         total_unique = len(unique_jobs)
+        # Most leads this run can still pay for (None = not metered). Re-read at every
+        # checkpoint: another pipeline may be spending the same balance in parallel.
+        credit_cap = affordable_quantity(db, tenant_id, "lead_sourced")
         for idx, job_data in enumerate(unique_jobs):
             # Cancel check
             if check_cancel(job_run.run_id, db):
@@ -1281,6 +1348,24 @@ def run_lead_sourcing_pipeline(
                 job_run.progress_pct = int((idx / total_unique) * 100)
                 _meter_inserted()
                 db.commit()
+                if credit_cap is not None:
+                    # Everything inserted so far is billed now, so the balance is
+                    # exactly what is left for the rest of the run.
+                    remaining = affordable_quantity(db, tenant_id, "lead_sourced")
+                    if remaining is not None:
+                        credit_cap = counters["inserted"] + remaining
+
+            if max_leads and counters["inserted"] >= max_leads:
+                counters["stopped_reason"] = "max_leads_reached"
+                counters["leads_not_saved"] = total_unique - idx
+                logger.info("Lead sourcing reached the requested cap", max_leads=max_leads)
+                break
+            if credit_cap is not None and counters["inserted"] >= credit_cap:
+                counters["stopped_reason"] = "credits_exhausted"
+                counters["leads_not_saved"] = total_unique - idx
+                logger.info("Lead sourcing stopped: out of credits",
+                            inserted=counters["inserted"], not_saved=total_unique - idx)
+                break
 
             try:
                 # Per-job SAVEPOINT: a failure (duplicate job_link, bad data) undoes
@@ -1395,6 +1480,9 @@ def run_lead_sourcing_pipeline(
             "per_source_detail": per_source_detail,
             "per_sub_source_detail": per_sub_source_detail,
             "api_diagnostics": api_diagnostics_list,
+            "requested_max_leads": counters["requested_max_leads"],
+            "stopped_reason": counters["stopped_reason"],
+            "leads_not_saved": counters["leads_not_saved"],
         })
 
         # Already billed at the checkpoints and the commit after the insert loop; a

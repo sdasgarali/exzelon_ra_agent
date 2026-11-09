@@ -51,6 +51,7 @@ SETTINGS_TAB_MAP: Dict[str, str] = {
     'lead_sourcing_frequency': 'job_source_apis',
     'location_diversification': 'source_tuning',
     'lead_sourcing_target_per_run': 'source_tuning',
+    'lead_sourcing_max_leads_per_run': 'source_tuning',
     'lead_sourcing_max_employee_count': 'source_tuning',
     'lead_sourcing_drop_confidential': 'source_tuning',
     'lead_sourcing_excluded_industries': 'source_tuning',

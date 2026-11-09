@@ -19,7 +19,7 @@ All endpoints are mounted under `/api/v1`.
 | `/settings` | `settings.py` | App settings, role permissions |
 | `/users` | `users.py` | User management, role assignment. `POST /users` is **super_admin only** (one user per tenant) |
 | `/roles` | `roles.py` | Role management (super admin). GET list (built-in + custom); POST/PUT/DELETE custom roles. Per-tenant; writes require an impersonated tenant. Built-ins protected. |
-| `/pipelines` | `pipelines.py` | Pipeline stage execution (sourcing/enrichment/validation/outreach) |
+| `/pipelines` | `pipelines.py` | Pipeline stage execution (sourcing/enrichment/validation/outreach). `POST /lead-sourcing/run?max_leads=1..5000` caps a run's new leads (omitted = `lead_sourcing_max_leads_per_run` default); `GET /lead-sourcing/run-options` = default cap, limit, `affordable_leads` for the run dialog. Run rows carry `requested_max_leads`/`stopped_reason`/`leads_not_saved`. |
 | `/warmup` | `warmup.py` | Warmup profiles, DNS checks, blacklist monitoring |
 | `/webhooks` | `webhooks.py` | Webhook subscription CRUD |
 | `/integrations/api-keys` | `integrations.py` | API key CRUD (admin, tenant-scoped). Create takes `scopes` (`read`\|`write`\|`admin`) + optional `expires_in_days`; key shown once. Scopes enforced for every `X-API-Key` request — see `CLAUDE_REFERENCE/mcp-connector.md`. No key can manage keys. |
