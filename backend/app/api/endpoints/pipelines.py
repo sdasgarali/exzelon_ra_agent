@@ -407,6 +407,26 @@ async def lead_sourcing_run_options(
     }
 
 
+@router.put("/lead-sourcing/default-max-leads")
+async def set_lead_sourcing_default_max_leads(
+    max_leads: Optional[int] = Body(default=None, ge=1, le=5000, embed=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
+    tenant_id: int = Depends(require_tenant_id),
+):
+    """Save (or clear, with null) the workspace's default leads per run.
+
+    Set from the Run dialog's "use this number for every run" tick box, so anyone
+    who may run lead sourcing can change it without Settings → Source Tuning access.
+    """
+    from app.core.settings_resolver import set_tenant_setting
+
+    set_tenant_setting(db, "lead_sourcing_max_leads_per_run", max_leads or 0,
+                       tenant_id=tenant_id, updated_by=current_user.email)
+    db.commit()
+    return {"default_max_leads": max_leads}
+
+
 @router.get("/lead-sourcing/lob-sources")
 async def list_lob_lead_sources(
     lob_id: Optional[int] = Query(default=None),

@@ -1,4 +1,6 @@
-import { affordableHint, parseMaxLeads, stopMessage } from '../lead-sourcing'
+import {
+  affordableHint, defaultLeadsLabel, nextDefaultMaxLeads, parseMaxLeads, stopMessage,
+} from '../lead-sourcing'
 
 describe('parseMaxLeads', () => {
   it('treats blank as the workspace default', () => {
@@ -53,5 +55,39 @@ describe('stopMessage', () => {
   it('is null for a run that finished normally', () => {
     expect(stopMessage({ records_success: 9, stopped_reason: null })).toBeNull()
     expect(stopMessage({})).toBeNull()
+  })
+})
+
+describe('defaultLeadsLabel', () => {
+  it('shows the saved default', () => {
+    expect(defaultLeadsLabel(50)).toBe('Default: 50 leads per run')
+    expect(defaultLeadsLabel(1)).toBe('Default: 1 lead per run')
+    expect(defaultLeadsLabel(1200)).toBe('Default: 1,200 leads per run')
+  })
+
+  it('says when there is none', () => {
+    expect(defaultLeadsLabel(null)).toBe('No default limit')
+    expect(defaultLeadsLabel(0)).toBe('No default limit')
+  })
+})
+
+describe('nextDefaultMaxLeads', () => {
+  it('saves the number when ticked', () => {
+    expect(nextDefaultMaxLeads(true, 40, null)).toBe(40)
+    expect(nextDefaultMaxLeads(true, 40, 25)).toBe(40)
+  })
+
+  it('clears the default when unticked', () => {
+    expect(nextDefaultMaxLeads(false, 40, 25)).toBeNull()
+  })
+
+  it('skips the write when nothing changes', () => {
+    expect(nextDefaultMaxLeads(true, 25, 25)).toBeUndefined()
+    expect(nextDefaultMaxLeads(false, 40, null)).toBeUndefined()
+    expect(nextDefaultMaxLeads(false, null, null)).toBeUndefined()
+  })
+
+  it('ticked with a blank field means no default limit', () => {
+    expect(nextDefaultMaxLeads(true, null, 25)).toBeNull()
   })
 })

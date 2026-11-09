@@ -34,6 +34,26 @@ export function affordableHint(affordableLeads: number | null | undefined): stri
   return `Your credits cover about ${n} lead${affordableLeads === 1 ? '' : 's'} (1 credit each). The run stops when they run out.`
 }
 
+/** The workspace default shown on the Pipelines page. */
+export function defaultLeadsLabel(defaultMaxLeads: number | null | undefined): string {
+  if (!defaultMaxLeads) return 'No default limit'
+  return `Default: ${defaultMaxLeads.toLocaleString()} lead${defaultMaxLeads === 1 ? '' : 's'} per run`
+}
+
+/**
+ * What the saved default should become when a run starts: the run's number when
+ * "use this number for every run" is ticked, otherwise cleared. `undefined` means
+ * the saved default already matches and needs no write.
+ */
+export function nextDefaultMaxLeads(
+  saveAsDefault: boolean,
+  maxLeads: number | null,
+  currentDefault: number | null,
+): number | null | undefined {
+  const desired = saveAsDefault ? maxLeads : null
+  return desired === (currentDefault ?? null) ? undefined : desired
+}
+
 /** One-line explanation for a run that ended early, or null if it ran to the end. */
 export function stopMessage(run: LeadSourcingRunSummary): string | null {
   const saved = run.records_success ?? 0

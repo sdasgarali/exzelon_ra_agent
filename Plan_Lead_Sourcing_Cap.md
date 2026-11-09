@@ -86,3 +86,14 @@ super admin / internal runs are unaffected.
 2. Default when left blank: **no cap** (only credits stop it).
 3. Who can set the count: anyone allowed to run lead sourcing (pipelines → lead_sourcing
    read_write). The saved default stays in Source Tuning.
+
+## Follow-up (2026-11-09): default set from the Run dialog
+Source Tuning is not visible to client admins (role matrix), and it holds platform-cost knobs,
+so it stays as is. Instead (user's direction):
+- Run dialog gets a tick box **"Use this number for every run (default)"**. Ticked → the number is
+  saved as the workspace default and prefilled next time. Unticked → this run only, and any saved
+  default is cleared.
+- Pipelines page shows the current default next to the Run Lead Sourcing button.
+- New `PUT /pipelines/lead-sourcing/default-max-leads` (pipelines → lead_sourcing read_write,
+  tenant required) writes `lead_sourcing_max_leads_per_run` (null/0 clears).
+- [x] F1 backend endpoint + tests  - [x] F2 dialog tick box + page badge + tests  - [ ] F3 suites, PR, deploy

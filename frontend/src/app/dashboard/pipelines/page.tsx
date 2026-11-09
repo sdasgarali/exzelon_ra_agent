@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { affordableHint, parseMaxLeads, stopMessage, type StoppedReason } from '@/lib/lead-sourcing'
+import {
+  affordableHint, defaultLeadsLabel, nextDefaultMaxLeads, parseMaxLeads, stopMessage, type StoppedReason,
+} from '@/lib/lead-sourcing'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
 import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
@@ -118,6 +120,9 @@ export default function PipelinesPage() {
     max_leads_limit: number
     affordable_leads: number | null
   }>({ default_max_leads: null, max_leads_limit: 5000, affordable_leads: null })
+  const [leadSourcingOptionsLoaded, setLeadSourcingOptionsLoaded] = useState(false)
+  // "Use this number for every run" — saves the number as the workspace default.
+  const [saveMaxLeadsAsDefault, setSaveMaxLeadsAsDefault] = useState(false)
   const [showRunAllLeadsConfirm, setShowRunAllLeadsConfirm] = useState(false)
   const [showRunAllContactsConfirm, setShowRunAllContactsConfirm] = useState(false)
 
@@ -570,18 +575,33 @@ export default function PipelinesPage() {
 
   const maxLeadsCheck = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit)
 
+  const loadLeadSourcingOptions = async () => {
+    const options = await pipelinesApi.getLeadSourcingRunOptions()
+    setLeadSourcingOptions(options)
+    setLeadSourcingOptionsLoaded(true)
+    return options
+  }
+
   // Open the run dialog prefilled with the workspace default and the credit hint.
   // If the options can't be loaded the dialog still works: blank = workspace default.
   const openLeadSourcingDialog = async () => {
     setShowLeadSourcingConfirm(true)
     try {
-      const options = await pipelinesApi.getLeadSourcingRunOptions()
-      setLeadSourcingOptions(options)
+      const options = await loadLeadSourcingOptions()
       setLeadSourcingMaxLeads(options.default_max_leads ? String(options.default_max_leads) : '')
+      setSaveMaxLeadsAsDefault(!!options.default_max_leads)
     } catch {
       setLeadSourcingMaxLeads('')
+      setSaveMaxLeadsAsDefault(false)
     }
   }
+
+  // Show the current default on the Lead Sourcing card.
+  useEffect(() => {
+    if (needsTenantSelection) return
+    loadLeadSourcingOptions().catch(() => setLeadSourcingOptionsLoaded(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsTenantSelection])
 
   // Run pipeline with polling (for lead-sourcing only now; email-validation uses contact selector)
   const runPipeline = async (pipelineType: string) => {
@@ -600,6 +620,16 @@ export default function PipelinesPage() {
         case 'lead-sourcing':
           {
             const maxLeads = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit).value
+            const newDefault = nextDefaultMaxLeads(saveMaxLeadsAsDefault, maxLeads, leadSourcingOptions.default_max_leads)
+            if (newDefault !== undefined) {
+              try {
+                await pipelinesApi.setLeadSourcingDefaultMaxLeads(newDefault)
+                setLeadSourcingOptions(o => ({ ...o, default_max_leads: newDefault }))
+              } catch {
+                // Not worth blocking the run over; the number still applies to this one.
+                setError('Could not save your default leads per run. This run still uses the number you entered.')
+              }
+            }
             await pipelinesApi.runLeadSourcing(['indeed', 'linkedin', 'glassdoor'], activeLobId, maxLeads)
             setSuccess(`Lead sourcing pipeline started!${maxLeads ? ` Up to ${maxLeads.toLocaleString()} leads.` : ''}${activeLobId ? ` (LOB: ${getActiveLob()?.name || activeLobId})` : ''}`)
           }
@@ -776,6 +806,11 @@ export default function PipelinesPage() {
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium mb-2" style={{ backgroundColor: `${getActiveLob()?.color || '#6366f1'}20`, color: getActiveLob()?.color || '#6366f1' }}>
               {getActiveLob()?.name} sources active
             </span>
+          )}
+          {leadSourcingOptionsLoaded && (
+            <p className="text-xs text-gray-500 mb-2" data-testid="lead-sourcing-default">
+              {defaultLeadsLabel(leadSourcingOptions.default_max_leads)}
+            </p>
           )}
           <button
             onClick={openLeadSourcingDialog}
@@ -1122,6 +1157,22 @@ export default function PipelinesPage() {
             || affordableHint(leadSourcingOptions.affordable_leads)
             || 'Leave blank for no limit.'}
         </p>
+        <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={saveMaxLeadsAsDefault}
+            onChange={(e) => setSaveMaxLeadsAsDefault(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            Use this number for every run
+            <span className="block text-xs text-gray-500">
+              {saveMaxLeadsAsDefault
+                ? 'It will be filled in automatically next time. Untick to choose per run.'
+                : 'This run only. Any saved default will be cleared.'}
+            </span>
+          </span>
+        </label>
       </ConfirmDialog>
 
       {/* "Run for All Leads" Confirmation */}

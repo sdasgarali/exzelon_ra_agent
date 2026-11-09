@@ -252,3 +252,53 @@ def test_run_options_endpoint(client, db_session, test_tenant, sa_headers, monke
     assert r.status_code == 200, r.text
     assert r.json() == {"default_max_leads": 25, "max_leads_limit": MAX_LEADS_PER_RUN_LIMIT,
                         "credits_per_lead": 1.0, "affordable_leads": 40}
+
+
+# ---------------------------------------------------------------------------
+# Default set from the Run dialog
+# ---------------------------------------------------------------------------
+
+def test_run_dialog_can_save_and_clear_the_default(client, db_session, test_tenant, sa_headers, monkeypatch):
+    h = _pipeline_headers(db_session, test_tenant, sa_headers, monkeypatch, credits=500)
+    url = "/api/v1/pipelines/lead-sourcing/default-max-leads"
+
+    r = client.put(url, headers=h, json={"max_leads": 30})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"default_max_leads": 30}
+    db_session.expire_all()
+    assert resolve_max_leads(db_session, test_tenant.tenant_id) == 30
+    opts = client.get("/api/v1/pipelines/lead-sourcing/run-options", headers=h).json()
+    assert opts["default_max_leads"] == 30
+
+    r = client.put(url, headers=h, json={"max_leads": None})
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert resolve_max_leads(db_session, test_tenant.tenant_id) is None
+
+
+@pytest.mark.parametrize("bad", [0, -2, MAX_LEADS_PER_RUN_LIMIT + 1])
+def test_default_rejects_out_of_range(client, db_session, test_tenant, sa_headers, monkeypatch, bad):
+    h = _pipeline_headers(db_session, test_tenant, sa_headers, monkeypatch, credits=500)
+    r = client.put("/api/v1/pipelines/lead-sourcing/default-max-leads", headers=h, json={"max_leads": bad})
+    assert r.status_code == 422
+
+
+def test_default_needs_a_workspace(client, sa_headers):
+    # A super admin who hasn't picked a workspace must not write a global default.
+    r = client.put("/api/v1/pipelines/lead-sourcing/default-max-leads", headers=sa_headers,
+                   json={"max_leads": 30})
+    assert r.status_code == 400
+
+
+def test_default_is_per_workspace(client, db_session, test_tenant, sa_headers, monkeypatch):
+    other = _tenant(db_session, "other-ws")
+    h = _pipeline_headers(db_session, test_tenant, sa_headers, monkeypatch, credits=500)
+    client.put("/api/v1/pipelines/lead-sourcing/default-max-leads", headers=h, json={"max_leads": 30})
+    db_session.expire_all()
+    assert resolve_max_leads(db_session, other.tenant_id) is None
+
+
+def test_viewer_cannot_change_the_default(client, viewer_token):
+    r = client.put("/api/v1/pipelines/lead-sourcing/default-max-leads",
+                   headers={"Authorization": f"Bearer {viewer_token}"}, json={"max_leads": 30})
+    assert r.status_code == 403
