@@ -77,6 +77,22 @@ class JobSourceAdapter(BaseAdapter):
     """Base adapter for job source providers."""
 
     @staticmethod
+    def page_plan(remaining: int, max_page_size: int, max_pages: int) -> tuple:
+        """(page_size, pages) for a page-NUMBER API that must not return more than
+        `remaining` results in total.
+
+        Page numbers only line up with a constant page size, so a query can't shrink
+        its last page. Instead the remainder is split into equal pages:
+        35 left at 25/page -> 2 pages of 17 (34). Never over `remaining`; at most one
+        result per page under it. (0, 0) when nothing is left.
+        """
+        remaining, max_page_size, max_pages = int(remaining), int(max_page_size), int(max_pages)
+        if remaining <= 0 or max_page_size <= 0 or max_pages <= 0:
+            return 0, 0
+        pages = min(max_pages, -(-remaining // max_page_size))
+        return min(max_page_size, remaining // pages), pages
+
+    @staticmethod
     def filter_excluded(
         job: dict,
         exclude_keywords: list = None,

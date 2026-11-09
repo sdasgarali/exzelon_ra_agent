@@ -96,6 +96,8 @@ def parse_counters(counters_json: str) -> dict:
                 "requested_max_leads": counters.get("requested_max_leads"),
                 "stopped_reason": counters.get("stopped_reason"),
                 "leads_not_saved": counters.get("leads_not_saved", 0),
+                "fetch_limit": counters.get("fetch_limit"),
+                "jobs_fetched": counters.get("jobs_fetched"),
             }
     except (json.JSONDecodeError, TypeError):
         pass
@@ -115,6 +117,8 @@ def parse_counters(counters_json: str) -> dict:
         "requested_max_leads": None,
         "stopped_reason": None,
         "leads_not_saved": 0,
+        "fetch_limit": None,
+        "jobs_fetched": None,
     }
 
 
@@ -175,6 +179,8 @@ async def list_job_runs(
             "requested_max_leads": counters["requested_max_leads"],
             "stopped_reason": counters["stopped_reason"],
             "leads_not_saved": counters["leads_not_saved"],
+            "fetch_limit": counters["fetch_limit"],
+            "jobs_fetched": counters["jobs_fetched"],
             "error_message": r.error_message,
             "triggered_by": r.triggered_by,
             "duration_seconds": duration,
@@ -353,9 +359,10 @@ async def run_lead_sourcing(
     sources: List[str] = Query(default=["linkedin", "indeed"]),
     lob_id: Optional[int] = Query(default=None, description="LOB to scope lead sources"),
     max_leads: Optional[int] = Query(
-        default=None, ge=1, le=5000,
-        description="Most new leads this run may save. Omit to use the workspace default "
-                    "(Source Tuning → Default leads per run; 0 there = no cap).",
+        default=None, ge=10, le=5000,
+        description="Most jobs this run may fetch from all sources together (and so the most "
+                    "new leads it can save). Omit to use the workspace default "
+                    "(0 there = no cap).",
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
@@ -397,10 +404,13 @@ async def lead_sourcing_run_options(
     current balance pays for (`affordable_leads` is null when credits aren't enforced)."""
     from app.core.credit_costs import cost_for
     from app.services.credit_metering import affordable_quantity
-    from app.services.pipelines.lead_sourcing import MAX_LEADS_PER_RUN_LIMIT, resolve_max_leads
+    from app.services.pipelines.lead_sourcing import (
+        MAX_LEADS_PER_RUN_LIMIT, MIN_LEADS_PER_RUN, resolve_max_leads,
+    )
 
     return {
         "default_max_leads": resolve_max_leads(db, tenant_id),
+        "min_leads": MIN_LEADS_PER_RUN,
         "max_leads_limit": MAX_LEADS_PER_RUN_LIMIT,
         "credits_per_lead": cost_for("lead_sourced", db=db),
         "affordable_leads": affordable_quantity(db, tenant_id, "lead_sourced"),
@@ -409,7 +419,7 @@ async def lead_sourcing_run_options(
 
 @router.put("/lead-sourcing/default-max-leads")
 async def set_lead_sourcing_default_max_leads(
-    max_leads: Optional[int] = Body(default=None, ge=1, le=5000, embed=True),
+    max_leads: Optional[int] = Body(default=None, ge=10, le=5000, embed=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
     tenant_id: int = Depends(require_tenant_id),

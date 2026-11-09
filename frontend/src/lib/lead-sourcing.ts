@@ -1,43 +1,58 @@
-/** Lead-sourcing run cap: input validation and the "why did it stop" message. */
+/**
+ * Lead-sourcing run size: the "How many jobs?" field, its hints, and the
+ * "what happened" message. A run fetches at most that many jobs from all job
+ * APIs together and charges 1 credit only for each new lead it saves.
+ */
 
-export type StoppedReason = 'max_leads_reached' | 'credits_exhausted' | null | undefined
+export type StoppedReason =
+  | 'max_leads_reached'
+  | 'credits_exhausted'
+  | 'fetch_limit_reached'
+  | null
+  | undefined
 
 export interface LeadSourcingRunSummary {
   records_success?: number
   requested_max_leads?: number | null
   stopped_reason?: StoppedReason
   leads_not_saved?: number
+  fetch_limit?: number | null
+  jobs_fetched?: number | null
+}
+
+/** Field label, e.g. "How many jobs? (min 10 · max 5,000)". */
+export function jobsFieldLabel(min: number, max: number): string {
+  return `How many jobs? (min ${min.toLocaleString()} · max ${max.toLocaleString()})`
 }
 
 /**
- * Parse the "How many leads?" field. Blank means "use the workspace default"
- * (returns `null`); anything else must be a whole number from 1 to `limit`.
+ * Parse the "How many jobs?" field. Required: a whole number from `min` to `max`.
  */
 export function parseMaxLeads(
   raw: string,
-  limit: number,
+  min: number,
+  max: number,
 ): { value: number | null; error: string | null } {
   const text = raw.trim()
-  if (text === '') return { value: null, error: null }
-  if (!/^\d+$/.test(text)) return { value: null, error: 'Enter a whole number.' }
+  const range = `Enter a number from ${min.toLocaleString()} to ${max.toLocaleString()}.`
+  if (text === '' || !/^\d+$/.test(text)) return { value: null, error: range }
   const value = Number(text)
-  if (value < 1) return { value: null, error: 'Enter at least 1.' }
-  if (value > limit) return { value: null, error: `At most ${limit.toLocaleString()} per run.` }
+  if (value < min || value > max) return { value: null, error: range }
   return { value, error: null }
 }
 
-/** Hint under the field: how many leads the balance pays for, or null when unmetered. */
-export function affordableHint(affordableLeads: number | null | undefined): string | null {
-  if (affordableLeads === null || affordableLeads === undefined) return null
+/** Hint under the field: what the run fetches and how it's charged. */
+export function fetchHint(affordableLeads: number | null | undefined): string {
+  const charge = 'We fetch at most this many jobs. You pay 1 credit only for each new lead saved — duplicates and filtered jobs are free.'
+  if (affordableLeads === null || affordableLeads === undefined) return charge
   if (affordableLeads <= 0) return 'You are out of credits. Top up to run lead sourcing.'
-  const n = affordableLeads.toLocaleString()
-  return `Your credits cover about ${n} lead${affordableLeads === 1 ? '' : 's'} (1 credit each). The run stops when they run out.`
+  return `${charge} Your credits cover ${affordableLeads.toLocaleString()} new lead${affordableLeads === 1 ? '' : 's'}.`
 }
 
 /** The workspace default shown on the Pipelines page. */
 export function defaultLeadsLabel(defaultMaxLeads: number | null | undefined): string {
-  if (!defaultMaxLeads) return 'No default limit'
-  return `Default: ${defaultMaxLeads.toLocaleString()} lead${defaultMaxLeads === 1 ? '' : 's'} per run`
+  if (!defaultMaxLeads) return 'No default set'
+  return `Default: ${defaultMaxLeads.toLocaleString()} job${defaultMaxLeads === 1 ? '' : 's'} per run`
 }
 
 /**
@@ -54,15 +69,23 @@ export function nextDefaultMaxLeads(
   return desired === (currentDefault ?? null) ? undefined : desired
 }
 
-/** One-line explanation for a run that ended early, or null if it ran to the end. */
+const n = (v: number) => v.toLocaleString()
+const plural = (v: number, word: string) => `${n(v)} ${word}${v === 1 ? '' : 's'}`
+
+/** One-line account of a capped run, or null for a run without a number. */
 export function stopMessage(run: LeadSourcingRunSummary): string | null {
   const saved = run.records_success ?? 0
+  const fetched = run.jobs_fetched ?? null
   if (run.stopped_reason === 'credits_exhausted') {
-    const of = run.requested_max_leads ? ` of ${run.requested_max_leads.toLocaleString()}` : ''
-    return `Stopped: out of credits — ${saved.toLocaleString()}${of} leads saved. Top up to continue.`
+    return `Stopped: out of credits — ${plural(saved, 'new lead')} saved (${plural(saved, 'credit')}). Top up to continue.`
+  }
+  if (run.stopped_reason === 'fetch_limit_reached' && fetched !== null) {
+    const free = Math.max(0, fetched - saved)
+    return `Fetched ${plural(fetched, 'job')} → ${plural(saved, 'new lead')} (${plural(saved, 'credit')}).`
+      + (free ? ` ${n(free)} ${free === 1 ? 'was a duplicate or filtered out' : 'were duplicates or filtered out'} — not charged.` : '')
   }
   if (run.stopped_reason === 'max_leads_reached') {
-    return `Reached your limit of ${(run.requested_max_leads ?? saved).toLocaleString()} leads.`
+    return `Saved ${plural(saved, 'new lead')} — the ${n(run.requested_max_leads ?? saved)} you asked for (${plural(saved, 'credit')}).`
   }
   return null
 }

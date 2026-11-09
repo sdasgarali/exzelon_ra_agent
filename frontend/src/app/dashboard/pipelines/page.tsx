@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
-  affordableHint, defaultLeadsLabel, nextDefaultMaxLeads, parseMaxLeads, stopMessage, type StoppedReason,
+  defaultLeadsLabel, fetchHint, jobsFieldLabel, nextDefaultMaxLeads, parseMaxLeads, stopMessage,
+  type StoppedReason,
 } from '@/lib/lead-sourcing'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
@@ -58,6 +59,8 @@ interface PipelineRun {
   progress_pct?: number
   logs_path?: string | null
   requested_max_leads?: number | null
+  fetch_limit?: number | null
+  jobs_fetched?: number | null
   stopped_reason?: StoppedReason
   leads_not_saved?: number
 }
@@ -113,13 +116,14 @@ export default function PipelinesPage() {
 
   // Confirmation dialog states
   const [showLeadSourcingConfirm, setShowLeadSourcingConfirm] = useState(false)
-  // "How many leads?" in the run dialog. Blank = the workspace default.
+  // "How many jobs?" in the run dialog: the most jobs the run fetches (min..max).
   const [leadSourcingMaxLeads, setLeadSourcingMaxLeads] = useState('')
   const [leadSourcingOptions, setLeadSourcingOptions] = useState<{
     default_max_leads: number | null
+    min_leads: number
     max_leads_limit: number
     affordable_leads: number | null
-  }>({ default_max_leads: null, max_leads_limit: 5000, affordable_leads: null })
+  }>({ default_max_leads: null, min_leads: 10, max_leads_limit: 5000, affordable_leads: null })
   const [leadSourcingOptionsLoaded, setLeadSourcingOptionsLoaded] = useState(false)
   // "Use this number for every run" — saves the number as the workspace default.
   const [saveMaxLeadsAsDefault, setSaveMaxLeadsAsDefault] = useState(false)
@@ -573,7 +577,8 @@ export default function PipelinesPage() {
     setTimeout(poll, 2000)
   }
 
-  const maxLeadsCheck = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit)
+  const maxLeadsCheck = parseMaxLeads(
+    leadSourcingMaxLeads, leadSourcingOptions.min_leads, leadSourcingOptions.max_leads_limit)
 
   const loadLeadSourcingOptions = async () => {
     const options = await pipelinesApi.getLeadSourcingRunOptions()
@@ -588,10 +593,11 @@ export default function PipelinesPage() {
     setShowLeadSourcingConfirm(true)
     try {
       const options = await loadLeadSourcingOptions()
-      setLeadSourcingMaxLeads(options.default_max_leads ? String(options.default_max_leads) : '')
+      // Start from the saved default, else the smallest run.
+      setLeadSourcingMaxLeads(String(options.default_max_leads || options.min_leads))
       setSaveMaxLeadsAsDefault(!!options.default_max_leads)
     } catch {
-      setLeadSourcingMaxLeads('')
+      setLeadSourcingMaxLeads(String(leadSourcingOptions.min_leads))
       setSaveMaxLeadsAsDefault(false)
     }
   }
@@ -619,7 +625,7 @@ export default function PipelinesPage() {
       switch (pipelineType) {
         case 'lead-sourcing':
           {
-            const maxLeads = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit).value
+            const maxLeads = maxLeadsCheck.value
             const newDefault = nextDefaultMaxLeads(saveMaxLeadsAsDefault, maxLeads, leadSourcingOptions.default_max_leads)
             if (newDefault !== undefined) {
               try {
@@ -1137,25 +1143,24 @@ export default function PipelinesPage() {
         }}
       >
         <label htmlFor="lead-sourcing-max-leads" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          How many leads?
+          {jobsFieldLabel(leadSourcingOptions.min_leads, leadSourcingOptions.max_leads_limit)}
         </label>
         <input
           id="lead-sourcing-max-leads"
           type="number"
           inputMode="numeric"
-          min={1}
+          min={leadSourcingOptions.min_leads}
           max={leadSourcingOptions.max_leads_limit}
+          required
           value={leadSourcingMaxLeads}
           onChange={(e) => setLeadSourcingMaxLeads(e.target.value)}
-          placeholder="No limit"
+          placeholder={String(leadSourcingOptions.min_leads)}
           aria-describedby="lead-sourcing-max-leads-hint"
           aria-invalid={!!maxLeadsCheck.error}
           className="input mt-1 w-full"
         />
         <p id="lead-sourcing-max-leads-hint" className={`mt-1 text-xs ${maxLeadsCheck.error ? 'text-red-600' : 'text-gray-500'}`}>
-          {maxLeadsCheck.error
-            || affordableHint(leadSourcingOptions.affordable_leads)
-            || 'Leave blank for no limit.'}
+          {maxLeadsCheck.error || fetchHint(leadSourcingOptions.affordable_leads)}
         </p>
         <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
           <input

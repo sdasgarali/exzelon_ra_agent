@@ -164,14 +164,25 @@ class TheirStackAdapter(JobSourceAdapter):
         payload = self._build_base_payload(posted_within_days, limit, _t)
         per_page = payload.get("limit") or self.DEFAULT_MAX_RESULTS_PER_PAGE
 
+        # Jobs the API has returned this call. Billed 1 credit per job, so a page
+        # asks only for what is left of `limit`.
+        self._raw_returned = 0
         with httpx.Client(timeout=30) as client:
             try:
                 # Ceil-divide so a small per-page cap still fetches enough pages
                 # to reach the requested total (e.g. 25/page x 40 pages = 1000).
                 pages_to_fetch = min(_max_pages, max(1, -(-limit // per_page)))
                 for title_batch in title_batches:
+                    if self._raw_returned >= limit:
+                        break
                     payload["job_title_or"] = title_batch
-                    for page in range(pages_to_fetch):
+                    # Page-NUMBER pagination: a title batch keeps one page size;
+                    # page_plan sizes its pages to fit what is left.
+                    payload["limit"], batch_pages = self.page_plan(
+                        int(limit) - self._raw_returned, per_page, pages_to_fetch)
+                    for page in range(batch_pages):
+                        if self._raw_returned >= limit:
+                            break
                         payload["page"] = page
                         self._api_calls += 1
                         response = client.post(
@@ -198,6 +209,8 @@ class TheirStackAdapter(JobSourceAdapter):
                         results = data.get("data", [])
                         if not results:
                             break
+                        results = results[: int(limit) - self._raw_returned]
+                        self._raw_returned += len(results)
 
                         for result in results:
                             job = self.normalize(result)

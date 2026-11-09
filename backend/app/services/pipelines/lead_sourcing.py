@@ -23,23 +23,21 @@ logger = structlog.get_logger()
 
 #: Most leads one run may be asked to save (the run dialog's upper bound).
 MAX_LEADS_PER_RUN_LIMIT = 5_000
-#: Paid pre-insert work scales with the request, so a 10-lead run can't spend
-#: hundreds of credits researching companies it will never save.
+#: Fewest jobs a run may be asked to fetch (the run dialog's lower bound).
+MIN_LEADS_PER_RUN = 10
+#: Research behind a run (company size, applicant counts) is not billed to the
+#: workspace but costs the platform, so it scales with the request.
 FIRMOGRAPHIC_LOOKUPS_PER_REQUESTED_LEAD = 3
-#: Unique candidates (before the ICP gates) the tiered early-stop aims for per lead
-#: requested; the gates typically keep about one in ten.
-CANDIDATES_PER_REQUESTED_LEAD = 10
 APPLICANT_LOOKUPS_PER_REQUESTED_LEAD = 2
-#: Share of the remaining balance a pre-insert research step may use, leaving the
-#: rest for the leads themselves.
-RESEARCH_CREDIT_SHARE = 0.5
 
 
 def resolve_max_leads(db, tenant_id: Optional[int], requested: Optional[int] = None) -> Optional[int]:
     """The run's lead cap: the requested number, else the workspace default.
 
     The default is the `lead_sourcing_max_leads_per_run` setting (Source Tuning);
-    0 or unset means no cap. Always clamped to 1..MAX_LEADS_PER_RUN_LIMIT.
+    0 or unset means no cap. Always clamped to
+    MIN_LEADS_PER_RUN..MAX_LEADS_PER_RUN_LIMIT. With a cap the run fetches at most
+    that many jobs from all sources together (see the fetch budget).
     """
     value = requested
     if not value:
@@ -50,7 +48,7 @@ def resolve_max_leads(db, tenant_id: Optional[int], requested: Optional[int] = N
             value = 0
     if not value or value <= 0:
         return None
-    return min(int(value), MAX_LEADS_PER_RUN_LIMIT)
+    return max(MIN_LEADS_PER_RUN, min(int(value), MAX_LEADS_PER_RUN_LIMIT))
 
 
 # Company name normalization patterns
@@ -525,23 +523,36 @@ def fetch_from_source(
     diagnostics: Dict[str, Any] = {
         "status": "success",
         "jobs_returned": 0,
+        # What the API itself returned (before the adapter's keyword filter) — the
+        # number a fetch budget is charged against. Adapters that don't report it
+        # fall back to the jobs they kept.
+        "api_returned": 0,
         "error_type": None,
         "error_message": None,
     }
+
+    def _api_returned(kept: List[Dict[str, Any]]) -> int:
+        raw = getattr(adapter, "_raw_returned", None)
+        return int(raw) if isinstance(raw, int) else len(kept)
+
     try:
         # Location diversification: search per-state instead of nationwide
         if location_diversification and target_states:
             jobs = []
             for state in target_states:
+                remaining = adapter_limit - diagnostics["api_returned"]
+                if remaining <= 0:
+                    break
                 state_jobs = adapter.fetch_jobs(
                     location=state,
                     posted_within_days=posted_within_days,
                     industries=target_industries,
                     exclude_keywords=exclude_keywords,
                     job_titles=target_job_titles,
-                    limit=adapter_limit,
+                    limit=remaining,
                     tuning=tuning,
                 )
+                diagnostics["api_returned"] += _api_returned(state_jobs)
                 jobs.extend(state_jobs)
         else:
             jobs = adapter.fetch_jobs(
@@ -553,6 +564,7 @@ def fetch_from_source(
                 limit=adapter_limit,
                 tuning=tuning,
             )
+            diagnostics["api_returned"] = _api_returned(jobs)
         diagnostics["jobs_returned"] = len(jobs)
         if len(jobs) == 0:
             diagnostics["status"] = "warning"
@@ -565,6 +577,7 @@ def fetch_from_source(
         diagnostics["error_type"] = "rate_limited"
         diagnostics["error_message"] = str(e)[:300]
         diagnostics["jobs_returned"] = len(partial)
+        diagnostics["api_returned"] = max(diagnostics["api_returned"], _api_returned(partial))
         logger.warning(
             f"Source {source_name} hit rate limit",
             partial_results=len(partial),
@@ -590,6 +603,10 @@ def fetch_from_source(
             diagnostics["error_type"] = "unknown"
         diagnostics["status"] = "error"
         diagnostics["error_message"] = error_msg[:300]
+        # Whatever the API returned before it failed still counts against a budget.
+        raw = getattr(adapter, "_raw_returned", None)
+        if isinstance(raw, int):
+            diagnostics["api_returned"] = max(diagnostics["api_returned"], raw)
         logger.error(f"Error fetching from {source_name}", error=error_msg)
         return (source_name, [], error_msg, diagnostics)
 
@@ -1013,13 +1030,39 @@ def run_lead_sourcing_pipeline(
 
         all_jobs = []
 
+        # Strict fetch budget: a run with a number fetches at most that many jobs
+        # from ALL sources together. Sources then run one at a time, each asked
+        # only for what is left, so later (expensive) sources never run once it is
+        # used up. None = no budget (today's parallel fetch).
+        fetch_budget: Optional[Dict[str, int]] = (
+            {"limit": max_leads, "remaining": max_leads} if max_leads else None
+        )
+        counters["fetch_limit"] = max_leads
+
+        counters["jobs_fetched"] = 0  # what the APIs delivered, all sources
+        jobs_kept = {"n": 0}
+
+        def _charge_budget(jobs: List[Dict[str, Any]], diag: Dict[str, Any]) -> List[Dict[str, Any]]:
+            """Count what a source delivered, debit the budget, drop anything past it."""
+            api_returned = int(diag.get("api_returned") or len(jobs))
+            counters["jobs_fetched"] += api_returned
+            if fetch_budget is None:
+                return jobs
+            fetch_budget["remaining"] = max(0, fetch_budget["remaining"] - api_returned)
+            jobs = jobs[:max(0, fetch_budget["limit"] - jobs_kept["n"])]
+            jobs_kept["n"] += len(jobs)
+            return jobs
+
         # Reusable parallel collector — fetches a subset of job-source adapters
         # and updates the run-scoped bookkeeping (counters, diagnostics, per-source
-        # detail). Closure over the pipeline config above.
-        def _collect_from_adapters(adapter_subset: List[Tuple[str, Any]]) -> List[Dict[str, Any]]:
+        # detail). Closure over the pipeline config above. `limit` overrides the
+        # per-adapter limit (the fetch budget's remainder).
+        def _collect_from_adapters(adapter_subset: List[Tuple[str, Any]],
+                                   limit: Optional[int] = None) -> List[Dict[str, Any]]:
             collected: List[Dict[str, Any]] = []
             if not adapter_subset:
                 return collected
+            source_limit = min(pipeline_adapter_limit, limit) if limit else pipeline_adapter_limit
             with concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers) as executor:
                 futures = []
                 for source_name, adapter in adapter_subset:
@@ -1037,7 +1080,7 @@ def run_lead_sourcing_pipeline(
                         location_diversification=location_diversification,
                         target_states=target_states,
                         tuning=adapter_tuning,
-                        adapter_limit=pipeline_adapter_limit,
+                        adapter_limit=source_limit,
                         posted_within_days=posted_within_days,
                         posted_within_hours=posted_within_hours,
                         max_employee_count_gate=max_employee_count,
@@ -1045,6 +1088,7 @@ def run_lead_sourcing_pipeline(
                     ))
                 for future in concurrent.futures.as_completed(futures):
                     source_name, jobs, error, diag = future.result()
+                    jobs = _charge_budget(jobs, diag)
                     counters["sources_used"].append(source_name)
                     counters["jobs_per_source"][source_name] = len(jobs)
                     per_source_detail[source_name] = {"fetched": len(jobs), "new": 0, "excluded": 0, "skipped_dedup": 0}
@@ -1052,6 +1096,7 @@ def run_lead_sourcing_pipeline(
                         "adapter": source_name,
                         "status": diag["status"],
                         "jobs_returned": diag["jobs_returned"],
+                        "api_returned": diag.get("api_returned", diag["jobs_returned"]),
                         "error_type": diag["error_type"],
                         "error_message": diag["error_message"],
                     })
@@ -1089,11 +1134,6 @@ def run_lead_sourcing_pipeline(
             # 3) Per-run target. Tier 2 (expensive) runs only to fill a gap toward
             #    this many unique leads. 0 disables early-stop (all tiers run).
             target = int(get_tenant_setting(db, "lead_sourcing_target_per_run", tenant_id=tenant_id, default=500) or 0)
-            if max_leads and target > 0:
-                # Don't run the expensive sources for far more candidates than the run
-                # can save. The target counts candidates before the ICP gates, which
-                # drop most of them, hence the headroom.
-                target = min(target, max_leads * CANDIDATES_PER_REQUESTED_LEAD)
             optimization = {
                 "target_per_run": target,
                 "overlap_skipped": overlap_skipped,
@@ -1109,11 +1149,23 @@ def run_lead_sourcing_pipeline(
                 f"target/run: {target}, overlap_skipped: {overlap_skipped}"
             )
 
-            # 4) Always run tier 1 (parallel)
-            _collect_from_adapters(tier1)
+            if fetch_budget is not None:
+                # 4b) Budget mode: one source at a time, cheapest tier first, each
+                #     asked only for what is left; stop when the budget is used.
+                for source_name, adapter in list(tier1) + list(tier2):
+                    if fetch_budget["remaining"] <= 0:
+                        optimization["tier2_skipped"].append(source_name)
+                        continue
+                    _collect_from_adapters([(source_name, adapter)], limit=fetch_budget["remaining"])
+                    if (source_name, adapter) in tier2:
+                        optimization["tier2_ran"].append(source_name)
+                optimization["early_stopped"] = fetch_budget["remaining"] <= 0
+            else:
+                # 4) Always run tier 1 (parallel)
+                _collect_from_adapters(tier1)
 
             # 5) Run tier 2 only to fill a gap, cheapest-first, stop when target met
-            if tier2:
+            if tier2 and fetch_budget is None:
                 if target > 0:
                     unique_now = deduplicate_jobs(all_jobs, db, tenant_id=tenant_id)
                     optimization["unique_after_tier1"] = len(unique_now)
@@ -1159,24 +1211,38 @@ def run_lead_sourcing_pipeline(
             lob_query = lob_source_config.get("query", "")
             lob_location = lob_source_config.get("location", "United States")
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers) as executor:
-                lob_futures = []
-                for source_name, adapter in lob_adapters:
-                    # Source-specific extra params from config
-                    extra = lob_source_config.get(source_name, {})
-                    future = executor.submit(
-                        fetch_from_lob_source,
-                        source_name,
-                        adapter,
-                        query=extra.get("query", lob_query),
-                        location=extra.get("location", lob_location),
-                        limit=extra.get("limit", 100),
-                        extra_params={k: v for k, v in extra.items() if k not in ("query", "location", "limit")},
-                    )
-                    lob_futures.append(future)
+            def _lob_kwargs(source_name: str, limit_cap: Optional[int] = None) -> Dict[str, Any]:
+                # Source-specific extra params from config
+                extra = lob_source_config.get(source_name, {})
+                limit = int(extra.get("limit", 100))
+                return dict(
+                    query=extra.get("query", lob_query),
+                    location=extra.get("location", lob_location),
+                    limit=min(limit, limit_cap) if limit_cap is not None else limit,
+                    extra_params={k: v for k, v in extra.items() if k not in ("query", "location", "limit")},
+                )
 
-                for future in concurrent.futures.as_completed(lob_futures):
-                    source_name, leads, error, diag = future.result()
+            lob_executor = None
+            if fetch_budget is not None:
+                # Budget mode: one LOB source at a time, each asked only for what is left.
+                def _lob_results():
+                    for source_name, adapter in lob_adapters:
+                        if fetch_budget["remaining"] <= 0:
+                            break
+                        yield fetch_from_lob_source(
+                            source_name, adapter, **_lob_kwargs(source_name, fetch_budget["remaining"]))
+                lob_result_iter = _lob_results()
+            else:
+                lob_executor = concurrent.futures.ThreadPoolExecutor(max_workers=pipeline_max_workers)
+                lob_futures = [
+                    lob_executor.submit(fetch_from_lob_source, source_name, adapter, **_lob_kwargs(source_name))
+                    for source_name, adapter in lob_adapters
+                ]
+                lob_result_iter = (f.result() for f in concurrent.futures.as_completed(lob_futures))
+
+            try:
+                for source_name, leads, error, diag in lob_result_iter:
+                    leads = _charge_budget(leads, diag)
                     counters["sources_used"].append(source_name)
                     counters["jobs_per_source"][source_name] = len(leads)
                     per_source_detail[source_name] = {"fetched": len(leads), "new": 0, "excluded": 0, "skipped_dedup": 0}
@@ -1200,6 +1266,9 @@ def run_lead_sourcing_pipeline(
                                 per_sub_source_detail[sub_src] = {"fetched": 0, "new": 0, "excluded": 0, "skipped_dedup": 0}
                             per_sub_source_detail[sub_src]["fetched"] += 1
                         all_jobs.extend(leads)
+            finally:
+                if lob_executor is not None:
+                    lob_executor.shutdown(wait=True)
 
             logger.info(f"Total leads after LOB sources: {len(all_jobs)}")
 
@@ -1282,16 +1351,12 @@ def run_lead_sourcing_pipeline(
         # (IT / staffing / government), and confidential/blank employers — cases
         # the keyword filters cannot detect from a bare brand name. Missing
         # attributes are filled by a bounded, cached LLM enrichment step first.
-        # Paid research is limited to the request and to half the remaining credits,
-        # so it can never spend the credits the leads themselves need.
+        # Research isn't billed to the workspace (it pays only for saved leads), but
+        # it still costs the platform, so it scales with the request.
         from app.services.credit_metering import affordable_quantity
         if max_leads:
             enrich_max_companies = min(enrich_max_companies,
                                        max_leads * FIRMOGRAPHIC_LOOKUPS_PER_REQUESTED_LEAD)
-        affordable_lookups = affordable_quantity(db, tenant_id, "firmographic_lookup",
-                                                 share=RESEARCH_CREDIT_SHARE)
-        if affordable_lookups is not None:
-            enrich_max_companies = min(enrich_max_companies, affordable_lookups)
         unique_jobs = _apply_company_gate(
             db,
             unique_jobs,
@@ -1314,10 +1379,6 @@ def run_lead_sourcing_pipeline(
             if max_leads:
                 applicant_scrape_max_lookups = min(applicant_scrape_max_lookups,
                                                    max_leads * APPLICANT_LOOKUPS_PER_REQUESTED_LEAD)
-            affordable_scrapes = affordable_quantity(db, tenant_id, "applicant_scrape",
-                                                     share=RESEARCH_CREDIT_SHARE)
-            if affordable_scrapes is not None:
-                applicant_scrape_max_lookups = min(applicant_scrape_max_lookups, affordable_scrapes)
             unique_jobs = _apply_applicant_gate(
                 db,
                 unique_jobs,
@@ -1438,6 +1499,12 @@ def run_lead_sourcing_pipeline(
         _meter_inserted()
         db.commit()
 
+        if (fetch_budget is not None and counters["stopped_reason"] is None
+                and counters["jobs_fetched"] >= fetch_budget["limit"]):
+            # Every job asked for was fetched; the rest were duplicates or filtered
+            # out (never charged).
+            counters["stopped_reason"] = "fetch_limit_reached"
+
         # Auto-enrich newly inserted leads from existing company contacts
         auto_enriched = _auto_enrich_new_leads(db, newly_inserted_leads, tenant_id=tenant_id)
         counters["auto_enriched"] = auto_enriched
@@ -1481,6 +1548,8 @@ def run_lead_sourcing_pipeline(
             "per_sub_source_detail": per_sub_source_detail,
             "api_diagnostics": api_diagnostics_list,
             "requested_max_leads": counters["requested_max_leads"],
+            "fetch_limit": counters.get("fetch_limit"),
+            "jobs_fetched": counters.get("jobs_fetched", 0),
             "stopped_reason": counters["stopped_reason"],
             "leads_not_saved": counters["leads_not_saved"],
         })
@@ -1633,9 +1702,10 @@ def _apply_applicant_gate(
     from app.services.applicant_enrichment import resolve_applicant_counts
     from app.services.applicant_parser import applicant_count_exceeds
 
+    # Lead sourcing charges only for the leads it saves, so the scrape isn't billed.
     counts = resolve_applicant_counts(
         db, jobs, api_key, max_lookups=max_lookups, timeout=timeout,
-        tenant_id=tenant_id, run_id=run_id,
+        tenant_id=tenant_id, run_id=run_id, bill_tenant=False,
     )
     if not counts:
         return jobs
@@ -1713,8 +1783,10 @@ def _apply_company_gate(
         if missing:
             try:
                 from app.services.company_enrichment import resolve_company_metadata_batch
+                # Not billed: lead sourcing charges only for the leads it saves.
                 meta = resolve_company_metadata_batch(
                     db, missing, tenant_id=tenant_id, max_llm_calls=enrich_max_companies,
+                    bill_tenant=False,
                 )
             except Exception as e:  # enrichment is best-effort; never fail the run
                 logger.warning(f"Company metadata enrichment failed: {e}")

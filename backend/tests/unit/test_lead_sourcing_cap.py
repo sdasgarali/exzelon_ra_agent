@@ -10,7 +10,9 @@ from app.core.credit_costs import estimate_run_credits
 from app.core.settings_resolver import set_tenant_setting
 from app.services.credit_metering import affordable_quantity, get_balance, spend
 from app.services.pipelines import lead_sourcing
-from app.services.pipelines.lead_sourcing import MAX_LEADS_PER_RUN_LIMIT, resolve_max_leads
+from app.services.pipelines.lead_sourcing import (
+    MAX_LEADS_PER_RUN_LIMIT, MIN_LEADS_PER_RUN, resolve_max_leads,
+)
 from tests.unit.test_loopholes_credits import _enforce, _pipeline_headers, _set_available
 from tests.unit.test_loopholes_pipelines import (
     _billed, _cost, _patch_sourcing, _source_jobs, _tenant,
@@ -42,7 +44,9 @@ def test_resolve_max_leads_prefers_request_then_setting(db_session):
     set_tenant_setting(db_session, "lead_sourcing_max_leads_per_run", 40, tenant_id=t.tenant_id)
     db_session.commit()
     assert resolve_max_leads(db_session, t.tenant_id) == 40
-    assert resolve_max_leads(db_session, t.tenant_id, 7) == 7
+    assert resolve_max_leads(db_session, t.tenant_id, 12) == 12
+    # Below the minimum is raised to it.
+    assert resolve_max_leads(db_session, t.tenant_id, 7) == MIN_LEADS_PER_RUN
 
     set_tenant_setting(db_session, "lead_sourcing_max_leads_per_run", 99_999, tenant_id=t.tenant_id)
     db_session.commit()
@@ -80,13 +84,13 @@ def test_run_saves_at_most_max_leads(db_session, monkeypatch):
 
 def test_run_uses_workspace_default_cap(db_session, monkeypatch):
     t = _tenant(db_session, "cap-b")
-    set_tenant_setting(db_session, "lead_sourcing_max_leads_per_run", 5, tenant_id=t.tenant_id)
+    set_tenant_setting(db_session, "lead_sourcing_max_leads_per_run", 10, tenant_id=t.tenant_id)
     db_session.commit()
-    _patch_sourcing(monkeypatch, db_session, _source_jobs(12))
+    _patch_sourcing(monkeypatch, db_session, _source_jobs(15))
 
     result = _run(t.tenant_id)
 
-    assert _stored(db_session, t.tenant_id) == 5
+    assert _stored(db_session, t.tenant_id) == 10
     assert result["stopped_reason"] == "max_leads_reached"
 
 
@@ -187,7 +191,8 @@ def test_company_research_scales_with_max_leads(db_session, monkeypatch):
     assert seen["enrich_max_companies"] == 10 * lead_sourcing.FIRMOGRAPHIC_LOOKUPS_PER_REQUESTED_LEAD
 
 
-def test_company_research_limited_to_half_the_balance(db_session, monkeypatch):
+def test_company_research_is_not_limited_by_credits(db_session, monkeypatch):
+    # Research isn't billed to the workspace any more, so its balance doesn't cap it.
     t = _tenant(db_session, "research-b")
     _enforce(monkeypatch)
     _set_available(db_session, t.tenant_id, 100)
@@ -197,8 +202,42 @@ def test_company_research_limited_to_half_the_balance(db_session, monkeypatch):
 
     _run(t.tenant_id)
 
-    # 50 credits for research at 3 per lookup.
-    assert seen["enrich_max_companies"] == 16
+    from app.core.config import settings
+    assert seen["enrich_max_companies"] == settings.LEAD_SOURCING_ENRICH_MAX_COMPANIES
+
+
+def test_company_gate_research_is_not_billed(db_session, monkeypatch):
+    from app.services import company_enrichment
+    seen = {}
+
+    def _resolve(db, companies, **kw):
+        seen.update(kw)
+        return {}
+    monkeypatch.setattr(company_enrichment, "resolve_company_metadata_batch", _resolve)
+
+    lead_sourcing._apply_company_gate(
+        db_session, [{"client_name": "Acme Bakery", "job_title": "HR Manager"}], {},
+        tenant_id=1, enrich=True,
+    )
+
+    assert seen["bill_tenant"] is False
+
+
+def test_applicant_scrape_is_not_billed(db_session, monkeypatch):
+    from app.services import applicant_enrichment
+    seen = {}
+
+    def _resolve(db, jobs, api_key, **kw):
+        seen.update(kw)
+        return {}
+    monkeypatch.setattr(applicant_enrichment, "resolve_applicant_counts", _resolve)
+
+    lead_sourcing._apply_applicant_gate(
+        db_session, [{"job_link": "https://www.linkedin.com/jobs/view/1"}], {},
+        api_key="k", tenant_id=1,
+    )
+
+    assert seen["bill_tenant"] is False
 
 
 def test_affordable_quantity(db_session, monkeypatch):
@@ -235,7 +274,7 @@ def test_endpoint_small_run_needs_only_its_own_credits(client, db_session, test_
                        params={"max_leads": 11}).status_code == 402
 
 
-@pytest.mark.parametrize("bad", [0, -1, MAX_LEADS_PER_RUN_LIMIT + 1])
+@pytest.mark.parametrize("bad", [0, -1, MIN_LEADS_PER_RUN - 1, MAX_LEADS_PER_RUN_LIMIT + 1])
 def test_endpoint_rejects_out_of_range_cap(client, db_session, test_tenant, sa_headers, monkeypatch, bad):
     h = _pipeline_headers(db_session, test_tenant, sa_headers, monkeypatch, credits=500)
     r = client.post("/api/v1/pipelines/lead-sourcing/run", headers=h, params={"max_leads": bad})
@@ -250,7 +289,8 @@ def test_run_options_endpoint(client, db_session, test_tenant, sa_headers, monke
     r = client.get("/api/v1/pipelines/lead-sourcing/run-options", headers=h)
 
     assert r.status_code == 200, r.text
-    assert r.json() == {"default_max_leads": 25, "max_leads_limit": MAX_LEADS_PER_RUN_LIMIT,
+    assert r.json() == {"default_max_leads": 25, "min_leads": MIN_LEADS_PER_RUN,
+                        "max_leads_limit": MAX_LEADS_PER_RUN_LIMIT,
                         "credits_per_lead": 1.0, "affordable_leads": 40}
 
 
@@ -276,7 +316,7 @@ def test_run_dialog_can_save_and_clear_the_default(client, db_session, test_tena
     assert resolve_max_leads(db_session, test_tenant.tenant_id) is None
 
 
-@pytest.mark.parametrize("bad", [0, -2, MAX_LEADS_PER_RUN_LIMIT + 1])
+@pytest.mark.parametrize("bad", [0, -2, MIN_LEADS_PER_RUN - 1, MAX_LEADS_PER_RUN_LIMIT + 1])
 def test_default_rejects_out_of_range(client, db_session, test_tenant, sa_headers, monkeypatch, bad):
     h = _pipeline_headers(db_session, test_tenant, sa_headers, monkeypatch, credits=500)
     r = client.put("/api/v1/pipelines/lead-sourcing/default-max-leads", headers=h, json={"max_leads": bad})

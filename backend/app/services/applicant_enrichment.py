@@ -43,8 +43,12 @@ def resolve_applicant_counts(
     timeout: int = 20,
     tenant_id: Optional[int] = None,
     run_id: Optional[int] = None,
+    bill_tenant: bool = True,
 ) -> Dict[int, int]:
     """Scrape + parse applicant counts for eligible jobs.
+
+    `bill_tenant=False` skips the workspace credit charge (the Firecrawl cost is
+    still recorded) — lead sourcing charges only for the leads it saves.
 
     Returns ``{id(job): applicant_count}`` for every job we could resolve a count
     for. Jobs without a scrapable URL, beyond the lookup budget, or with no
@@ -82,8 +86,9 @@ def resolve_applicant_counts(
             logger.warning("Firecrawl cost tracking failed", error=str(e))
 
         # Firecrawl bills per scrape whether or not the page yielded a count.
-        from app.services.credit_metering import meter
-        meter(db, tenant_id, "applicant_scrape", scrapes, reference_id=str(run_id or ""))
+        if bill_tenant:
+            from app.services.credit_metering import meter
+            meter(db, tenant_id, "applicant_scrape", scrapes, reference_id=str(run_id or ""))
 
     logger.info("Applicant enrichment complete", scrapes=scrapes, resolved=len(results))
     return results
