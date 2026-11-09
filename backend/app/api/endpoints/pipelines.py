@@ -91,7 +91,11 @@ def parse_counters(counters_json: str) -> dict:
                 "leads_enriched": leads_enriched,
                 "contacts_reused": contacts_reused,
                 "api_calls_saved": api_calls_saved,
-                "auto_enriched_leads": auto_enriched_leads
+                "auto_enriched_leads": auto_enriched_leads,
+                # Lead sourcing: why the run ended early, if it did.
+                "requested_max_leads": counters.get("requested_max_leads"),
+                "stopped_reason": counters.get("stopped_reason"),
+                "leads_not_saved": counters.get("leads_not_saved", 0),
             }
     except (json.JSONDecodeError, TypeError):
         pass
@@ -107,7 +111,10 @@ def parse_counters(counters_json: str) -> dict:
         "leads_enriched": 0,
         "contacts_reused": 0,
         "api_calls_saved": 0,
-        "auto_enriched_leads": 0
+        "auto_enriched_leads": 0,
+        "requested_max_leads": None,
+        "stopped_reason": None,
+        "leads_not_saved": 0,
     }
 
 
@@ -165,6 +172,9 @@ async def list_job_runs(
             "records_processed": counters["records_processed"],
             "records_success": counters["records_success"],
             "records_failed": counters["records_failed"],
+            "requested_max_leads": counters["requested_max_leads"],
+            "stopped_reason": counters["stopped_reason"],
+            "leads_not_saved": counters["leads_not_saved"],
             "error_message": r.error_message,
             "triggered_by": r.triggered_by,
             "duration_seconds": duration,
@@ -342,14 +352,23 @@ async def run_lead_sourcing(
     background_tasks: BackgroundTasks,
     sources: List[str] = Query(default=["linkedin", "indeed"]),
     lob_id: Optional[int] = Query(default=None, description="LOB to scope lead sources"),
+    max_leads: Optional[int] = Query(
+        default=None, ge=1, le=5000,
+        description="Most new leads this run may save. Omit to use the workspace default "
+                    "(Source Tuning → Default leads per run; 0 there = no cap).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read_write')),
     tenant_id: int = Depends(require_tenant_with_budget),
 ):
-    """Run lead sourcing pipeline."""
-    from app.services.pipelines.lead_sourcing import run_lead_sourcing_pipeline
+    """Run lead sourcing pipeline.
 
-    _gate_run_estimate(db, tenant_id, "lead_sourcing")
+    The run stops at `max_leads`, or as soon as the workspace runs out of credits.
+    """
+    from app.services.pipelines.lead_sourcing import resolve_max_leads, run_lead_sourcing_pipeline
+
+    effective_max_leads = resolve_max_leads(db, tenant_id, max_leads)
+    _gate_run_estimate(db, tenant_id, "lead_sourcing", units=effective_max_leads)
 
     background_tasks.add_task(
         run_lead_sourcing_pipeline,
@@ -357,12 +376,34 @@ async def run_lead_sourcing(
         triggered_by=current_user.email,
         tenant_id=tenant_id,
         lob_id=lob_id,
+        max_leads=effective_max_leads,
     )
 
     return {
         "message": f"Lead sourcing started for sources: {sources}",
         "status": "processing",
         "lob_id": lob_id,
+        "max_leads": effective_max_leads,
+    }
+
+
+@router.get("/lead-sourcing/run-options")
+async def lead_sourcing_run_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_module_tab_permission('pipelines', 'lead_sourcing', 'read')),
+    tenant_id: Optional[int] = Depends(get_current_tenant_id),
+):
+    """What the run dialog needs: the workspace's default cap and how many leads the
+    current balance pays for (`affordable_leads` is null when credits aren't enforced)."""
+    from app.core.credit_costs import cost_for
+    from app.services.credit_metering import affordable_quantity
+    from app.services.pipelines.lead_sourcing import MAX_LEADS_PER_RUN_LIMIT, resolve_max_leads
+
+    return {
+        "default_max_leads": resolve_max_leads(db, tenant_id),
+        "max_leads_limit": MAX_LEADS_PER_RUN_LIMIT,
+        "credits_per_lead": cost_for("lead_sourced", db=db),
+        "affordable_leads": affordable_quantity(db, tenant_id, "lead_sourced"),
     }
 
 

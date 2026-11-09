@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { pipelinesApi, dashboardApi, leadsApi, contactsApi, emailPreviewApi } from '@/lib/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { affordableHint, parseMaxLeads, stopMessage, type StoppedReason } from '@/lib/lead-sourcing'
 import { PipelineReportModal } from '@/components/pipeline-report-modal'
 import { useLobStore } from '@/lib/lob-store'
 import { useNeedsTenantSelection, SelectTenantBanner } from '@/components/tenant-guard'
@@ -54,6 +55,9 @@ interface PipelineRun {
   is_cancel_requested?: boolean
   progress_pct?: number
   logs_path?: string | null
+  requested_max_leads?: number | null
+  stopped_reason?: StoppedReason
+  leads_not_saved?: number
 }
 
 interface PipelineStats {
@@ -107,6 +111,13 @@ export default function PipelinesPage() {
 
   // Confirmation dialog states
   const [showLeadSourcingConfirm, setShowLeadSourcingConfirm] = useState(false)
+  // "How many leads?" in the run dialog. Blank = the workspace default.
+  const [leadSourcingMaxLeads, setLeadSourcingMaxLeads] = useState('')
+  const [leadSourcingOptions, setLeadSourcingOptions] = useState<{
+    default_max_leads: number | null
+    max_leads_limit: number
+    affordable_leads: number | null
+  }>({ default_max_leads: null, max_leads_limit: 5000, affordable_leads: null })
   const [showRunAllLeadsConfirm, setShowRunAllLeadsConfirm] = useState(false)
   const [showRunAllContactsConfirm, setShowRunAllContactsConfirm] = useState(false)
 
@@ -513,7 +524,12 @@ export default function PipelinesPage() {
 
       const latestRun = runsData[0]
       if (latestRun && latestRun.status === 'completed') {
-        setSuccess(`Pipeline completed! Processed: ${latestRun.records_processed}, Success: ${latestRun.records_success}, Failed: ${latestRun.records_failed}`)
+        const stopped = stopMessage(latestRun)
+        if (latestRun.stopped_reason === 'credits_exhausted' && stopped) {
+          setError(stopped)
+        } else {
+          setSuccess(`Pipeline completed! Processed: ${latestRun.records_processed}, Success: ${latestRun.records_success}, Failed: ${latestRun.records_failed}${stopped ? `. ${stopped}` : ''}`)
+        }
       } else if (latestRun && latestRun.status === 'failed') {
         setError(`Pipeline failed: ${latestRun.error_message || 'Unknown error'}`)
       } else if (attempts >= maxAttempts) {
@@ -552,6 +568,21 @@ export default function PipelinesPage() {
     setTimeout(poll, 2000)
   }
 
+  const maxLeadsCheck = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit)
+
+  // Open the run dialog prefilled with the workspace default and the credit hint.
+  // If the options can't be loaded the dialog still works: blank = workspace default.
+  const openLeadSourcingDialog = async () => {
+    setShowLeadSourcingConfirm(true)
+    try {
+      const options = await pipelinesApi.getLeadSourcingRunOptions()
+      setLeadSourcingOptions(options)
+      setLeadSourcingMaxLeads(options.default_max_leads ? String(options.default_max_leads) : '')
+    } catch {
+      setLeadSourcingMaxLeads('')
+    }
+  }
+
   // Run pipeline with polling (for lead-sourcing only now; email-validation uses contact selector)
   const runPipeline = async (pipelineType: string) => {
     // Set running state
@@ -567,8 +598,11 @@ export default function PipelinesPage() {
       // Start the pipeline
       switch (pipelineType) {
         case 'lead-sourcing':
-          await pipelinesApi.runLeadSourcing(['indeed', 'linkedin', 'glassdoor'], activeLobId)
-          setSuccess(`Lead sourcing pipeline started!${activeLobId ? ` (LOB: ${getActiveLob()?.name || activeLobId})` : ''}`)
+          {
+            const maxLeads = parseMaxLeads(leadSourcingMaxLeads, leadSourcingOptions.max_leads_limit).value
+            await pipelinesApi.runLeadSourcing(['indeed', 'linkedin', 'glassdoor'], activeLobId, maxLeads)
+            setSuccess(`Lead sourcing pipeline started!${maxLeads ? ` Up to ${maxLeads.toLocaleString()} leads.` : ''}${activeLobId ? ` (LOB: ${getActiveLob()?.name || activeLobId})` : ''}`)
+          }
           break
         case 'contact-enrichment':
           await pipelinesApi.runContactEnrichment()
@@ -744,7 +778,7 @@ export default function PipelinesPage() {
             </span>
           )}
           <button
-            onClick={() => setShowLeadSourcingConfirm(true)}
+            onClick={openLeadSourcingDialog}
             disabled={leadSourcingRunning || needsTenantSelection}
             title={runDisabledTitle}
             className={`w-full text-sm text-white rounded-lg px-4 py-2 font-medium flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${leadSourcingRunning ? 'bg-indigo-400 animate-pulse cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
@@ -969,6 +1003,11 @@ export default function PipelinesPage() {
                   <span className="text-green-600">{run.records_success || 0}</span>
                   {' / '}
                   <span className="text-red-600">{run.records_failed || 0}</span>
+                  {stopMessage(run) && (
+                    <div className={`mt-1 text-xs ${run.stopped_reason === 'credits_exhausted' ? 'text-amber-700' : 'text-gray-500'}`}>
+                      {stopMessage(run)}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">
                   {run.triggered_by || 'system'}
@@ -1056,11 +1095,34 @@ export default function PipelinesPage() {
         })()}
         confirmLabel="Run Pipeline"
         variant="info"
+        confirmDisabled={!!maxLeadsCheck.error || leadSourcingOptions.affordable_leads === 0}
         onConfirm={() => {
           setShowLeadSourcingConfirm(false)
           runPipeline('lead-sourcing')
         }}
-      />
+      >
+        <label htmlFor="lead-sourcing-max-leads" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          How many leads?
+        </label>
+        <input
+          id="lead-sourcing-max-leads"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={leadSourcingOptions.max_leads_limit}
+          value={leadSourcingMaxLeads}
+          onChange={(e) => setLeadSourcingMaxLeads(e.target.value)}
+          placeholder="No limit"
+          aria-describedby="lead-sourcing-max-leads-hint"
+          aria-invalid={!!maxLeadsCheck.error}
+          className="input mt-1 w-full"
+        />
+        <p id="lead-sourcing-max-leads-hint" className={`mt-1 text-xs ${maxLeadsCheck.error ? 'text-red-600' : 'text-gray-500'}`}>
+          {maxLeadsCheck.error
+            || affordableHint(leadSourcingOptions.affordable_leads)
+            || 'Leave blank for no limit.'}
+        </p>
+      </ConfirmDialog>
 
       {/* "Run for All Leads" Confirmation */}
       <ConfirmDialog

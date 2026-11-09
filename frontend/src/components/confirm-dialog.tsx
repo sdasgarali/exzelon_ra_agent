@@ -12,6 +12,10 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   variant?: "danger" | "warning" | "info";
   loading?: boolean;
+  /** Extra content under the message, e.g. an input the confirmation depends on. */
+  children?: React.ReactNode;
+  /** Disable the confirm button (e.g. while that input is invalid). */
+  confirmDisabled?: boolean;
 }
 
 export function ConfirmDialog({
@@ -24,6 +28,8 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   variant = "danger",
   loading = false,
+  children,
+  confirmDisabled = false,
 }: ConfirmDialogProps) {
   if (!open) return null;
 
@@ -52,6 +58,7 @@ export function ConfirmDialog({
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{message}</p>
+            {children && <div className="mt-4">{children}</div>}
           </div>
         </div>
 
@@ -65,7 +72,7 @@ export function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 ${confirmColors[variant]}`}
           >
             {loading ? "Processing..." : confirmLabel}

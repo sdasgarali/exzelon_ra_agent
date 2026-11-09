@@ -458,12 +458,23 @@ export const pipelinesApi = {
     const response = await api.get('/pipelines/runs', { params })
     return response.data
   },
-  runLeadSourcing: async (sources: string[], lobId?: number | null) => {
+  /** `maxLeads` caps how many new leads the run saves; omit for the workspace default. */
+  runLeadSourcing: async (sources: string[], lobId?: number | null, maxLeads?: number | null) => {
     const params: Record<string, any> = { sources }
     if (lobId) params.lob_id = lobId
+    if (maxLeads) params.max_leads = maxLeads
     const response = await api.post('/pipelines/lead-sourcing/run', null, {
       params,
     })
+    return response.data
+  },
+  getLeadSourcingRunOptions: async (): Promise<{
+    default_max_leads: number | null
+    max_leads_limit: number
+    credits_per_lead: number
+    affordable_leads: number | null
+  }> => {
+    const response = await api.get('/pipelines/lead-sourcing/run-options')
     return response.data
   },
   getLobLeadSources: async (lobId?: number | null) => {

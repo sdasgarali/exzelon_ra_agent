@@ -639,6 +639,41 @@ def has_credit_budget(
         return True
 
 
+def affordable_quantity(
+    db: Session,
+    tenant_id: Optional[int],
+    action: str,
+    *,
+    share: float = 1.0,
+) -> Optional[int]:
+    """How many `action`s the tenant can still pay for, or None when it isn't metered.
+
+    For pipelines that must stop the moment credits run out instead of spending into
+    an overage. `share` limits the answer to that fraction of the balance, so one
+    step (e.g. company research) can't eat the credits the next step needs.
+
+    None means "no limit": enforcement off, super-admin/internal work, a free action,
+    or a balance read failure — which fails open like :func:`has_credit_budget`.
+    """
+    if tenant_id is None:
+        return None
+    try:
+        if not enforcement_enabled(db, tenant_id):
+            return None
+        unit = cost_for(action, 1, db=db)
+        if unit <= 0:
+            return None
+        balance = get_balance(db, tenant_id)
+        # Another pipeline may have spent since this session last read the row.
+        db.flush()
+        db.refresh(balance)
+        available = max(0.0, balance.total_available) * max(0.0, min(share, 1.0))
+        return int(available // unit)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("affordable_quantity_failed", tenant_id=tenant_id, action=action, error=str(e))
+        return None
+
+
 def record_usage(
     db: Session,
     tenant_id: int,
