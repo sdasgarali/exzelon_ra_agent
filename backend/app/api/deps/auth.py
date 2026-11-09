@@ -176,6 +176,13 @@ def require_role(allowed_roles: List[UserRole]):
     return role_checker
 
 
+#: Settings tabs only a super admin may open. They hold the platform-wide provider
+#: keys (job boards, Resource Pool, contact-discovery providers) that every
+#: workspace falls back to, so a workspace admin must never read or change them,
+#: whatever the role matrix grants.
+SUPER_ADMIN_ONLY_SETTINGS_TABS = frozenset({'job_source_apis', 'contacts'})
+
+
 def get_module_tab_access(db: Session, user: User, module_key: str, tab_key: str) -> str:
     """Returns the user's access level for a specific tab within any module.
 
@@ -185,6 +192,9 @@ def get_module_tab_access(db: Session, user: User, module_key: str, tab_key: str
     """
     if user.role == UserRole.SUPER_ADMIN:
         return 'full'
+
+    if module_key == 'settings' and tab_key in SUPER_ADMIN_ONLY_SETTINGS_TABS:
+        return 'no_access'
 
     from app.core.settings_resolver import get_tenant_setting
     role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
@@ -228,22 +238,20 @@ def get_all_settings_tab_permissions(db: Session, user: User) -> dict:
 
     from app.core.settings_resolver import get_tenant_setting
     role_perms = get_tenant_setting(db, 'role_permissions', tenant_id=user.tenant_id, default=None)
-    if not role_perms or not isinstance(role_perms, dict):
-        return {tab: 'no_access' for tab in tabs}
-
-    role_config = _role_matrix_config(db, user, role_perms)
-    settings_perm = role_config.get('settings')
-
-    if settings_perm is None:
-        return {tab: 'no_access' for tab in tabs}
+    settings_perm = None
+    if role_perms and isinstance(role_perms, dict):
+        settings_perm = _role_matrix_config(db, user, role_perms).get('settings')
 
     if isinstance(settings_perm, str):
-        return {tab: settings_perm for tab in tabs}
+        perms = {tab: settings_perm for tab in tabs}
+    elif isinstance(settings_perm, dict):
+        perms = {tab: settings_perm.get(tab, 'no_access') for tab in tabs}
+    else:
+        perms = {tab: 'no_access' for tab in tabs}
 
-    if isinstance(settings_perm, dict):
-        return {tab: settings_perm.get(tab, 'no_access') for tab in tabs}
-
-    return {tab: 'no_access' for tab in tabs}
+    for tab in SUPER_ADMIN_ONLY_SETTINGS_TABS:
+        perms[tab] = 'no_access'
+    return perms
 
 
 PERMISSION_LEVELS = ['no_access', 'read', 'read_write', 'full']
