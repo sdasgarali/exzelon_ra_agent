@@ -39,6 +39,11 @@ class Tenant:
 - **Impersonation**: `X-Tenant-ID` header or `/admin/tenants/{id}/impersonate` endpoint
 - **Admin panel**: `/admin/tenants` — list, detail, update, deactivate tenants
 - **Cross-tenant visibility**: All queries return all tenants' data when `tenant_id=None`
+- **Super-admin-only Settings tabs**: `job_source_apis` and `contacts` (`SUPER_ADMIN_ONLY_SETTINGS_TABS`
+  in `api/deps/auth.py`). They hold the platform provider keys every workspace falls back to, so
+  workspace admins get `no_access` there regardless of the role matrix (list, read, write and
+  test-connection all 403/omit). The tabs are not offered in the Roles matrix. Other tabs still
+  return global secret rows to admins who can read the tab — masking those is an open item.
 
 ## User ↔ Tenant Binding (`api/endpoints/users.py`)
 

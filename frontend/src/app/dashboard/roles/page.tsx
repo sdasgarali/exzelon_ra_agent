@@ -59,7 +59,9 @@ const MODULES: ModuleDef[] = [
   { key: 'attribution', label: 'Attribution' },
   { key: 'visitors', label: 'Visitors' },
   { key: 'automation', label: 'Automation Control' },
-  { key: 'settings', label: 'Settings', tabs: ['Job Filters', 'Job Source APIs', 'AI/LLM', 'Contacts', 'Validation', 'Outreach', 'Business Rules', 'Deliverability', 'LOB Lead Sources', 'Source Tuning'], tabKeys: ['job_filters', 'job_source_apis', 'ai_llm', 'contacts', 'validation', 'outreach', 'business_rules', 'deliverability', 'lob_lead_sources', 'source_tuning'], independentTabs: true },
+  // Job Source APIs and Contacts are super-admin only (platform provider keys), so
+  // they are not grantable here — see SUPER_ADMIN_ONLY_SETTINGS_TABS in api/deps/auth.py.
+  { key: 'settings', label: 'Settings', tabs: ['Job Filters', 'AI/LLM', 'Validation', 'Outreach', 'Business Rules', 'Deliverability', 'LOB Lead Sources', 'Source Tuning'], tabKeys: ['job_filters', 'ai_llm', 'validation', 'outreach', 'business_rules', 'deliverability', 'lob_lead_sources', 'source_tuning'], independentTabs: true },
   { key: 'lob', label: 'Lines of Business' },
   { key: 'billing', label: 'Billing' },
   { key: 'backups', label: 'Data Backups' },
