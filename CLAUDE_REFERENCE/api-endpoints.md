@@ -47,6 +47,11 @@ All endpoints are mounted under `/api/v1`.
 | `/gdpr` | `gdpr.py` | GDPR data-subject rights (admin, tenant-scoped): `GET /gdpr/export?email=` (Right-to-Access — all PII: contacts, outreach events, inbox, visits, suppression status); `POST /gdpr/erase {email}` (Right-to-Erasure — anonymises contact PII, keeps rows for FK integrity, suppresses the address, audits; requires impersonated tenant) (ELR-024) |
 | `/public/site-info` | `public.py` | **No auth**, rate-limited 120/min, `Cache-Control: public, max-age=300`. Returns `{support_email, privacy_email (falls back to SUPPORT_EMAIL), legal_entity_name, legal_address, legal_jurisdiction, terms_version, payments_enabled}` from config. `payments_enabled` = `BILLING_ENABLED` and `STRIPE_SECRET_KEY` and a Pro monthly price (`STRIPE_PRICE_PRO`) — same conditions as subscription checkout. Consumed by `frontend/src/lib/site-info.ts` (legal pages, footer, billing buttons). |
 
+> **Public API reference:** `/api/docs` (Swagger), `/api/redoc`, `/api/openapi.json` are public and
+> exempt from the API CSP (they load bundles from cdn.jsdelivr.net). `admin_tenants` and `backups`
+> are mounted with `include_in_schema=False` so platform-ops routes are not published; they are
+> still served and role-gated.
+>
 > **Plan gating (Phase 3):** several routers are mounted in `api/router.py` with
 > `dependencies=[Depends(require_feature(...))]` and return **402** with a structured body
 > (`{code: "feature_not_in_plan", required_plan, ...}`) for plans that don't include them:

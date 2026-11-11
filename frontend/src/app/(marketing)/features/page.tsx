@@ -3,11 +3,14 @@ import { Search, Mail, Inbox, Shield, Briefcase, BarChart3, Zap, Brain, Globe, U
 import { Check } from 'lucide-react'
 import ScrollReveal from '@/components/marketing/ScrollReveal'
 import CTABanner from '@/components/marketing/CTABanner'
+import { OG_IMAGE } from '@/lib/og-image'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/features' },
   title: 'Features',
   description: 'Explore all features: 10 lead sources, 7 contact providers, multi-step campaigns, AI content generation, unified inbox, CRM deals, warmup engine, and analytics.',
   openGraph: {
+    images: [OG_IMAGE],
     title: 'Features — NeuraLeads',
     description: 'Complete outreach platform features. Lead sourcing, campaigns, inbox, CRM, warmup, analytics.',
   },

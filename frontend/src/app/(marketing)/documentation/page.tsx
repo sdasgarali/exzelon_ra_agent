@@ -3,12 +3,14 @@ import { marketingFontVars } from '@/lib/marketing-fonts'
 import DocsRail from './DocsRail'
 import { SECTIONS } from './sections'
 import styles from './handbook.module.css'
+import { OG_IMAGE } from '@/lib/og-image'
 
 export const metadata: Metadata = {
   title: 'Documentation',
   description:
     'The complete NeuraLeads customer handbook — every screen, workflow, safety rule, integration, plan and default, explained for the people who use the platform.',
   openGraph: {
+    images: [OG_IMAGE],
     title: 'Documentation — NeuraLeads',
     description:
       'Every feature explained: lead sourcing, contact enrichment, validation, campaigns, the send gate, deals, AI, integrations, plans and business rules.',

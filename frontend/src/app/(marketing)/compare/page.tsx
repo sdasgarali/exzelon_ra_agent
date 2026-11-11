@@ -2,11 +2,14 @@ import type { Metadata } from 'next'
 import ComparisonTable from '@/components/marketing/ComparisonTable'
 import CTABanner from '@/components/marketing/CTABanner'
 import ScrollReveal from '@/components/marketing/ScrollReveal'
+import { OG_IMAGE } from '@/lib/og-image'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/compare' },
   title: 'Compare',
   description: 'Side-by-side comparison of NeuraLeads vs leading cold email platforms. See scores across 8 categories and 50+ features.',
   openGraph: {
+    images: [OG_IMAGE],
     title: 'NeuraLeads vs Leading Outreach Platforms',
     description: 'Feature-by-feature comparison. NeuraLeads scores 135/150 vs top competitors.',
   },
