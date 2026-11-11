@@ -190,6 +190,7 @@ must pass `X-Forwarded-Proto $scheme` (the API only sends HSTS when it is `https
 To apply on the live file WITHOUT clobbering Certbot's SSL lines, edit in place: delete the
 5 security `add_header` lines (server block + `location /`) and add
 `proxy_set_header X-Forwarded-Proto $scheme;` to `location /health`, then `nginx -t && systemctl reload nginx`.
+Applied to the live file 2026-11-11 (backup `/root/nginx-backups/ra-app.bak-20261111-185024`).
 **Caution:** the `cp` recipe above replaces the live file with the template, whose SSL
 lines are commented out — only use it if you re-run certbot afterwards.
 **Gotcha:** never leave config backups in `sites-enabled/` — nginx `include`s `*`, so a

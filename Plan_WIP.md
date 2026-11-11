@@ -1,14 +1,17 @@
 # Plan WIP
 
 ## SITE AUDIT FIXES (2026-11-11) — branch bugfix/site-audit-fixes
-> Live audit of https://neuraleads.ai found 5 issues + 3 minor. User: "fix all of them". Not deployed yet.
+> Live audit of https://neuraleads.ai found 5 issues + 3 minor. User: "fix all of them". DEPLOYED 2026-11-11 18:50 UTC (d311345, PR #150).
 - [x] 1. /api/docs blank: CSP exemption lists /docs but docs live at /api/docs (security_headers.py) + fix test
 - [x] 2. Public OpenAPI exposes super-admin routes: hide admin_tenants + backups routers from schema (docs stay public)
 - [x] 3. No robots.txt / sitemap.xml: add frontend app/robots.ts + app/sitemap.ts
 - [x] 4. No og:image / canonical / per-page titles on auth pages: metadataBase, OG image, canonicals
 - [x] 5. Duplicate security headers (nginx + app): drop nginx add_header dupes, pass X-Forwarded-Proto on /health (live nginx needs manual apply on VPS)
 - [x] 6. Minor: /dashboard calls /billing/usage before auth; /features 1px mobile overflow; 404 page has no h1
-- [ ] 7. Tests (pytest security headers + schema, frontend lint/build), PR, then ask before deploy
+- [x] 7. Tests green (backend 2309, jest 171, build OK); PR #150 squash-merged + deployed (pre-deploy dump
+      backups/pre-deploy-20261111-184807.sql.gz). Live nginx ra-app edited in place (backup
+      /root/nginx-backups/ra-app.bak-20261111-185024), nginx -t ok, reloaded. Live re-crawl: all pages clean,
+      headers single, /api/docs renders, robots/sitemap/og live. Leftover: Swagger UI itself scrolls sideways on phones (3rd-party).
 
 ## SESSION_CONTEXT_RETRIEVAL
 > PICKUP 2026-10-08 (session ended 2026-10-07 ~19:00 UTC). Prod 138fb40 + docs, all services up.
