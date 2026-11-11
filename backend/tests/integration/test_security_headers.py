@@ -27,12 +27,31 @@ class TestSecurityHeaders:
         assert "camera=()" in pp
         assert "microphone=()" in pp
 
-    def test_docs_endpoint_skips_csp(self, client):
-        """Swagger UI needs inline scripts, so CSP is skipped for /docs."""
-        resp = client.get("/docs")
-        # /docs may redirect, but should not have restrictive CSP
-        csp = resp.headers.get("Content-Security-Policy", "")
-        # Either no CSP or a permissive one for docs
-        if resp.status_code == 200:
-            # Docs pages should either have no CSP or a relaxed one
-            assert "default-src 'none'" not in csp
+    @pytest.mark.parametrize("path", ["/api/docs", "/api/redoc", "/api/openapi.json"])
+    def test_docs_endpoints_skip_csp(self, client, path):
+        """Swagger UI / ReDoc load their bundles from a CDN, so the docs paths get no CSP.
+
+        Regression: the exemption used to list /docs while the app serves /api/docs,
+        so the CSP blocked the Swagger bundle and the public API docs page was blank.
+        """
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert "Content-Security-Policy" not in resp.headers
+        # The other security headers still apply to the docs pages.
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+class TestPublicApiSchema:
+    """The published OpenAPI schema lists the customer API, not platform-ops routes."""
+
+    def test_admin_and_backup_routes_hidden_from_schema(self, client):
+        paths = client.get("/api/openapi.json").json()["paths"]
+        assert not [p for p in paths if p.startswith("/api/v1/admin/tenants")]
+        assert not [p for p in paths if p.startswith("/api/v1/backups")]
+        # Customer-facing routes are still documented.
+        assert any(p.startswith("/api/v1/leads") for p in paths)
+
+    def test_hidden_routes_still_served(self, client, super_admin_headers):
+        """Leaving a route out of the schema must not unmount it."""
+        resp = client.get("/api/v1/backups", headers=super_admin_headers)
+        assert resp.status_code != 404

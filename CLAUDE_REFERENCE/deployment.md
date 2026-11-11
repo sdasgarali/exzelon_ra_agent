@@ -180,8 +180,18 @@ nginx -t && systemctl reload nginx
 **Caching (2026-08-17):** `location /` sends `Cache-Control: no-cache` on the HTML shell
 (via `proxy_hide_header Cache-Control` + `add_header`) so a new frontend deploy is picked
 up on the next normal reload — no hard refresh needed. Hashed assets under `/_next/static/`
-stay `public, immutable`. Because any `add_header` in a location cancels inheritance of the
-server-level `add_header`s, the 5 security headers are re-declared inside `location /`.
+stay `public, immutable`.
+
+**Security headers (2026-11-11):** owned by the apps, NOT nginx — the API sets them in
+`backend/app/middleware/security_headers.py`, the web app in `frontend/next.config.js`.
+nginx used to add them too, so every header went out twice (API: `X-Frame-Options: DENY,
+SAMEORIGIN`). The template no longer has any security `add_header`; every proxied location
+must pass `X-Forwarded-Proto $scheme` (the API only sends HSTS when it is `https`).
+To apply on the live file WITHOUT clobbering Certbot's SSL lines, edit in place: delete the
+5 security `add_header` lines (server block + `location /`) and add
+`proxy_set_header X-Forwarded-Proto $scheme;` to `location /health`, then `nginx -t && systemctl reload nginx`.
+**Caution:** the `cp` recipe above replaces the live file with the template, whose SSL
+lines are commented out — only use it if you re-run certbot afterwards.
 **Gotcha:** never leave config backups in `sites-enabled/` — nginx `include`s `*`, so a
 `ra-app.bak` there causes `duplicate upstream` and `nginx -t` fails. Keep backups in
 `/root/nginx-backups/`.

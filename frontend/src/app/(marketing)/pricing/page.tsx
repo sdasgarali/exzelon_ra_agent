@@ -3,11 +3,14 @@ import PricingCards from '@/components/marketing/PricingCards'
 import FAQAccordion from '@/components/marketing/FAQAccordion'
 import CTABanner from '@/components/marketing/CTABanner'
 import ScrollReveal from '@/components/marketing/ScrollReveal'
+import { OG_IMAGE } from '@/lib/og-image'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/pricing' },
   title: 'Pricing',
   description: 'A genuinely free tier, then $99/mo for a whole team. No per-seat fees. Credits cover data and AI; sends have their own monthly allowance.',
   openGraph: {
+    images: [OG_IMAGE],
     title: 'Pricing — NeuraLeads',
     description: 'Free forever to start. Pro $99/mo, Max $299/mo, flat — no per-seat charges.',
   },

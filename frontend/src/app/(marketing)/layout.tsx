@@ -34,7 +34,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
     .then((i) => i.support_email || SITE_INFO_FALLBACK.support_email)
     .catch(() => SITE_INFO_FALLBACK.support_email)
   return (
-    <div className={`${archivo.variable} light-only font-archivo marketing-gradient-bg min-h-screen`}>
+    <div className={`${archivo.variable} light-only font-archivo marketing-gradient-bg min-h-screen overflow-x-clip`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

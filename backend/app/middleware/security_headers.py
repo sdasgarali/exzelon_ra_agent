@@ -9,8 +9,10 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 
-# Endpoints where CSP is skipped because Swagger UI requires inline scripts/styles
-_DOCS_PATHS = frozenset({"/docs", "/redoc", "/openapi.json"})
+# Endpoints where CSP is skipped because Swagger UI / ReDoc load their bundles from
+# cdn.jsdelivr.net and run inline scripts. Must match docs_url / redoc_url /
+# openapi_url in main.py — the app serves them under /api/.
+_DOCS_PATHS = frozenset({"/api/docs", "/api/redoc", "/api/openapi.json"})
 
 _CSP_VALUE = (
     "default-src 'self'; "

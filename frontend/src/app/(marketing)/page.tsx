@@ -3,12 +3,15 @@ import Link from 'next/link'
 import Hero from '@/components/marketing/Hero'
 import FeatureGrid from '@/components/marketing/FeatureGrid'
 import FeatureShowcase from '@/components/marketing/FeatureShowcase'
+import { OG_IMAGE } from '@/lib/og-image'
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/' },
   title: 'NeuraLeads — Outbound that knows what not to send',
   description:
     'Ten job boards in, thirty emails out. Three-layer dedup, a company-size gate, seven validation providers and a ten-check send gate before anything reaches a mailbox.',
   openGraph: {
+    images: [OG_IMAGE],
     title: 'NeuraLeads — Outbound that knows what not to send',
     description:
       'Full-pipeline outreach automation with a ten-check send gate on every path. Self-hosted or managed, no per-seat pricing.',

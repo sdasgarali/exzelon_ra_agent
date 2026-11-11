@@ -18,11 +18,16 @@ const mockUser = {
 }
 
 jest.mock('@/lib/store', () => ({
-  useAuthStore: () => ({
-    user: mockUser,
-    logout: jest.fn(),
-    isAuthenticated: () => true,
-  }),
+  // Zustand hooks are called both bare and with a selector (usePlanFeatures).
+  useAuthStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = {
+      user: mockUser,
+      token: 'test-token',
+      logout: jest.fn(),
+      isAuthenticated: () => true,
+    }
+    return selector ? selector(state) : state
+  },
 }))
 
 jest.mock('@/lib/api', () => ({

@@ -41,7 +41,12 @@ api_router.include_router(mailboxes.router)
 api_router.include_router(warmup.router, dependencies=[Depends(require_feature("warmup"))])
 api_router.include_router(templates.router)
 api_router.include_router(audit.router)
-api_router.include_router(backups.router, dependencies=[Depends(require_feature("backups"))])
+# Platform-operations surfaces are left out of the public OpenAPI schema (served at
+# /api/docs) so the published API reference only lists the customer-facing API.
+# The routes themselves are unchanged and stay role-gated.
+api_router.include_router(
+    backups.router, dependencies=[Depends(require_feature("backups"))], include_in_schema=False
+)
 api_router.include_router(campaigns.router)
 api_router.include_router(inbox.router)
 api_router.include_router(webhooks.router, dependencies=[Depends(require_feature("webhooks"))])
@@ -59,7 +64,7 @@ api_router.include_router(sequence_generator.router, dependencies=[Depends(requi
 api_router.include_router(crm_sync.router, dependencies=[Depends(require_feature("crm_sync"))])
 api_router.include_router(deal_tasks.router)
 api_router.include_router(spam_check.router)
-api_router.include_router(admin_tenants.router)
+api_router.include_router(admin_tenants.router, include_in_schema=False)
 api_router.include_router(billing.router)
 api_router.include_router(activity_log.router)
 api_router.include_router(roles.router, dependencies=[Depends(require_feature("custom_roles"))])

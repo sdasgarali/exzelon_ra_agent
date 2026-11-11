@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { billingApi } from '@/lib/api'
+import { useAuthStore } from '@/lib/store'
 
 /**
  * What the current tenant's plan includes.
@@ -17,11 +18,15 @@ import { billingApi } from '@/lib/api'
  * because a request was slow.
  */
 export function usePlanFeatures() {
+  // Logged-out visitors to /dashboard are redirected to /login; without this gate the
+  // query fired first and left a 401 in the console on every such redirect.
+  const hasToken = useAuthStore((s) => !!s.token)
   const { data, isLoading } = useQuery({
     queryKey: ['billing-usage'],
     queryFn: billingApi.usage,
     staleTime: 5 * 60_000,
     retry: false,
+    enabled: hasToken,
   })
 
   const metered: boolean = data?.metered ?? false
