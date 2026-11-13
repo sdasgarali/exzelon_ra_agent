@@ -4,7 +4,7 @@
 > Every assessment advanced warmup_days_completed, so manual "Run Assessment" skipped ramp days (~1,000 manual runs Mar-Sep).
 - [x] 1. assess_mailbox: advance only while day <= calendar days since warmup_started_at (legacy rows w/o start date unchanged)
 - [x] 2. 5 unit tests; full suite 2344 passed
-- [ ] 3. PR, merge, deploy
+- [x] 3. PR #154 merged + DEPLOYED b5b3b73 16:26 UTC (backup pre-deploy-20261113-162534.sql.gz)
 
 ## WARMUP ASSESSMENT HISTORY (2026-11-13) — branch bugfix/warmup-assessment-history
 > Prod: nightly assessment ran once globally, JobRun saved as tenant 1 -> Neuraforz (tenant 2) history had 1 run.
