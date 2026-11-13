@@ -1,7 +1,7 @@
 # Plan WIP
 
-## WARMUP HEALTH SCORE v2 (2026-11-13) — PLANNED, awaiting user decisions D1-D4
-> Plan: docs/PLAN_WARMUP_HEALTH_SCORE_V2.md. Next step: user answers D1-D4, then implement task 2.
+## WARMUP HEALTH SCORE v2 (2026-11-13) — APPROVED (D1 20%, D2 platform age w10, D3 40/60/80, D4 display only)
+> Plan: docs/PLAN_WARMUP_HEALTH_SCORE_V2.md. Next step: implement task 2 on a feature branch.
 
 ## WARMUP FOLLOW-UPS (2026-11-13) — branch bugfix/warmup-maintenance-profiles
 > User: "fix those also" (after #151). Scope: maintenance warmup for warmed mailboxes, invalid profile JSON, exzelon.com DNS.

@@ -1,6 +1,6 @@
 # Plan — Warmup Health Score v2
 
-> Status: **PLANNED, awaiting approval** (2026-11-13). Nothing below is implemented.
+> Status: **APPROVED 2026-11-13** — D1 20%, D2 platform age weight 10, D3 caps 40/60/80, D4 display only. Not yet implemented.
 > Context: prod review on 2026-11-13 (434 mailboxes). The score was calculated correctly
 > but did not track deliverability: brand-new mailboxes showed 85 after one warmup reply, and
 > hr@exzelon.com showed 100 while exzelon.com has no DKIM.
@@ -73,7 +73,7 @@ Response gains `caps_applied: [{reason, cap}]` so the UI can say *why* (e.g. "Ca
 - Frontend `dashboard/warmup/page.tsx` (null score, cap reasons, placement %), deliverability page
 
 ## 4. Tasks
-- [ ] 1. Decisions D1–D4 confirmed by user
+- [x] 1. Decisions D1–D4 confirmed by user (2026-11-13: all recommended options)
 - [ ] 2. Score v2 function + data-sufficiency + caps, behind `warmup_health_score_version` (unit tests per rule)
 - [ ] 3. API/schema/MCP: nullable score, components, `caps_applied`, `data_status`; averages skip nulls
 - [ ] 4. Frontend: "Collecting data", cap reasons, placement column
