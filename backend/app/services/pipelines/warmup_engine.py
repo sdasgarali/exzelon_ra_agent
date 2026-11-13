@@ -215,6 +215,16 @@ def assess_mailbox(mailbox: SenderMailbox, config: Dict[str, Any], db) -> Dict[s
         day = (mailbox.warmup_days_completed or 0) + 1
         total_days = config["total_days"]
 
+        # Advance at most one warmup day per calendar day since the start. Without
+        # this, every extra assessment (manual "Run Assessment", per-mailbox runs)
+        # pushed the mailbox a day further up the ramp.
+        if mailbox.warmup_started_at is not None:
+            days_since_start = (datetime.utcnow().date() - mailbox.warmup_started_at.date()).days
+            if day > days_since_start:
+                result["action"] = "already_advanced_today"
+                db.add(mailbox)
+                return result
+
         if day > total_days:
             mailbox.warmup_status = WarmupStatus.COLD_READY
             mailbox.warmup_completed_at = datetime.utcnow()
