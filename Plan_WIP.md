@@ -1,5 +1,15 @@
 # Plan WIP
 
+## WARMUP REPLY LIMIT FIX (2026-11-13) — PR #151, DEPLOYED 6ca13b1 14:45 UTC
+> Prod check: 290 of 301 new neuraforz mailboxes (day 1, limit 2) sent 3-10 warmup emails because
+> run_auto_reply_cycle never checked daily_send_limit. User: "fix", then "merge and deploy".
+- [x] 1. Auto-reply skips a replier at its daily limit (email stays answerable after reset, 24h window)
+- [x] 2. Peer send loop reserves reply share of the limit (new_thread_budget, min 1) so reply rate holds
+- [x] 3. 12 unit tests; full suite 2321 passed; CI green; deployed (backup pre-deploy-20261113-144158.sql.gz), /health + /ready OK
+- [ ] 4. Verify tomorrow (after 00:00 UTC reset): no warming_up mailbox has emails_sent_today > daily_limit; health stays ~85
+- [ ] 5. Open follow-ups: cold_ready mailboxes excluded from peer pool (health stuck at 75); 3 exzelon.com mailboxes dns_score 65;
+      "demo" warmup profile has invalid config_json "{{}}"; last_assessed_at never populated
+
 ## SITE AUDIT FIXES (2026-11-11) — branch bugfix/site-audit-fixes
 > Live audit of https://neuraleads.ai found 5 issues + 3 minor. User: "fix all of them". DEPLOYED 2026-11-11 18:50 UTC (d311345, PR #150).
 - [x] 1. /api/docs blank: CSP exemption lists /docs but docs live at /api/docs (security_headers.py) + fix test
