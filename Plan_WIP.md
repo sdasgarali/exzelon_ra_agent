@@ -1,5 +1,15 @@
 # Plan WIP
 
+## WARMUP FOLLOW-UPS (2026-11-13) — branch bugfix/warmup-maintenance-profiles
+> User: "fix those also" (after #151). Scope: maintenance warmup for warmed mailboxes, invalid profile JSON, exzelon.com DNS.
+- [x] 1. Maintenance warmup: cold_ready/active mailboxes join the peer pool (send + receive + reply), capped by
+      warmup_maintenance_daily_limit (default 4 warmup emails/day, counted from warmup_emails) so campaign capacity is kept.
+      Toggle warmup_maintenance_enabled (default true).
+- [x] 2. Profiles: validate config_json (object with total_days + phase_1..4 {days,min_emails,max_emails}) on create/update;
+      frontend default '{{}}' -> valid Standard template; repair prod row "demo" (id 4).
+- [ ] 3. exzelon.com DKIM missing (no selector1/2 CNAME; M365 DKIM off, DNS at Hostinger) -> user action, not code.
+- [ ] 4. Tests + full suite, PR, merge, deploy, verify.
+
 ## WARMUP REPLY LIMIT FIX (2026-11-13) — PR #151, DEPLOYED 6ca13b1 14:45 UTC
 > Prod check: 290 of 301 new neuraforz mailboxes (day 1, limit 2) sent 3-10 warmup emails because
 > run_auto_reply_cycle never checked daily_send_limit. User: "fix", then "merge and deploy".
