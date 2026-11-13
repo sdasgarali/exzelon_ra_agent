@@ -1,7 +1,8 @@
 """Pydantic schemas for warmup engine."""
+import json
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class WarmupPhaseConfig(BaseModel):
@@ -245,11 +246,52 @@ class WarmupProfileSchema(BaseModel):
         from_attributes = True
 
 
+def validate_profile_config(value: Optional[str]) -> Optional[str]:
+    """A profile config must be the ramp the system profiles use:
+    {"total_days": N, "phase_1".."phase_4": {"days", "min_emails", "max_emails"}},
+    with phase days summing to total_days and min_emails <= max_emails."""
+    if value is None:
+        return value
+    try:
+        cfg = json.loads(value)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"config_json is not valid JSON: {e}")
+    if not isinstance(cfg, dict):
+        raise ValueError("config_json must be a JSON object")
+
+    def _int(v, where):
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ValueError(f"{where} must be a non-negative integer")
+        return v
+
+    total = _int(cfg.get("total_days"), "total_days")
+    if total < 1:
+        raise ValueError("total_days must be at least 1")
+    phase_days = 0
+    for n in range(1, 5):
+        phase = cfg.get(f"phase_{n}")
+        if not isinstance(phase, dict):
+            raise ValueError(f"phase_{n} must be an object with days, min_emails, max_emails")
+        phase_days += _int(phase.get("days"), f"phase_{n}.days")
+        lo = _int(phase.get("min_emails"), f"phase_{n}.min_emails")
+        hi = _int(phase.get("max_emails"), f"phase_{n}.max_emails")
+        if lo > hi:
+            raise ValueError(f"phase_{n}.min_emails must not exceed max_emails")
+    if phase_days != total:
+        raise ValueError(f"phase days add up to {phase_days}, but total_days is {total}")
+    return value
+
+
 class WarmupProfileCreate(BaseModel):
     """Create a custom warmup profile."""
     name: str
     description: Optional[str] = None
     config_json: str
+
+    @field_validator("config_json")
+    @classmethod
+    def _check_config(cls, v):
+        return validate_profile_config(v)
 
 
 class WarmupProfileUpdate(BaseModel):
@@ -258,6 +300,11 @@ class WarmupProfileUpdate(BaseModel):
     description: Optional[str] = None
     config_json: Optional[str] = None
     is_default: Optional[bool] = None
+
+    @field_validator("config_json")
+    @classmethod
+    def _check_config(cls, v):
+        return validate_profile_config(v)
 
 
 class WarmupProfileListResponse(BaseModel):

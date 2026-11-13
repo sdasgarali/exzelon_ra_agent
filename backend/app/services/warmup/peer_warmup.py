@@ -6,7 +6,7 @@ import uuid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -16,11 +16,48 @@ from app.services.warmup.tracking import inject_tracking
 from app.core.settings_resolver import get_tenant_setting
 
 
+WARMING_STATUSES = (WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING)
+# Mailboxes that finished warmup keep a small daily warmup volume ("maintenance")
+# so their reply signal and reputation don't decay, and so new mailboxes have
+# established peers to exchange mail with.
+MAINTENANCE_STATUSES = (WarmupStatus.COLD_READY, WarmupStatus.ACTIVE)
+
+
+def peer_pool_statuses(db: Session, tenant_id=None) -> Tuple[WarmupStatus, ...]:
+    if get_tenant_setting(db, "warmup_maintenance_enabled", tenant_id=tenant_id, default=True):
+        return WARMING_STATUSES + MAINTENANCE_STATUSES
+    return WARMING_STATUSES
+
+
+def warmup_sent_today(db: Session, mailbox: SenderMailbox) -> int:
+    """Warmup emails (threads + replies) this mailbox sent since 00:00 UTC."""
+    start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return db.query(WarmupEmail).filter(
+        WarmupEmail.sender_mailbox_id == mailbox.mailbox_id,
+        WarmupEmail.sent_at >= start,
+        WarmupEmail.status != WarmupEmailStatus.FAILED,
+    ).count()
+
+
+def warmup_usage(db: Session, mailbox: SenderMailbox, maintenance_cap: int) -> Tuple[int, int]:
+    """(used, limit) for today's warmup sending.
+
+    Warming mailboxes: their ramp limit covers all their sending.
+    Maintenance mailboxes: at most ``maintenance_cap`` warmup emails, and never
+    past daily_send_limit, which campaign sends share.
+    """
+    if mailbox.warmup_status in MAINTENANCE_STATUSES:
+        used = warmup_sent_today(db, mailbox)
+        campaign_room = max(0, (mailbox.daily_send_limit or 0) - (mailbox.emails_sent_today or 0))
+        return used, min(maintenance_cap, used + campaign_room)
+    return mailbox.emails_sent_today or 0, mailbox.daily_send_limit or 0
+
+
 def get_peer_pairs(db: Session, mailbox: SenderMailbox, tenant_id=None) -> List[SenderMailbox]:
     peers = db.query(SenderMailbox).filter(
         and_(
             SenderMailbox.mailbox_id != mailbox.mailbox_id,
-            SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING]),
+            SenderMailbox.warmup_status.in_(peer_pool_statuses(db, tenant_id=tenant_id)),
             SenderMailbox.is_active == True,
             SenderMailbox.connection_status == "successful",
         )
@@ -93,7 +130,7 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None, s
         return {"skipped": True, "reason": "Peer warmup disabled"}
 
     query = db.query(SenderMailbox).filter(
-        SenderMailbox.warmup_status.in_([WarmupStatus.WARMING_UP, WarmupStatus.RECOVERING]),
+        SenderMailbox.warmup_status.in_(peer_pool_statuses(db, tenant_id=tenant_id)),
         SenderMailbox.is_active == True,
         SenderMailbox.connection_status == "successful",
     )
@@ -105,17 +142,19 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None, s
     mailboxes = query.all()
     results = {"total": 0, "sent": 0, "failed": 0, "details": []}
     reply_rate_target = float(get_tenant_setting(db, "warmup_auto_reply_rate", tenant_id=tenant_id, default=0.5))
+    maintenance_cap = int(get_tenant_setting(db, "warmup_maintenance_daily_limit", tenant_id=tenant_id, default=4))
 
     for mb in mailboxes:
         # Replies also count against the daily limit, so new threads only get
         # the share of it not reserved for replying to inbound warmup mail.
-        send_budget = new_thread_budget(mb.daily_send_limit or 0, reply_rate_target)
-        if (mb.emails_sent_today or 0) >= send_budget:
+        used, limit = warmup_usage(db, mb, maintenance_cap)
+        send_budget = new_thread_budget(limit, reply_rate_target)
+        if used >= send_budget:
             continue
 
         peers = get_peer_pairs(db, mb, tenant_id=tenant_id)
         for peer in peers:
-            if (mb.emails_sent_today or 0) >= send_budget:
+            if used >= send_budget:
                 break
 
             sender_name = mb.display_name or mb.email.split("@")[0]
@@ -153,11 +192,13 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None, s
                 tracking_id=tracking_id,
                 ai_generated=ai_generated,
                 ai_provider=ai_provider,
+                sent_at=datetime.utcnow(),
             )
             db.add(email_record)
 
             if result["success"]:
                 results["sent"] += 1
+                used += 1
                 mb.emails_sent_today += 1
                 mb.total_emails_sent += 1
                 mb.warmup_emails_sent = (mb.warmup_emails_sent or 0) + 1
@@ -203,6 +244,7 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
     reply_rate_target = float(get_tenant_setting(db, "warmup_auto_reply_rate", tenant_id=tenant_id, default=0.5))
     min_delay_minutes = int(get_tenant_setting(db, "warmup_auto_reply_min_delay", tenant_id=tenant_id, default=15))
     max_delay_minutes = int(get_tenant_setting(db, "warmup_auto_reply_max_delay", tenant_id=tenant_id, default=90))
+    maintenance_cap = int(get_tenant_setting(db, "warmup_maintenance_daily_limit", tenant_id=tenant_id, default=4))
 
     now = datetime.utcnow()
     delay_cutoff = now - timedelta(minutes=min_delay_minutes)
@@ -224,6 +266,9 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
     unreplied = unreplied.all()
 
     results = {"total_candidates": len(unreplied), "replied": 0, "skipped": 0, "failed": 0, "details": []}
+    # (used, limit) per replier, counted once and kept current in memory: reply
+    # rows added this cycle are not visible to a COUNT query until flushed.
+    usage: Dict[int, List[int]] = {}
 
     for email_record in unreplied:
         # Randomly skip some emails to achieve a natural reply rate
@@ -250,7 +295,10 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
         # A reply is a real send: it must respect the replier's warmup ramp.
         # Left unreplied, the email can still be answered after the daily reset
         # while it is inside the 24h window.
-        if (receiver_mb.emails_sent_today or 0) >= (receiver_mb.daily_send_limit or 0):
+        if receiver_mb.mailbox_id not in usage:
+            usage[receiver_mb.mailbox_id] = list(warmup_usage(db, receiver_mb, maintenance_cap))
+        used, limit = usage[receiver_mb.mailbox_id]
+        if used >= limit:
             results["skipped"] += 1
             continue
 
@@ -288,6 +336,7 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
             sender_mb.warmup_replies = (sender_mb.warmup_replies or 0) + 1
 
             # Update receiver mailbox send counters
+            usage[receiver_mb.mailbox_id][0] += 1
             receiver_mb.emails_sent_today = (receiver_mb.emails_sent_today or 0) + 1
             receiver_mb.total_emails_sent = (receiver_mb.total_emails_sent or 0) + 1
             receiver_mb.warmup_emails_sent = (receiver_mb.warmup_emails_sent or 0) + 1
@@ -304,6 +353,7 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
                 tracking_id=str(uuid.uuid4()),
                 ai_generated=reply_content.get("ai_generated", False),
                 ai_provider=reply_content.get("ai_provider") if reply_content.get("ai_generated") else None,
+                sent_at=datetime.utcnow(),
             )
             db.add(reply_record)
 

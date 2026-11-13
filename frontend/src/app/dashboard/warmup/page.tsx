@@ -104,6 +104,15 @@ const statusColor: Record<string, string> = {
   blacklisted: 'bg-red-200 text-red-900',
   recovering: 'bg-purple-100 text-purple-800',
 }
+// Starting point for a custom profile: the Standard 30-day ramp (the API rejects other shapes).
+const DEFAULT_PROFILE_CONFIG = JSON.stringify({
+  total_days: 30,
+  phase_1: { days: 7, min_emails: 2, max_emails: 5 },
+  phase_2: { days: 7, min_emails: 5, max_emails: 15 },
+  phase_3: { days: 7, min_emails: 15, max_emails: 25 },
+  phase_4: { days: 9, min_emails: 25, max_emails: 35 },
+}, null, 2)
+
 function hColor(s: number) { return s >= 80 ? 'bg-green-500' : s >= 60 ? 'bg-yellow-500' : s >= 40 ? 'bg-orange-500' : 'bg-red-500' }
 function hText(s: number) { return s >= 80 ? 'text-green-600' : s >= 60 ? 'text-yellow-600' : s >= 40 ? 'text-orange-600' : 'text-red-600' }
 
@@ -133,7 +142,7 @@ export default function WarmupEnginePage() {
   const [alertFilter, setAlertFilter] = useState<string>('all')
   const [alertReadFilter, setAlertReadFilter] = useState<string>('all')
   const [showProfileForm, setShowProfileForm] = useState(false)
-  const [newProfile, setNewProfile] = useState({ name: '', description: '', config_json: '{{}}' })
+  const [newProfile, setNewProfile] = useState({ name: '', description: '', config_json: DEFAULT_PROFILE_CONFIG })
   const [exportFormat, setExportFormat] = useState('csv')
   const [exportDays, setExportDays] = useState(30)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatusData | null>(null)
@@ -269,9 +278,13 @@ export default function WarmupEnginePage() {
   const handleCreateProfile = async () => {
     try {
       await warmupApi.createProfile(newProfile)
-      setNewProfile({ name: '', description: '', config_json: '{{}}' }); setShowProfileForm(false)
+      setNewProfile({ name: '', description: '', config_json: DEFAULT_PROFILE_CONFIG }); setShowProfileForm(false)
       await fetchProfiles(); setSuccess('Profile created')
-    } catch { setError('Failed to create profile') }
+    } catch (e: any) {
+      const d = e?.response?.data?.detail
+      const msg = Array.isArray(d) ? d[0]?.msg?.replace(/^Value error, /, '') : typeof d === 'string' ? d : null
+      setError(msg ? `Failed to create profile: ${msg}` : 'Failed to create profile')
+    }
   }
   const handleApplyProfile = async (profileId: number, mailboxId: number) => {
     try { await warmupApi.applyProfile(profileId, mailboxId); await fetchCore(); setSuccess('Profile applied') } catch { setError('Failed to apply profile') }
@@ -785,7 +798,7 @@ export default function WarmupEnginePage() {
                 <div><label className="block text-xs text-gray-500 mb-1">Name</label><input type="text" value={newProfile.name} onChange={e => setNewProfile({ ...newProfile, name: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Profile name" /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Description</label><input type="text" value={newProfile.description} onChange={e => setNewProfile({ ...newProfile, description: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Description" /></div>
               </div>
-              <div><label className="block text-xs text-gray-500 mb-1">Config JSON</label><textarea value={newProfile.config_json} onChange={e => setNewProfile({ ...newProfile, config_json: e.target.value })} rows={4} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Config JSON</label><textarea value={newProfile.config_json} onChange={e => setNewProfile({ ...newProfile, config_json: e.target.value })} rows={10} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500" /></div>
               <div className="flex justify-end"><button onClick={handleCreateProfile} disabled={!newProfile.name} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium">Save Profile</button></div>
             </div>
           )}

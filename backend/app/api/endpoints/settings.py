@@ -566,6 +566,8 @@ DEFAULT_SETTINGS = {
     "warmup_peer_min_delay_minutes": {"value": 5, "type": "integer", "description": "Minimum delay between peer emails (minutes)"},
     "warmup_peer_max_delay_minutes": {"value": 30, "type": "integer", "description": "Maximum delay between peer emails (minutes)"},
     "warmup_peer_max_emails_per_pair": {"value": 3, "type": "integer", "description": "Max warmup emails per mailbox pair per cycle"},
+    "warmup_maintenance_enabled": {"value": True, "type": "boolean", "description": "Keep warmed-up (cold-ready/active) mailboxes in the peer warmup pool"},
+    "warmup_maintenance_daily_limit": {"value": 4, "type": "integer", "description": "Max warmup emails per day for warmed-up mailboxes (counts toward the daily send limit)"},
     "warmup_ai_provider": {"value": "groq", "type": "string", "description": "AI provider for warmup content generation"},
     "warmup_ai_temperature": {"value": 0.8, "type": "float", "description": "AI content generation temperature"},
     "warmup_content_max_length": {"value": 200, "type": "integer", "description": "Max word length for AI warmup content"},

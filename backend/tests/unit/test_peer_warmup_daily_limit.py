@@ -126,3 +126,59 @@ def test_send_and_reply_together_stay_within_limit(db_session, test_tenant, fake
     for mb in mbs:
         db_session.refresh(mb)
         assert mb.emails_sent_today <= mb.daily_send_limit
+
+
+# ---------------------------------------------------------------------------
+# Maintenance warmup: cold_ready / active mailboxes stay in the peer pool
+# ---------------------------------------------------------------------------
+
+def _ready(db, tenant, email, limit=35, sent_today=0, status=WarmupStatus.COLD_READY):
+    mb = _mailbox(db, tenant, email, limit, sent_today)
+    mb.warmup_status = status
+    db.commit()
+    return mb
+
+
+def test_ready_mailboxes_join_peer_pool(db_session, test_tenant, fake_io):
+    new = _mailbox(db_session, test_tenant, "new@test.com", limit=2)
+    ready = _ready(db_session, test_tenant, "ready@test.com")
+
+    assert peer_warmup.get_peer_pairs(db_session, new) == [ready]
+    peer_warmup.run_peer_warmup_cycle(db_session)
+    senders = {s for s, _ in fake_io}
+    assert senders == {"new@test.com", "ready@test.com"}
+
+
+def test_maintenance_cap_limits_ready_mailbox(db_session, test_tenant, fake_io):
+    """A ready mailbox (limit 35) sends at most new_thread_budget(cap) threads
+    and replies only up to the maintenance cap in total."""
+    ready = _ready(db_session, test_tenant, "ready@test.com", status=WarmupStatus.ACTIVE)
+    peers = [_mailbox(db_session, test_tenant, f"p{i}@test.com", limit=20) for i in range(5)]
+
+    peer_warmup.run_peer_warmup_cycle(db_session)
+    # cap 4 with the fixture's 100% reply rate -> 1 new thread, 3 slots kept for replies
+    assert sum(1 for s, _ in fake_io if s == "ready@test.com") == new_thread_budget(4, 1.0) == 1
+
+    for p in peers:
+        _inbound(db_session, p, ready, 1)
+    peer_warmup.run_auto_reply_cycle(db_session)
+    assert peer_warmup.warmup_sent_today(db_session, ready) <= 4
+
+
+def test_maintenance_respects_campaign_capacity(db_session, test_tenant, fake_io):
+    """A ready mailbox that used its whole daily limit on campaigns sends no warmup."""
+    _mailbox(db_session, test_tenant, "new@test.com", limit=2)
+    _ready(db_session, test_tenant, "busy@test.com", limit=30, sent_today=30)
+
+    peer_warmup.run_peer_warmup_cycle(db_session)
+    assert all(s != "busy@test.com" for s, _ in fake_io)
+
+
+def test_maintenance_can_be_disabled(db_session, test_tenant, fake_io, monkeypatch):
+    new = _mailbox(db_session, test_tenant, "new@test.com", limit=2)
+    _ready(db_session, test_tenant, "ready@test.com")
+    inner = peer_warmup.get_tenant_setting
+    monkeypatch.setattr(peer_warmup, "get_tenant_setting",
+                        lambda db, key, tenant_id=None, default=None:
+                        False if key == "warmup_maintenance_enabled" else inner(db, key, tenant_id=tenant_id, default=default))
+    assert peer_warmup.get_peer_pairs(db_session, new) == []
