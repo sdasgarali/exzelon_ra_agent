@@ -206,7 +206,7 @@ export default function WarmupEnginePage() {
   const fetchAssessmentRuns = async () => {
     setRunsLoading(true)
     try {
-      const allRuns = await pipelinesApi.runs({ limit: 200 })
+      const allRuns = await pipelinesApi.runs({ limit: 200, pipeline_name: 'warmup_assessment' })
       setAssessmentRuns((allRuns || []).filter((r: PipelineRun) => r.pipeline_name === 'warmup_assessment'))
     } catch { /* ignore */ } finally { setRunsLoading(false) }
   }

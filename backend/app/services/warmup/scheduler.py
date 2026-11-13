@@ -226,15 +226,16 @@ def job_daily_assessment():
         logger.info("Job daily_assessment skipped (disabled)")
         return
     logger.info("Running daily warmup assessment")
-    db = _get_db()
-    try:
-        from app.services.pipelines.warmup_engine import run_warmup_assessment
-        result = run_warmup_assessment(triggered_by="scheduler")
-        logger.info("Daily assessment complete", result=result)
-    except Exception as e:
-        logger.error("Daily assessment failed", error=str(e))
-    finally:
-        db.close()
+    from app.services.pipelines.warmup_engine import run_warmup_assessment
+    # One run per tenant: each tenant's mailboxes are assessed under that tenant's
+    # warmup settings and get their own JobRun, so the run shows in that tenant's
+    # Warmup Assessment History (a single global run was recorded under tenant 1 only).
+    for tid in _get_active_tenant_ids():
+        try:
+            result = run_warmup_assessment(triggered_by="scheduler", tenant_id=tid)
+            logger.info("Daily assessment complete", tenant_id=tid, result=result)
+        except Exception as e:
+            logger.error("Daily assessment failed", tenant_id=tid, error=str(e))
 
 
 def job_peer_warmup_cycle():

@@ -1,5 +1,12 @@
 # Plan WIP
 
+## WARMUP ASSESSMENT HISTORY (2026-11-13) — branch bugfix/warmup-assessment-history
+> Prod: nightly assessment ran once globally, JobRun saved as tenant 1 -> Neuraforz (tenant 2) history had 1 run.
+- [x] 1. job_daily_assessment loops active tenants (own settings + own JobRun), per-tenant error isolation
+- [x] 2. History tab requests pipeline_name=warmup_assessment server-side (was last-200-of-all-types then client filter)
+- [x] 3. Tests (old test asserted the global run -> updated); full suite 2339 passed; tsc clean
+- [ ] 4. PR, merge, deploy; verify tomorrow 00:05 UTC that tenant 2 gets its own run
+
 ## WARMUP HEALTH SCORE v2 (2026-11-13) — APPROVED (D1 20%, D2 platform age w10, D3 40/60/80, D4 display only)
 > Plan: docs/PLAN_WARMUP_HEALTH_SCORE_V2.md. Next step: implement task 2 on a feature branch.
 
