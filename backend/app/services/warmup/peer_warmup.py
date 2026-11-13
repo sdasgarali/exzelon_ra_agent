@@ -1,4 +1,5 @@
 """Peer Warmup Email Service - mailboxes email each other to build ISP reputation."""
+import math
 import random
 import smtplib
 import uuid
@@ -29,6 +30,20 @@ def get_peer_pairs(db: Session, mailbox: SenderMailbox, tenant_id=None) -> List[
     max_per_pair = int(get_tenant_setting(db, "warmup_peer_max_emails_per_pair", tenant_id=tenant_id, default=3))
     random.shuffle(peers)
     return peers[:max_per_pair]
+
+
+def new_thread_budget(daily_limit: int, reply_rate: float) -> int:
+    """How much of a mailbox's daily limit may go to new warmup threads.
+
+    The rest is reserved for auto-replies, which are capped by the same limit.
+    Always at least 1 when the limit allows sending at all, so a day-1 mailbox
+    (limit 2) still starts threads.
+    """
+    if daily_limit <= 0:
+        return 0
+    reply_rate = min(max(reply_rate, 0.0), 1.0)
+    reserved = math.ceil(daily_limit * reply_rate)
+    return max(1, daily_limit - reserved)
 
 
 def send_warmup_email(sender_mailbox: SenderMailbox, receiver_email: str, subject: str, body_html: str, body_text: str) -> Dict[str, Any]:
@@ -89,14 +104,18 @@ def run_peer_warmup_cycle(db: Session, mailbox_id: int = None, tenant_id=None, s
 
     mailboxes = query.all()
     results = {"total": 0, "sent": 0, "failed": 0, "details": []}
+    reply_rate_target = float(get_tenant_setting(db, "warmup_auto_reply_rate", tenant_id=tenant_id, default=0.5))
 
     for mb in mailboxes:
-        if mb.emails_sent_today >= mb.daily_send_limit:
+        # Replies also count against the daily limit, so new threads only get
+        # the share of it not reserved for replying to inbound warmup mail.
+        send_budget = new_thread_budget(mb.daily_send_limit or 0, reply_rate_target)
+        if (mb.emails_sent_today or 0) >= send_budget:
             continue
 
         peers = get_peer_pairs(db, mb, tenant_id=tenant_id)
         for peer in peers:
-            if mb.emails_sent_today >= mb.daily_send_limit:
+            if (mb.emails_sent_today or 0) >= send_budget:
                 break
 
             sender_name = mb.display_name or mb.email.split("@")[0]
@@ -225,6 +244,13 @@ def run_auto_reply_cycle(db: Session, tenant_id=None, replier_tenant_id=None) ->
             SenderMailbox.connection_status == "successful",
         ).first()
         if not receiver_mb:
+            results["skipped"] += 1
+            continue
+
+        # A reply is a real send: it must respect the replier's warmup ramp.
+        # Left unreplied, the email can still be answered after the daily reset
+        # while it is inside the 24h window.
+        if (receiver_mb.emails_sent_today or 0) >= (receiver_mb.daily_send_limit or 0):
             results["skipped"] += 1
             continue
 
