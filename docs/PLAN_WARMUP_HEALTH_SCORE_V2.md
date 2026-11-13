@@ -15,6 +15,7 @@
 | P4 | "Age" = time since the mailbox was added to NeuraLeads, not domain/account age | Old domain connected today scores 0 for age |
 | P5 | Inbox vs spam placement is never measured (IMAP reader only reads INBOX) | No signal for the thing that matters most |
 | P6 | Lifetime counters: old clean history hides a new bounce spike | — |
+| P7 | Status ignores score: graduation to cold_ready is day-based only, so status and score can contradict | New mailboxes 85 + "warming up"; ready ones 75 + "cold ready" |
 
 ## 2. Design
 
@@ -63,6 +64,16 @@ Response gains `caps_applied: [{reason, cap}]` so the UI can say *why* (e.g. "Ca
 - `warmup_daily_logs.health_score` keeps storing a number (0 for insufficient data is NOT used —
   store NULL; check column nullability first).
 
+### 2.7 Status vs score consistency (P7, raised by user 2026-11-13) — PROPOSED, needs approval (D5)
+- Today status is purely time-based: `warming_up` → `cold_ready` when day > total_days
+  (`assess_mailbox`), with **no health check**. So a 30-day-old mailbox at health 30 still becomes
+  "ready", and on the dashboard new mailboxes (85, inflated) sit next to ready ones (75, decayed) —
+  it reads as if a higher score means "needs more warmup".
+- Proposal: graduate to `cold_ready` only when day > total_days **and** v2 score >= 70 **and** no
+  cap is applied; otherwise stay `warming_up` at the last phase's limit, with alert
+  "Warmup extended: <reason>" (e.g. "DKIM missing", "inbox placement 72%"). Re-checked daily.
+- Dashboard: show the status reason next to the badge ("Day 3/30", "Ready", "Extended: DKIM missing").
+
 ## 3. Touch points
 - `services/pipelines/warmup_engine.py` (score, assess, promotion threshold usage)
 - `api/endpoints/warmup.py` (overview, health-scores, averages), `api/endpoints/deliverability.py` (2 call sites use `float(...)`)
@@ -80,6 +91,7 @@ Response gains `caps_applied: [{reason, cap}]` so the UI can say *why* (e.g. "Ca
 - [ ] 5. Alembic `warmup_emails.placement`; IMAP Junk scan + rescue; include COLD_READY/RECOVERING; bounded cycle time
 - [ ] 6. Rolling 14-day rates
 - [ ] 7. Shadow script v1 vs v2 on prod → review with user
+- [ ] 7b. (if D5 approved) Health-gated graduation + status reason in dashboard
 - [ ] 8. Full suites, PR, deploy with version 1, then flip to 2 after review
 
 ## 5. Acceptance criteria
@@ -95,6 +107,8 @@ Response gains `caps_applied: [{reason, cap}]` so the UI can say *why* (e.g. "Ca
 - **D2** Age: (a) keep platform age at weight 10 (recommended, no external calls) or (b) real domain age via RDAP lookup, cached per domain.
 - **D3** Cap values 40 / 60 / 80 OK?
 - **D4** Should a score below a threshold (e.g. 50) stop the mailbox from being picked for campaigns? Today `mailbox_selector` ignores health. Out of scope unless requested.
+
+- **D5** Gate graduation to cold_ready on score >= 70 and no caps (extend warmup otherwise)? Recommended: yes.
 
 ## 7. Expected prod impact (once on v2)
 - The 300 new neuraforz mailboxes: "Collecting data" for their first ~4–5 warmup days, then a number.
