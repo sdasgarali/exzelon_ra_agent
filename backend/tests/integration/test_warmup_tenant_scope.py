@@ -329,15 +329,27 @@ class TestAssessAll:
         result = run_warmup_assessment(triggered_by="scheduler", db=db_session)
         assert result["assessed"] == 3
 
-    def test_scheduler_job_calls_engine_unscoped(self, monkeypatch):
+    def test_scheduler_job_assesses_each_tenant(self, monkeypatch):
+        """The nightly job runs one scoped assessment per active tenant, so each
+        tenant gets its own JobRun in its Assessment History."""
         import app.services.pipelines.warmup_engine as engine
         import app.services.warmup.scheduler as sched
         calls = []
         monkeypatch.setattr(sched, "_is_warmup_job_enabled", lambda job_id: True)
+        monkeypatch.setattr(sched, "_get_active_tenant_ids", lambda: [1, 7])
         monkeypatch.setattr(engine, "run_warmup_assessment",
                             lambda **kw: calls.append(kw) or {"assessed": 0})
         sched.job_daily_assessment()
-        assert calls and "tenant_id" not in calls[0]
+        assert [c["tenant_id"] for c in calls] == [1, 7]
+
+    def test_tenant_scoped_run_is_recorded_for_that_tenant(self, db_session, world):
+        """A scoped run is attributed to its own tenant and only assesses its mailboxes."""
+        from app.services.pipelines.warmup_engine import run_warmup_assessment
+        tid = world["mb_a"].tenant_id
+        result = run_warmup_assessment(triggered_by="scheduler", tenant_id=tid, db=db_session)
+        job = db_session.query(JobRun).filter(JobRun.pipeline_name == "warmup_assessment").order_by(JobRun.run_id.desc()).first()
+        assert job.tenant_id == tid
+        assert result["assessed"] == 1
 
 
 # ---------------------------------------------------------------------------

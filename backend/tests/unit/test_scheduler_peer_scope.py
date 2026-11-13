@@ -34,3 +34,31 @@ def test_auto_reply_scopes_repliers_per_tenant(two_tenants, monkeypatch):
     monkeypatch.setattr(peer_warmup, "run_auto_reply_cycle", lambda db, **kw: calls.append(kw) or {})
     scheduler.job_auto_reply_cycle()
     assert calls == [{"tenant_id": 1, "replier_tenant_id": 1}, {"tenant_id": 2, "replier_tenant_id": 2}]
+
+
+def test_daily_assessment_runs_once_per_tenant(two_tenants, monkeypatch):
+    """Regression: the nightly assessment ran once for all tenants and its JobRun was
+    recorded under tenant 1, so other tenants' Assessment History stayed empty and
+    their own warmup settings were ignored."""
+    from app.services.pipelines import warmup_engine
+
+    calls = []
+    monkeypatch.setattr(warmup_engine, "run_warmup_assessment", lambda **kw: calls.append(kw) or {})
+    scheduler.job_daily_assessment()
+    assert calls == [{"triggered_by": "scheduler", "tenant_id": 1}, {"triggered_by": "scheduler", "tenant_id": 2}]
+
+
+def test_daily_assessment_failure_does_not_stop_other_tenants(two_tenants, monkeypatch):
+    from app.services.pipelines import warmup_engine
+
+    seen = []
+
+    def _run(**kw):
+        seen.append(kw["tenant_id"])
+        if kw["tenant_id"] == 1:
+            raise RuntimeError("boom")
+        return {}
+
+    monkeypatch.setattr(warmup_engine, "run_warmup_assessment", _run)
+    scheduler.job_daily_assessment()
+    assert seen == [1, 2]
